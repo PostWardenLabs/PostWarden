@@ -167,6 +167,68 @@ def logout(request: Request, csrf_token: str = Form(...)):
 
 
 # ---------------------------------------------------------------------------
+# User settings — username/password, and the theme picker (see settings.html)
+# ---------------------------------------------------------------------------
+USERNAME_PATTERN = re.compile(r"^[a-z0-9_.-]{3,32}$")
+
+
+@app.get("/settings")
+def settings_page(request: Request, ok: str = None, err: str = None):
+    return templates.TemplateResponse(request, "settings.html", {
+        "nav": "settings", "ok": ok, "err": err,
+    })
+
+
+@app.post("/settings/username")
+def change_username(request: Request, username: str = Form(...),
+                    csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        username = username.strip().lower()
+        if not USERNAME_PATTERN.match(username):
+            raise ValueError(
+                "Username must be 3-32 characters: lowercase letters, numbers, "
+                "_ . or - only")
+        user_id = auth.current_user(request)["user_id"]
+        with tx() as cur:
+            cur.execute("UPDATE users SET username = %s WHERE id = %s",
+                       (username, user_id))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/settings", err=msg)
+    return flash_redirect("/settings", ok=f"Username changed to {username!r}")
+
+
+@app.post("/settings/password")
+def change_password(request: Request, current_password: str = Form(...),
+                    new_password: str = Form(...), confirm_password: str = Form(...),
+                    csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        session = auth.current_user(request)
+        row = q1("SELECT password_hash FROM users WHERE id = %s", (session["user_id"],))
+        if not row or not auth.verify_password(current_password, row["password_hash"]):
+            raise ValueError("Current password is incorrect")
+        if new_password != confirm_password:
+            raise ValueError("New password and confirmation don't match")
+        if len(new_password) < 8:
+            raise ValueError("New password must be at least 8 characters")
+        with tx() as cur:
+            cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                       (auth.hash_password(new_password), session["user_id"]))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/settings", err=msg)
+    # Same as the CLI's reset-password: revoke every session for this user,
+    # including the current one — logging back in with the new password is
+    # itself the confirmation that it was set correctly.
+    auth.delete_all_sessions_for_user(session["user_id"])
+    resp = flash_redirect("/login", ok="Password changed — please log in again")
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Trial balance
 # ---------------------------------------------------------------------------
 @app.get("/")

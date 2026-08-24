@@ -27,22 +27,9 @@
       <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
       <a href="/payees" class="{{ 'active' if nav == 'payees' }}">Payees</a>
     </nav>
-    <label class="theme-picker">
-      <span class="sr-only">Theme</span>
-      <select id="theme-select">
-        <option value="ledger">Ledger</option>
-        <option value="midnight">Midnight</option>
-        <option value="parchment">Parchment</option>
-        <option value="slate">Slate</option>
-        <option value="ink">Ink</option>
-        <option value="terracotta">Terracotta</option>
-        <option value="graphite">Graphite</option>
-        <option value="rose">Rose</option>
-      </select>
-    </label>
+    <a href="/settings" class="username-link dim small {{ 'active' if nav == 'settings' }}">{{ request.state.user.username }}</a>
     <form method="post" action="/logout" class="logout-form">
       <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-      <span class="dim small">{{ request.state.user.username }}</span>
       <button type="submit" class="quiet">Log out</button>
     </form>
     {% endif %}
