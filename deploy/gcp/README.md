@@ -17,8 +17,11 @@ not by guessing a URL, not by port-scanning the VM's IP.
 
 - A GCP project with billing enabled ([console.cloud.google.com](https://console.cloud.google.com))
 - The [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed and run once: `gcloud init`
-- This repo's `origin` remote public on GitHub (it already is) — the VM
-  clones it directly, no deploy keys needed
+- If `origin` is a **private** GitHub repo (the common case), `setup.sh`
+  generates a read-only deploy keypair on first run and walks you through
+  adding the public half at `github.com/<owner>/<repo>/settings/keys` — the
+  VM clones over SSH using it. Nothing to do here ahead of time; the script
+  pauses and asks.
 
 ## 1. Provision the VM
 
@@ -29,17 +32,25 @@ PROJECT_ID=your-project-id ./setup.sh
 
 This is idempotent-ish and does, in order:
 
-1. Enables the Compute Engine and IAP APIs
-2. Creates a **dedicated VPC** (`libro-vpc`) — a network you create yourself
+1. Generates `deploy_key`/`deploy_key.pub` if they don't exist yet
+   (gitignored — never committed) and pauses for you to add the public key
+   as a GitHub deploy key, read-only
+2. Enables the Compute Engine and IAP APIs
+3. Creates a **dedicated VPC** (`libro-vpc`) — a network you create yourself
    starts with zero firewall rules (unlike the project's default network,
    which usually ships a permissive `default-allow-ssh` open to
    `0.0.0.0/0`). Nothing is reachable here until a rule says otherwise.
-3. Adds exactly one firewall rule: allow tcp:22 from `35.235.240.0/20` —
-   Google's IAP forwarding range, not the public internet
-4. Grants your account `roles/iap.tunnelResourceAccessor`
-5. Creates an `e2-micro` VM (free-tier eligible in `us-west1`,
+4. Adds two firewall rules, both scoped to `35.235.240.0/20` — Google's IAP
+   forwarding range, not the public internet: tcp:22 (SSH) and tcp:8000
+   (the app). IAP TCP forwarding needs an explicit rule per destination
+   port even though it's already identity-gated; without the second rule,
+   `start-iap-tunnel ... 8000` connects but then fails with "failed to
+   connect to backend"
+5. Grants your account `roles/iap.tunnelResourceAccessor`
+6. Creates an `e2-micro` VM (free-tier eligible in `us-west1`,
    `us-central1`, `us-east1`) with [`startup-script.sh`](startup-script.sh)
-   attached, which installs Docker and runs
+   and the deploy key attached as metadata. The startup script installs
+   Docker, wires the deploy key into root's SSH config, and runs
    `docker compose up -d --build` on every boot
 
 First boot takes a couple of minutes (Docker install + image build). Check
@@ -128,7 +139,7 @@ IAP tunneling itself is free. If Postgres+app feel memory-constrained on
 
 ```bash
 gcloud compute instances delete libro-vm --zone=us-central1-a --project=your-project-id
-gcloud compute firewall-rules delete libro-vpc-allow-iap-ssh --project=your-project-id
+gcloud compute firewall-rules delete libro-vpc-allow-iap-ssh libro-vpc-allow-iap-app --project=your-project-id
 gcloud compute networks delete libro-vpc --project=your-project-id
 ```
 

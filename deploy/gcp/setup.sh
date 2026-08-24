@@ -20,6 +20,26 @@ ACCOUNT="$(gcloud config get-value account)"
 
 echo "== Project: $PROJECT_ID  Zone: $ZONE  Account: $ACCOUNT =="
 
+echo "-- Ensuring a GitHub deploy key exists (the repo is private)"
+if [ ! -f deploy_key ]; then
+  ssh-keygen -t ed25519 -f deploy_key -N "" -C "libro-vm-deploy-key" -q
+  cat <<EOF
+
+Generated deploy_key / deploy_key.pub (gitignored — never committed).
+Add the public key as a READ-ONLY deploy key before the VM's first boot,
+or its git clone will fail exactly like a missing-credential error:
+
+  https://github.com/<owner>/<repo>/settings/keys -> Add deploy key
+  (leave "Allow write access" unchecked)
+
+$(cat deploy_key.pub)
+
+EOF
+  read -r -p "Press Enter once the key is added to GitHub... "
+else
+  echo "   (deploy_key already exists, reusing)"
+fi
+
 echo "-- Enabling required APIs"
 gcloud services enable compute.googleapis.com iap.googleapis.com \
   --project "$PROJECT_ID"
@@ -36,6 +56,16 @@ gcloud compute firewall-rules create "${NETWORK}-allow-iap-ssh" \
   --source-ranges=35.235.240.0/20 \
   || echo "   (firewall rule already exists, continuing)"
 
+echo "-- Allowing the app port only from Google's IAP forwarding range"
+# IAP TCP forwarding still needs a firewall rule per destination port, same
+# as SSH above — without this, `start-iap-tunnel ... 8000` connects but
+# then fails with "failed to connect to backend".
+gcloud compute firewall-rules create "${NETWORK}-allow-iap-app" \
+  --project "$PROJECT_ID" --network "$NETWORK" \
+  --direction=INGRESS --action=ALLOW --rules=tcp:8000 \
+  --source-ranges=35.235.240.0/20 \
+  || echo "   (firewall rule already exists, continuing)"
+
 echo "-- Granting your account permission to open IAP tunnels"
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="user:$ACCOUNT" --role="roles/iap.tunnelResourceAccessor" \
@@ -48,7 +78,7 @@ gcloud compute instances create "$VM_NAME" \
   --image-family=debian-12 --image-project=debian-cloud \
   --boot-disk-size=20GB --boot-disk-type=pd-standard \
   --network="$NETWORK" --subnet="$NETWORK" \
-  --metadata-from-file=startup-script=startup-script.sh
+  --metadata-from-file=startup-script=startup-script.sh,deploy-ssh-key=deploy_key
 
 cat <<EOF
 

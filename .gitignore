@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
+
+# GitHub deploy key for deploy/gcp — generated locally by setup.sh, holds
+# the VM's read-only credential for cloning the private repo. Never commit
+# this; it lives in GCE instance metadata, not git.
+deploy/gcp/deploy_key
+deploy/gcp/deploy_key.pub
