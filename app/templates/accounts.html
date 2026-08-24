@@ -4,77 +4,121 @@
 <h1>Chart of accounts</h1>
 <p class="page-sub">Summary accounts structure the chart; only postable leaves take journal lines. Children inherit their parent's type — the database enforces it.</p>
 
-<table class="ledger" id="accounts-tree">
-  <thead><tr>
-    <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
-  </tr></thead>
-  <tbody id="accounts-body">
-    {% for r in rows %}
-    {% if r.kind == 'gap' %}
-    <tr class="add-gap" data-track="{{ r.track_id or '' }}">
-      <td colspan="5">
-        <button type="button" class="add-gap-trigger" aria-label="Add account here">+</button>
-        <form method="post" action="/accounts/quick-create" class="add-gap-form" hidden>
-          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-          <input type="hidden" name="parent_id" value="">
-          <select name="account_type" class="add-gap-type" hidden>
-            {% for t in account_types %}
-            <option value="{{ t }}">{{ type_labels[t] }}</option>
+<div class="accounts-layout">
+  <nav class="levels-panel">
+    <a href="/accounts" class="level-link {{ 'active' if not selected_level }}">All levels</a>
+    {% for lv in levels %}
+    <a href="/accounts?level_id={{ lv.id }}"
+       class="level-link {{ 'active' if selected_level and selected_level.id == lv.id }}"
+       style="padding-left: {{ 0.5 + ([lv.depth, 6] | min - 1) * 1 }}rem;">
+      {{ lv.name }}
+    </a>
+    {% endfor %}
+    <a href="/account-levels" class="level-link dim small" style="margin-top: 0.4rem;">Manage levels…</a>
+  </nav>
+
+  <div class="accounts-main">
+    {% if selected_level %}
+    <p class="page-sub">Showing only <strong>{{ selected_level.name }}</strong> — every account sitting exactly at
+      depth {{ selected_level.depth }}, wherever it lives in the tree.</p>
+    <table class="ledger">
+      <thead><tr>
+        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for a in display_accounts %}
+        <tr class="{{ 'inactive' if not a.is_active }}">
+          <td class="mono dim">{{ a.code }}</td>
+          <td>{{ a.name }} <span class="dim small">{{ a.path }}</span></td>
+          <td class="dim">{{ type_labels[a.account_type] }}</td>
+          <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
+          <td>
+            <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+              <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="dim">No accounts at this level yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <table class="ledger" id="accounts-tree">
+      <thead><tr>
+        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
+      </tr></thead>
+      <tbody id="accounts-body">
+        {% for r in rows %}
+        {% if r.kind == 'gap' %}
+        <tr class="add-gap" data-track="{{ r.track_id or '' }}">
+          <td colspan="5">
+            <button type="button" class="add-gap-trigger" aria-label="Add account here">+</button>
+            <form method="post" action="/accounts/quick-create" class="add-gap-form" hidden>
+              <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+              <input type="hidden" name="parent_id" value="">
+              <select name="account_type" class="add-gap-type" hidden>
+                {% for t in account_types %}
+                <option value="{{ t }}">{{ type_labels[t] }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="name" placeholder="Category name" required>
+              <label class="checkline"><input type="checkbox" name="is_postable" checked> leaf</label>
+              <button type="submit">Add</button>
+              <button type="button" class="add-gap-cancel quiet">Cancel</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr class="acct-row {{ 'inactive' if not r.is_active }}"
+            data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}"
+            data-postable="{{ 1 if r.is_postable else 0 }}" data-type="{{ r.account_type }}">
+          <td class="mono dim">{{ r.code }}</td>
+          <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle">{{ '▸' if not r.is_postable else '' }}</span>{{ r.name }}</td>
+          <td class="dim">{{ type_labels[r.account_type] }}</td>
+          <td class="dim">{{ 'leaf' if r.is_postable else 'summary' }}</td>
+          <td>
+            <form method="post" action="/accounts/{{ r.id }}/toggle-active" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+              <button type="submit" class="quiet">{{ 'Deactivate' if r.is_active else 'Reactivate' }}</button>
+            </form>
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <div class="panel">
+      <h2>New account</h2>
+      <form method="post" action="/accounts" class="grid-form">
+        <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+        <label class="field">Code
+          <input type="text" name="code" required pattern="[0-9]{3,8}" placeholder="e.g. 5510">
+        </label>
+        <label class="field">Name
+          <input type="text" name="name" required placeholder="e.g. Streaming Services">
+        </label>
+        <label class="field">Type
+          <select name="account_type">
+            {% for t in account_types %}<option value="{{ t }}">{{ type_labels[t] }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">Parent
+          <select name="parent_id">
+            <option value="">— none (top level) —</option>
+            {% for a in accounts %}
+            <option value="{{ a.id }}">{{ a.code }} · {{ a.path }}</option>
             {% endfor %}
           </select>
-          <input type="text" name="name" placeholder="Category name" required>
-          <label class="checkline"><input type="checkbox" name="is_postable" checked> leaf</label>
-          <button type="submit">Add</button>
-          <button type="button" class="add-gap-cancel quiet">Cancel</button>
-        </form>
-      </td>
-    </tr>
-    {% else %}
-    <tr class="acct-row {{ 'inactive' if not r.is_active }}"
-        data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}"
-        data-postable="{{ 1 if r.is_postable else 0 }}" data-type="{{ r.account_type }}">
-      <td class="mono dim">{{ r.code }}</td>
-      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle">{{ '▸' if not r.is_postable else '' }}</span>{{ r.name }}</td>
-      <td class="dim">{{ type_labels[r.account_type] }}</td>
-      <td class="dim">{{ 'leaf' if r.is_postable else 'summary' }}</td>
-      <td>
-        <form method="post" action="/accounts/{{ r.id }}/toggle-active" style="display:inline">
-          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-          <button type="submit" class="quiet">{{ 'Deactivate' if r.is_active else 'Reactivate' }}</button>
-        </form>
-      </td>
-    </tr>
-    {% endif %}
-    {% endfor %}
-  </tbody>
-</table>
-
-<div class="panel">
-  <h2>New account</h2>
-  <form method="post" action="/accounts" class="grid-form">
-    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-    <label class="field">Code
-      <input type="text" name="code" required pattern="[0-9]{3,8}" placeholder="e.g. 5510">
-    </label>
-    <label class="field">Name
-      <input type="text" name="name" required placeholder="e.g. Streaming Services">
-    </label>
-    <label class="field">Type
-      <select name="account_type">
-        {% for t in account_types %}<option value="{{ t }}">{{ type_labels[t] }}</option>{% endfor %}
-      </select>
-    </label>
-    <label class="field">Parent
-      <select name="parent_id">
-        <option value="">— none (top level) —</option>
-        {% for a in accounts %}
-        <option value="{{ a.id }}">{{ a.code }} · {{ a.path }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="checkline"><input type="checkbox" name="is_postable" checked> postable (leaf)</label>
-    <button type="submit">Create account</button>
-  </form>
+        </label>
+        <label class="checkline"><input type="checkbox" name="is_postable" checked> postable (leaf)</label>
+        <button type="submit">Create account</button>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}
 

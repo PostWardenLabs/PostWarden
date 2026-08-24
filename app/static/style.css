@@ -497,7 +497,21 @@ details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
 }
 .tag-chip-remove:hover { color: var(--red); }
 
-/* -- accounts tree ------------------------------------------------------- */
+/* -- accounts page: level browser + tree ---------------------------------- */
+.accounts-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+.levels-panel {
+  flex: 0 0 12rem; display: flex; flex-direction: column; gap: 0.15rem;
+  border: 1px solid var(--rule); background: var(--surface); padding: 0.6rem;
+  position: sticky; top: 1rem;
+}
+.levels-panel .level-link {
+  display: block; padding: 0.35rem 0.5rem; text-decoration: none;
+  color: var(--ink); border-radius: 2px; font-size: 0.9rem;
+}
+.levels-panel .level-link:hover { background: var(--paper-deep); }
+.levels-panel .level-link.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.accounts-main { flex: 1; min-width: 0; }
+
 td.acct-name { font-variant-numeric: tabular-nums; }
 /* table.ledger td's own padding shorthand (below) beats a bare .depth-N
    on specificity — (1 class, 2 elements) vs (1 class, 0 elements) — so

@@ -469,6 +469,33 @@ def test_variance_page_rolls_up_a_coarse_scenario_against_a_fine_one(conn):
         assert 'data-value="-10.00"' in r.text  # variance: 90 - 100
 
 
+def test_accounts_page_filters_to_selected_level(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        parent = mk_account(cur, postable=False)
+        child = mk_account(cur, parent_id=parent["id"])
+        cur.execute("SELECT id FROM account_levels WHERE depth = 1")
+        level1_id = cur.fetchone()["id"]
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        # Each account's own toggle-active form action is unique and only
+        # ever rendered inside the accounts *table* — unlike the code/name,
+        # which can also legitimately appear in the (deliberately
+        # unfiltered) "New account" Parent dropdown.
+        child_marker = f"/accounts/{child['id']}/toggle-active"
+
+        r_all = c.get("/accounts")
+        assert parent["code"] in r_all.text
+        assert child_marker in r_all.text  # unfiltered: both show
+
+        r_level1 = c.get(f"/accounts?level_id={level1_id}")
+        assert parent["code"] in r_level1.text
+        assert child_marker not in r_level1.text  # filtered to depth 1 only
+
+
 def test_logout_revokes_session(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

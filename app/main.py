@@ -424,10 +424,20 @@ def _accounts_with_gaps(accounts: list[dict]) -> list[dict]:
 
 
 @app.get("/accounts")
-def accounts_page(request: Request, ok: str = None, err: str = None):
+def accounts_page(request: Request, level_id: str = "", ok: str = None, err: str = None):
     accounts = q("SELECT * FROM v_dim_account ORDER BY sort_path")
+    selected_level = q1("SELECT * FROM account_levels WHERE id = %s",
+                        (int(level_id),)) if level_id else None
+    if selected_level:
+        display_accounts = [a for a in accounts if a["depth"] == selected_level["depth"]]
+        rows = None
+    else:
+        display_accounts = accounts
+        rows = _accounts_with_gaps(accounts)
     return templates.TemplateResponse(request, "accounts.html", {
-        "nav": "accounts", "accounts": accounts, "rows": _accounts_with_gaps(accounts),
+        "nav": "accounts", "accounts": accounts, "rows": rows,
+        "display_accounts": display_accounts,
+        "levels": account_levels_all(), "selected_level": selected_level,
         "account_types": ACCOUNT_TYPES, "type_labels": TYPE_LABELS,
         "ok": ok, "err": err,
     })
