@@ -668,4 +668,60 @@ LANGUAGE sql STABLE AS $$
      ORDER BY da.sort_path;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Rolled-up balance per account at a chosen depth — the budget-vs-actual
+-- base. Unlike fn_trial_balance (native depth, own postings only), this
+-- collapses every posting under a common ancestor at p_depth: a leaf's
+-- amount rolls up into whichever account sits at p_depth on its own path
+-- to the root, so a Budget scenario posted straight to "Bank" (depth 2)
+-- lines up against Actual's Checking + Savings postings (depth 3) summed
+-- together under that same "Bank" row. A posting shallower than p_depth
+-- (nothing to push deeper) stays at its own account — p_depth is a
+-- ceiling, not a hard requirement. p_depth NULL means no rollup at all,
+-- each account at its own native depth (matches fn_trial_balance's rows,
+-- just without the always-show-every-postable-leaf zero rows).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_rollup_balance(
+    p_scenario TEXT,
+    p_depth    SMALLINT DEFAULT NULL,
+    p_as_of    DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    account_id     BIGINT,
+    account_code   TEXT,
+    account_name   TEXT,
+    acct_type      account_type,
+    path           TEXT,
+    sort_path      TEXT,
+    total_debits   NUMERIC(18,2),
+    total_credits  NUMERIC(18,2),
+    net            NUMERIC(18,2),
+    debit_balance  NUMERIC(18,2),
+    credit_balance NUMERIC(18,2)
+)
+LANGUAGE sql STABLE AS $$
+    WITH targets AS (
+        SELECT f.debit, f.credit, f.amount,
+               array_to_string(
+                   (string_to_array(da.sort_path, '.'))
+                       [1:LEAST(da.depth, COALESCE(p_depth, da.depth))],
+                   '.'
+               ) AS target_sort_path
+          FROM v_fact_lines f
+          JOIN v_dim_account da ON da.id = f.account_id
+         WHERE f.scenario_code = p_scenario
+           AND f.entry_date <= COALESCE(p_as_of, 'infinity'::date)
+    )
+    SELECT da.id, da.code, da.name, da.account_type, da.path, da.sort_path,
+           COALESCE(SUM(t.debit),  0)::numeric(18,2),
+           COALESCE(SUM(t.credit), 0)::numeric(18,2),
+           COALESCE(SUM(t.amount), 0)::numeric(18,2),
+           GREATEST(COALESCE(SUM(t.amount), 0),  0)::numeric(18,2),
+           GREATEST(-COALESCE(SUM(t.amount), 0), 0)::numeric(18,2)
+      FROM targets t
+      JOIN v_dim_account da ON da.sort_path = t.target_sort_path
+     GROUP BY da.id, da.code, da.name, da.account_type, da.path, da.sort_path
+     ORDER BY da.sort_path;
+$$;
+
 COMMIT;

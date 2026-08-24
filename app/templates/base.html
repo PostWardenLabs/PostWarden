@@ -21,6 +21,7 @@
     {% if request.state.user %}
     <nav>
       <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
+      <a href="/variance" class="{{ 'active' if nav == 'variance' }}">Variance</a>
       <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
       <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
       <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>

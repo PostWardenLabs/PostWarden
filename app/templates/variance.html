@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Variance{% endblock %}
+{% block content %}
+<h1>Variance</h1>
+<p class="page-sub">Compare two scenarios side by side, rolled up to a common level — so a budget entered
+  straight against "Bank" still lines up against Checking + Savings actuals summed together, not just past
+  each other.</p>
+
+<form class="bar" method="get" action="/variance">
+  <label class="field">Baseline
+    <select name="baseline">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == baseline }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Compare to
+    <select name="compare">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Roll up to
+    <select name="level_id">
+      <option value="">— native depth, no rollup —</option>
+      {% for lv in levels %}
+      <option value="{{ lv.id }}" {{ 'selected' if level_id == lv.id | string }}>{{ lv.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">As of
+    <input type="date" name="as_of" value="{{ as_of }}">
+  </label>
+  <button type="submit">Refresh</button>
+</form>
+
+<table class="ledger">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Account</th>
+      <th class="num money money-first">{{ baseline }}</th>
+      <th class="num money">{{ compare }}</th>
+      <th class="num money">Variance</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in grouped %}
+    <tr class="type-head"><td colspan="5">{{ g.label }}</td></tr>
+      {% for r in g.rows %}
+      <tr>
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ r.baseline_net | money }}</td>
+        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
+      </tr>
+      {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>{{ g.label }} subtotal</td>
+      <td class="num money money-first">{{ g.sub_baseline | money }}</td>
+      <td class="num money">{{ g.sub_compare | money }}</td>
+      <td class="num money {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="grand">
+      <td></td>
+      <td>Total</td>
+      <td class="num money money-first">{{ total_baseline | money }}</td>
+      <td class="num money">{{ total_compare | money }}</td>
+      <td class="num money {{ 'neg' if total_variance < 0 }}">{{ total_variance | money }}</td>
+    </tr>
+  </tbody>
+</table>
+{% if not grouped %}<p class="dim">No activity in either scenario yet.</p>{% endif %}
+{% endblock %}

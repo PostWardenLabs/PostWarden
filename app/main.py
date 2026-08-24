@@ -306,6 +306,80 @@ def trial_balance(request: Request, scenario: str = "ACTUAL",
 
 
 # ---------------------------------------------------------------------------
+# Variance — budget (or any scenario) vs. actual (or any other scenario),
+# rolled up to a common level so a coarse scenario (posted straight to
+# "Bank") lines up against a fine one (Checking + Savings) instead of
+# just not matching up at all.
+# ---------------------------------------------------------------------------
+@app.get("/variance")
+def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
+                  level_id: str = "", as_of: str = None):
+    scens = scenarios_all()
+    codes = [s["code"] for s in scens]
+    if not compare:
+        others = [s["code"] for s in scens if s["code"] != baseline]
+        compare = others[0] if others else ""
+
+    level_depth = None
+    if level_id:
+        lvl = q1("SELECT depth FROM account_levels WHERE id = %s", (int(level_id),))
+        level_depth = lvl["depth"] if lvl else None
+    elif compare:
+        # Default to the comparison scenario's own base level, if it has
+        # one — the natural granularity it was actually entered at. Set
+        # level_id too (not just level_depth) so the picker reflects what
+        # was actually used instead of silently showing "no rollup".
+        bl = q1("""SELECT al.id, al.depth FROM scenarios s
+                    JOIN account_levels al ON al.id = s.base_level_id
+                   WHERE s.code = %s""", (compare,))
+        if bl:
+            level_depth = bl["depth"]
+            level_id = str(bl["id"])
+
+    as_of_date = as_of or None
+    baseline_rows = {r["account_id"]: r for r in q(
+        "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
+        (baseline, level_depth, as_of_date))} if baseline in codes else {}
+    compare_rows = {r["account_id"]: r for r in q(
+        "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
+        (compare, level_depth, as_of_date))} if compare in codes else {}
+
+    merged = []
+    for aid in set(baseline_rows) | set(compare_rows):
+        b = baseline_rows.get(aid)
+        c = compare_rows.get(aid)
+        ref = b or c
+        b_net = b["net"] if b else 0
+        c_net = c["net"] if c else 0
+        merged.append({
+            "account_code": ref["account_code"], "account_name": ref["account_name"],
+            "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
+            "baseline_net": b_net, "compare_net": c_net, "variance": c_net - b_net,
+        })
+
+    grouped = []
+    for t in ACCOUNT_TYPES:
+        sub = sorted((r for r in merged if r["acct_type"] == t), key=lambda r: r["sort_path"])
+        if sub:
+            grouped.append({
+                "type": t, "label": TYPE_LABELS[t], "rows": sub,
+                "sub_baseline": sum(r["baseline_net"] for r in sub),
+                "sub_compare": sum(r["compare_net"] for r in sub),
+                "sub_variance": sum(r["variance"] for r in sub),
+            })
+
+    return templates.TemplateResponse(request, "variance.html", {
+        "nav": "variance", "grouped": grouped, "scenarios": scens,
+        "levels": account_levels_all(), "baseline": baseline, "compare": compare,
+        "level_id": level_id, "as_of": as_of or "",
+        "total_baseline": sum(r["baseline_net"] for r in merged),
+        "total_compare": sum(r["compare_net"] for r in merged),
+        "total_variance": sum(r["variance"] for r in merged),
+        "today": date.today().isoformat(),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Chart of accounts
 # ---------------------------------------------------------------------------
 # Seed.sql's own convention (1xxx assets, 2xxx liabilities, ...) isn't

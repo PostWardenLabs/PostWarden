@@ -9,7 +9,7 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import mk_account, mk_user
+from conftest import mk_account, mk_entry, mk_line, mk_scenario, mk_user
 
 client_kwargs = {"base_url": "http://testserver", "follow_redirects": False}
 
@@ -429,6 +429,44 @@ def test_account_levels_crud(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT name FROM account_levels WHERE depth = 97")
         assert cur.fetchone() is None  # deleted
+
+
+def test_variance_page_rolls_up_a_coarse_scenario_against_a_fine_one(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM account_levels WHERE depth = 1")
+        level1_id = cur.fetchone()["id"]
+        parent = mk_account(cur, postable=False)                          # depth 1
+        leaf1 = mk_account(cur, parent_id=parent["id"])                   # depth 2
+        leaf2 = mk_account(cur, parent_id=parent["id"])                   # depth 2
+        budget = mk_scenario(cur, base_level_id=level1_id, enforce_balance=False)
+
+        # Actual: posted at the fine (leaf) level, split across two accounts
+        # (plus a balancing counter-line — ACTUAL enforces balance).
+        counter = mk_account(cur)
+        eid = mk_entry(cur, actual_id)
+        mk_line(cur, eid, leaf1["id"], 40, line_no=1)
+        mk_line(cur, eid, leaf2["id"], 60, line_no=2)
+        mk_line(cur, eid, counter["id"], -100, line_no=3)
+        # Budget: posted straight to the coarse parent (single-sided OK).
+        eid2 = mk_entry(cur, budget["id"])
+        mk_line(cur, eid2, parent["id"], 90)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/variance?baseline=ACTUAL&compare={budget['code']}")
+        assert r.status_code == 200
+        assert parent["code"] in r.text
+        # money-format.js's data-value carries the exact unformatted
+        # number (no thousands separator), so these can't collide with
+        # unrelated pre-existing amounts elsewhere on a shared test DB
+        # the way a bare "100.00" substring search could.
+        assert 'data-value="100.00"' in r.text  # actual: 40 + 60 rolled into the parent
+        assert 'data-value="90.00"' in r.text   # budget: posted straight to the parent
+        assert 'data-value="-10.00"' in r.text  # variance: 90 - 100
 
 
 def test_logout_revokes_session(conn):

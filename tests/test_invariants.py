@@ -181,6 +181,43 @@ def test_trial_balance_shows_summary_account_with_direct_postings(conn):
         assert untouched_summary["code"] not in rows
 
 
+def test_rollup_balance_sums_leaves_under_a_common_ancestor(conn):
+    # The budget-vs-actual base: two leaves under the same parent roll up
+    # into that parent's own row when a depth is requested, and a posting
+    # already shallower than the requested depth stays at its own account
+    # (there's nothing to push it deeper into) rather than disappearing.
+    with conn.cursor() as cur:
+        cur.execute("SELECT id, depth FROM account_levels WHERE depth = 2")
+        level2 = cur.fetchone()
+        parent = mk_account(cur, postable=False)          # depth 1
+        leaf1 = mk_account(cur, parent_id=parent["id"])    # depth 2
+        leaf2 = mk_account(cur, parent_id=parent["id"])    # depth 2
+        scen = mk_scenario(cur, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, leaf1["id"], 30, line_no=1)
+        mk_line(cur, eid, leaf2["id"], 70, line_no=2)
+    conn.commit()
+
+    with conn.cursor() as cur:
+        # Rolled up to depth 2 (the leaves' own depth): each keeps its own row.
+        cur.execute("SELECT account_code, net FROM fn_rollup_balance(%s, 2::smallint)", (scen["code"],))
+        rows = {r["account_code"]: r["net"] for r in cur.fetchall()}
+        assert rows[leaf1["code"]] == 30
+        assert rows[leaf2["code"]] == 70
+
+        # Rolled up to depth 1 (the parent): both leaves merge into it.
+        cur.execute("SELECT account_code, net FROM fn_rollup_balance(%s, 1::smallint)", (scen["code"],))
+        rows = {r["account_code"]: r["net"] for r in cur.fetchall()}
+        assert rows[parent["code"]] == 100
+        assert leaf1["code"] not in rows
+
+        # No depth given: native depth, same as each leaf's own row.
+        cur.execute("SELECT account_code, net FROM fn_rollup_balance(%s, NULL)", (scen["code"],))
+        rows = {r["account_code"]: r["net"] for r in cur.fetchall()}
+        assert rows[leaf1["code"]] == 30
+        assert rows[leaf2["code"]] == 70
+
+
 def test_line_rejected_on_inactive_account(conn, actual_scenario_id):
     with expect_error(conn, match="inactive"):
         with conn.cursor() as cur:
