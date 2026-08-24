@@ -4,7 +4,13 @@
    clears the credit on that line (and vice versa) — one side per line,
    exactly like the paper form. The Post button unlocks only when the
    entry balances, unless the chosen scenario allows single-sided entries.
-   The database re-checks everything at commit regardless. */
+   The database re-checks everything at commit regardless.
+
+   The account cell is a real <select> (options built from ACCOUNTS below),
+   skinned into a searchable combobox by combobox.js — so a line can only
+   ever reference an account that actually exists; there's no "unknown
+   account code" typo path left in the UI (the server still validates,
+   since a direct POST could still send garbage). */
 (function () {
   const body = document.getElementById("lines-body");
   const bar = document.getElementById("balance-bar");
@@ -18,27 +24,70 @@
   const errBox = document.getElementById("entry-error");
   if (!body) return;
 
+  const ACCOUNTS = JSON.parse(document.getElementById("accounts-data").textContent || "[]");
+
   const fmt = (n) =>
     n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function makeRow() {
     const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td class="col-account"><input name="account" list="acctlist"
-          autocomplete="off" placeholder="code or name"></td>
-      <td class="col-amount money money-first"><input name="debit" class="amount"
-          inputmode="decimal" placeholder=""></td>
-      <td class="col-amount money"><input name="credit" class="amount"
-          inputmode="decimal" placeholder=""></td>
-      <td><input name="memo" placeholder=""></td>`;
+
+    const acctTd = document.createElement("td");
+    acctTd.className = "col-account";
+    const acctSelect = document.createElement("select");
+    acctSelect.name = "account";
+    acctSelect.appendChild(document.createElement("option")); // blank = unset
+    ACCOUNTS.forEach((a) => {
+      // Options built via textContent, not innerHTML — an account name
+      // can't inject markup here regardless of what it contains.
+      const opt = document.createElement("option");
+      opt.value = a.code;
+      opt.textContent = `${a.code} · ${a.name}`;
+      opt.dataset.path = a.path;
+      acctSelect.appendChild(opt);
+    });
+    acctTd.appendChild(acctSelect);
+    tr.appendChild(acctTd);
+
+    const debitTd = document.createElement("td");
+    debitTd.className = "col-amount money money-first";
+    const debitInput = document.createElement("input");
+    debitInput.name = "debit"; debitInput.className = "amount"; debitInput.inputMode = "decimal";
+    debitTd.appendChild(debitInput);
+    tr.appendChild(debitTd);
+
+    const creditTd = document.createElement("td");
+    creditTd.className = "col-amount money";
+    const creditInput = document.createElement("input");
+    creditInput.name = "credit"; creditInput.className = "amount"; creditInput.inputMode = "decimal";
+    creditTd.appendChild(creditInput);
+    tr.appendChild(creditTd);
+
+    const memoTd = document.createElement("td");
+    const memoInput = document.createElement("input");
+    memoInput.name = "memo";
+    memoTd.appendChild(memoInput);
+    tr.appendChild(memoTd);
+
     body.appendChild(tr);
+    if (window.LibroCombobox) window.LibroCombobox.enhance(acctSelect);
     return tr;
+  }
+
+  function focusAccountField(tr) {
+    // The real <select name="account"> is hidden once combobox.js skins
+    // it; the thing a person actually types into is its sibling input.
+    const field = tr.querySelector(".combobox-input") || tr.querySelector('[name="account"]');
+    if (field) field.focus();
   }
 
   function rows() { return Array.from(body.querySelectorAll("tr")); }
 
   function rowUsed(tr) {
-    return Array.from(tr.querySelectorAll("input")).some((i) => i.value.trim() !== "");
+    const acct = tr.querySelector('select[name="account"]');
+    if (acct && acct.value !== "") return true;
+    return Array.from(tr.querySelectorAll('input[name="debit"], input[name="credit"], input[name="memo"]'))
+      .some((i) => i.value.trim() !== "");
   }
 
   function ensureTrailingBlank() {
@@ -83,32 +132,38 @@
     }
   }
 
-  body.addEventListener("input", (e) => {
+  function onRowChange(e) {
     const tr = e.target.closest("tr");
+    if (!tr) return;
     if (e.target.name === "debit" && e.target.value.trim() !== "")
       tr.querySelector('[name="credit"]').value = "";
     if (e.target.name === "credit" && e.target.value.trim() !== "")
       tr.querySelector('[name="debit"]').value = "";
     ensureTrailingBlank();
     recalc();
-  });
+  }
+  // "input" covers typing in debit/credit/memo; "change" covers picking an
+  // account from the combobox (its underlying <select> only fires change,
+  // not input, when set programmatically — see combobox.js).
+  body.addEventListener("input", onRowChange);
+  body.addEventListener("change", onRowChange);
 
   scenarioSel.addEventListener("change", recalc);
 
   document.getElementById("add-row").addEventListener("click", () => {
-    makeRow().querySelector('[name="account"]').focus();
+    focusAccountField(makeRow());
     recalc();
   });
   document.addEventListener("keydown", (e) => {
     if (e.altKey && e.key.toLowerCase() === "n") {
       e.preventDefault();
-      makeRow().querySelector('[name="account"]').focus();
+      focusAccountField(makeRow());
     }
   });
 
-  // Submit via fetch so a rejected entry (unbalanced, bad account code,
-  // locked scenario, ...) can show its error without reloading the page —
-  // otherwise every line the user typed would vanish on a plain redirect.
+  // Submit via fetch so a rejected entry (unbalanced, locked scenario, ...)
+  // can show its error without reloading the page — otherwise every line
+  // the user typed would vanish on a plain redirect.
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     rows().forEach((tr) => { if (!rowUsed(tr)) tr.remove(); });

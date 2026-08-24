@@ -2,6 +2,7 @@
 
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
+import json
 import secrets
 from contextlib import asynccontextmanager
 from datetime import date
@@ -13,6 +14,7 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 
 from . import auth
 from .db import q, q1, tx
@@ -65,7 +67,21 @@ def asset(filename: str) -> str:
     return f"/static/{filename}?v={v}"
 
 
+def tojson(value) -> Markup:
+    """Embed a value as JSON inside a <script type="application/json">
+    block. Escapes <, >, & so a value containing e.g. "</script>" (account
+    names are free text) can't break out of the tag; JSON.parse on the
+    other end decodes the \\uXXXX escapes back to the real characters, so
+    this only protects the HTML-embedding boundary — it says nothing about
+    how the parsed value gets used afterwards. app.js only ever reads these
+    parsed values via .textContent/.value (DOM APIs, never innerHTML), so
+    there's no second escaping step needed there; keep it that way."""
+    encoded = json.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return Markup(encoded)
+
+
 templates.env.filters["money"] = money
+templates.env.filters["tojson"] = tojson
 templates.env.globals["asset"] = asset
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
@@ -247,7 +263,11 @@ def _parse_lines(form) -> list[dict]:
     """Turn parallel account[]/debit[]/credit[]/memo[] arrays into line dicts.
 
     Rules mirror the paper form: a line needs an account and exactly one of
-    debit or credit, strictly positive. Blank rows are ignored.
+    debit or credit, strictly positive. Blank rows are ignored. The account
+    field is a <select> (searchable combobox in the UI — see app.js), so
+    its value is already a bare code; no "code · name" text to split here
+    the way a free-text field would need — this is just defense in depth
+    against a client that isn't the browser UI.
     """
     accounts = form.getlist("account")
     debits = form.getlist("debit")
@@ -255,13 +275,12 @@ def _parse_lines(form) -> list[dict]:
     memos = form.getlist("memo")
     lines = []
     for i, acct in enumerate(accounts):
-        acct = (acct or "").strip()
+        code = (acct or "").strip()
         d = (debits[i] if i < len(debits) else "").strip()
         c = (credits[i] if i < len(credits) else "").strip()
         memo = (memos[i] if i < len(memos) else "").strip() or None
-        if not acct and not d and not c:
+        if not code and not d and not c:
             continue  # blank row
-        code = acct.split("·")[0].split(" ")[0].strip()
         if not code:
             raise ValueError(f"Line {i + 1}: missing account")
         dv = float(d) if d else 0.0

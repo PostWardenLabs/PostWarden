@@ -2,7 +2,9 @@
 {% block title %}New entry{% endblock %}
 {% block content %}
 <h1>New journal entry</h1>
-<p class="page-sub">Type an account code or name, then a debit or a credit. Tab through — a fresh line appears when you need one. The entry posts only when it balances.</p>
+<p class="page-sub">Search an account by code or name, then a debit or a credit. Tab through — a fresh line appears when you need one. The entry posts only when it balances.</p>
+
+<script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
 
 <div id="entry-error" class="flash flash-err" hidden></div>
 
@@ -40,12 +42,6 @@
     </thead>
     <tbody id="lines-body"><!-- rows injected by app.js --></tbody>
   </table>
-
-  <datalist id="acctlist">
-    {% for a in accounts %}
-    <option value="{{ a.code }} · {{ a.name }}" label="{{ a.path }}"></option>
-    {% endfor %}
-  </datalist>
 
   <div class="balance-bar" id="balance-bar">
     <span><span class="lbl">Debits</span> <span id="t-debits">0.00</span></span>
