@@ -274,11 +274,52 @@ def trial_balance(request: Request, scenario: str = "ACTUAL",
 # ---------------------------------------------------------------------------
 # Chart of accounts
 # ---------------------------------------------------------------------------
+# Seed.sql's own convention (1xxx assets, 2xxx liabilities, ...) isn't
+# DB-enforced, just a habit — quick-created accounts follow it anyway so
+# the chart stays legible without asking the user to think about codes.
+ACCOUNT_TYPE_CODE_PREFIX = {
+    "asset": "1", "liability": "2", "equity": "3", "income": "4", "expense": "5",
+}
+
+
+def _next_account_code(account_type: str) -> str:
+    prefix = ACCOUNT_TYPE_CODE_PREFIX[account_type]
+    existing = {int(r["code"]) for r in q(
+        "SELECT code FROM accounts WHERE code LIKE %s", (prefix + "%",))}
+    candidate = (max(existing) + 10) if existing else int(prefix + "000")
+    while candidate in existing:
+        candidate += 1
+    return str(candidate)
+
+
+def _accounts_with_gaps(accounts: list[dict]) -> list[dict]:
+    """Interleaves a "gap" placeholder before every account row (and one
+    trailing) so accounts.html can render an Actual Budget-style "+" for
+    adding a category between any two adjacent rows, instead of only via
+    the form at the bottom.
+
+    Deliberately does NOT decide each gap's parent_id/account_type here —
+    which two rows are visually adjacent around a given gap depends on
+    which summary accounts are currently collapsed, and that's a client-
+    side (localStorage) preference this request has no way to see. Each
+    gap just needs to know which account row to track for visibility
+    (see accounts.js); accounts.js computes the actual parent/type at
+    "+"-click time from whichever rows are visible right then."""
+    out = []
+    prev = None
+    for acct in accounts:
+        out.append({"kind": "gap", "track_id": acct["id"]})
+        out.append({"kind": "account", **acct})
+        prev = acct
+    out.append({"kind": "gap", "track_id": prev["id"] if prev else None})
+    return out
+
+
 @app.get("/accounts")
 def accounts_page(request: Request, ok: str = None, err: str = None):
     accounts = q("SELECT * FROM v_dim_account ORDER BY sort_path")
     return templates.TemplateResponse(request, "accounts.html", {
-        "nav": "accounts", "accounts": accounts,
+        "nav": "accounts", "accounts": accounts, "rows": _accounts_with_gaps(accounts),
         "account_types": ACCOUNT_TYPES, "type_labels": TYPE_LABELS,
         "ok": ok, "err": err,
     })
@@ -298,6 +339,41 @@ def create_account(request: Request, code: str = Form(...), name: str = Form(...
                  int(parent_id) if parent_id else None,
                  is_postable is not None),
             )
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/accounts", err=msg)
+    return flash_redirect("/accounts", ok=f"Account {code} — {name} created")
+
+
+@app.post("/accounts/quick-create")
+def quick_create_account(request: Request, name: str = Form(...),
+                         parent_id: str = Form(""), account_type: str = Form(""),
+                         is_postable: str = Form(None), csrf_token: str = Form(...)):
+    # Powers the "+" between two rows on /accounts (see accounts.js) — the
+    # code is generated, not typed, same spirit as Actual Budget's category
+    # picker not showing account numbers at all; /accounts's own bottom
+    # form is still there for anyone who wants to set an exact code.
+    try:
+        require_csrf(request, csrf_token)
+        name = name.strip()
+        if not name:
+            raise ValueError("Name is required")
+        pid = int(parent_id) if parent_id else None
+        if pid:
+            parent = q1("SELECT account_type FROM accounts WHERE id = %s", (pid,))
+            if not parent:
+                raise ValueError("Unknown parent account")
+            acct_type = parent["account_type"]
+        else:
+            acct_type = account_type
+            if acct_type not in ACCOUNT_TYPES:
+                raise ValueError("Choose an account type")
+        code = _next_account_code(acct_type)
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO accounts (code, name, account_type, parent_id, is_postable)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (code, name, acct_type, pid, is_postable is not None))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/accounts", err=msg)

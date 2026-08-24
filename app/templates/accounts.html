@@ -9,21 +9,42 @@
     <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
   </tr></thead>
   <tbody id="accounts-body">
-    {% for a in accounts %}
-    <tr class="{{ 'inactive' if not a.is_active }}"
-        data-id="{{ a.id }}" data-parent="{{ a.parent_id or '' }}"
-        data-postable="{{ 1 if a.is_postable else 0 }}">
-      <td class="mono dim">{{ a.code }}</td>
-      <td class="acct-name depth-{{ [a.depth, 4] | min }}"><span class="tree-toggle">{{ '▸' if not a.is_postable else '' }}</span>{{ a.name }}</td>
-      <td class="dim">{{ type_labels[a.account_type] }}</td>
-      <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
-      <td>
-        <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
+    {% for r in rows %}
+    {% if r.kind == 'gap' %}
+    <tr class="add-gap" data-track="{{ r.track_id or '' }}">
+      <td colspan="5">
+        <button type="button" class="add-gap-trigger" aria-label="Add account here">+</button>
+        <form method="post" action="/accounts/quick-create" class="add-gap-form" hidden>
           <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-          <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
+          <input type="hidden" name="parent_id" value="">
+          <select name="account_type" class="add-gap-type" hidden>
+            {% for t in account_types %}
+            <option value="{{ t }}">{{ type_labels[t] }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="name" placeholder="Category name" required>
+          <label class="checkline"><input type="checkbox" name="is_postable" checked> leaf</label>
+          <button type="submit">Add</button>
+          <button type="button" class="add-gap-cancel quiet">Cancel</button>
         </form>
       </td>
     </tr>
+    {% else %}
+    <tr class="acct-row {{ 'inactive' if not r.is_active }}"
+        data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}"
+        data-postable="{{ 1 if r.is_postable else 0 }}" data-type="{{ r.account_type }}">
+      <td class="mono dim">{{ r.code }}</td>
+      <td class="acct-name depth-{{ [r.depth, 4] | min }}"><span class="tree-toggle">{{ '▸' if not r.is_postable else '' }}</span>{{ r.name }}</td>
+      <td class="dim">{{ type_labels[r.account_type] }}</td>
+      <td class="dim">{{ 'leaf' if r.is_postable else 'summary' }}</td>
+      <td>
+        <form method="post" action="/accounts/{{ r.id }}/toggle-active" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">{{ 'Deactivate' if r.is_active else 'Reactivate' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endif %}
     {% endfor %}
   </tbody>
 </table>

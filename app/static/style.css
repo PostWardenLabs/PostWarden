@@ -522,6 +522,30 @@ tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
 tr[data-postable="0"]:hover td { background: var(--paper-deep); }
 tr.collapsed .tree-toggle { opacity: 1; transform: rotate(0deg); }
 
+/* Inline "add category here" gap rows, Actual Budget-style — see
+   accounts.js. Each is a slim hover strip between two account rows until
+   clicked, then expands to show the form. */
+tr.add-gap td {
+  padding: 0; border: none; height: 0.45rem; position: relative;
+}
+tr.add-gap .add-gap-trigger {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 1.3rem; height: 1.3rem; padding: 0; line-height: 1;
+  border-radius: 999px; border: 1px solid var(--rule-strong);
+  background: var(--surface); color: var(--ink-soft); cursor: pointer;
+  font-size: 0.85rem; opacity: 0; transition: opacity 120ms ease;
+}
+tr.add-gap:hover .add-gap-trigger { opacity: 1; }
+tr.add-gap:hover td { background: var(--paper-deep); }
+tr.add-gap.open td { height: auto; padding: 0.45rem 0.6rem; background: var(--paper-deep); }
+tr.add-gap.open .add-gap-trigger { display: none; }
+tr.add-gap .add-gap-form {
+  display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+}
+tr.add-gap.open .add-gap-form { display: flex; }
+tr.add-gap .add-gap-form input[type="text"] { flex: 1; min-width: 10rem; }
+tr.add-gap .add-gap-type { max-width: 11rem; }
+
 .panel {
   background: var(--surface); border: 1px solid var(--rule);
   padding: 1rem 1.1rem; margin-top: 1.4rem;

@@ -300,6 +300,58 @@ def test_create_template_requires_balance_and_saves_lines(conn):
         assert [r["name"] for r in cur.fetchall()] == ["housing", "monthly"]
 
 
+def test_quick_create_account_inherits_parent_type_and_generates_code(conn):
+    # Powers the "+" gap rows on /accounts (see accounts.js) — a child
+    # inherits its parent's type and account_type is ignored even if sent
+    # (the parent decides); a top-level account requires an explicit,
+    # valid account_type since there's no parent to inherit from.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        parent = mk_account(cur, account_type="liability", postable=False)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r1 = c.post("/accounts/quick-create", data={
+            "csrf_token": csrf_token, "name": "New Card",
+            "parent_id": str(parent["id"]), "account_type": "asset",
+        })
+        assert "ok=" in r1.headers["location"]
+
+        r2 = c.post("/accounts/quick-create", data={
+            "csrf_token": csrf_token, "name": "New Top Level",
+            "parent_id": "", "account_type": "income",
+        })
+        assert "ok=" in r2.headers["location"]
+
+        r3 = c.post("/accounts/quick-create", data={
+            "csrf_token": csrf_token, "name": "No type given", "parent_id": "",
+        })
+        assert "err=" in r3.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT account_type, parent_id, code FROM accounts WHERE name = 'New Card'")
+        child = cur.fetchone()
+        assert child["account_type"] == "liability"  # inherited, not "asset"
+        assert child["parent_id"] == parent["id"]
+
+        cur.execute(
+            "SELECT account_type, parent_id, code FROM accounts WHERE name = 'New Top Level'")
+        top = cur.fetchone()
+        assert top["account_type"] == "income"
+        assert top["parent_id"] is None
+        assert top["code"].startswith("4")  # income prefix
+
+        cur.execute("SELECT 1 FROM accounts WHERE name = 'No type given'")
+        assert cur.fetchone() is None
+
+
 def test_logout_revokes_session(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
