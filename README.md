@@ -67,6 +67,15 @@ authentication (e.g. a reverse proxy) in front of it, and change the
 on the POST forms; that becomes relevant the moment auth is added, so
 revisit it then.
 
+## Deploy to Google Cloud
+
+`deploy/gcp/` sets up a single Compute Engine VM running this same
+`docker-compose.yml`, reachable only through an authenticated IAP tunnel —
+no port is ever opened to the public internet, app included. See
+[`deploy/gcp/README.md`](deploy/gcp/README.md) for the full walkthrough
+(provisioning, redeploying, connecting BI tools remotely, backups). Fits
+GCP's always-free tier for a personal, low-traffic ledger.
+
 ## Connect Power BI / Excel
 
 Connect to PostgreSQL (`localhost`, database `libro`) and load:
@@ -99,6 +108,7 @@ db/seed.sql          starter chart of accounts + ACTUAL / BUD2026 scenarios
 db/seed_demo.sql     optional sample entries
 app/                 FastAPI app: HTML screens + /api/* JSON
 scripts/init_db.sh   local database bootstrap
+deploy/gcp/          Google Cloud deployment (Compute Engine + IAP tunnel)
 SPEC.md              design decisions and rationale
 ```
 

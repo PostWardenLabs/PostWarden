@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# One-time provisioning for Libro on Google Cloud: a single Compute Engine
+# VM running docker-compose, reachable ONLY through an IAP tunnel — no
+# firewall rule opens the app (or SSH) to the public internet at all.
+#
+# Run from your own machine (needs the gcloud CLI, authenticated, with a
+# project already selected: `gcloud init`). Idempotent-ish: safe to re-run,
+# `gcloud ... create` calls will just fail loudly if the resource exists.
+#
+# Usage:
+#   PROJECT_ID=my-project ./setup.sh
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID, e.g. PROJECT_ID=my-project ./setup.sh}"
+ZONE="${ZONE:-us-central1-a}"                 # free-tier-eligible region
+VM_NAME="${VM_NAME:-libro-vm}"
+NETWORK="${NETWORK:-libro-vpc}"
+ACCOUNT="$(gcloud config get-value account)"
+
+echo "== Project: $PROJECT_ID  Zone: $ZONE  Account: $ACCOUNT =="
+
+echo "-- Enabling required APIs"
+gcloud services enable compute.googleapis.com iap.googleapis.com \
+  --project "$PROJECT_ID"
+
+echo "-- Creating an isolated VPC (no implicit rules — everything is closed by default)"
+gcloud compute networks create "$NETWORK" \
+  --project "$PROJECT_ID" --subnet-mode=auto \
+  || echo "   (network already exists, continuing)"
+
+echo "-- Allowing SSH only from Google's IAP forwarding range"
+gcloud compute firewall-rules create "${NETWORK}-allow-iap-ssh" \
+  --project "$PROJECT_ID" --network "$NETWORK" \
+  --direction=INGRESS --action=ALLOW --rules=tcp:22 \
+  --source-ranges=35.235.240.0/20 \
+  || echo "   (firewall rule already exists, continuing)"
+
+echo "-- Granting your account permission to open IAP tunnels"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="user:$ACCOUNT" --role="roles/iap.tunnelResourceAccessor" \
+  --condition=None >/dev/null
+
+echo "-- Creating the VM (e2-micro — free-tier eligible in us-west1/us-central1/us-east1)"
+gcloud compute instances create "$VM_NAME" \
+  --project "$PROJECT_ID" --zone "$ZONE" \
+  --machine-type=e2-micro \
+  --image-family=debian-12 --image-project=debian-cloud \
+  --boot-disk-size=20GB --boot-disk-type=pd-standard \
+  --network="$NETWORK" --subnet="$NETWORK" \
+  --metadata-from-file=startup-script=startup-script.sh
+
+cat <<EOF
+
+Done. The VM is booting and will build+start the app on its own
+(docker install + git clone + docker compose up -d --build) — give it a
+couple of minutes on first boot.
+
+No port is open to the public internet, including the app itself. Reach it
+with:
+  gcloud compute start-iap-tunnel $VM_NAME 8000 \\
+    --local-host-port=localhost:8000 --zone=$ZONE --project=$PROJECT_ID
+
+then open http://localhost:8000 on your own machine. See README.md in this
+directory for redeploying after a git push, connecting BI tools, and
+backups.
+EOF
