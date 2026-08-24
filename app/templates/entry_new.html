@@ -30,6 +30,14 @@
     <label class="field">Reference
       <input type="text" name="reference" placeholder="optional">
     </label>
+    <label class="field">Payee
+      <select name="payee_id">
+        <option value="">— none —</option>
+        {% for p in payees %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="field" style="flex:1; min-width: 14rem;">Tags
       <div class="tag-input" data-placeholder="Add a tag…">
         <input type="hidden" name="tags" value="">

@@ -254,8 +254,10 @@ def entry_new(request: Request, err: str = None):
     postable = q("""SELECT id, code, name, path FROM v_dim_account
                     WHERE is_postable AND is_active ORDER BY sort_path""")
     scen = [s for s in scenarios_all() if not s["is_locked"]]
+    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     return templates.TemplateResponse(request, "entry_new.html", {
         "nav": "new", "accounts": postable, "scenarios": scen,
+        "payees": active_payees,
         "today": date.today().isoformat(), "err": err, "all_tags": all_tags(),
     })
 
@@ -350,6 +352,7 @@ async def create_entry(request: Request):
         description = (form.get("description") or "").strip()
         reference = (form.get("reference") or "").strip() or None
         tag_names = _parse_tags(form.get("tags", ""))
+        payee_id = int(form.get("payee_id")) if form.get("payee_id") else None
         if not description:
             raise ValueError("Description is required")
 
@@ -363,9 +366,10 @@ async def create_entry(request: Request):
         with tx() as cur:
             cur.execute(
                 """INSERT INTO journal_entries
-                       (scenario_id, entry_date, description, reference, created_by_user_id)
-                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-                (scenario_id, entry_date, description, reference,
+                       (scenario_id, entry_date, description, reference,
+                        payee_id, created_by_user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (scenario_id, entry_date, description, reference, payee_id,
                  auth.current_user(request)["user_id"]))
             entry_id = cur.fetchone()["id"]
             for n, ln in enumerate(lines, start=1):
@@ -425,6 +429,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         SELECT e.id, e.entry_date, e.description, e.reference,
                e.reverses_entry_id, s.code AS scenario_code,
                s.is_locked AS scenario_locked, u.username AS posted_by,
+               p.name AS payee_name,
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                  WHERE l.entry_id = e.id) AS total_debits,
                (SELECT COALESCE(SUM(l.credit), 0) FROM journal_lines l
@@ -434,6 +439,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
           FROM journal_entries e
           JOIN scenarios s ON s.id = e.scenario_id
           LEFT JOIN users u ON u.id = e.created_by_user_id
+          LEFT JOIN payees p ON p.id = e.payee_id
          WHERE {' AND '.join(where)}
          ORDER BY e.entry_date DESC, e.id DESC
          LIMIT 200""", params)
@@ -485,11 +491,12 @@ def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
             cur.execute(
                 """INSERT INTO journal_entries
                        (scenario_id, entry_date, description, reference,
-                        reverses_entry_id, created_by_user_id)
-                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                        reverses_entry_id, payee_id, created_by_user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                 (orig["scenario_id"], date.today(),
                  f"Reversal of #{entry_id} — {orig['description']}",
-                 orig["reference"], entry_id, auth.current_user(request)["user_id"]))
+                 orig["reference"], entry_id, orig["payee_id"],
+                 auth.current_user(request)["user_id"]))
             new_id = cur.fetchone()["id"]
             cur.execute(
                 """INSERT INTO journal_lines
@@ -553,6 +560,51 @@ def toggle_lock(scenario_id: int, request: Request, csrf_token: str = Form(...))
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/scenarios", err=msg)
     return flash_redirect("/scenarios", ok="Scenario updated")
+
+
+# ---------------------------------------------------------------------------
+# Payees
+# ---------------------------------------------------------------------------
+def payees_all():
+    return q("""SELECT p.*, (SELECT COUNT(*) FROM journal_entries e
+                             WHERE e.payee_id = p.id) AS entry_count
+                FROM payees p ORDER BY p.name""")
+
+
+@app.get("/payees")
+def payees_page(request: Request, ok: str = None, err: str = None):
+    return templates.TemplateResponse(request, "payees.html", {
+        "nav": "payees", "payees": payees_all(), "ok": ok, "err": err,
+    })
+
+
+@app.post("/payees")
+def create_payee(request: Request, name: str = Form(...), csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        name = name.strip()
+        if not name:
+            raise ValueError("Payee name is required")
+        with tx() as cur:
+            cur.execute("INSERT INTO payees (name) VALUES (%s)", (name,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/payees", err=msg)
+    return flash_redirect("/payees", ok=f"Payee {name!r} created")
+
+
+@app.post("/payees/{payee_id}/toggle-active")
+def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute(
+                "UPDATE payees SET is_active = NOT is_active WHERE id = %s",
+                (payee_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/payees", err=msg)
+    return flash_redirect("/payees", ok="Payee updated")
 
 
 # ---------------------------------------------------------------------------

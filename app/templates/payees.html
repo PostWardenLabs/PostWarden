@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Payees{% endblock %}
+{% block content %}
+<h1>Payees</h1>
+<p class="page-sub">Who the money went to or came from. Assign one per entry from the New entry screen; deactivating a payee here doesn't touch entries that already used it.</p>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Name</th><th class="num">Entries</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+    {% for p in payees %}
+    <tr class="{{ 'inactive' if not p.is_active }}">
+      <td>{{ p.name }}</td>
+      <td class="num mono">{{ p.entry_count }}</td>
+      <td class="dim">{{ 'active' if p.is_active else 'inactive' }}</td>
+      <td>
+        <form method="post" action="/payees/{{ p.id }}/toggle-active" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">{{ 'Deactivate' if p.is_active else 'Reactivate' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="dim">No payees yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel">
+  <h2>New payee</h2>
+  <form method="post" action="/payees" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <label class="field">Name
+      <input type="text" name="name" required placeholder="e.g. Whole Foods">
+    </label>
+    <button type="submit">Create payee</button>
+  </form>
+</div>
+{% endblock %}

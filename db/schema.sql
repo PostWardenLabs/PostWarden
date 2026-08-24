@@ -143,6 +143,18 @@ BEFORE INSERT OR UPDATE OF parent_id, account_type ON accounts
 FOR EACH ROW EXECUTE FUNCTION fn_account_hierarchy_guard();
 
 -- ---------------------------------------------------------------------------
+-- Payees — who the money went to or came from. One per entry (unlike tags,
+-- which are many-to-many), so it's a plain FK on journal_entries rather
+-- than a junction table.
+-- ---------------------------------------------------------------------------
+CREATE TABLE payees (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE CHECK (name = trim(name) AND length(name) BETWEEN 1 AND 80),
+    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
 -- Journal entries (header) and journal lines (the fact table)
 -- ---------------------------------------------------------------------------
 CREATE TABLE journal_entries (
@@ -152,12 +164,15 @@ CREATE TABLE journal_entries (
     description        TEXT NOT NULL CHECK (length(trim(description)) > 0),
     reference          TEXT,
     reverses_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE RESTRICT,
+    payee_id           BIGINT REFERENCES payees(id) ON DELETE SET NULL,
     -- Who posted it, for the audit trail — nullable so direct psql/import
     -- inserts don't need a user, but the app always sets it from the session.
     created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (reverses_entry_id <> id)
 );
+
+CREATE INDEX idx_entries_payee ON journal_entries(payee_id) WHERE payee_id IS NOT NULL;
 
 CREATE INDEX idx_entries_scenario_date ON journal_entries(scenario_id, entry_date);
 
@@ -406,12 +421,14 @@ SELECT l.id                                   AS line_id,
        e.reference,
        e.reverses_entry_id,
        u.username                             AS posted_by,
+       p.name                                 AS payee,
        COALESCE(t.tag_names, ARRAY[]::text[]) AS tags
   FROM journal_lines   l
   JOIN journal_entries e ON e.id = l.entry_id
   JOIN scenarios       s ON s.id = e.scenario_id
   JOIN accounts        a ON a.id = l.account_id
   LEFT JOIN users       u ON u.id = e.created_by_user_id
+  LEFT JOIN payees      p ON p.id = e.payee_id
   LEFT JOIN (
       SELECT jet.entry_id, array_agg(tg.name ORDER BY tg.name) AS tag_names
         FROM journal_entry_tags jet
