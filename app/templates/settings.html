@@ -53,4 +53,18 @@
     </select>
   </label>
 </div>
+
+<div class="panel">
+  <h2>Amount entry</h2>
+  <label class="checkline">
+    <input type="checkbox" id="cents-entry-toggle">
+    Fill amounts right-to-left, like a bank transfer app
+  </label>
+  <p class="dim small" style="margin-top: 0.6rem; margin-bottom: 0;">
+    When on, typing digits into a Debit or Credit field fills in from the cents up — no
+    decimal point to type. <span class="mono">62</span> types as
+    <span class="mono">00.62</span>; keep typing <span class="mono">6200</span> to reach
+    <span class="mono">62.00</span>.
+  </p>
+</div>
 {% endblock %}
