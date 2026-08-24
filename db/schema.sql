@@ -188,6 +188,27 @@ CREATE INDEX idx_lines_entry   ON journal_lines(entry_id);
 CREATE INDEX idx_lines_account ON journal_lines(account_id);
 
 -- ---------------------------------------------------------------------------
+-- Tags — free-form organization across entries, orthogonal to the
+-- account/scenario dimensions. Deliberately not covered by the
+-- immutability trigger below: they're metadata about an entry, not part
+-- of the accounting fact itself, so re-tagging a posted entry is fine.
+-- ---------------------------------------------------------------------------
+CREATE TABLE tags (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE
+               CHECK (name = lower(trim(name)) AND name ~ '^[a-z0-9][a-z0-9 _-]{0,39}$'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE journal_entry_tags (
+    entry_id BIGINT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    tag_id   BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (entry_id, tag_id)
+);
+
+CREATE INDEX idx_journal_entry_tags_tag ON journal_entry_tags(tag_id);
+
+-- ---------------------------------------------------------------------------
 -- Integrity trigger 1 — THE double-entry invariant, enforced at COMMIT.
 --
 -- A deferred constraint trigger lets the application insert the header and
@@ -384,12 +405,19 @@ SELECT l.id                                   AS line_id,
        e.description,
        e.reference,
        e.reverses_entry_id,
-       u.username                             AS posted_by
+       u.username                             AS posted_by,
+       COALESCE(t.tag_names, ARRAY[]::text[]) AS tags
   FROM journal_lines   l
   JOIN journal_entries e ON e.id = l.entry_id
   JOIN scenarios       s ON s.id = e.scenario_id
   JOIN accounts        a ON a.id = l.account_id
-  LEFT JOIN users       u ON u.id = e.created_by_user_id;
+  LEFT JOIN users       u ON u.id = e.created_by_user_id
+  LEFT JOIN (
+      SELECT jet.entry_id, array_agg(tg.name ORDER BY tg.name) AS tag_names
+        FROM journal_entry_tags jet
+        JOIN tags tg ON tg.id = jet.tag_id
+       GROUP BY jet.entry_id
+  ) t ON t.entry_id = e.id;
 
 -- Monthly activity per account per scenario — the budget-vs-actual base.
 CREATE VIEW v_monthly_activity AS

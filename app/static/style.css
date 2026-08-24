@@ -335,6 +335,33 @@ details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
   border-radius: 2px;
 }
 .badge.rev { border-color: var(--red); color: var(--red); }
+.badge.tag {
+  border-color: var(--focus); color: var(--focus); text-decoration: none;
+}
+.badge.tag:hover { background: var(--paper-deep); }
+
+/* -- tag chip input (see tags.js) ----------------------------------------- */
+.tag-input {
+  position: relative; display: flex; flex-wrap: wrap; gap: 0.3rem;
+  align-items: center; border: 1px solid var(--rule-strong);
+  background: var(--surface); border-radius: 2px; padding: 0.3rem 0.4rem;
+  min-height: 2.2rem;
+}
+.tag-input input[type="text"] {
+  flex: 1; min-width: 6rem; border: none; padding: 0.1rem 0; background: transparent;
+}
+.tag-input input[type="text"]:focus { outline: none; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: var(--paper-deep); border: 1px solid var(--rule-strong);
+  border-radius: 999px; padding: 0.1rem 0.4rem 0.1rem 0.6rem; font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tag-chip-remove {
+  background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
+  font-size: 0.9rem; line-height: 1; padding: 0;
+}
+.tag-chip-remove:hover { color: var(--red); }
 
 /* -- accounts tree ------------------------------------------------------- */
 td.acct-name { font-variant-numeric: tabular-nums; }

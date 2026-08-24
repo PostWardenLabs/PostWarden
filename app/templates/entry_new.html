@@ -5,6 +5,7 @@
 <p class="page-sub">Search an account by code or name, then a debit or a credit. Tab through — a fresh line appears when you need one. The entry posts only when it balances.</p>
 
 <script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
+<script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
 
 <div id="entry-error" class="flash flash-err" hidden></div>
 
@@ -28,6 +29,11 @@
     </label>
     <label class="field">Reference
       <input type="text" name="reference" placeholder="optional">
+    </label>
+    <label class="field" style="flex:1; min-width: 14rem;">Tags
+      <div class="tag-input" data-placeholder="Add a tag…">
+        <input type="hidden" name="tags" value="">
+      </div>
     </label>
   </div>
 
@@ -57,4 +63,7 @@
 </form>
 {% endblock %}
 
-{% block scripts %}<script src="{{ asset('app.js') }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ asset('tags.js') }}"></script>
+<script src="{{ asset('app.js') }}"></script>
+{% endblock %}

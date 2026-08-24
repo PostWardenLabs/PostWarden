@@ -3,6 +3,7 @@
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
 import json
+import re
 import secrets
 from contextlib import asynccontextmanager
 from datetime import date
@@ -255,8 +256,46 @@ def entry_new(request: Request, err: str = None):
     scen = [s for s in scenarios_all() if not s["is_locked"]]
     return templates.TemplateResponse(request, "entry_new.html", {
         "nav": "new", "accounts": postable, "scenarios": scen,
-        "today": date.today().isoformat(), "err": err,
+        "today": date.today().isoformat(), "err": err, "all_tags": all_tags(),
     })
+
+
+TAG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9 _-]{0,39}$")
+
+
+def all_tags() -> list[str]:
+    return [r["name"] for r in q("SELECT name FROM tags ORDER BY name")]
+
+
+def _parse_tags(raw: str) -> list[str]:
+    """Comma-separated tag names from the tag-input widget (see tags.js) ->
+    a clean, deduped, validated list — matches tags.name's CHECK constraint
+    so a bad tag fails here with a plain message instead of a raw
+    constraint-violation error."""
+    seen = []
+    for piece in (raw or "").split(","):
+        name = piece.strip().lower()
+        if not name or name in seen:
+            continue
+        if not TAG_PATTERN.match(name):
+            raise ValueError(
+                f"Invalid tag {name!r}: letters, numbers, spaces, - and _ only, max 40 chars")
+        seen.append(name)
+    return seen
+
+
+def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
+    cur.execute("DELETE FROM journal_entry_tags WHERE entry_id = %s", (entry_id,))
+    for name in tag_names:
+        cur.execute(
+            """INSERT INTO tags (name) VALUES (%s)
+               ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+               RETURNING id""",
+            (name,))
+        tag_id = cur.fetchone()["id"]
+        cur.execute(
+            "INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)",
+            (entry_id, tag_id))
 
 
 def _parse_lines(form) -> list[dict]:
@@ -310,6 +349,7 @@ async def create_entry(request: Request):
         scenario_id = int(form.get("scenario_id"))
         description = (form.get("description") or "").strip()
         reference = (form.get("reference") or "").strip() or None
+        tag_names = _parse_tags(form.get("tags", ""))
         if not description:
             raise ValueError("Description is required")
 
@@ -336,6 +376,8 @@ async def create_entry(request: Request):
                                (SELECT id FROM accounts WHERE code = %s),
                                %s, %s)""",
                     (entry_id, n, ln["code"], ln["amount"], ln["memo"]))
+            if tag_names:
+                _sync_entry_tags(cur, entry_id, tag_names)
         # the deferred trigger has now blessed the entry at COMMIT
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
@@ -353,8 +395,12 @@ async def create_entry(request: Request):
 # ---------------------------------------------------------------------------
 @app.get("/entries")
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
-                 date_to: str = "", qtext: str = "", ok: str = None,
-                 err: str = None):
+                 date_to: str = "", qtext: str = "", tags: str = "",
+                 ok: str = None, err: str = None):
+    try:
+        tag_list = _parse_tags(tags) if tags else []
+    except ValueError:
+        tag_list = []  # a hand-edited URL with a malformed tag; just ignore it
     where, params = ["TRUE"], []
     if scenario:
         where.append("s.code = %s")
@@ -368,6 +414,12 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     if qtext:
         where.append("(e.description ILIKE %s OR e.reference ILIKE %s)")
         params.extend([f"%{qtext}%", f"%{qtext}%"])
+    if tag_list:
+        # ANY of the given tags — a broadening filter, like most tag UIs.
+        where.append("""e.id IN (SELECT jet.entry_id FROM journal_entry_tags jet
+                                   JOIN tags tg ON tg.id = jet.tag_id
+                                  WHERE tg.name = ANY(%s))""")
+        params.append(tag_list)
 
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
@@ -388,6 +440,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
+    tags_by_entry = {}
     if ids:
         for ln in q("""SELECT l.entry_id, l.line_no, l.debit, l.credit,
                               l.memo, a.code AS account_code,
@@ -397,9 +450,16 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
                         WHERE l.entry_id = ANY(%s)
                         ORDER BY l.entry_id, l.line_no""", (ids,)):
             lines_by_entry.setdefault(ln["entry_id"], []).append(ln)
+        for tg in q("""SELECT jet.entry_id, tg.name
+                         FROM journal_entry_tags jet
+                         JOIN tags tg ON tg.id = jet.tag_id
+                        WHERE jet.entry_id = ANY(%s)
+                        ORDER BY tg.name""", (ids,)):
+            tags_by_entry.setdefault(tg["entry_id"], []).append(tg["name"])
 
     return templates.TemplateResponse(request, "entries.html", {
         "nav": "entries", "entries": entries, "lines_by_entry": lines_by_entry,
+        "tags_by_entry": tags_by_entry, "tags": tags, "all_tags": all_tags(),
         "scenarios": scenarios_all(), "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "ok": ok, "err": err,
@@ -436,6 +496,12 @@ def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
                        (entry_id, line_no, account_id, amount, memo)
                    SELECT %s, line_no, account_id, -amount, memo
                      FROM journal_lines WHERE entry_id = %s""",
+                (new_id, entry_id))
+            # Carry the original's tags over — a reversal is still "about"
+            # whatever it was tagged for.
+            cur.execute(
+                """INSERT INTO journal_entry_tags (entry_id, tag_id)
+                   SELECT %s, tag_id FROM journal_entry_tags WHERE entry_id = %s""",
                 (new_id, entry_id))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)

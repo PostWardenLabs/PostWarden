@@ -4,6 +4,8 @@
 <h1>Journal</h1>
 <p class="page-sub">Most recent first · showing up to 200 entries. History is append-only: fix mistakes with Reverse, never by editing.</p>
 
+<script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+
 <form class="bar" method="get" action="/entries">
   <label class="field">Scenario
     <select name="scenario">
@@ -16,6 +18,11 @@
   <label class="field">From <input type="date" name="date_from" value="{{ date_from }}"></label>
   <label class="field">To <input type="date" name="date_to" value="{{ date_to }}"></label>
   <label class="field">Search <input type="text" name="qtext" value="{{ qtext }}" placeholder="description or reference"></label>
+  <label class="field" style="flex:1; min-width: 14rem;">Tags
+    <div class="tag-input" data-placeholder="Filter by tag…">
+      <input type="hidden" name="tags" value="{{ tags }}">
+    </div>
+  </label>
   <button type="submit">Filter</button>
 </form>
 
@@ -29,6 +36,7 @@
       {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
       {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
       {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
+      {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
     </span>
     <span class="num mono">{{ e.total_debits | money }}</span>
     <span></span>
@@ -65,3 +73,5 @@
 <p class="dim">No entries match. Post one from <a href="/entries/new">New entry</a>.</p>
 {% endfor %}
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('tags.js') }}"></script>{% endblock %}
