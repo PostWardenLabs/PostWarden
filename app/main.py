@@ -110,9 +110,37 @@ SCENARIO_TYPES = ["actual", "budget", "forecast", "what_if"]
 
 
 def scenarios_all():
-    return q("""SELECT s.*, (SELECT COUNT(*) FROM journal_entries e
-                             WHERE e.scenario_id = s.id) AS entry_count
-                FROM scenarios s ORDER BY s.scenario_type, s.code""")
+    return q("""SELECT s.*, al.name AS base_level_name,
+                       (SELECT COUNT(*) FROM journal_entries e
+                         WHERE e.scenario_id = s.id) AS entry_count
+                  FROM scenarios s
+                  LEFT JOIN account_levels al ON al.id = s.base_level_id
+                 ORDER BY s.scenario_type, s.code""")
+
+
+def account_levels_all():
+    return q("""SELECT al.*,
+                       (SELECT COUNT(*) FROM scenarios s
+                         WHERE s.base_level_id = al.id) AS scenario_count
+                  FROM account_levels al ORDER BY al.depth""")
+
+
+def postable_accounts_for_pickers():
+    """Every account any scenario could actually post a line to: true
+    leaves (always postable, any scenario), plus anything sitting exactly
+    at a level some scenario has chosen as its base_level (see
+    scenarios.base_level_id / fn_line_account_guard). The trigger is the
+    real per-scenario enforcement; this just keeps a New entry/Scheduled/
+    Template account picker from being needlessly narrow. A future
+    refinement could filter this per the currently-selected scenario
+    instead of showing the union of everything any scenario allows."""
+    return q("""SELECT id, code, name, path FROM v_dim_account
+                WHERE is_active AND (
+                    is_postable
+                    OR depth IN (SELECT al.depth FROM account_levels al
+                                  JOIN scenarios s ON s.base_level_id = al.id)
+                )
+                ORDER BY sort_path""")
 
 
 def flash_url(url: str, ok: str = None, err: str = None) -> str:
@@ -405,8 +433,7 @@ def toggle_account(account_id: int, request: Request, csrf_token: str = Form(...
 # ---------------------------------------------------------------------------
 @app.get("/entries/new")
 def entry_new(request: Request, err: str = None):
-    postable = q("""SELECT id, code, name, path FROM v_dim_account
-                    WHERE is_postable AND is_active ORDER BY sort_path""")
+    postable = postable_accounts_for_pickers()
     scen = [s for s in scenarios_all() if not s["is_locked"]]
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     return templates.TemplateResponse(request, "entry_new.html", {
@@ -684,6 +711,7 @@ def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
 def scenarios_page(request: Request, ok: str = None, err: str = None):
     return templates.TemplateResponse(request, "scenarios.html", {
         "nav": "scenarios", "scenarios": scenarios_all(),
+        "levels": account_levels_all(),
         "scenario_types": SCENARIO_TYPES, "ok": ok, "err": err,
     })
 
@@ -692,16 +720,19 @@ def scenarios_page(request: Request, ok: str = None, err: str = None):
 def create_scenario(request: Request, code: str = Form(...), name: str = Form(...),
                     scenario_type: str = Form(...),
                     enforce_balance: str = Form(None),
+                    base_level_id: str = Form(""),
                     notes: str = Form(""), csrf_token: str = Form(...)):
     try:
         require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
                 """INSERT INTO scenarios
-                       (code, name, scenario_type, enforce_balance, notes)
-                   VALUES (%s, %s, %s, %s, %s)""",
+                       (code, name, scenario_type, enforce_balance, base_level_id, notes)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (code.strip().upper(), name.strip(), scenario_type,
-                 enforce_balance is not None, notes.strip() or None))
+                 enforce_balance is not None,
+                 int(base_level_id) if base_level_id else None,
+                 notes.strip() or None))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/scenarios", err=msg)
@@ -720,6 +751,72 @@ def toggle_lock(scenario_id: int, request: Request, csrf_token: str = Form(...))
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/scenarios", err=msg)
     return flash_redirect("/scenarios", ok="Scenario updated")
+
+
+# ---------------------------------------------------------------------------
+# Account levels — user-named steps down the chart of accounts (see
+# account_levels/scenarios.base_level_id in db/schema.sql). A scenario
+# picks one of these as its base_level to post at a whole branch instead
+# of every leaf under it — vertical extensibility, OneStream-style.
+# ---------------------------------------------------------------------------
+@app.get("/account-levels")
+def account_levels_page(request: Request, ok: str = None, err: str = None):
+    levels = account_levels_all()
+    next_depth = max((lv["depth"] for lv in levels), default=0) + 1
+    return templates.TemplateResponse(request, "account_levels.html", {
+        "nav": "account_levels", "levels": levels, "next_depth": next_depth,
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/account-levels")
+def create_account_level(request: Request, name: str = Form(...), depth: str = Form(...),
+                         csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        name = name.strip()
+        if not name:
+            raise ValueError("Name is required")
+        depth_i = int(depth)
+        if depth_i <= 0:
+            raise ValueError("Depth must be a positive number")
+        with tx() as cur:
+            cur.execute(
+                "INSERT INTO account_levels (name, depth) VALUES (%s, %s)",
+                (name, depth_i))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/account-levels", err=msg)
+    return flash_redirect("/account-levels", ok=f"Level {name!r} created")
+
+
+@app.post("/account-levels/{level_id}/rename")
+def rename_account_level(level_id: int, request: Request, name: str = Form(...),
+                         csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        name = name.strip()
+        if not name:
+            raise ValueError("Name is required")
+        with tx() as cur:
+            cur.execute("UPDATE account_levels SET name = %s WHERE id = %s",
+                       (name, level_id))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/account-levels", err=msg)
+    return flash_redirect("/account-levels", ok="Level renamed")
+
+
+@app.post("/account-levels/{level_id}/delete")
+def delete_account_level(level_id: int, request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute("DELETE FROM account_levels WHERE id = %s", (level_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/account-levels", err=msg)
+    return flash_redirect("/account-levels", ok="Level deleted")
 
 
 # ---------------------------------------------------------------------------
@@ -907,8 +1004,7 @@ def materialize_due_schedules() -> None:
 
 @app.get("/scheduled")
 def scheduled_page(request: Request, ok: str = None, err: str = None):
-    postable = q("""SELECT id, code, name, path FROM v_dim_account
-                    WHERE is_postable AND is_active ORDER BY sort_path""")
+    postable = postable_accounts_for_pickers()
     scen = [s for s in scenarios_all() if not s["is_locked"]]
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     pending, pending_lines = pending_scheduled_entries()
@@ -1090,8 +1186,7 @@ def templates_full():
 
 @app.get("/templates")
 def templates_page(request: Request, ok: str = None, err: str = None):
-    postable = q("""SELECT id, code, name, path FROM v_dim_account
-                    WHERE is_postable AND is_active ORDER BY sort_path""")
+    postable = postable_accounts_for_pickers()
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     return templates.TemplateResponse(request, "entry_templates.html", {
         "nav": "templates", "tpls": templates_full(),

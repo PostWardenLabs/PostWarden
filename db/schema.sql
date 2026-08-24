@@ -56,6 +56,23 @@ CREATE INDEX idx_sessions_user    ON sessions(user_id);
 CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 
 -- ---------------------------------------------------------------------------
+-- Account levels — user-named steps down the chart of accounts (depth 1 =
+-- the tree's roots, depth 2 = their children, ...). Purely a labeling
+-- layer over the hierarchy accounts.parent_id already builds — the tree
+-- itself is still unlimited depth, always was. A scenario can optionally
+-- pick one of these as its base_level (below) so it can post to a whole
+-- branch (e.g. "Bank") without touching every leaf under it — vertical
+-- extensibility, OneStream-style. Defined ahead of scenarios so that
+-- table can reference this one.
+-- ---------------------------------------------------------------------------
+CREATE TABLE account_levels (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name       TEXT NOT NULL CHECK (length(trim(name)) > 0),
+    depth      SMALLINT NOT NULL UNIQUE CHECK (depth > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
 -- Scenarios (the OneStream-style dimension)
 --
 -- enforce_balance:
@@ -65,6 +82,13 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 --   FALSE -> single-sided planning entries allowed (CPM-style budget input:
 --            "Groceries 6,000 in March" with no counter-account).
 -- is_locked: no new entries may be posted while locked (enforced by trigger).
+-- base_level: NULL (the default) changes nothing — entries in this
+--   scenario may only post to true leaf accounts, same as always. Set it
+--   to let this scenario also post to any account sitting exactly at that
+--   level, summary or not — e.g. base_level = "Subaccounts" lets a budget
+--   scenario post straight to "Bank" instead of splitting across
+--   Checking/Savings. Additive only: it never blocks posting to a real
+--   leaf, even one deeper than base_level (fn_line_account_guard).
 -- ---------------------------------------------------------------------------
 CREATE TABLE scenarios (
     id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -74,6 +98,7 @@ CREATE TABLE scenarios (
     scenario_type   scenario_type NOT NULL,
     enforce_balance BOOLEAN NOT NULL DEFAULT TRUE,
     is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
+    base_level_id   BIGINT REFERENCES account_levels(id) ON DELETE RESTRICT,
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -386,23 +411,50 @@ FOR EACH ROW EXECUTE FUNCTION fn_entry_balanced();
 
 -- ---------------------------------------------------------------------------
 -- Integrity trigger 2 — lines may only hit postable, active accounts.
+--
+-- "Postable" is scenario-relative: always true leaves (accounts.is_postable),
+-- plus — if the entry's scenario has a base_level set — any account sitting
+-- exactly at that level too, summary or not (see scenarios.base_level_id
+-- above). Additive only: a scenario's base_level can never make a true
+-- leaf un-postable, only add coarser accounts as options.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_line_account_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_postable BOOLEAN;
-    v_active   BOOLEAN;
-    v_code     TEXT;
-    v_name     TEXT;
+    v_postable   BOOLEAN;
+    v_active     BOOLEAN;
+    v_code       TEXT;
+    v_name       TEXT;
+    v_depth      SMALLINT;
+    v_walk       BIGINT;
+    v_base_level SMALLINT;
 BEGIN
-    SELECT is_postable, is_active, code, name
-      INTO v_postable, v_active, v_code, v_name
+    SELECT is_postable, is_active, code, name, parent_id
+      INTO v_postable, v_active, v_code, v_name, v_walk
       FROM accounts WHERE id = NEW.account_id;
 
     IF NOT v_postable THEN
-        RAISE EXCEPTION
-            'Account % — % is a summary account; post to a leaf account instead',
-            v_code, v_name;
+        -- Walk parent_id to this account's depth (root = 1) — self-
+        -- contained rather than joining v_dim_account's recursive CTE
+        -- from inside a trigger; cheap since accounts.parent_id is
+        -- guaranteed acyclic by fn_account_hierarchy_guard.
+        v_depth := 1;
+        WHILE v_walk IS NOT NULL LOOP
+            v_depth := v_depth + 1;
+            SELECT parent_id INTO v_walk FROM accounts WHERE id = v_walk;
+        END LOOP;
+
+        SELECT al.depth INTO v_base_level
+          FROM journal_entries e
+          JOIN scenarios s ON s.id = e.scenario_id
+          JOIN account_levels al ON al.id = s.base_level_id
+         WHERE e.id = NEW.entry_id;
+
+        IF v_base_level IS DISTINCT FROM v_depth THEN
+            RAISE EXCEPTION
+                'Account % — % is a summary account; post to a leaf account instead (or a scenario whose base level includes it)',
+                v_code, v_name;
+        END IF;
     END IF;
     IF NOT v_active THEN
         RAISE EXCEPTION 'Account % — % is inactive', v_code, v_name;
@@ -600,7 +652,18 @@ LANGUAGE sql STABLE AS $$
              ON f.account_id = da.id
             AND f.scenario_code = p_scenario
             AND f.entry_date <= COALESCE(p_as_of, 'infinity'::date)
-     WHERE da.is_postable AND da.is_active
+     WHERE da.is_active
+       -- True leaves always show, same as always. A summary account only
+       -- shows if it actually has postings in *this* scenario — that's
+       -- how a scenario's base_level (fn_line_account_guard) lets one
+       -- post straight to e.g. "Bank" without every leaf under it; if
+       -- this stayed is_postable-only, that money would silently vanish
+       -- from Trial Balance despite genuinely being posted. Each account
+       -- still shows its own direct postings only — no rollup summing a
+       -- summary account's descendants into it.
+       AND (da.is_postable OR EXISTS (
+           SELECT 1 FROM v_fact_lines f2
+            WHERE f2.account_id = da.id AND f2.scenario_code = p_scenario))
      GROUP BY da.id, da.code, da.name, da.account_type, da.path, da.sort_path
      ORDER BY da.sort_path;
 $$;

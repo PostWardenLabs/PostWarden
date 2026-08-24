@@ -6,7 +6,7 @@
 
 <table class="ledger">
   <thead><tr>
-    <th>Code</th><th>Name</th><th>Type</th><th>Balance rule</th>
+    <th>Code</th><th>Name</th><th>Type</th><th>Balance rule</th><th>Base level</th>
     <th class="num">Entries</th><th>Status</th><th></th>
   </tr></thead>
   <tbody>
@@ -16,6 +16,7 @@
       <td>{{ s.name }}</td>
       <td class="dim">{{ s.scenario_type }}</td>
       <td class="dim">{{ 'must balance' if s.enforce_balance else 'single-sided OK' }}</td>
+      <td class="dim">{{ s.base_level_name or '— leaves only —' }}</td>
       <td class="num mono">{{ s.entry_count }}</td>
       <td>{% if s.is_locked %}<span class="badge rev">locked</span>{% else %}<span class="badge">open</span>{% endif %}</td>
       <td>
@@ -45,6 +46,14 @@
       </select>
     </label>
     <label class="checkline"><input type="checkbox" name="enforce_balance"> require balanced entries</label>
+    <label class="field">Base level
+      <select name="base_level_id">
+        <option value="">— leaves only (default) —</option>
+        {% for lv in levels %}
+        <option value="{{ lv.id }}">{{ lv.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="field" style="grid-column: 1 / -1;">Notes
       <input type="text" name="notes" placeholder="optional">
     </label>

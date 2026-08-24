@@ -6,6 +6,14 @@
 -- ============================================================================
 BEGIN;
 
+-- Account levels — names the three levels this starter chart actually
+-- uses (Assets -> Bank -> Checking is 3 deep). Purely labels; add more
+-- via the Account levels page if your chart goes deeper than this.
+INSERT INTO account_levels (name, depth) VALUES
+    ('Top Level Accounts', 1),
+    ('Subaccounts',        2),
+    ('Account Detail',     3);
+
 -- Scenarios ------------------------------------------------------------------
 INSERT INTO scenarios (code, name, scenario_type, enforce_balance, notes) VALUES
     ('ACTUAL',  'Actual',       'actual', TRUE,

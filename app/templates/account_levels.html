@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Account levels{% endblock %}
+{% block content %}
+<h1>Account levels</h1>
+<p class="page-sub">Names for each step down the chart of accounts — depth 1 is every account's root
+  (Assets, Liabilities, ...), depth 2 their children, and so on, however deep your chart goes. Purely
+  labels: the hierarchy itself is still just <a href="/accounts">accounts</a> and their parent.
+  Pick one of these as a <a href="/scenarios">scenario</a>'s base level to let it post to a whole
+  branch — "Bank" — instead of every leaf underneath it.</p>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Depth</th><th>Name</th><th class="num">Scenarios using it</th><th></th><th></th>
+  </tr></thead>
+  <tbody>
+    {% for lv in levels %}
+    <tr>
+      <td class="mono dim">{{ lv.depth }}</td>
+      <td>
+        <form method="post" action="/account-levels/{{ lv.id }}/rename">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <input type="text" name="name" value="{{ lv.name }}" required style="max-width: 16rem;">
+          <button type="submit" class="quiet">Save</button>
+        </form>
+      </td>
+      <td class="num mono">{{ lv.scenario_count }}</td>
+      <td colspan="2">
+        <form method="post" action="/account-levels/{{ lv.id }}/delete" style="display:inline"
+              onsubmit="return confirm('Delete level {{ lv.name }}?');">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="dim">No levels yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel">
+  <h2>New level</h2>
+  <form method="post" action="/account-levels" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <label class="field" style="max-width: 8rem;">Depth
+      <input type="number" name="depth" min="1" value="{{ next_depth }}" required>
+    </label>
+    <label class="field">Name
+      <input type="text" name="name" required placeholder="e.g. Account Detail">
+    </label>
+    <button type="submit">Create level</button>
+  </form>
+  <p class="dim small" style="margin-top: 0.6rem; margin-bottom: 0;">Depth must match how deep an
+    account actually sits under its parents to mean anything — e.g. depth 3 is Assets → Bank →
+    Checking. Levels don't have to be contiguous or cover every depth your chart uses.</p>
+</div>
+{% endblock %}

@@ -86,6 +86,101 @@ def test_line_rejected_on_summary_account(conn, actual_scenario_id):
             mk_line(cur, eid, summary["id"], 10)
 
 
+# ---------------------------------------------------------------------------
+# Account levels — a scenario's base_level relaxes fn_line_account_guard
+# for accounts sitting exactly at that depth, additively (see
+# app/main.py's postable_accounts_for_pickers()/create_scenario). seed.sql
+# already defines depths 1/2/3 ("Top Level Accounts"/"Subaccounts"/
+# "Account Detail") and depth is UNIQUE, so these reuse those rather than
+# insert colliding ones.
+# ---------------------------------------------------------------------------
+def test_line_allowed_on_summary_account_at_scenario_base_level(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM account_levels WHERE depth = 2")
+        level2_id = cur.fetchone()["id"]
+        parent = mk_account(cur, postable=False)             # depth 1
+        child = mk_account(cur, parent_id=parent["id"], postable=False)  # depth 2
+        scen = mk_scenario(cur, base_level_id=level2_id, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, child["id"], 10)
+    conn.commit()  # would raise here if the trigger still rejected it
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM journal_lines WHERE entry_id = %s", (eid,))
+        assert cur.fetchone() is not None
+
+
+def test_line_rejected_on_summary_account_not_at_scenario_base_level(conn):
+    with expect_error(conn, match="summary account"):
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM account_levels WHERE depth = 2")
+            level2_id = cur.fetchone()["id"]
+            root = mk_account(cur, postable=False)  # depth 1, not depth 2
+            scen = mk_scenario(cur, base_level_id=level2_id, enforce_balance=False)
+            eid = mk_entry(cur, scen["id"])
+            mk_line(cur, eid, root["id"], 10)
+
+
+def test_line_allowed_on_true_leaf_regardless_of_scenario_base_level(conn):
+    # Additive only: a scenario's base_level never blocks a real leaf,
+    # even one deeper than base_level.
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM account_levels WHERE depth = 2")
+        level2_id = cur.fetchone()["id"]
+        leaf = mk_account(cur, postable=True)  # depth 1, a true leaf
+        scen = mk_scenario(cur, base_level_id=level2_id, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, leaf["id"], 10)
+    conn.commit()
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM journal_lines WHERE entry_id = %s", (eid,))
+        assert cur.fetchone() is not None
+
+
+def test_account_level_depth_must_be_unique(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO account_levels (name, depth) VALUES ('Dup', 2)")
+
+
+def test_account_level_delete_rejected_while_scenario_uses_it(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM account_levels WHERE depth = 3")
+        level3_id = cur.fetchone()["id"]
+        mk_scenario(cur, base_level_id=level3_id)
+    conn.commit()
+
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM account_levels WHERE id = %s", (level3_id,))
+
+
+def test_trial_balance_shows_summary_account_with_direct_postings(conn):
+    # fn_trial_balance used to filter to is_postable accounts only — a
+    # posting legitimately made to a summary account (via a scenario's
+    # base_level) would silently vanish from the report despite being
+    # real data. Confirms it now shows up, and that an *untouched*
+    # summary account still doesn't clutter the report.
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM account_levels WHERE depth = 2")
+        level2_id = cur.fetchone()["id"]
+        parent = mk_account(cur, postable=False)
+        posted_summary = mk_account(cur, parent_id=parent["id"], postable=False)
+        untouched_summary = mk_account(cur, parent_id=parent["id"], postable=False)
+        scen = mk_scenario(cur, base_level_id=level2_id, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, posted_summary["id"], 250)
+    conn.commit()
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT account_code, debit_balance FROM fn_trial_balance(%s)",
+                    (scen["code"],))
+        rows = {r["account_code"]: r["debit_balance"] for r in cur.fetchall()}
+        assert rows.get(posted_summary["code"]) == 250
+        assert untouched_summary["code"] not in rows
+
+
 def test_line_rejected_on_inactive_account(conn, actual_scenario_id):
     with expect_error(conn, match="inactive"):
         with conn.cursor() as cur:

@@ -352,6 +352,85 @@ def test_quick_create_account_inherits_parent_type_and_generates_code(conn):
         assert cur.fetchone() is None
 
 
+def test_scenario_base_level_relaxes_posting_through_the_real_routes(conn):
+    # End-to-end through the actual routes, not just the DB trigger: pick
+    # "Subaccounts" (depth 2, seeded by seed.sql) as a new scenario's base
+    # level, then post an entry straight to a depth-2 summary account.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        parent = mk_account(cur, postable=False)
+        child = mk_account(cur, parent_id=parent["id"], postable=False)
+        cur.execute("SELECT id FROM account_levels WHERE depth = 2")
+        level2_id = cur.fetchone()["id"]
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r1 = c.post("/scenarios", data={
+            "csrf_token": csrf_token, "code": "COARSE1", "name": "Coarse test",
+            "scenario_type": "budget", "base_level_id": str(level2_id),
+        })
+        assert "ok=" in r1.headers["location"]
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, base_level_id FROM scenarios WHERE code = 'COARSE1'")
+            scen = cur.fetchone()
+            assert scen["base_level_id"] == level2_id
+
+        r2 = c.post("/entries", data={
+            "csrf_token": csrf_token, "entry_date": "2026-01-01",
+            "scenario_id": str(scen["id"]), "description": "Post to summary account",
+            "account": [child["code"]], "debit": ["10"], "credit": [""], "memo": [""],
+        })
+        assert "err=" not in r2.headers["location"]
+        assert "ok=" in r2.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT 1 FROM journal_lines l JOIN journal_entries e ON e.id = l.entry_id
+               WHERE e.scenario_id = %s AND l.account_id = %s""",
+            (scen["id"], child["id"]))
+        assert cur.fetchone() is not None
+
+
+def test_account_levels_crud(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r1 = c.post("/account-levels", data={
+            "csrf_token": csrf_token, "name": "Test Level", "depth": "97",
+        })
+        assert "ok=" in r1.headers["location"]
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM account_levels WHERE depth = 97")
+            level_id = cur.fetchone()["id"]
+
+        r2 = c.post(f"/account-levels/{level_id}/rename",
+                    data={"csrf_token": csrf_token, "name": "Renamed Level"})
+        assert "ok=" in r2.headers["location"]
+
+        r3 = c.post(f"/account-levels/{level_id}/delete",
+                    data={"csrf_token": csrf_token})
+        assert "ok=" in r3.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM account_levels WHERE depth = 97")
+        assert cur.fetchone() is None  # deleted
+
+
 def test_logout_revokes_session(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
