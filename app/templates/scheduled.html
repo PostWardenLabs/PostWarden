@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Scheduled entries{% endblock %}
+{% block content %}
+<h1>Scheduled entries</h1>
+<p class="page-sub">Recurring postings — rent, wages, subscriptions. Each occurrence lands in the
+  <span class="mono">STAGING</span> scenario on its date; nothing touches your real books until you
+  approve it below.</p>
+
+<script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
+<script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Description</th>
+    <th>Payee</th>
+    <th>Target scenario</th>
+    <th>Repeats</th>
+    <th>Next</th>
+    <th>Status</th>
+    <th></th>
+  </tr></thead>
+  <tbody>
+    {% for s in schedules %}
+    <tr>
+      <td>{{ s.description }}{% if s.reference %} <span class="dim small">[{{ s.reference }}]</span>{% endif %}</td>
+      <td class="dim">{{ s.payee_name or '—' }}</td>
+      <td class="mono dim">{{ s.scenario_code }}</td>
+      <td>every {{ s.interval_count }} {{ s.interval_unit }}{{ 's' if s.interval_count != 1 }}</td>
+      <td class="mono">{{ s.next_date }}</td>
+      <td>{{ 'active' if s.is_active else 'paused' }}</td>
+      <td>
+        <form method="post" action="/scheduled/{{ s.id }}/toggle-active">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">{{ 'Pause' if s.is_active else 'Resume' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="dim">No scheduled entries yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel" style="margin-top: 1.5rem;">
+  <h2>New schedule</h2>
+  <div id="entry-error" class="flash flash-err" hidden></div>
+  <form method="post" action="/scheduled" id="entry-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <div class="bar">
+      <label class="field" style="max-width: 6rem;">Repeats every
+        <input type="number" name="interval_count" value="1" min="1">
+      </label>
+      <label class="field" style="max-width: 9rem;">&nbsp;
+        <select name="interval_unit">
+          {% for u in units %}
+          <option value="{{ u }}">{{ u }}(s)</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">Next on
+        <input type="date" name="next_date" value="{{ today }}" required>
+      </label>
+      <label class="field">Target scenario
+        <select name="scenario_id" id="scenario">
+          {% for s in scenarios %}
+          <option value="{{ s.id }}" data-enforce="{{ 1 if s.enforce_balance else 0 }}">
+            {{ s.code }} — {{ s.name }}{{ '' if s.enforce_balance else ' (single-sided OK)' }}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field" style="flex:1; min-width: 16rem;">Description
+        <input type="text" name="description" required placeholder="e.g. Rent" autofocus>
+      </label>
+      <label class="field">Reference
+        <input type="text" name="reference" placeholder="optional">
+      </label>
+      <label class="field">Payee
+        <select name="payee_id" data-create-url="/payees/quick-create">
+          <option value="">— none —</option>
+          {% for p in payees %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field" style="flex:1; min-width: 14rem;">Tags
+        <div class="tag-input" data-placeholder="Add a tag…">
+          <input type="hidden" name="tags" value="">
+        </div>
+      </label>
+    </div>
+
+    <table class="ledger entry-grid" id="lines">
+      <thead>
+        <tr>
+          <th class="col-account">Account</th>
+          <th class="num col-amount money money-first">Debit</th>
+          <th class="num col-amount money">Credit</th>
+          <th>Memo</th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"><!-- rows injected by app.js --></tbody>
+    </table>
+
+    <div class="balance-bar" id="balance-bar">
+      <span><span class="lbl">Debits</span> <span id="t-debits">0.00</span></span>
+      <span><span class="lbl">Credits</span> <span id="t-credits">0.00</span></span>
+      <span><span class="lbl">Difference</span> <span class="diff" id="t-diff">0.00</span></span>
+      <span id="balance-msg" class="dim small"></span>
+    </div>
+
+    <p style="margin-top: 1rem;">
+      <button type="submit" id="post-btn">Save schedule</button>
+      <button type="button" class="quiet" id="add-row">Add line (Alt+N)</button>
+    </p>
+  </form>
+</div>
+
+<h2 style="margin-top: 2rem;">Pending approval</h2>
+<p class="page-sub">Auto-posted to Staging, waiting for you. Select the ones you want and post them to their target scenario.</p>
+{% if pending %}
+<form method="post" action="/scheduled/post">
+  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+  {% for e in pending %}
+  <details class="entry">
+    <summary>
+      <label class="checkline" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
+        <input type="checkbox" name="entry_id" value="{{ e.id }}">
+      </label>
+      <span class="mono dim">{{ e.entry_date }}</span>
+      <span>{{ e.description }}
+        {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+        <span class="badge">→ {{ e.target_scenario_code }}</span>
+      </span>
+      <span class="num mono">{{ e.total_debits | money }}</span>
+      <span></span>
+    </summary>
+    <div class="lines">
+      <table class="ledger">
+        <thead><tr>
+          <th>Account</th>
+          <th class="num money money-first">Debit</th>
+          <th class="num money">Credit</th>
+          <th>Memo</th>
+        </tr></thead>
+        <tbody>
+          {% for l in pending_lines.get(e.id, []) %}
+          <tr>
+            <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
+            <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
+            <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
+            <td class="dim">{{ l.memo or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+  <p style="margin-top: 1rem;"><button type="submit">Post selected</button></p>
+</form>
+{% else %}
+<p class="dim">Nothing waiting on approval.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('tags.js') }}"></script>
+<script src="{{ asset('app.js') }}"></script>
+{% endblock %}

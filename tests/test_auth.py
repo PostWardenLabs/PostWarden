@@ -4,10 +4,12 @@ Unlike test_invariants.py, this drives the actual FastAPI app (TestClient),
 since these are things only the app layer enforces — the schema just holds
 the users/sessions rows it checks against.
 """
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import mk_user
+from conftest import mk_account, mk_user
 
 client_kwargs = {"base_url": "http://testserver", "follow_redirects": False}
 
@@ -164,6 +166,91 @@ def test_quick_create_payee_gets_or_creates_and_reactivates(conn):
         row = cur.fetchone()
         assert row["n"] == 1
         assert row["active"] is True
+
+
+def test_scheduled_entry_materializes_and_posts(conn):
+    # End-to-end through the actual routes: create a schedule due today,
+    # let the auth middleware's lazy materialize_due_schedules() pick it up
+    # on the next request, then approve it — same path a real user takes,
+    # just without the browser.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r = c.post("/scheduled", data={
+            "csrf_token": csrf_token,
+            "interval_count": "1", "interval_unit": "month",
+            "next_date": date.today().isoformat(),
+            "scenario_id": str(actual_id),
+            "description": "Test schedule",
+            "account": [acct1["code"], acct2["code"]],
+            "debit": ["50", ""],
+            "credit": ["", "50"],
+            "memo": ["", ""],
+        })
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+        # The auth middleware runs materialize_due_schedules() on every
+        # request — this GET is what actually triggers it.
+        assert c.get("/scheduled").status_code == 200
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT e.id, e.promoted_entry_id FROM journal_entries e
+                 JOIN scenarios s ON s.id = e.scenario_id
+                WHERE s.code = 'STAGING' AND e.description = 'Test schedule'""")
+        staged = cur.fetchone()
+        assert staged is not None
+        assert staged["promoted_entry_id"] is None
+        cur.execute("SELECT next_date FROM scheduled_entries WHERE description = 'Test schedule'")
+        assert cur.fetchone()["next_date"] > date.today()  # advanced past today
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r2 = c.post("/scheduled/post",
+                    data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
+        assert r2.status_code == 303
+        assert "ok=" in r2.headers["location"]
+
+        # Re-posting the same (now-promoted) staging entry must fail, not
+        # silently duplicate the real entry.
+        r3 = c.post("/scheduled/post",
+                    data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
+        assert "already+posted" in r3.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT promoted_entry_id FROM journal_entries WHERE id = %s",
+                    (staged["id"],))
+        promoted_id = cur.fetchone()["promoted_entry_id"]
+        assert promoted_id is not None
+        cur.execute(
+            "SELECT scenario_id, description FROM journal_entries WHERE id = %s",
+            (promoted_id,))
+        real = cur.fetchone()
+        assert real["scenario_id"] == actual_id
+        assert real["description"] == "Test schedule"
+        cur.execute("SELECT COUNT(*) AS n FROM journal_lines WHERE entry_id = %s",
+                    (promoted_id,))
+        assert cur.fetchone()["n"] == 2
 
 
 def test_logout_revokes_session(conn):

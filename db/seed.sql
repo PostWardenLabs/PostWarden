@@ -11,7 +11,9 @@ INSERT INTO scenarios (code, name, scenario_type, enforce_balance, notes) VALUES
     ('ACTUAL',  'Actual',       'actual', TRUE,
      'The books. Always balanced.'),
     ('BUD2026', 'Budget 2026',  'budget', FALSE,
-     'Annual budget. Single-sided planning entries allowed (CPM-style input).');
+     'Annual budget. Single-sided planning entries allowed (CPM-style input).'),
+    ('STAGING', 'Staging',      'what_if', TRUE,
+     'Auto-posted by Scheduled entries, awaiting approval. Never counts as real books until promoted.');
 
 -- Chart of accounts ----------------------------------------------------------
 -- Summary (non-postable) parents first, then postable leaves.

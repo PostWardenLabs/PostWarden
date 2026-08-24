@@ -2,11 +2,12 @@
 
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
+import calendar
 import json
 import re
 import secrets
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -49,6 +50,15 @@ async def auth_gate(request: Request, call_next):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
     request.state.user = session
+    # No task runner in this deployment, so "auto-post on the date" is done
+    # lazily here instead of on a real cron: cheap (an indexed SELECT that's
+    # almost always empty) and each due schedule only ever materializes once
+    # since materialize_due_schedules() advances next_date past today as
+    # part of the same write. A failure here shouldn't take the app down.
+    try:
+        materialize_due_schedules()
+    except Exception:
+        pass
     return await call_next(request)
 
 
@@ -348,8 +358,10 @@ def _parse_tags(raw: str) -> list[str]:
     return seen
 
 
-def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
-    cur.execute("DELETE FROM journal_entry_tags WHERE entry_id = %s", (entry_id,))
+def _sync_tags(cur, table: str, id_col: str, obj_id: int, tag_names: list[str]) -> None:
+    """Shared by journal entries and scheduled entries — both have their own
+    entry_id/tag_id junction table with the same shape."""
+    cur.execute(f"DELETE FROM {table} WHERE {id_col} = %s", (obj_id,))
     for name in tag_names:
         cur.execute(
             """INSERT INTO tags (name) VALUES (%s)
@@ -358,8 +370,12 @@ def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
             (name,))
         tag_id = cur.fetchone()["id"]
         cur.execute(
-            "INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)",
-            (entry_id, tag_id))
+            f"INSERT INTO {table} ({id_col}, tag_id) VALUES (%s, %s)",
+            (obj_id, tag_id))
+
+
+def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
+    _sync_tags(cur, "journal_entry_tags", "entry_id", entry_id, tag_names)
 
 
 def _parse_lines(form) -> list[dict]:
@@ -696,6 +712,262 @@ def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/payees", err=msg)
     return flash_redirect("/payees", ok="Payee updated")
+
+
+# ---------------------------------------------------------------------------
+# Scheduled entries — a template + recurrence rule. Due occurrences are
+# auto-posted to the Staging scenario (materialize_due_schedules(), called
+# from the auth middleware); a human approves each one from here before it
+# becomes a real entry in its target scenario ("posting" = copy + mark the
+# staging row promoted, never editing it in place — same append-only spirit
+# as the rest of the ledger).
+# ---------------------------------------------------------------------------
+SCHEDULE_UNITS = ["day", "week", "month"]
+
+
+def _advance_date(d: date, unit: str, count: int) -> date:
+    if unit == "day":
+        return d + timedelta(days=count)
+    if unit == "week":
+        return d + timedelta(weeks=count)
+    if unit == "month":
+        total = d.month - 1 + count
+        year = d.year + total // 12
+        month = total % 12 + 1
+        day = min(d.day, calendar.monthrange(year, month)[1])  # clamp Jan 31 + 1mo -> Feb 28/29
+        return date(year, month, day)
+    raise ValueError(f"Unknown interval unit: {unit}")
+
+
+def scheduled_all():
+    return q("""
+        SELECT se.*, s.code AS scenario_code, s.name AS scenario_name,
+               p.name AS payee_name,
+               (SELECT COUNT(*) FROM scheduled_entry_lines
+                 WHERE scheduled_entry_id = se.id) AS line_count,
+               (SELECT COALESCE(SUM(debit), 0) FROM scheduled_entry_lines
+                 WHERE scheduled_entry_id = se.id) AS total_amount
+          FROM scheduled_entries se
+          JOIN scenarios s ON s.id = se.target_scenario_id
+          LEFT JOIN payees p ON p.id = se.payee_id
+         ORDER BY se.next_date, se.id""")
+
+
+def pending_scheduled_entries():
+    """Staging entries materialized from a schedule but not yet approved —
+    the admin page's whole reason to have a "Post" button."""
+    entries = q("""
+        SELECT e.id, e.entry_date, e.description, e.reference,
+               p.name AS payee_name,
+               ts.code AS target_scenario_code, ts.name AS target_scenario_name,
+               (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                 WHERE l.entry_id = e.id) AS total_debits
+          FROM journal_entries e
+          JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+          JOIN scenarios ts ON ts.id = se.target_scenario_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE e.promoted_entry_id IS NULL
+         ORDER BY e.entry_date, e.id""")
+    ids = [e["id"] for e in entries]
+    lines_by_entry = {}
+    if ids:
+        for ln in q("""SELECT l.entry_id, l.debit, l.credit, l.memo,
+                              a.code AS account_code, a.name AS account_name
+                         FROM journal_lines l
+                         JOIN accounts a ON a.id = l.account_id
+                        WHERE l.entry_id = ANY(%s)
+                        ORDER BY l.entry_id, l.line_no""", (ids,)):
+            lines_by_entry.setdefault(ln["entry_id"], []).append(ln)
+    return entries, lines_by_entry
+
+
+def materialize_due_schedules() -> None:
+    due = q("""SELECT * FROM scheduled_entries
+               WHERE is_active AND next_date <= CURRENT_DATE
+               ORDER BY id""")
+    if not due:
+        return
+    staging = q1("SELECT id FROM scenarios WHERE code = 'STAGING'")
+    if not staging:
+        return  # schema migrated but the seed row hasn't landed yet
+    for sched in due:
+        lines = q("""SELECT line_no, account_id, amount, memo
+                       FROM scheduled_entry_lines
+                      WHERE scheduled_entry_id = %s ORDER BY line_no""", (sched["id"],))
+        if not lines:
+            continue  # nothing to post; leave next_date alone rather than skip silently
+        tag_names = [r["name"] for r in q(
+            """SELECT tg.name FROM scheduled_entry_tags st
+                JOIN tags tg ON tg.id = st.tag_id
+               WHERE st.scheduled_entry_id = %s""", (sched["id"],))]
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO journal_entries
+                       (scenario_id, entry_date, description, reference,
+                        payee_id, scheduled_entry_id)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (staging["id"], sched["next_date"], sched["description"],
+                 sched["reference"], sched["payee_id"], sched["id"]))
+            entry_id = cur.fetchone()["id"]
+            for ln in lines:
+                cur.execute(
+                    """INSERT INTO journal_lines
+                           (entry_id, line_no, account_id, amount, memo)
+                       VALUES (%s, %s, %s, %s, %s)""",
+                    (entry_id, ln["line_no"], ln["account_id"], ln["amount"], ln["memo"]))
+            if tag_names:
+                _sync_entry_tags(cur, entry_id, tag_names)
+            cur.execute(
+                "UPDATE scheduled_entries SET next_date = %s WHERE id = %s",
+                (_advance_date(sched["next_date"], sched["interval_unit"],
+                               sched["interval_count"]), sched["id"]))
+
+
+@app.get("/scheduled")
+def scheduled_page(request: Request, ok: str = None, err: str = None):
+    postable = q("""SELECT id, code, name, path FROM v_dim_account
+                    WHERE is_postable AND is_active ORDER BY sort_path""")
+    scen = [s for s in scenarios_all() if not s["is_locked"]]
+    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
+    pending, pending_lines = pending_scheduled_entries()
+    return templates.TemplateResponse(request, "scheduled.html", {
+        "nav": "scheduled", "schedules": scheduled_all(),
+        "accounts": postable, "scenarios": scen, "payees": active_payees,
+        "all_tags": all_tags(), "today": date.today().isoformat(),
+        "units": SCHEDULE_UNITS,
+        "pending": pending, "pending_lines": pending_lines,
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/scheduled")
+async def create_schedule(request: Request):
+    form = await request.form()
+    wants_json = "application/json" in request.headers.get("accept", "")
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        lines = _parse_lines(form)
+        total = round(sum(ln["amount"] for ln in lines), 2)
+        if total != 0:
+            raise ValueError("Schedule lines must balance (debits = credits)")
+        description = (form.get("description") or "").strip()
+        if not description:
+            raise ValueError("Description is required")
+        reference = (form.get("reference") or "").strip() or None
+        payee_id = int(form.get("payee_id")) if form.get("payee_id") else None
+        tag_names = _parse_tags(form.get("tags", ""))
+        target_scenario_id = int(form.get("scenario_id"))
+        interval_unit = form.get("interval_unit") or ""
+        if interval_unit not in SCHEDULE_UNITS:
+            raise ValueError("Choose a valid repeat unit")
+        interval_count = int(form.get("interval_count") or 1)
+        if interval_count <= 0:
+            raise ValueError("Repeat count must be positive")
+        next_date = form.get("next_date") or date.today().isoformat()
+
+        codes = {ln["code"] for ln in lines}
+        found = {r["code"] for r in q(
+            "SELECT code FROM accounts WHERE code = ANY(%s)", (list(codes),))}
+        missing = codes - found
+        if missing:
+            raise ValueError(f"Unknown account code: {', '.join(sorted(missing))}")
+
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO scheduled_entries
+                       (description, reference, payee_id, target_scenario_id,
+                        interval_unit, interval_count, next_date)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (description, reference, payee_id, target_scenario_id,
+                 interval_unit, interval_count, next_date))
+            sched_id = cur.fetchone()["id"]
+            for n, ln in enumerate(lines, start=1):
+                cur.execute(
+                    """INSERT INTO scheduled_entry_lines
+                           (scheduled_entry_id, line_no, account_id, amount, memo)
+                       VALUES (%s, %s, (SELECT id FROM accounts WHERE code = %s), %s, %s)""",
+                    (sched_id, n, ln["code"], ln["amount"], ln["memo"]))
+            if tag_names:
+                _sync_tags(cur, "scheduled_entry_tags", "scheduled_entry_id",
+                          sched_id, tag_names)
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        if wants_json:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        return flash_redirect("/scheduled", err=msg)
+    ok_msg = f"Schedule {description!r} created — next on {next_date}"
+    if wants_json:
+        return JSONResponse({"ok": True, "redirect": flash_url("/scheduled", ok=ok_msg)})
+    return flash_redirect("/scheduled", ok=ok_msg)
+
+
+@app.post("/scheduled/{scheduled_id}/toggle-active")
+def toggle_schedule(scheduled_id: int, request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute(
+                "UPDATE scheduled_entries SET is_active = NOT is_active WHERE id = %s",
+                (scheduled_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/scheduled", err=msg)
+    return flash_redirect("/scheduled", ok="Schedule updated")
+
+
+@app.post("/scheduled/post")
+async def post_scheduled_entries(request: Request):
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+    except ValueError as e:
+        return flash_redirect("/scheduled", err=str(e))
+
+    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    if not entry_ids:
+        return flash_redirect("/scheduled", err="Select at least one entry to post")
+
+    posted, errors = [], []
+    for eid in entry_ids:
+        try:
+            staged = q1("""SELECT e.*, se.target_scenario_id
+                             FROM journal_entries e
+                             JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+                            WHERE e.id = %s""", (eid,))
+            if not staged:
+                raise ValueError(f"#{eid}: not a pending scheduled entry")
+            if staged["promoted_entry_id"] is not None:
+                raise ValueError(f"#{eid}: already posted")
+            with tx() as cur:
+                cur.execute(
+                    """INSERT INTO journal_entries
+                           (scenario_id, entry_date, description, reference,
+                            payee_id, created_by_user_id)
+                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (staged["target_scenario_id"], staged["entry_date"],
+                     staged["description"], staged["reference"], staged["payee_id"],
+                     auth.current_user(request)["user_id"]))
+                new_id = cur.fetchone()["id"]
+                cur.execute(
+                    """INSERT INTO journal_lines
+                           (entry_id, line_no, account_id, amount, memo)
+                       SELECT %s, line_no, account_id, amount, memo
+                         FROM journal_lines WHERE entry_id = %s""",
+                    (new_id, eid))
+                cur.execute(
+                    """INSERT INTO journal_entry_tags (entry_id, tag_id)
+                       SELECT %s, tag_id FROM journal_entry_tags WHERE entry_id = %s""",
+                    (new_id, eid))
+                cur.execute(
+                    "UPDATE journal_entries SET promoted_entry_id = %s WHERE id = %s",
+                    (new_id, eid))
+            posted.append(eid)
+        except (ValueError, psycopg.Error) as e:
+            errors.append(_pg_msg(e) if isinstance(e, psycopg.Error) else str(e))
+
+    ok_msg = f"Posted {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}" if posted else None
+    err_msg = "; ".join(errors) or None
+    return flash_redirect("/scheduled", ok=ok_msg, err=err_msg)
 
 
 # ---------------------------------------------------------------------------

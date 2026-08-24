@@ -26,6 +26,7 @@
       <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
       <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
       <a href="/payees" class="{{ 'active' if nav == 'payees' }}">Payees</a>
+      <a href="/scheduled" class="{{ 'active' if nav == 'scheduled' }}">Scheduled</a>
     </nav>
     <a href="/settings" class="username-link dim small {{ 'active' if nav == 'settings' }}">{{ request.state.user.username }}</a>
     <form method="post" action="/logout" class="logout-form">

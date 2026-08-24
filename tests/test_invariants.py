@@ -203,6 +203,56 @@ def test_self_reversal_rejected(conn, actual_scenario_id):
                 (actual_scenario_id,))
 
 
+def test_self_promotion_rejected(conn, actual_scenario_id):
+    # Mirrors the reverses_entry_id self-check above — promoted_entry_id is
+    # the same kind of "points at another journal_entries row" column (see
+    # app/main.py's Scheduled entries "post" flow), so it gets the same
+    # sanity guard.
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO journal_entries
+                       (id, scenario_id, entry_date, description, promoted_entry_id)
+                   OVERRIDING SYSTEM VALUE
+                   SELECT nextval(pg_get_serial_sequence('journal_entries', 'id')),
+                          %s, CURRENT_DATE, 'self promotion', currval(
+                              pg_get_serial_sequence('journal_entries', 'id'))""",
+                (actual_scenario_id,))
+
+
+# ---------------------------------------------------------------------------
+# Scheduled entries — the template + recurrence rule a schedule materializes
+# from (see app/main.py's materialize_due_schedules()/create_schedule).
+# ---------------------------------------------------------------------------
+def test_scheduled_entry_line_amount_cannot_be_zero(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            acct = mk_account(cur)
+            scen = mk_scenario(cur, scenario_type="actual")
+            cur.execute(
+                """INSERT INTO scheduled_entries
+                       (description, target_scenario_id, interval_unit, next_date)
+                   VALUES ('Test schedule', %s, 'month', CURRENT_DATE) RETURNING id""",
+                (scen["id"],))
+            sid = cur.fetchone()["id"]
+            cur.execute(
+                """INSERT INTO scheduled_entry_lines
+                       (scheduled_entry_id, line_no, account_id, amount)
+                   VALUES (%s, 1, %s, 0)""",
+                (sid, acct["id"]))
+
+
+def test_scheduled_entry_interval_unit_must_be_recognized(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            scen = mk_scenario(cur, scenario_type="actual")
+            cur.execute(
+                """INSERT INTO scheduled_entries
+                       (description, target_scenario_id, interval_unit, next_date)
+                   VALUES ('Test schedule', %s, 'fortnight', CURRENT_DATE)""",
+                (scen["id"],))
+
+
 def test_double_reversal_rejected(conn, actual_scenario_id):
     with conn.cursor() as cur:
         acct1 = mk_account(cur)

@@ -155,6 +155,48 @@ CREATE TABLE payees (
 );
 
 -- ---------------------------------------------------------------------------
+-- Scheduled entries — a template plus a recurrence rule. materialize_due_
+-- schedules() (app/main.py, run lazily on request rather than a real cron —
+-- there's no task runner in this deployment) posts a copy into the Staging
+-- scenario once next_date arrives; a human still has to approve it from
+-- there before it's real (see journal_entries.scheduled_entry_id /
+-- promoted_entry_id below). Defined ahead of journal_entries so that table
+-- can reference this one.
+-- ---------------------------------------------------------------------------
+CREATE TABLE scheduled_entries (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    description         TEXT NOT NULL CHECK (length(trim(description)) > 0),
+    reference           TEXT,
+    payee_id            BIGINT REFERENCES payees(id) ON DELETE SET NULL,
+    -- Where an occurrence lands once approved — Staging is just a layover.
+    target_scenario_id  BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
+    interval_unit       TEXT NOT NULL CHECK (interval_unit IN ('day', 'week', 'month')),
+    interval_count      SMALLINT NOT NULL DEFAULT 1 CHECK (interval_count > 0),
+    next_date           DATE NOT NULL,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_scheduled_entries_due
+    ON scheduled_entries(next_date) WHERE is_active;
+
+CREATE TABLE scheduled_entry_lines (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    scheduled_entry_id  BIGINT NOT NULL REFERENCES scheduled_entries(id) ON DELETE CASCADE,
+    line_no             SMALLINT NOT NULL CHECK (line_no > 0),
+    account_id          BIGINT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    amount              NUMERIC(18,2) NOT NULL CHECK (amount <> 0),
+    debit               NUMERIC(18,2) NOT NULL GENERATED ALWAYS AS
+                        (CASE WHEN amount > 0 THEN amount ELSE 0 END) STORED,
+    credit              NUMERIC(18,2) NOT NULL GENERATED ALWAYS AS
+                        (CASE WHEN amount < 0 THEN -amount ELSE 0 END) STORED,
+    memo                TEXT,
+    UNIQUE (scheduled_entry_id, line_no)
+);
+
+CREATE INDEX idx_scheduled_entry_lines_parent ON scheduled_entry_lines(scheduled_entry_id);
+
+-- ---------------------------------------------------------------------------
 -- Journal entries (header) and journal lines (the fact table)
 -- ---------------------------------------------------------------------------
 CREATE TABLE journal_entries (
@@ -165,16 +207,34 @@ CREATE TABLE journal_entries (
     reference          TEXT,
     reverses_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE RESTRICT,
     payee_id           BIGINT REFERENCES payees(id) ON DELETE SET NULL,
+    -- Set when this entry was auto-posted to the Staging scenario by a
+    -- schedule (see scheduled_entries below) — lets the admin page find
+    -- "everything from this schedule" and the app skip re-materializing
+    -- the same occurrence twice.
+    scheduled_entry_id BIGINT REFERENCES scheduled_entries(id) ON DELETE SET NULL,
+    -- Set on a Staging entry once approved: the id of the real entry it
+    -- was copied into. NULL means "still awaiting approval" for anything
+    -- sitting in Staging.
+    promoted_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE SET NULL,
     -- Who posted it, for the audit trail — nullable so direct psql/import
     -- inserts don't need a user, but the app always sets it from the session.
     created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (reverses_entry_id <> id)
+    CHECK (reverses_entry_id <> id),
+    CHECK (promoted_entry_id <> id)
 );
 
 CREATE INDEX idx_entries_payee ON journal_entries(payee_id) WHERE payee_id IS NOT NULL;
 
 CREATE INDEX idx_entries_scenario_date ON journal_entries(scenario_id, entry_date);
+
+CREATE INDEX idx_entries_scheduled ON journal_entries(scheduled_entry_id)
+    WHERE scheduled_entry_id IS NOT NULL;
+
+-- Everything sitting in Staging (any scenario, in practice) still awaiting
+-- approval — the admin page's "pending" list is exactly this.
+CREATE INDEX idx_entries_pending_promotion ON journal_entries(scheduled_entry_id)
+    WHERE scheduled_entry_id IS NOT NULL AND promoted_entry_id IS NULL;
 
 -- An entry may be reversed at most once. This is also the invariant the app
 -- relies on to show "reversed by #N" and to refuse a second Reverse click —
@@ -222,6 +282,12 @@ CREATE TABLE journal_entry_tags (
 );
 
 CREATE INDEX idx_journal_entry_tags_tag ON journal_entry_tags(tag_id);
+
+CREATE TABLE scheduled_entry_tags (
+    scheduled_entry_id BIGINT NOT NULL REFERENCES scheduled_entries(id) ON DELETE CASCADE,
+    tag_id             BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (scheduled_entry_id, tag_id)
+);
 
 -- ---------------------------------------------------------------------------
 -- Integrity trigger 1 — THE double-entry invariant, enforced at COMMIT.
