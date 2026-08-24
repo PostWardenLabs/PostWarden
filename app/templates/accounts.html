@@ -34,7 +34,7 @@
         data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}"
         data-postable="{{ 1 if r.is_postable else 0 }}" data-type="{{ r.account_type }}">
       <td class="mono dim">{{ r.code }}</td>
-      <td class="acct-name depth-{{ [r.depth, 4] | min }}"><span class="tree-toggle">{{ '▸' if not r.is_postable else '' }}</span>{{ r.name }}</td>
+      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle">{{ '▸' if not r.is_postable else '' }}</span>{{ r.name }}</td>
       <td class="dim">{{ type_labels[r.account_type] }}</td>
       <td class="dim">{{ 'leaf' if r.is_postable else 'summary' }}</td>
       <td>

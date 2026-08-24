@@ -499,10 +499,18 @@ details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
 
 /* -- accounts tree ------------------------------------------------------- */
 td.acct-name { font-variant-numeric: tabular-nums; }
-.depth-1 { padding-left: 0; font-weight: 600; }
-.depth-2 { padding-left: 1.3rem; }
-.depth-3 { padding-left: 2.6rem; }
-.depth-4 { padding-left: 3.9rem; }
+/* table.ledger td's own padding shorthand (below) beats a bare .depth-N
+   on specificity — (1 class, 2 elements) vs (1 class, 0 elements) — so
+   padding-left silently lost to it unless these are qualified the same
+   way. Six levels' worth of headroom, not just four: vertical-dimension
+   trees (accounts.dimension_levels) can go deeper than the old fixed
+   4-level chart ever did. */
+table.ledger td.acct-name.depth-1 { padding-left: 0; font-weight: 600; }
+table.ledger td.acct-name.depth-2 { padding-left: 1.3rem; }
+table.ledger td.acct-name.depth-3 { padding-left: 2.6rem; }
+table.ledger td.acct-name.depth-4 { padding-left: 3.9rem; }
+table.ledger td.acct-name.depth-5 { padding-left: 5.2rem; }
+table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
 .inactive { opacity: 0.45; }
 
 /* Collapse/expand — see accounts.js. The arrow is reserved space on every
