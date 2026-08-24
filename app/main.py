@@ -26,7 +26,18 @@ def money(v) -> str:
     return f"{v:,.2f}"
 
 
+def asset(filename: str) -> str:
+    """Cache-busting URL for a static file: /static/x?v=<mtime>. Without a
+    version query param, browsers can silently keep serving an old cached
+    copy of app.js/style.css after a deploy — a plain reload isn't enough
+    to guarantee a re-fetch. Appending the file's mtime changes the URL
+    (and cache key) exactly when the file itself changes, no build step."""
+    v = int((BASE / "static" / filename).stat().st_mtime)
+    return f"/static/{filename}?v={v}"
+
+
 templates.env.filters["money"] = money
+templates.env.globals["asset"] = asset
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
 TYPE_LABELS = {
