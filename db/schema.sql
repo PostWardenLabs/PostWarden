@@ -197,6 +197,36 @@ CREATE TABLE scheduled_entry_lines (
 CREATE INDEX idx_scheduled_entry_lines_parent ON scheduled_entry_lines(scheduled_entry_id);
 
 -- ---------------------------------------------------------------------------
+-- Entry templates — reusable scaffolding for New entry ("Load template"),
+-- not a posting on their own and not linked to any journal_entries row.
+-- Same shape as scheduled_entries minus the recurrence columns.
+-- ---------------------------------------------------------------------------
+CREATE TABLE entry_templates (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE CHECK (name = trim(name) AND length(name) BETWEEN 1 AND 80),
+    description TEXT NOT NULL CHECK (length(trim(description)) > 0),
+    reference   TEXT,
+    payee_id    BIGINT REFERENCES payees(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE entry_template_lines (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    template_id BIGINT NOT NULL REFERENCES entry_templates(id) ON DELETE CASCADE,
+    line_no     SMALLINT NOT NULL CHECK (line_no > 0),
+    account_id  BIGINT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    amount      NUMERIC(18,2) NOT NULL CHECK (amount <> 0),
+    debit       NUMERIC(18,2) NOT NULL GENERATED ALWAYS AS
+                (CASE WHEN amount > 0 THEN amount ELSE 0 END) STORED,
+    credit      NUMERIC(18,2) NOT NULL GENERATED ALWAYS AS
+                (CASE WHEN amount < 0 THEN -amount ELSE 0 END) STORED,
+    memo        TEXT,
+    UNIQUE (template_id, line_no)
+);
+
+CREATE INDEX idx_entry_template_lines_parent ON entry_template_lines(template_id);
+
+-- ---------------------------------------------------------------------------
 -- Journal entries (header) and journal lines (the fact table)
 -- ---------------------------------------------------------------------------
 CREATE TABLE journal_entries (
@@ -287,6 +317,12 @@ CREATE TABLE scheduled_entry_tags (
     scheduled_entry_id BIGINT NOT NULL REFERENCES scheduled_entries(id) ON DELETE CASCADE,
     tag_id             BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (scheduled_entry_id, tag_id)
+);
+
+CREATE TABLE entry_template_tags (
+    template_id BIGINT NOT NULL REFERENCES entry_templates(id) ON DELETE CASCADE,
+    tag_id      BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (template_id, tag_id)
 );
 
 -- ---------------------------------------------------------------------------

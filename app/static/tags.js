@@ -117,6 +117,17 @@
       if (!root.contains(e.target)) closePanel();
     });
 
+    // Exposes this instance's tag list to external scripts — see
+    // entry_templates.js's "Load template", which needs to replace the
+    // whole set at once the same way picking a saved template replaces
+    // every other field on the form.
+    root.__libroTags = {
+      setValue(csv) {
+        tags = (csv || "").split(",").map((s) => s.trim()).filter(Boolean);
+        sync();
+      },
+    };
+
     renderChips();
   }
 

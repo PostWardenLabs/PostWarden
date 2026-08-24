@@ -253,6 +253,53 @@ def test_scheduled_entry_materializes_and_posts(conn):
         assert cur.fetchone()["n"] == 2
 
 
+def test_create_template_requires_balance_and_saves_lines(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        # Unbalanced — rejected, nothing saved.
+        r1 = c.post("/templates", data={
+            "csrf_token": csrf_token, "name": "Bad template", "description": "x",
+            "account": [acct1["code"]], "debit": ["10"], "credit": [""], "memo": [""],
+        })
+        assert "err=" in r1.headers["location"]
+
+        # Balanced — saved, with tags and both lines.
+        r2 = c.post("/templates", data={
+            "csrf_token": csrf_token, "name": "Good template", "description": "Rent",
+            "tags": "housing,monthly",
+            "account": [acct1["code"], acct2["code"]],
+            "debit": ["25", ""], "credit": ["", "25"], "memo": ["", ""],
+        })
+        assert r2.status_code == 303
+        assert "ok=" in r2.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM entry_templates WHERE name = 'Bad template'")
+        assert cur.fetchone() is None
+
+        cur.execute("SELECT id FROM entry_templates WHERE name = 'Good template'")
+        tid = cur.fetchone()["id"]
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM entry_template_lines WHERE template_id = %s", (tid,))
+        assert cur.fetchone()["n"] == 2
+        cur.execute(
+            """SELECT tg.name FROM entry_template_tags ett
+               JOIN tags tg ON tg.id = ett.tag_id
+              WHERE ett.template_id = %s ORDER BY tg.name""", (tid,))
+        assert [r["name"] for r in cur.fetchall()] == ["housing", "monthly"]
+
+
 def test_logout_revokes_session(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

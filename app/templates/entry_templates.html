@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Templates{% endblock %}
+{% block content %}
+<h1>Entry templates</h1>
+<p class="page-sub">Reusable scaffolding for entries you post often. Save one here, then pick it from the
+  "Load template" list on <a href="/entries/new">New entry</a> to fill the whole form in one click.</p>
+
+<script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
+<script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Name</th>
+    <th>Description</th>
+    <th>Payee</th>
+    <th>Lines</th>
+    <th></th>
+  </tr></thead>
+  <tbody>
+    {% for t in tpls %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td class="dim">{{ t.description }}</td>
+      <td class="dim">{{ t.payee_name or '—' }}</td>
+      <td class="dim">{{ t.lines | length }}</td>
+      <td>
+        <form method="post" action="/templates/{{ t.id }}/delete"
+              onsubmit="return confirm('Delete template {{ t.name }}?');">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="dim">No templates yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel" style="margin-top: 1.5rem;">
+  <h2>New template</h2>
+  <div id="entry-error" class="flash flash-err" hidden></div>
+  <form method="post" action="/templates" id="entry-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <div class="bar">
+      <label class="field">Template name
+        <input type="text" name="name" required placeholder="e.g. Monthly rent">
+      </label>
+      <label class="field" style="flex:1; min-width: 16rem;">Description
+        <input type="text" name="description" required placeholder="e.g. Rent">
+      </label>
+      <label class="field">Reference
+        <input type="text" name="reference" placeholder="optional">
+      </label>
+      <label class="field">Payee
+        <select name="payee_id" data-create-url="/payees/quick-create">
+          <option value="">— none —</option>
+          {% for p in payees %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field" style="flex:1; min-width: 14rem;">Tags
+        <div class="tag-input" data-placeholder="Add a tag…">
+          <input type="hidden" name="tags" value="">
+        </div>
+      </label>
+    </div>
+
+    <table class="ledger entry-grid" id="lines">
+      <thead>
+        <tr>
+          <th class="col-account">Account</th>
+          <th class="num col-amount money money-first">Debit</th>
+          <th class="num col-amount money">Credit</th>
+          <th>Memo</th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"><!-- rows injected by app.js --></tbody>
+    </table>
+
+    <div class="balance-bar" id="balance-bar">
+      <span><span class="lbl">Debits</span> <span id="t-debits">0.00</span></span>
+      <span><span class="lbl">Credits</span> <span id="t-credits">0.00</span></span>
+      <span><span class="lbl">Difference</span> <span class="diff" id="t-diff">0.00</span></span>
+      <span id="balance-msg" class="dim small"></span>
+    </div>
+
+    <p style="margin-top: 1rem;">
+      <button type="submit" id="post-btn">Save template</button>
+      <button type="button" class="quiet" id="add-row">Add line (Alt+N)</button>
+    </p>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('tags.js') }}"></script>
+<script src="{{ asset('app.js') }}"></script>
+{% endblock %}

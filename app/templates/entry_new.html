@@ -6,6 +6,20 @@
 
 <script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+<script type="application/json" id="templates-data">{{ tpls | tojson }}</script>
+
+{% if tpls %}
+<div class="bar" style="margin-bottom: 0.8rem;">
+  <label class="field" style="max-width: 20rem;">Load template
+    <select id="template-select">
+      <option value="">— choose a template —</option>
+      {% for t in tpls %}
+      <option value="{{ t.id }}">{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</div>
+{% endif %}
 
 <div id="entry-error" class="flash flash-err" hidden></div>
 
@@ -74,4 +88,5 @@
 {% block scripts %}
 <script src="{{ asset('tags.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>
+<script src="{{ asset('entry_templates.js') }}"></script>
 {% endblock %}

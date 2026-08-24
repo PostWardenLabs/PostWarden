@@ -329,7 +329,7 @@ def entry_new(request: Request, err: str = None):
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     return templates.TemplateResponse(request, "entry_new.html", {
         "nav": "new", "accounts": postable, "scenarios": scen,
-        "payees": active_payees,
+        "payees": active_payees, "tpls": templates_full(),
         "today": date.today().isoformat(), "err": err, "all_tags": all_tags(),
     })
 
@@ -968,6 +968,118 @@ async def post_scheduled_entries(request: Request):
     ok_msg = f"Posted {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}" if posted else None
     err_msg = "; ".join(errors) or None
     return flash_redirect("/scheduled", ok=ok_msg, err=err_msg)
+
+
+# ---------------------------------------------------------------------------
+# Entry templates — reusable scaffolding for New entry's "Load template"
+# picker. Not postings themselves and not tracked once loaded: loading one
+# just fills the form (entirely client-side — see entry_templates.js and
+# the #templates-data blob below), the same as typing it by hand.
+# ---------------------------------------------------------------------------
+def templates_full():
+    tpls = q("""SELECT t.id, t.name, t.description, t.reference, t.payee_id,
+                       p.name AS payee_name
+                  FROM entry_templates t
+                  LEFT JOIN payees p ON p.id = t.payee_id
+                 ORDER BY t.name""")
+    ids = [t["id"] for t in tpls]
+    lines_by_t, tags_by_t = {}, {}
+    if ids:
+        for ln in q("""SELECT l.template_id, a.code, l.debit, l.credit, l.memo
+                         FROM entry_template_lines l
+                         JOIN accounts a ON a.id = l.account_id
+                        WHERE l.template_id = ANY(%s)
+                        ORDER BY l.template_id, l.line_no""", (ids,)):
+            lines_by_t.setdefault(ln["template_id"], []).append({
+                "code": ln["code"],
+                "debit": str(ln["debit"]) if ln["debit"] else None,
+                "credit": str(ln["credit"]) if ln["credit"] else None,
+                "memo": ln["memo"],
+            })
+        for tg in q("""SELECT ett.template_id, tg.name FROM entry_template_tags ett
+                        JOIN tags tg ON tg.id = ett.tag_id
+                       WHERE ett.template_id = ANY(%s) ORDER BY tg.name""", (ids,)):
+            tags_by_t.setdefault(tg["template_id"], []).append(tg["name"])
+    for t in tpls:
+        t["lines"] = lines_by_t.get(t["id"], [])
+        t["tags"] = tags_by_t.get(t["id"], [])
+    return tpls
+
+
+@app.get("/templates")
+def templates_page(request: Request, ok: str = None, err: str = None):
+    postable = q("""SELECT id, code, name, path FROM v_dim_account
+                    WHERE is_postable AND is_active ORDER BY sort_path""")
+    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
+    return templates.TemplateResponse(request, "entry_templates.html", {
+        "nav": "templates", "tpls": templates_full(),
+        "accounts": postable, "payees": active_payees, "all_tags": all_tags(),
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/templates")
+async def create_template(request: Request):
+    form = await request.form()
+    wants_json = "application/json" in request.headers.get("accept", "")
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        name = (form.get("name") or "").strip()
+        if not name:
+            raise ValueError("Template name is required")
+        lines = _parse_lines(form)
+        total = round(sum(ln["amount"] for ln in lines), 2)
+        if total != 0:
+            raise ValueError("Template lines must balance (debits = credits)")
+        description = (form.get("description") or "").strip()
+        if not description:
+            raise ValueError("Description is required")
+        reference = (form.get("reference") or "").strip() or None
+        payee_id = int(form.get("payee_id")) if form.get("payee_id") else None
+        tag_names = _parse_tags(form.get("tags", ""))
+
+        codes = {ln["code"] for ln in lines}
+        found = {r["code"] for r in q(
+            "SELECT code FROM accounts WHERE code = ANY(%s)", (list(codes),))}
+        missing = codes - found
+        if missing:
+            raise ValueError(f"Unknown account code: {', '.join(sorted(missing))}")
+
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO entry_templates (name, description, reference, payee_id)
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (name, description, reference, payee_id))
+            tpl_id = cur.fetchone()["id"]
+            for n, ln in enumerate(lines, start=1):
+                cur.execute(
+                    """INSERT INTO entry_template_lines
+                           (template_id, line_no, account_id, amount, memo)
+                       VALUES (%s, %s, (SELECT id FROM accounts WHERE code = %s), %s, %s)""",
+                    (tpl_id, n, ln["code"], ln["amount"], ln["memo"]))
+            if tag_names:
+                _sync_tags(cur, "entry_template_tags", "template_id", tpl_id, tag_names)
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        if wants_json:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        return flash_redirect("/templates", err=msg)
+    ok_msg = f"Template {name!r} saved"
+    if wants_json:
+        return JSONResponse({"ok": True, "redirect": flash_url("/templates", ok=ok_msg)})
+    return flash_redirect("/templates", ok=ok_msg)
+
+
+@app.post("/templates/{template_id}/delete")
+def delete_template(template_id: int, request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute("DELETE FROM entry_templates WHERE id = %s", (template_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/templates", err=msg)
+    return flash_redirect("/templates", ok="Template deleted")
 
 
 # ---------------------------------------------------------------------------

@@ -107,6 +107,10 @@
   }
 
   function enforcing() {
+    // No scenario picker on this page (entry_templates.html — a template
+    // isn't posted to any scenario) — always require balance there, same
+    // as any scenario that doesn't explicitly opt out of it.
+    if (!scenarioSel) return true;
     const opt = scenarioSel.selectedOptions[0];
     return !opt || opt.dataset.enforce === "1";
   }
@@ -153,7 +157,7 @@
   body.addEventListener("input", onRowChange);
   body.addEventListener("change", onRowChange);
 
-  scenarioSel.addEventListener("change", recalc);
+  if (scenarioSel) scenarioSel.addEventListener("change", recalc);
 
   document.getElementById("add-row").addEventListener("click", () => {
     focusAccountField(makeRow());
@@ -200,4 +204,16 @@
   makeRow();
   makeRow();
   recalc();
+
+  // Lets other progressive-enhancement scripts drive the grid the same way
+  // a person typing into it would — see entry_templates.js's "Load
+  // template", the only current caller. Deliberately narrow: callers set
+  // field values and dispatch their own change/input events (as
+  // createAndSelect in combobox.js does), then call recalc().
+  window.LibroEntryGrid = {
+    addRow: () => { const tr = makeRow(); return tr; },
+    clear: () => { body.innerHTML = ""; },
+    ensureTrailingBlank,
+    recalc,
+  };
 })();

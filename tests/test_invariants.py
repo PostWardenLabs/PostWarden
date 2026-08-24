@@ -253,6 +253,36 @@ def test_scheduled_entry_interval_unit_must_be_recognized(conn):
                 (scen["id"],))
 
 
+# ---------------------------------------------------------------------------
+# Entry templates — reusable scaffolding for New entry's "Load template"
+# (see app/main.py's create_template/templates_full()).
+# ---------------------------------------------------------------------------
+def test_entry_template_line_amount_cannot_be_zero(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            acct = mk_account(cur)
+            cur.execute(
+                """INSERT INTO entry_templates (name, description)
+                   VALUES ('Test template', 'Test') RETURNING id""")
+            tid = cur.fetchone()["id"]
+            cur.execute(
+                """INSERT INTO entry_template_lines
+                       (template_id, line_no, account_id, amount)
+                   VALUES (%s, 1, %s, 0)""",
+                (tid, acct["id"]))
+
+
+def test_entry_template_name_must_be_unique(conn):
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO entry_templates (name, description) VALUES ('Dup', 'a')")
+    conn.commit()
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO entry_templates (name, description) VALUES ('Dup', 'b')")
+
+
 def test_double_reversal_rejected(conn, actual_scenario_id):
     with conn.cursor() as cur:
         acct1 = mk_account(cur)
