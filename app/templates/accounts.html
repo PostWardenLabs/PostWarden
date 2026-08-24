@@ -4,15 +4,17 @@
 <h1>Chart of accounts</h1>
 <p class="page-sub">Summary accounts structure the chart; only postable leaves take journal lines. Children inherit their parent's type — the database enforces it.</p>
 
-<table class="ledger">
+<table class="ledger" id="accounts-tree">
   <thead><tr>
     <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
   </tr></thead>
-  <tbody>
+  <tbody id="accounts-body">
     {% for a in accounts %}
-    <tr class="{{ 'inactive' if not a.is_active }}">
+    <tr class="{{ 'inactive' if not a.is_active }}"
+        data-id="{{ a.id }}" data-parent="{{ a.parent_id or '' }}"
+        data-postable="{{ 1 if a.is_postable else 0 }}">
       <td class="mono dim">{{ a.code }}</td>
-      <td class="acct-name depth-{{ [a.depth, 4] | min }}">{{ a.name }}</td>
+      <td class="acct-name depth-{{ [a.depth, 4] | min }}"><span class="tree-toggle">{{ '▸' if not a.is_postable else '' }}</span>{{ a.name }}</td>
       <td class="dim">{{ type_labels[a.account_type] }}</td>
       <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
       <td>
@@ -54,3 +56,5 @@
   </form>
 </div>
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('accounts.js') }}"></script>{% endblock %}

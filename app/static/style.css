@@ -344,6 +344,23 @@ td.acct-name { font-variant-numeric: tabular-nums; }
 .depth-4 { padding-left: 3.9rem; }
 .inactive { opacity: 0.45; }
 
+/* Collapse/expand — see accounts.js. The arrow is reserved space on every
+   row (empty for leaves) so names always line up regardless of hover
+   state; it's only visible (revealed on hover) or interactive on summary
+   rows, and stays visible once a group is collapsed so the state itself
+   is legible without hovering. */
+.tree-toggle {
+  display: inline-block; width: 0.9rem; text-align: center;
+}
+tr[data-postable="0"] .acct-name { cursor: pointer; }
+tr[data-postable="0"] .tree-toggle {
+  color: var(--ink-soft); transform: rotate(90deg);
+  opacity: 0; transition: opacity 120ms ease, transform 120ms ease;
+}
+tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
+tr[data-postable="0"]:hover td { background: var(--paper-deep); }
+tr.collapsed .tree-toggle { opacity: 1; transform: rotate(0deg); }
+
 .panel {
   background: var(--surface); border: 1px solid var(--rule);
   padding: 1rem 1.1rem; margin-top: 1.4rem;
