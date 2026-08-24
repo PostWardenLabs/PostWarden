@@ -146,6 +146,63 @@
   --accent-text:  #fbf1f2;
 }
 
+/* Mono — true grayscale, no hue anywhere except the functional red/green
+   the ledger itself needs (imbalance, credit, income). The most
+   minimalist of the set: black-on-white, one weight of accent. */
+:root[data-theme="mono"] {
+  --paper:        #fafafa;
+  --paper-deep:   #f0f0f0;
+  --surface:      #ffffff;
+  --ink:          #1a1a1a;
+  --ink-soft:     #6b6b6b;
+  --rule:         #e0e0e0;
+  --rule-strong:  #b0b0b0;
+  --red:          #b3261e;
+  --ok:           #2e7d4f;
+  --focus:        #4a4a4a;
+  --accent:       var(--ink);
+  --accent-hover: #333333;
+  --accent-text:  var(--paper);
+}
+
+/* Linen — the barest warmth, a whisper of Parchment rather than a shout.
+   Still minimalist: one restrained hue, everything else grayscale. */
+:root[data-theme="linen"] {
+  --paper:        #faf8f5;
+  --paper-deep:   #f1ede6;
+  --surface:      #ffffff;
+  --ink:          #2b2620;
+  --ink-soft:     #7a7367;
+  --rule:         #e6dfd4;
+  --rule-strong:  #cabfae;
+  --red:          #a8402f;
+  --ok:           #4f7350;
+  --focus:        #6b7280;
+  --accent:       var(--ink);
+  --accent-hover: #443c32;
+  --accent-text:  var(--paper);
+}
+
+/* Budget — clean cool-white and a saturated indigo accent, styled after
+   Actual Budget's default look rather than this app's own ledger-paper
+   idiom: flat surfaces, no warmth, one confident brand color instead of
+   ink-as-accent. */
+:root[data-theme="budget"] {
+  --paper:        #f7f8fb;
+  --paper-deep:   #eef0f6;
+  --surface:      #ffffff;
+  --ink:          #242530;
+  --ink-soft:     #6e7186;
+  --rule:         #e3e5ee;
+  --rule-strong:  #c7cbdc;
+  --red:          #d0393e;
+  --ok:           #2ba672;
+  --focus:        #6366f1;
+  --accent:       #5442f5;
+  --accent-hover: #6f5ffa;
+  --accent-text:  #ffffff;
+}
+
 * { box-sizing: border-box; }
 html { font-size: 16px; }
 body {
