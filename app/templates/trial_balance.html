@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Trial balance{% endblock %}
+{% block content %}
+<h1>Trial balance</h1>
+<p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span></p>
+
+<form class="bar" method="get" action="/">
+  <label class="field">Scenario
+    <select name="scenario">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">As of
+    <input type="date" name="as_of" value="{{ as_of }}">
+  </label>
+  <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
+  <button type="submit">Refresh</button>
+</form>
+
+<table class="ledger">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Account</th>
+      <th class="num money money-first">Debit</th>
+      <th class="num money">Credit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in grouped %}
+    <tr class="type-head"><td colspan="4">{{ g.label }}</td></tr>
+      {% for r in g.rows %}
+      <tr>
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ r.debit_balance | money if r.debit_balance else '' }}</td>
+        <td class="num money">{{ r.credit_balance | money if r.credit_balance else '' }}</td>
+      </tr>
+      {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>{{ g.label }} subtotal</td>
+      <td class="num money money-first">{{ g.sub_debits | money }}</td>
+      <td class="num money">{{ g.sub_credits | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="grand {{ '' if in_balance else 'out-of-balance' }}">
+      <td></td>
+      <td>{{ 'In balance' if in_balance else 'Out of balance' }}
+          {% if not in_balance %}<span class="small dim">(this scenario allows single-sided entries)</span>{% endif %}</td>
+      <td class="num money money-first">{{ total_debits | money }}</td>
+      <td class="num money">{{ total_credits | money }}</td>
+    </tr>
+  </tbody>
+</table>
+{% if not grouped %}<p class="dim">No activity in this scenario yet. Post your first entry from <a href="/entries/new">New entry</a>.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Libro{% endblock %} · Libro</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
+  <nav>
+    <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
+    <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
+    <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
+    <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
+    <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
+  </nav>
+</header>
+<main>
+  {% if request.query_params.get('ok') or ok %}
+    <div class="flash flash-ok">{{ request.query_params.get('ok') or ok }}</div>
+  {% endif %}
+  {% if request.query_params.get('err') or err %}
+    <div class="flash flash-err">{{ request.query_params.get('err') or err }}</div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="footer">Libro · every entry balances, or it doesn't post.</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

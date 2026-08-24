@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Scenarios{% endblock %}
+{% block content %}
+<h1>Scenarios</h1>
+<p class="page-sub">The OneStream idea, in a ledger: ACTUAL, budgets and forecasts are all journal entries tagged with a scenario. Variance is just a query across them.</p>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Code</th><th>Name</th><th>Type</th><th>Balance rule</th>
+    <th class="num">Entries</th><th>Status</th><th></th>
+  </tr></thead>
+  <tbody>
+    {% for s in scenarios %}
+    <tr>
+      <td class="mono">{{ s.code }}</td>
+      <td>{{ s.name }}</td>
+      <td class="dim">{{ s.scenario_type }}</td>
+      <td class="dim">{{ 'must balance' if s.enforce_balance else 'single-sided OK' }}</td>
+      <td class="num mono">{{ s.entry_count }}</td>
+      <td>{% if s.is_locked %}<span class="badge rev">locked</span>{% else %}<span class="badge">open</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/scenarios/{{ s.id }}/toggle-lock" style="display:inline">
+          <button type="submit" class="quiet">{{ 'Unlock' if s.is_locked else 'Lock' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel">
+  <h2>New scenario</h2>
+  <form method="post" action="/scenarios" class="grid-form">
+    <label class="field">Code
+      <input type="text" name="code" required pattern="[A-Za-z0-9_]{2,24}" placeholder="e.g. FCST_2026_09">
+    </label>
+    <label class="field">Name
+      <input type="text" name="name" required placeholder="e.g. September forecast">
+    </label>
+    <label class="field">Type
+      <select name="scenario_type">
+        {% for t in scenario_types if t != 'actual' %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="checkline"><input type="checkbox" name="enforce_balance"> require balanced entries</label>
+    <label class="field" style="grid-column: 1 / -1;">Notes
+      <input type="text" name="notes" placeholder="optional">
+    </label>
+    <button type="submit">Create scenario</button>
+  </form>
+</div>
+{% endblock %}

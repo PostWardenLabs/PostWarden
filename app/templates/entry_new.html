@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}New entry{% endblock %}
+{% block content %}
+<h1>New journal entry</h1>
+<p class="page-sub">Type an account code or name, then a debit or a credit. Tab through — a fresh line appears when you need one. The entry posts only when it balances.</p>
+
+<form method="post" action="/entries" id="entry-form">
+  <div class="bar">
+    <label class="field">Date
+      <input type="date" name="entry_date" value="{{ today }}" required>
+    </label>
+    <label class="field">Scenario
+      <select name="scenario_id" id="scenario">
+        {% for s in scenarios %}
+        <option value="{{ s.id }}" data-enforce="{{ 1 if s.enforce_balance else 0 }}">
+          {{ s.code }} — {{ s.name }}{{ '' if s.enforce_balance else ' (single-sided OK)' }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field" style="flex:1; min-width: 16rem;">Description
+      <input type="text" name="description" required placeholder="e.g. August rent" autofocus>
+    </label>
+    <label class="field">Reference
+      <input type="text" name="reference" placeholder="optional">
+    </label>
+  </div>
+
+  <table class="ledger entry-grid" id="lines">
+    <thead>
+      <tr>
+        <th class="col-account">Account</th>
+        <th class="num col-amount money money-first">Debit</th>
+        <th class="num col-amount money">Credit</th>
+        <th>Memo</th>
+      </tr>
+    </thead>
+    <tbody id="lines-body"><!-- rows injected by app.js --></tbody>
+  </table>
+
+  <datalist id="acctlist">
+    {% for a in accounts %}
+    <option value="{{ a.code }} · {{ a.name }}" label="{{ a.path }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <div class="balance-bar" id="balance-bar">
+    <span><span class="lbl">Debits</span> <span id="t-debits">0.00</span></span>
+    <span><span class="lbl">Credits</span> <span id="t-credits">0.00</span></span>
+    <span><span class="lbl">Difference</span> <span class="diff" id="t-diff">0.00</span></span>
+    <span id="balance-msg" class="dim small"></span>
+  </div>
+
+  <p style="margin-top: 1rem;">
+    <button type="submit" id="post-btn">Post entry</button>
+    <button type="button" class="quiet" id="add-row">Add line (Alt+N)</button>
+  </p>
+</form>
+{% endblock %}
+
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

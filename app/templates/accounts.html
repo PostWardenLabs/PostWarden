@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<h1>Chart of accounts</h1>
+<p class="page-sub">Summary accounts structure the chart; only postable leaves take journal lines. Children inherit their parent's type — the database enforces it.</p>
+
+<table class="ledger">
+  <thead><tr>
+    <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
+  </tr></thead>
+  <tbody>
+    {% for a in accounts %}
+    <tr class="{{ 'inactive' if not a.is_active }}">
+      <td class="mono dim">{{ a.code }}</td>
+      <td class="acct-name depth-{{ [a.depth, 4] | min }}">{{ a.name }}</td>
+      <td class="dim">{{ type_labels[a.account_type] }}</td>
+      <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
+      <td>
+        <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
+          <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="panel">
+  <h2>New account</h2>
+  <form method="post" action="/accounts" class="grid-form">
+    <label class="field">Code
+      <input type="text" name="code" required pattern="[0-9]{3,8}" placeholder="e.g. 5510">
+    </label>
+    <label class="field">Name
+      <input type="text" name="name" required placeholder="e.g. Streaming Services">
+    </label>
+    <label class="field">Type
+      <select name="account_type">
+        {% for t in account_types %}<option value="{{ t }}">{{ type_labels[t] }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field">Parent
+      <select name="parent_id">
+        <option value="">— none (top level) —</option>
+        {% for a in accounts %}
+        <option value="{{ a.id }}">{{ a.code }} · {{ a.path }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="checkline"><input type="checkbox" name="is_postable" checked> postable (leaf)</label>
+    <button type="submit">Create account</button>
+  </form>
+</div>
+{% endblock %}
