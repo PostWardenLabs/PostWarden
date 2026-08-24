@@ -245,7 +245,12 @@ button.quiet:hover { background: var(--paper-deep); }
   border-radius: 2px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
 }
 .combobox-option { padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
-.combobox-option.active, .combobox-option:hover { background: var(--paper-deep); }
+/* Strong accent, not the subtle paper-deep tint used elsewhere for hover —
+   this is the one thing arrow-key navigation shows you, so it needs to be
+   unmistakable at a glance, not just barely-different from the panel. */
+.combobox-option.active, .combobox-option:hover {
+  background: var(--accent); color: var(--accent-text);
+}
 .combobox-option.selected { font-weight: 600; }
 .combobox-empty { padding: 0.35rem 0.6rem; color: var(--ink-soft); font-size: 0.85rem; }
 

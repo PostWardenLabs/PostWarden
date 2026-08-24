@@ -93,9 +93,14 @@
   function ensureTrailingBlank() {
     const rs = rows();
     if (rs.length === 0 || rowUsed(rs[rs.length - 1])) makeRow();
-    // trim extra blanks at the end, keep exactly one
+    // trim extra blanks at the end, keep exactly one — but never the row
+    // the user is currently focused in (e.g. mid-search in its account
+    // combobox after clicking "Add line" left two blank rows). This runs
+    // on every keystroke in the grid; yanking that row out from under a
+    // still-typing user would kill their focus and close the dropdown.
     let r = rows();
-    while (r.length > 2 && !rowUsed(r[r.length - 1]) && !rowUsed(r[r.length - 2])) {
+    while (r.length > 2 && !rowUsed(r[r.length - 1]) && !rowUsed(r[r.length - 2])
+           && !r[r.length - 1].contains(document.activeElement)) {
       r[r.length - 1].remove();
       r = rows();
     }
