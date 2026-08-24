@@ -53,6 +53,20 @@ uvicorn app.main:app --reload
 
 Set `DATABASE_URL` if your Postgres isn't `libro:libro@localhost:5432/libro`.
 
+## Security notes
+
+Libro is built for one person running it on their own machine or home
+network, and it currently has **no authentication** — every screen and
+`/api/*` route (posting entries, reversing them, locking scenarios) is open
+to anyone who can reach the app port. `docker-compose.yml` binds Postgres to
+`127.0.0.1` for this reason (Power BI/Excel/psql on the same machine still
+connect fine; the network can't). The app's own port (`8000`) has no such
+guard — don't expose it beyond a trusted network without putting
+authentication (e.g. a reverse proxy) in front of it, and change the
+`libro`/`libro` credentials before you do. There's also no CSRF protection
+on the POST forms; that becomes relevant the moment auth is added, so
+revisit it then.
+
 ## Connect Power BI / Excel
 
 Connect to PostgreSQL (`localhost`, database `libro`) and load:

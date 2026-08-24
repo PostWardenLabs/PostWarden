@@ -13,7 +13,11 @@ services:
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - ./db/seed_demo.sql:/docker-entrypoint-initdb.d/03_seed_demo.sql:ro
     ports:
-      - "5432:5432"   # exposed so Power BI / Excel / psql can connect directly
+      # Bound to loopback only: Power BI / Excel / psql on this same machine
+      # can still connect via localhost, but the database isn't reachable
+      # from the network. Widen to "5432:5432" deliberately if you need
+      # remote BI access — and change the libro/libro password first.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U libro -d libro"]
       interval: 3s
