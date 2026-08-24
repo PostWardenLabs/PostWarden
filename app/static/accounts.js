@@ -125,6 +125,12 @@
         type = prev.dataset.type;
       }
       parentField.value = parentId || "";
+      // combobox.js wraps this <select> in its own sibling div (the
+      // visible text input + panel) — hiding the select itself (already
+      // moot, combobox.js's own CSS hides it unconditionally) does
+      // nothing to that wrapper, which is what's actually on screen.
+      const typeWrap = typeField.closest(".combobox") || typeField;
+      typeWrap.hidden = !!parentId;
       typeField.hidden = !!parentId;
       if (!parentId && type) {
         typeField.value = type;
