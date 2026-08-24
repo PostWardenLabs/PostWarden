@@ -94,3 +94,26 @@ SPEC.md              design decisions and rationale
 `GET /api/accounts` · `GET /api/scenarios` ·
 `GET /api/entries?scenario=&date_from=&date_to=` ·
 `GET /api/monthly-activity?scenario=`
+
+## Tests
+
+`tests/` exercises the invariants in `SPEC.md` directly against Postgres —
+balance enforcement, scenario locking, account hierarchy, immutability,
+reversal integrity — so they hold regardless of which client writes to the
+database. Each run gets a disposable `libro_test` database (dropped and
+recreated from `db/schema.sql` + `db/seed.sql`).
+
+With `docker compose up -d db` already running:
+
+```bash
+docker run --rm --network libro_default -v "$PWD":/srv/libro -w /srv/libro \
+  python:3.12-slim bash -c "pip install -q -r requirements-dev.txt && pytest tests -v"
+```
+
+Or locally, with `psycopg[binary]` and `pytest` installed and `LIBRO_TEST_ADMIN_URL`
+/ `LIBRO_TEST_URL` pointed at a reachable Postgres:
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests -v
+```

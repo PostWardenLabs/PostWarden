@@ -1,0 +1,4 @@
+# Extra dependencies for running the test suite (tests/). Not needed to run
+# the app itself — see requirements.txt for that.
+-r requirements.txt
+pytest>=8.0
