@@ -189,6 +189,13 @@ async def create_entry(request: Request):
         if not description:
             raise ValueError("Description is required")
 
+        codes = {ln["code"] for ln in lines}
+        found = {r["code"] for r in q(
+            "SELECT code FROM accounts WHERE code = ANY(%s)", (list(codes),))}
+        missing = codes - found
+        if missing:
+            raise ValueError(f"Unknown account code: {', '.join(sorted(missing))}")
+
         with tx() as cur:
             cur.execute(
                 """INSERT INTO journal_entries
