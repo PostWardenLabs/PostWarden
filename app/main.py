@@ -42,15 +42,18 @@ def scenarios_all():
                 FROM scenarios s ORDER BY s.scenario_type, s.code""")
 
 
-def flash_redirect(url: str, ok: str = None, err: str = None):
+def flash_url(url: str, ok: str = None, err: str = None) -> str:
     params = {}
     if ok:
         params["ok"] = ok
     if err:
         params["err"] = err
     sep = "&" if "?" in url else "?"
-    return RedirectResponse(url + (sep + urlencode(params) if params else ""),
-                            status_code=303)
+    return url + (sep + urlencode(params) if params else "")
+
+
+def flash_redirect(url: str, ok: str = None, err: str = None):
+    return RedirectResponse(flash_url(url, ok, err), status_code=303)
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +183,10 @@ def _parse_lines(form) -> list[dict]:
 @app.post("/entries")
 async def create_entry(request: Request):
     form = await request.form()
+    # The entry-grid page submits via fetch() so a rejected entry (e.g. a
+    # bad account code) doesn't lose the lines the user already typed —
+    # it asks for JSON back instead of a redirect. See app.js.
+    wants_json = "application/json" in request.headers.get("accept", "")
     try:
         lines = _parse_lines(form)
         entry_date = form.get("entry_date") or date.today().isoformat()
@@ -214,8 +221,13 @@ async def create_entry(request: Request):
         # the deferred trigger has now blessed the entry at COMMIT
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        if wants_json:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
         return flash_redirect("/entries/new", err=msg)
-    return flash_redirect("/entries", ok=f"Entry #{entry_id} posted")
+    ok_msg = f"Entry #{entry_id} posted"
+    if wants_json:
+        return JSONResponse({"ok": True, "redirect": flash_url("/entries", ok=ok_msg)})
+    return flash_redirect("/entries", ok=ok_msg)
 
 
 # ---------------------------------------------------------------------------

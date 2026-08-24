@@ -14,6 +14,8 @@
   const msg = document.getElementById("balance-msg");
   const postBtn = document.getElementById("post-btn");
   const scenarioSel = document.getElementById("scenario");
+  const form = document.getElementById("entry-form");
+  const errBox = document.getElementById("entry-error");
   if (!body) return;
 
   const fmt = (n) =>
@@ -104,9 +106,35 @@
     }
   });
 
-  // sanity: strip disabled state confusion on submit — server & DB re-check
-  document.getElementById("entry-form").addEventListener("submit", () => {
+  // Submit via fetch so a rejected entry (unbalanced, bad account code,
+  // locked scenario, ...) can show its error without reloading the page —
+  // otherwise every line the user typed would vanish on a plain redirect.
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
     rows().forEach((tr) => { if (!rowUsed(tr)) tr.remove(); });
+    errBox.hidden = true;
+    postBtn.disabled = true;
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: new FormData(form),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        window.location.href = data.redirect;
+        return; // leaving the page
+      }
+      errBox.textContent = data.error;
+      errBox.hidden = false;
+      errBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (err) {
+      errBox.textContent = "Could not reach the server — check your connection and try again.";
+      errBox.hidden = false;
+    } finally {
+      ensureTrailingBlank(); // the strip above may have removed the editable blank row
+      recalc(); // restores the balance-derived enabled/disabled state
+    }
   });
 
   makeRow();
