@@ -62,10 +62,16 @@ async def auth_gate(request: Request, call_next):
     return await call_next(request)
 
 
-def money(v) -> str:
+def money(v) -> Markup:
+    """Renders as American-default text ("1,234.56", no symbol) so the page
+    is correct even with JS disabled, but wraps it in a span carrying the
+    plain numeric value — money-format.js rewrites every .money-fmt's
+    displayed text from that raw value using whatever symbol/decimal/
+    thousands preferences are saved in Settings (client-side only, same
+    as the theme picker; the number stored in Postgres never changes)."""
     if v is None:
-        return ""
-    return f"{v:,.2f}"
+        return Markup("")
+    return Markup(f'<span class="money-fmt" data-value="{v:.2f}">{v:,.2f}</span>')
 
 
 def asset(filename: str) -> str:

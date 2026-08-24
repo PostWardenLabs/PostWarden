@@ -26,8 +26,13 @@
 
   const ACCOUNTS = JSON.parse(document.getElementById("accounts-data").textContent || "[]");
 
-  const fmt = (n) =>
-    n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Same symbol/decimal/thousands preferences as every server-rendered
+  // {{ x | money }} span (see money-format.js) — this bar is the one
+  // money display in the app computed entirely client-side, so it needs
+  // its own call in rather than a data-value span to rewrite.
+  const fmt = (n) => window.LibroMoney
+    ? window.LibroMoney.format(n)
+    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function makeRow() {
     const tr = document.createElement("tr");
