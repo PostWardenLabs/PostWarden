@@ -122,10 +122,18 @@ CREATE TABLE journal_entries (
     description        TEXT NOT NULL CHECK (length(trim(description)) > 0),
     reference          TEXT,
     reverses_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE RESTRICT,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (reverses_entry_id <> id)
 );
 
 CREATE INDEX idx_entries_scenario_date ON journal_entries(scenario_id, entry_date);
+
+-- An entry may be reversed at most once. This is also the invariant the app
+-- relies on to show "reversed by #N" and to refuse a second Reverse click —
+-- enforcing it here (not just in app.py) closes the race where two
+-- concurrent reversal requests could otherwise both succeed.
+CREATE UNIQUE INDEX uq_one_reversal_per_entry
+    ON journal_entries (reverses_entry_id) WHERE reverses_entry_id IS NOT NULL;
 
 CREATE TABLE journal_lines (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
