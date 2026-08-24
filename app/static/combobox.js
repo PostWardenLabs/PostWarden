@@ -211,12 +211,22 @@
     });
 
     syncInputFromSelect();
+    // Exposes the sync this instance already does on its own click/keyboard
+    // paths — for code elsewhere that changes select.value or rebuilds its
+    // <option>s programmatically (see app.js's refreshAccountsForScenario())
+    // and needs the visible text to catch up, since nothing here is
+    // listening for that kind of external mutation.
+    select.__libroComboboxSync = syncInputFromSelect;
   }
 
   function enhanceAll(root) {
     (root || document).querySelectorAll("select:not([data-enhanced])").forEach(enhanceSelect);
   }
 
+  function resync(select) {
+    if (select && select.__libroComboboxSync) select.__libroComboboxSync();
+  }
+
   document.addEventListener("DOMContentLoaded", () => enhanceAll());
-  window.LibroCombobox = { enhance: enhanceSelect, enhanceAll };
+  window.LibroCombobox = { enhance: enhanceSelect, enhanceAll, resync };
 })();

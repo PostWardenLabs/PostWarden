@@ -4,6 +4,8 @@ Unlike test_invariants.py, this drives the actual FastAPI app (TestClient),
 since these are things only the app layer enforces — the schema just holds
 the users/sessions rows it checks against.
 """
+import json
+import re
 from datetime import date
 
 from fastapi.testclient import TestClient
@@ -396,6 +398,38 @@ def test_scenario_base_level_relaxes_posting_through_the_real_routes(conn):
                WHERE e.scenario_id = %s AND l.account_id = %s""",
             (scen["id"], child["id"]))
         assert cur.fetchone() is not None
+
+
+def test_new_entry_page_embeds_per_scenario_account_lists(conn):
+    # The account picker used to be one static list shared by every
+    # scenario (a known simplification); it's now scenario-aware — New
+    # entry embeds a {scenario_id: [account, ...]} blob and app.js
+    # re-filters the grid's <select>s to it when the Scenario field
+    # changes. Confirms the blob itself is correct at the source: a
+    # summary account only appears under scenarios whose base_level
+    # actually includes it.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM account_levels WHERE depth = 1")
+        level1_id = cur.fetchone()["id"]
+        parent = mk_account(cur, postable=False)  # depth 1
+        coarse = mk_scenario(cur, base_level_id=level1_id)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries/new")
+        assert r.status_code == 200
+        blob = json.loads(
+            re.search(
+                r'id="accounts-by-scenario-data">(.*?)</script>', r.text, re.S
+            ).group(1))
+        actual_codes = {a["code"] for a in blob[str(actual_id)]}
+        coarse_codes = {a["code"] for a in blob[str(coarse["id"])]}
+        assert parent["code"] not in actual_codes  # ACTUAL: leaves only
+        assert parent["code"] in coarse_codes      # coarse scenario: also this
 
 
 def test_account_levels_crud(conn):

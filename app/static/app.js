@@ -24,7 +24,13 @@
   const errBox = document.getElementById("entry-error");
   if (!body) return;
 
-  const ACCOUNTS = JSON.parse(document.getElementById("accounts-data").textContent || "[]");
+  let ACCOUNTS = JSON.parse(document.getElementById("accounts-data").textContent || "[]");
+  // {scenario_id: [account, ...]} — entry_templates.html has no scenario
+  // picker and thus no such blob; ACCOUNTS just stays the broadened list
+  // that page was given (see postable_accounts_for_pickers()).
+  const accountsByScenarioEl = document.getElementById("accounts-by-scenario-data");
+  const ACCOUNTS_BY_SCENARIO = accountsByScenarioEl
+    ? JSON.parse(accountsByScenarioEl.textContent || "{}") : null;
 
   // Same symbol/decimal/thousands preferences as every server-rendered
   // {{ x | money }} span (see money-format.js) — this bar is the one
@@ -34,14 +40,9 @@
     ? window.LibroMoney.format(n)
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  function makeRow() {
-    const tr = document.createElement("tr");
-
-    const acctTd = document.createElement("td");
-    acctTd.className = "col-account";
-    const acctSelect = document.createElement("select");
-    acctSelect.name = "account";
-    acctSelect.appendChild(document.createElement("option")); // blank = unset
+  function buildAccountOptions(select) {
+    select.innerHTML = "";
+    select.appendChild(document.createElement("option")); // blank = unset
     ACCOUNTS.forEach((a) => {
       // Options built via textContent, not innerHTML — an account name
       // can't inject markup here regardless of what it contains.
@@ -49,8 +50,18 @@
       opt.value = a.code;
       opt.textContent = `${a.code} · ${a.name}`;
       opt.dataset.path = a.path;
-      acctSelect.appendChild(opt);
+      select.appendChild(opt);
     });
+  }
+
+  function makeRow() {
+    const tr = document.createElement("tr");
+
+    const acctTd = document.createElement("td");
+    acctTd.className = "col-account";
+    const acctSelect = document.createElement("select");
+    acctSelect.name = "account";
+    buildAccountOptions(acctSelect);
     acctTd.appendChild(acctSelect);
     tr.appendChild(acctTd);
 
@@ -162,7 +173,30 @@
   body.addEventListener("input", onRowChange);
   body.addEventListener("change", onRowChange);
 
-  if (scenarioSel) scenarioSel.addEventListener("change", recalc);
+  // Re-filters every row's account picker to whatever the newly-selected
+  // scenario can actually post to (see fn_line_account_guard) — a line
+  // already pointed at an account that's no longer valid for the new
+  // scenario gets cleared rather than silently left showing something the
+  // form would reject at submit time.
+  function refreshAccountsForScenario() {
+    if (!ACCOUNTS_BY_SCENARIO || !scenarioSel) return;
+    ACCOUNTS = ACCOUNTS_BY_SCENARIO[scenarioSel.value] || [];
+    rows().forEach((tr) => {
+      const select = tr.querySelector('select[name="account"]');
+      if (!select) return;
+      const prevValue = select.value;
+      buildAccountOptions(select);
+      select.value = ACCOUNTS.some((a) => a.code === prevValue) ? prevValue : "";
+      if (window.LibroCombobox) window.LibroCombobox.resync(select);
+    });
+  }
+
+  if (scenarioSel) {
+    scenarioSel.addEventListener("change", () => {
+      refreshAccountsForScenario();
+      recalc();
+    });
+  }
 
   document.getElementById("add-row").addEventListener("click", () => {
     focusAccountField(makeRow());

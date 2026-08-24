@@ -126,14 +126,9 @@ def account_levels_all():
 
 
 def postable_accounts_for_pickers():
-    """Every account any scenario could actually post a line to: true
-    leaves (always postable, any scenario), plus anything sitting exactly
-    at a level some scenario has chosen as its base_level (see
-    scenarios.base_level_id / fn_line_account_guard). The trigger is the
-    real per-scenario enforcement; this just keeps a New entry/Scheduled/
-    Template account picker from being needlessly narrow. A future
-    refinement could filter this per the currently-selected scenario
-    instead of showing the union of everything any scenario allows."""
+    """Every account ANY scenario could actually post a line to — the union
+    across all of them. Used only where there's no single scenario to be
+    precise about: entry_templates.html isn't scenario-bound at all."""
     return q("""SELECT id, code, name, path FROM v_dim_account
                 WHERE is_active AND (
                     is_postable
@@ -141,6 +136,30 @@ def postable_accounts_for_pickers():
                                   JOIN scenarios s ON s.base_level_id = al.id)
                 )
                 ORDER BY sort_path""")
+
+
+def postable_accounts_by_scenario() -> dict:
+    """{scenario_id: [{id, code, name, path}, ...]} — each scenario's own
+    exact posting targets, matching fn_line_account_guard precisely (true
+    leaves, plus anything at that scenario's own base_level depth if it
+    has one). Powers entry_new.html/scheduled.html's account picker,
+    which re-filters to this when the Scenario field changes (see
+    app.js's refreshAccountsForScenario()) instead of showing the same
+    broadened list regardless of which scenario is selected."""
+    rows = q("""
+        SELECT s.id AS scenario_id, d.id, d.code, d.name, d.path
+          FROM scenarios s
+          JOIN v_dim_account d ON d.is_active AND (
+              d.is_postable
+              OR (s.base_level_id IS NOT NULL AND d.depth = (
+                  SELECT al.depth FROM account_levels al WHERE al.id = s.base_level_id))
+          )
+         ORDER BY s.id, d.sort_path""")
+    by_scenario: dict = {}
+    for r in rows:
+        by_scenario.setdefault(r["scenario_id"], []).append(
+            {"id": r["id"], "code": r["code"], "name": r["name"], "path": r["path"]})
+    return by_scenario
 
 
 def flash_url(url: str, ok: str = None, err: str = None) -> str:
@@ -517,11 +536,16 @@ def toggle_account(account_id: int, request: Request, csrf_token: str = Form(...
 # ---------------------------------------------------------------------------
 @app.get("/entries/new")
 def entry_new(request: Request, err: str = None):
-    postable = postable_accounts_for_pickers()
     scen = [s for s in scenarios_all() if not s["is_locked"]]
+    by_scenario = postable_accounts_by_scenario()
+    # The scenario <select> defaults to its first <option> (no `selected`
+    # is ever set) — match that here so the grid's initial account list is
+    # right from first paint, before any change event fires.
+    postable = by_scenario.get(scen[0]["id"], []) if scen else []
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     return templates.TemplateResponse(request, "entry_new.html", {
-        "nav": "new", "accounts": postable, "scenarios": scen,
+        "nav": "new", "accounts": postable, "accounts_by_scenario": by_scenario,
+        "scenarios": scen,
         "payees": active_payees, "tpls": templates_full(),
         "today": date.today().isoformat(), "err": err, "all_tags": all_tags(),
     })
@@ -1088,13 +1112,15 @@ def materialize_due_schedules() -> None:
 
 @app.get("/scheduled")
 def scheduled_page(request: Request, ok: str = None, err: str = None):
-    postable = postable_accounts_for_pickers()
     scen = [s for s in scenarios_all() if not s["is_locked"]]
+    by_scenario = postable_accounts_by_scenario()
+    postable = by_scenario.get(scen[0]["id"], []) if scen else []
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
     pending, pending_lines = pending_scheduled_entries()
     return templates.TemplateResponse(request, "scheduled.html", {
         "nav": "scheduled", "schedules": scheduled_all(),
-        "accounts": postable, "scenarios": scen, "payees": active_payees,
+        "accounts": postable, "accounts_by_scenario": by_scenario,
+        "scenarios": scen, "payees": active_payees,
         "all_tags": all_tags(), "today": date.today().isoformat(),
         "units": SCHEDULE_UNITS,
         "pending": pending, "pending_lines": pending_lines,
