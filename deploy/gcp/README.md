@@ -103,6 +103,52 @@ PROJECT_ID=your-project-id ./redeploy.sh
 restarts via `docker compose up -d --build`.) Rebooting the VM has the
 same effect, since `startup-script.sh` re-runs on every boot.
 
+## Public domain via Cloudflare Tunnel (optional)
+
+If you'd rather visit `https://libro.yourdomain.com` than run a `gcloud`
+tunnel command, and your domain's DNS is on Cloudflare, a Cloudflare
+Tunnel gets you a real domain with **zero GCP firewall changes** — the
+tunnel is an outbound-only connection from the VM, so the IAP-only setup
+above stays exactly as closed as it is. Access is gated by [Cloudflare
+Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
+(free for up to 50 users) instead of GCP IAM — a login (email code or
+Google/GitHub OAuth) sits in front of the tunnel's public hostname, so the
+app still never sees unauthenticated traffic.
+
+**One-time setup, in the Cloudflare dashboard** (Zero Trust → Networks →
+Tunnels):
+
+1. Create a tunnel (Cloudflared connector). Copy its **token** — save it
+   to a local file, don't paste it anywhere it'd get logged or committed.
+2. Add a **Public Hostname**: your subdomain, Service Type `HTTP`, URL
+   `app:8000` (the docker-compose service name — `cloudflared` joins the
+   same network as `app`/`db`).
+3. Zero Trust → Access → Applications → **Add an application** →
+   **Self-hosted** → your domain → add a policy allowing only your own
+   email (or a specific Google/GitHub account).
+
+**Wiring it to the VM:**
+
+- Fresh VM: `setup.sh` prompts for the token (paste it, or leave blank to
+  skip this entirely) and passes it as instance metadata alongside the
+  deploy key.
+- Existing VM: add it after the fact —
+  ```bash
+  gcloud compute instances add-metadata libro-vm \
+    --zone=us-central1-a --project=your-project-id \
+    --metadata-from-file=cloudflare-tunnel-token=/path/to/token-file
+  gcloud compute ssh libro-vm --zone=us-central1-a --project=your-project-id \
+    --tunnel-through-iap -- 'sudo google_metadata_script_runner startup'
+  ```
+  (re-runs `startup-script.sh`, which now finds the token, writes it into
+  `/opt/libro/.env` alongside `COMPOSE_PROFILES=cloudflared`, and starts
+  the `cloudflared` service — nothing else about the deployment changes.)
+
+`docker-compose.yml`'s `cloudflared` service is behind a compose
+**profile**, so it's entirely inert for local dev — a plain
+`docker compose up` never starts it, on your machine or the VM, unless
+`COMPOSE_PROFILES=cloudflared` is set.
+
 ## 4. Backups (optional, recommended — it's real financial data)
 
 The database lives in a Docker named volume on the VM's boot disk. That

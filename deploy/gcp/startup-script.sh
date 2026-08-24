@@ -53,4 +53,23 @@ else
 fi
 
 cd "$APP_DIR"
+
+# Optional: a Cloudflare Tunnel token, if this instance was given one (see
+# setup.sh / deploy/gcp/README.md "Public domain via Cloudflare Tunnel").
+# Written to .env — gitignored, and untouched by `git reset --hard` above
+# since it's never a tracked file. COMPOSE_PROFILES=cloudflared here means
+# every `docker compose` invocation in this directory activates the
+# cloudflared service automatically (including redeploy.sh, unmodified) —
+# its absence just means the tunnel is never started.
+CF_TOKEN="$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/attributes/cloudflare-tunnel-token" \
+  2>/dev/null || true)"
+if [ -n "$CF_TOKEN" ]; then
+  cat > .env <<EOF
+CLOUDFLARE_TUNNEL_TOKEN=$CF_TOKEN
+COMPOSE_PROFILES=cloudflared
+EOF
+  chmod 600 .env
+fi
+
 docker compose up -d --build

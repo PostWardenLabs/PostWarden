@@ -34,5 +34,21 @@ services:
       db:
         condition: service_healthy
 
+  # Optional: a Cloudflare Tunnel exposing the app at a real domain, gated
+  # by Cloudflare Access (Google/email login) — see deploy/gcp/README.md.
+  # Outbound-only: no port published, no firewall change needed anywhere.
+  # Opt-in via a profile so plain `docker compose up` (local dev) is
+  # unaffected; activate with `docker compose --profile cloudflared up`,
+  # and set CLOUDFLARE_TUNNEL_TOKEN in .env (see .env.example).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+    restart: unless-stopped
+    profiles: ["cloudflared"]
+
 volumes:
   libro_pgdata:

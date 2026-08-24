@@ -40,6 +40,19 @@ else
   echo "   (deploy_key already exists, reusing)"
 fi
 
+echo "-- Cloudflare Tunnel token (optional — a public domain via Cloudflare"
+echo "   Access; see README.md 'Public domain via Cloudflare Tunnel'. Skip"
+echo "   with a blank answer if you just want the IAP-tunnel-only setup.)"
+if [ ! -f cloudflare_tunnel_token ]; then
+  read -r -p "Paste a Cloudflare Tunnel token, or leave blank to skip: " CF_TOKEN_INPUT
+  if [ -n "$CF_TOKEN_INPUT" ]; then
+    printf '%s' "$CF_TOKEN_INPUT" > cloudflare_tunnel_token
+    chmod 600 cloudflare_tunnel_token
+  fi
+else
+  echo "   (cloudflare_tunnel_token already exists, reusing)"
+fi
+
 echo "-- Enabling required APIs"
 gcloud services enable compute.googleapis.com iap.googleapis.com \
   --project "$PROJECT_ID"
@@ -71,6 +84,11 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="user:$ACCOUNT" --role="roles/iap.tunnelResourceAccessor" \
   --condition=None >/dev/null
 
+METADATA_FILES="startup-script=startup-script.sh,deploy-ssh-key=deploy_key"
+if [ -f cloudflare_tunnel_token ]; then
+  METADATA_FILES="$METADATA_FILES,cloudflare-tunnel-token=cloudflare_tunnel_token"
+fi
+
 echo "-- Creating the VM (e2-micro — free-tier eligible in us-west1/us-central1/us-east1)"
 gcloud compute instances create "$VM_NAME" \
   --project "$PROJECT_ID" --zone "$ZONE" \
@@ -78,7 +96,7 @@ gcloud compute instances create "$VM_NAME" \
   --image-family=debian-12 --image-project=debian-cloud \
   --boot-disk-size=20GB --boot-disk-type=pd-standard \
   --network="$NETWORK" --subnet="$NETWORK" \
-  --metadata-from-file=startup-script=startup-script.sh,deploy-ssh-key=deploy_key
+  --metadata-from-file="$METADATA_FILES"
 
 cat <<EOF
 

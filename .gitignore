@@ -8,3 +8,8 @@ __pycache__/
 # this; it lives in GCE instance metadata, not git.
 deploy/gcp/deploy_key
 deploy/gcp/deploy_key.pub
+
+# Cloudflare Tunnel token for deploy/gcp — pasted into setup.sh, holds the
+# credential for the optional public-domain tunnel. Never commit this
+# either; it lives in GCE instance metadata, not git.
+deploy/gcp/cloudflare_tunnel_token
