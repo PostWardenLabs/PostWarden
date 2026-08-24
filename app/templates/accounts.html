@@ -17,6 +17,7 @@
       <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
       <td>
         <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
           <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
         </form>
       </td>
@@ -28,6 +29,7 @@
 <div class="panel">
   <h2>New account</h2>
   <form method="post" action="/accounts" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
     <label class="field">Code
       <input type="text" name="code" required pattern="[0-9]{3,8}" placeholder="e.g. 5510">
     </label>

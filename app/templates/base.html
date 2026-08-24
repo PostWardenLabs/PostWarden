@@ -18,6 +18,7 @@
 <header class="topbar">
   <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
   <div class="topbar-right">
+    {% if request.state.user %}
     <nav>
       <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
       <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
@@ -34,6 +35,12 @@
         <option value="slate">Slate</option>
       </select>
     </label>
+    <form method="post" action="/logout" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+      <span class="dim small">{{ request.state.user.username }}</span>
+      <button type="submit" class="quiet">Log out</button>
+    </form>
+    {% endif %}
   </div>
 </header>
 <main>

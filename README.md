@@ -55,17 +55,48 @@ Set `DATABASE_URL` if your Postgres isn't `libro:libro@localhost:5432/libro`.
 
 ## Security notes
 
-Libro is built for one person running it on their own machine or home
-network, and it currently has **no authentication** — every screen and
-`/api/*` route (posting entries, reversing them, locking scenarios) is open
-to anyone who can reach the app port. `docker-compose.yml` binds Postgres to
-`127.0.0.1` for this reason (Power BI/Excel/psql on the same machine still
-connect fine; the network can't). The app's own port (`8000`) has no such
-guard — don't expose it beyond a trusted network without putting
-authentication (e.g. a reverse proxy) in front of it, and change the
-`libro`/`libro` credentials before you do. There's also no CSRF protection
-on the POST forms; that becomes relevant the moment auth is added, so
-revisit it then.
+Every screen and `/api/*` route requires a login — see "Creating a login"
+below to set one up. A session is an opaque random token stored in
+Postgres (`sessions`, checked on every request); logging out or resetting
+a password deletes it, no signing secret to manage. State-changing POSTs
+(posting an entry, reversing one, locking a scenario, ...) also require a
+per-session CSRF token, rendered as a hidden field on every form.
+
+Sessions cookies are `HttpOnly` and `SameSite=Lax` always. They're
+`Secure` (HTTPS-only) only if `LIBRO_COOKIE_SECURE=true` is set — that's
+**not** the default, because neither of this project's documented
+deployment paths terminates HTTPS at uvicorn itself (an IAP tunnel and a
+Cloudflare Tunnel both encrypt at the tunnel layer, invisible to the
+cookie; a browser still sees plain `http://localhost:8000`). If you put a
+reverse proxy in front that terminates real TLS itself, set
+`LIBRO_COOKIE_SECURE=true`.
+
+`docker-compose.yml` still binds Postgres to `127.0.0.1` (Power BI/Excel/psql
+on the same machine connect fine; the network can't) — change the
+`libro`/`libro` database credentials before exposing this beyond a machine
+you trust, login or not; the app's login only protects the app, not a
+direct Postgres connection.
+
+## Creating a login
+
+No login exists until you create one.
+
+**Docker, easiest:** set `LIBRO_ADMIN_USER` / `LIBRO_ADMIN_PASSWORD` in
+`.env` (copy `.env.example`) before the first `docker compose up` — that
+account is created automatically on boot if no user exists yet, and never
+overwrites a password on later boots.
+
+**Any time, including after the fact:**
+```bash
+# Inside Docker:
+docker compose exec app python -m app.cli create-user <username>     # new login
+docker compose exec app python -m app.cli reset-password <username>  # forgot it
+
+# Outside Docker, same thing:
+./scripts/create_user.sh <username>            # new login
+./scripts/create_user.sh <username> --reset     # forgot it
+```
+(Password is always typed interactively, never as a command-line argument.)
 
 ## Deploy to Google Cloud
 
@@ -107,7 +138,10 @@ db/schema.sql        the source of truth — tables, triggers, views, functions
 db/seed.sql          starter chart of accounts + ACTUAL / BUD2026 scenarios
 db/seed_demo.sql     optional sample entries
 app/                 FastAPI app: HTML screens + /api/* JSON
+app/auth.py          sessions, password hashing, CSRF, login rate-limit
+app/cli.py           create-user / reset-password (see scripts/create_user.sh)
 scripts/init_db.sh   local database bootstrap
+scripts/create_user.sh  create or reset a login
 deploy/gcp/          Google Cloud deployment (Compute Engine + IAP tunnel)
 SPEC.md              design decisions and rationale
 ```
@@ -121,11 +155,14 @@ SPEC.md              design decisions and rationale
 
 ## Tests
 
-`tests/` exercises the invariants in `SPEC.md` directly against Postgres —
-balance enforcement, scenario locking, account hierarchy, immutability,
-reversal integrity — so they hold regardless of which client writes to the
-database. Each run gets a disposable `libro_test` database (dropped and
-recreated from `db/schema.sql` + `db/seed.sql`).
+`tests/test_invariants.py` exercises the invariants in `SPEC.md` directly
+against Postgres — balance enforcement, scenario locking, account
+hierarchy, immutability, reversal integrity — so they hold regardless of
+which client writes to the database. `tests/test_auth.py` drives the
+actual FastAPI app instead, for the things only the app layer enforces:
+login, session and CSRF checks, logout. Each run gets a disposable
+`libro_test` database (dropped and recreated from `db/schema.sql` +
+`db/seed.sql`).
 
 With `docker compose up -d db` already running:
 

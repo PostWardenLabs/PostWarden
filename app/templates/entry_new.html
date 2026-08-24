@@ -7,6 +7,7 @@
 <div id="entry-error" class="flash flash-err" hidden></div>
 
 <form method="post" action="/entries" id="entry-form">
+  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <div class="bar">
     <label class="field">Date
       <input type="date" name="entry_date" value="{{ today }}" required>

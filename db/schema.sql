@@ -26,6 +26,36 @@ CREATE TYPE account_type AS ENUM ('asset', 'liability', 'equity', 'income', 'exp
 CREATE TYPE scenario_type AS ENUM ('actual', 'budget', 'forecast', 'what_if');
 
 -- ---------------------------------------------------------------------------
+-- Users and sessions — application-level authentication.
+--
+-- Every route in the app requires a valid session (enforced in app/main.py,
+-- not here — this table just holds the truth it checks against). Passwords
+-- are hashed with bcrypt in the app layer; the hash is the only thing that
+-- ever reaches SQL. A session is an opaque random token looked up on every
+-- request — no signing secret to manage or rotate, and revoking one (or
+-- all of a user's sessions, e.g. on password reset) is just a DELETE.
+-- ---------------------------------------------------------------------------
+CREATE TABLE users (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE
+                  CHECK (username = lower(username) AND username ~ '^[a-z0-9_.-]{3,32}$'),
+    password_hash TEXT NOT NULL,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE sessions (
+    token       TEXT PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    csrf_token  TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX idx_sessions_user    ON sessions(user_id);
+CREATE INDEX idx_sessions_expires ON sessions(expires_at);
+
+-- ---------------------------------------------------------------------------
 -- Scenarios (the OneStream-style dimension)
 --
 -- enforce_balance:
@@ -122,6 +152,9 @@ CREATE TABLE journal_entries (
     description        TEXT NOT NULL CHECK (length(trim(description)) > 0),
     reference          TEXT,
     reverses_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE RESTRICT,
+    -- Who posted it, for the audit trail — nullable so direct psql/import
+    -- inserts don't need a user, but the app always sets it from the session.
+    created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (reverses_entry_id <> id)
 );
@@ -350,11 +383,13 @@ SELECT l.id                                   AS line_id,
        l.memo,
        e.description,
        e.reference,
-       e.reverses_entry_id
+       e.reverses_entry_id,
+       u.username                             AS posted_by
   FROM journal_lines   l
   JOIN journal_entries e ON e.id = l.entry_id
   JOIN scenarios       s ON s.id = e.scenario_id
-  JOIN accounts        a ON a.id = l.account_id;
+  JOIN accounts        a ON a.id = l.account_id
+  LEFT JOIN users       u ON u.id = e.created_by_user_id;
 
 -- Monthly activity per account per scenario — the budget-vs-actual base.
 CREATE VIEW v_monthly_activity AS

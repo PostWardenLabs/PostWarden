@@ -28,9 +28,16 @@ TEST_URL = os.environ.get(
     "LIBRO_TEST_URL", f"postgresql://libro:libro@db:5432/{TEST_DB}"
 )
 
+# app/db.py opens its connection pool at import time, so DATABASE_URL has to
+# point at the disposable test database *before* anything imports app.main
+# (e.g. tests/test_auth.py) — which means before pytest even collects test
+# modules, not inside a fixture (fixtures run after collection/import).
+os.environ.setdefault("DATABASE_URL", TEST_URL)
 
-@pytest.fixture(scope="session", autouse=True)
-def _fresh_database():
+
+def pytest_configure(config):
+    """Runs before test collection — see the DATABASE_URL comment above for
+    why this can't just be a fixture."""
     with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
         admin.execute(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
         admin.execute(f"CREATE DATABASE {TEST_DB}")
@@ -39,7 +46,6 @@ def _fresh_database():
     with psycopg.connect(TEST_URL, autocommit=True) as conn:
         conn.execute(schema_sql)
         conn.execute(seed_sql)
-    yield
 
 
 @pytest.fixture
@@ -109,3 +115,13 @@ def actual_scenario_id(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
         return cur.fetchone()["id"]
+
+
+def mk_user(cur, username=None, password="testpass123") -> dict:
+    from app.auth import hash_password
+    username = username or ("user" + "".join(random.choices(string.digits, k=6)))
+    cur.execute(
+        "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id, username",
+        (username, hash_password(password)))
+    row = cur.fetchone()
+    return {"id": row["id"], "username": row["username"], "password": password}

@@ -2,6 +2,8 @@
 
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
+import secrets
+from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
@@ -12,12 +14,39 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from . import auth
 from .db import q, q1, tx
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    auth.bootstrap_admin_from_env()
+    yield
+
+
 BASE = Path(__file__).parent
-app = FastAPI(title="Libro")
+app = FastAPI(title="Libro", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
+
+PUBLIC_PATHS = {"/login"}
+
+
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    """Every route needs a valid session except /login and static assets.
+    Sets request.state.user once per request so handlers and templates
+    (`request.state.user`) don't each need their own session lookup."""
+    path = request.url.path
+    if path in PUBLIC_PATHS or path.startswith("/static/"):
+        return await call_next(request)
+    session = auth.get_session(request.cookies.get(auth.SESSION_COOKIE))
+    if not session:
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+        return RedirectResponse("/login", status_code=303)
+    request.state.user = session
+    return await call_next(request)
 
 
 def money(v) -> str:
@@ -67,6 +96,59 @@ def flash_redirect(url: str, ok: str = None, err: str = None):
     return RedirectResponse(flash_url(url, ok, err), status_code=303)
 
 
+def require_csrf(request: Request, token: str | None):
+    """Raise ValueError (caught the same way as any other bad input) if the
+    submitted token doesn't match this session's. Every state-changing POST
+    calls this — see the hidden csrf_token field templates render from
+    request.state.user.csrf_token."""
+    user = auth.current_user(request)
+    if not user or not token or not secrets.compare_digest(token, user["csrf_token"]):
+        raise ValueError("Your session expired or the form was stale — please retry.")
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+@app.get("/login")
+def login_page(request: Request, err: str = None):
+    if auth.get_session(request.cookies.get(auth.SESSION_COOKIE)):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"err": err})
+
+
+@app.post("/login")
+def login_submit(username: str = Form(...), password: str = Form(...)):
+    username = username.strip().lower()
+    if auth.is_rate_limited(username):
+        return flash_redirect(
+            "/login", err="Too many failed attempts — wait a few minutes and try again")
+    row = q1("SELECT id, password_hash, is_active FROM users WHERE username = %s",
+             (username,))
+    if not row or not row["is_active"] or not auth.verify_password(password, row["password_hash"]):
+        auth.record_failed_login(username)
+        return flash_redirect("/login", err="Invalid username or password")
+    auth.clear_failed_logins(username)
+    token = auth.create_session(row["id"])
+    resp = RedirectResponse("/", status_code=303)
+    resp.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax",
+                    secure=auth.COOKIE_SECURE, max_age=int(auth.SESSION_TTL.total_seconds()))
+    return resp
+
+
+@app.post("/logout")
+def logout(request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+    except ValueError:
+        pass  # worst case of a bad token here is a no-op logout; just proceed
+    user = auth.current_user(request)
+    if user:
+        auth.delete_session(user["token"])
+    resp = RedirectResponse("/login", status_code=303)
+    resp.delete_cookie(auth.SESSION_COOKIE)
+    return resp
+
+
 # ---------------------------------------------------------------------------
 # Trial balance
 # ---------------------------------------------------------------------------
@@ -114,10 +196,11 @@ def accounts_page(request: Request, ok: str = None, err: str = None):
 
 
 @app.post("/accounts")
-def create_account(code: str = Form(...), name: str = Form(...),
+def create_account(request: Request, code: str = Form(...), name: str = Form(...),
                    account_type: str = Form(...), parent_id: str = Form(""),
-                   is_postable: str = Form(None)):
+                   is_postable: str = Form(None), csrf_token: str = Form(...)):
     try:
+        require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
                 """INSERT INTO accounts (code, name, account_type, parent_id, is_postable)
@@ -126,20 +209,23 @@ def create_account(code: str = Form(...), name: str = Form(...),
                  int(parent_id) if parent_id else None,
                  is_postable is not None),
             )
-    except psycopg.Error as e:
-        return flash_redirect("/accounts", err=_pg_msg(e))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/accounts", err=msg)
     return flash_redirect("/accounts", ok=f"Account {code} — {name} created")
 
 
 @app.post("/accounts/{account_id}/toggle-active")
-def toggle_account(account_id: int):
+def toggle_account(account_id: int, request: Request, csrf_token: str = Form(...)):
     try:
+        require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
                 "UPDATE accounts SET is_active = NOT is_active WHERE id = %s",
                 (account_id,))
-    except psycopg.Error as e:
-        return flash_redirect("/accounts", err=_pg_msg(e))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/accounts", err=msg)
     return flash_redirect("/accounts", ok="Account updated")
 
 
@@ -199,6 +285,7 @@ async def create_entry(request: Request):
     # it asks for JSON back instead of a redirect. See app.js.
     wants_json = "application/json" in request.headers.get("accept", "")
     try:
+        require_csrf(request, form.get("csrf_token"))
         lines = _parse_lines(form)
         entry_date = form.get("entry_date") or date.today().isoformat()
         scenario_id = int(form.get("scenario_id"))
@@ -217,9 +304,10 @@ async def create_entry(request: Request):
         with tx() as cur:
             cur.execute(
                 """INSERT INTO journal_entries
-                       (scenario_id, entry_date, description, reference)
-                   VALUES (%s, %s, %s, %s) RETURNING id""",
-                (scenario_id, entry_date, description, reference))
+                       (scenario_id, entry_date, description, reference, created_by_user_id)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                (scenario_id, entry_date, description, reference,
+                 auth.current_user(request)["user_id"]))
             entry_id = cur.fetchone()["id"]
             for n, ln in enumerate(lines, start=1):
                 cur.execute(
@@ -265,7 +353,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
                e.reverses_entry_id, s.code AS scenario_code,
-               s.is_locked AS scenario_locked,
+               s.is_locked AS scenario_locked, u.username AS posted_by,
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                  WHERE l.entry_id = e.id) AS total_debits,
                (SELECT COALESCE(SUM(l.credit), 0) FROM journal_lines l
@@ -274,6 +362,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  WHERE r.reverses_entry_id = e.id LIMIT 1) AS reversed_by
           FROM journal_entries e
           JOIN scenarios s ON s.id = e.scenario_id
+          LEFT JOIN users u ON u.id = e.created_by_user_id
          WHERE {' AND '.join(where)}
          ORDER BY e.entry_date DESC, e.id DESC
          LIMIT 200""", params)
@@ -299,8 +388,9 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
 
 @app.post("/entries/{entry_id}/reverse")
-def reverse_entry(entry_id: int):
+def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
     try:
+        require_csrf(request, csrf_token)
         orig = q1("""SELECT e.*, s.code AS scenario_code FROM journal_entries e
                      JOIN scenarios s ON s.id = e.scenario_id
                      WHERE e.id = %s""", (entry_id,))
@@ -316,11 +406,11 @@ def reverse_entry(entry_id: int):
             cur.execute(
                 """INSERT INTO journal_entries
                        (scenario_id, entry_date, description, reference,
-                        reverses_entry_id)
-                   VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                        reverses_entry_id, created_by_user_id)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
                 (orig["scenario_id"], date.today(),
                  f"Reversal of #{entry_id} — {orig['description']}",
-                 orig["reference"], entry_id))
+                 orig["reference"], entry_id, auth.current_user(request)["user_id"]))
             new_id = cur.fetchone()["id"]
             cur.execute(
                 """INSERT INTO journal_lines
@@ -328,8 +418,9 @@ def reverse_entry(entry_id: int):
                    SELECT %s, line_no, account_id, -amount, memo
                      FROM journal_lines WHERE entry_id = %s""",
                 (new_id, entry_id))
-    except psycopg.Error as e:
-        return flash_redirect("/entries", err=_pg_msg(e))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/entries", err=msg)
     return flash_redirect("/entries",
                           ok=f"Entry #{entry_id} reversed by #{new_id}")
 
@@ -346,11 +437,12 @@ def scenarios_page(request: Request, ok: str = None, err: str = None):
 
 
 @app.post("/scenarios")
-def create_scenario(code: str = Form(...), name: str = Form(...),
+def create_scenario(request: Request, code: str = Form(...), name: str = Form(...),
                     scenario_type: str = Form(...),
                     enforce_balance: str = Form(None),
-                    notes: str = Form("")):
+                    notes: str = Form(""), csrf_token: str = Form(...)):
     try:
+        require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
                 """INSERT INTO scenarios
@@ -358,20 +450,23 @@ def create_scenario(code: str = Form(...), name: str = Form(...),
                    VALUES (%s, %s, %s, %s, %s)""",
                 (code.strip().upper(), name.strip(), scenario_type,
                  enforce_balance is not None, notes.strip() or None))
-    except psycopg.Error as e:
-        return flash_redirect("/scenarios", err=_pg_msg(e))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/scenarios", err=msg)
     return flash_redirect("/scenarios", ok=f"Scenario {code.upper()} created")
 
 
 @app.post("/scenarios/{scenario_id}/toggle-lock")
-def toggle_lock(scenario_id: int):
+def toggle_lock(scenario_id: int, request: Request, csrf_token: str = Form(...)):
     try:
+        require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
                 "UPDATE scenarios SET is_locked = NOT is_locked WHERE id = %s",
                 (scenario_id,))
-    except psycopg.Error as e:
-        return flash_redirect("/scenarios", err=_pg_msg(e))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/scenarios", err=msg)
     return flash_redirect("/scenarios", ok="Scenario updated")
 
 

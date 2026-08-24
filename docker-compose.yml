@@ -28,6 +28,18 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://libro:libro@db:5432/libro
+      # First-boot convenience: if both are set and no user exists yet,
+      # this account is created automatically — see app/auth.py. Leave
+      # unset and use `docker compose exec app python -m app.cli
+      # create-user <name>` instead if you'd rather not put a password
+      # in .env. Never overwrites an existing password.
+      LIBRO_ADMIN_USER: ${LIBRO_ADMIN_USER:-}
+      LIBRO_ADMIN_PASSWORD: ${LIBRO_ADMIN_PASSWORD:-}
+      # Set to true only if uvicorn itself is terminating real HTTPS (not
+      # the case for the documented IAP-tunnel or Cloudflare-tunnel
+      # deployments — both encrypt at the tunnel layer instead). See
+      # app/auth.py's COOKIE_SECURE comment.
+      LIBRO_COOKIE_SECURE: ${LIBRO_COOKIE_SECURE:-}
     ports:
       - "8000:8000"
     depends_on:

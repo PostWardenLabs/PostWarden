@@ -28,6 +28,7 @@
       {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
       {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
       {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
+      {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
     </span>
     <span class="num mono">{{ e.total_debits | money }}</span>
     <span></span>
@@ -54,6 +55,7 @@
     {% if not e.reversed_by and not e.scenario_locked %}
     <form method="post" action="/entries/{{ e.id }}/reverse" style="margin-top: 0.6rem;"
           onsubmit="return confirm('Post a reversing entry for #{{ e.id }}?');">
+      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
       <button type="submit" class="quiet">Reverse this entry</button>
     </form>
     {% endif %}

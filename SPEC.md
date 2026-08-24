@@ -91,6 +91,31 @@ Tab, next line appears — with a live balance bar; the Post button unlocks
 only when the entry balances (client courtesy; the database re-checks at
 commit regardless).
 
+### 8. Authentication is session-based and database-backed, not JWT
+
+Every route requires a login; a session is an opaque random token in a
+`sessions` table (`token`, `user_id`, `csrf_token`, `expires_at`), not a
+signed/encrypted token like a JWT. The tradeoff: a DB round-trip on every
+request instead of local verification — acceptable for a personal ledger's
+traffic, and it buys real properties a signed token can't give you for
+free. There's no signing secret to generate, store, or rotate, so there's
+no class of bug where a leaked secret lets someone forge arbitrary
+sessions. "Log out" or "log out everywhere" (e.g. on password reset) is a
+`DELETE`, not a denylist you have to check separately. And who's logged
+in, and for how long, is a query — consistent with every other "if it
+matters, SQL should be able to answer it" decision in this schema.
+
+Passwords are hashed with bcrypt in the app layer; the hash is the only
+thing that ever reaches SQL. CSRF is a per-session token (the same
+`sessions` row) rendered as a hidden field on every state-changing form
+and checked with a constant-time compare — necessary the moment a session
+cookie exists, since `SameSite=Lax` alone is a mitigation, not a guarantee.
+
+`journal_entries.created_by_user_id` (nullable, `ON DELETE SET NULL`)
+extends the existing audit-trail philosophy — history was already
+append-only and reversal-only; this adds *who* posted or reversed each
+entry, without requiring one (direct SQL/import inserts still work).
+
 ## Extension roadmap
 
 - **Entity dimension** — add `entities` and `entity_id` on entries, and the

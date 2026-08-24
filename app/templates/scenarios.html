@@ -20,6 +20,7 @@
       <td>{% if s.is_locked %}<span class="badge rev">locked</span>{% else %}<span class="badge">open</span>{% endif %}</td>
       <td>
         <form method="post" action="/scenarios/{{ s.id }}/toggle-lock" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
           <button type="submit" class="quiet">{{ 'Unlock' if s.is_locked else 'Lock' }}</button>
         </form>
       </td>
@@ -31,6 +32,7 @@
 <div class="panel">
   <h2>New scenario</h2>
   <form method="post" action="/scenarios" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
     <label class="field">Code
       <input type="text" name="code" required pattern="[A-Za-z0-9_]{2,24}" placeholder="e.g. FCST_2026_09">
     </label>
