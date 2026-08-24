@@ -6,18 +6,75 @@
    under balanced totals.
    ========================================================================== */
 :root {
-  --paper:       #f7faf4;
-  --paper-deep:  #eff5ea;   /* tinted money columns */
-  --ink:         #1d2b22;
-  --ink-soft:    #55665c;
-  --rule:        #ccdcc8;   /* ledger ruling */
-  --rule-strong: #8fae8b;
-  --red:         #a63c2e;   /* the red rule; imbalance; credit accent */
-  --ok:          #2f6b45;
-  --focus:       #3e6f8e;
+  /* Ledger — pale green ledger stock. The default; also the palette
+     every other theme is a deliberate departure from. */
+  --paper:        #f7faf4;
+  --paper-deep:   #eff5ea;   /* tinted money columns */
+  --surface:      #ffffff;   /* cards, inputs — the "clean sheet" on top of paper */
+  --ink:          #1d2b22;
+  --ink-soft:     #55665c;
+  --rule:         #ccdcc8;   /* ledger ruling */
+  --rule-strong:  #8fae8b;
+  --red:          #a63c2e;   /* the red rule; imbalance; credit accent */
+  --ok:           #2f6b45;
+  --focus:        #3e6f8e;
+  --accent:       var(--ink);
+  --accent-hover: #2c4034;
+  --accent-text:  var(--paper);
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+}
+
+/* Midnight — a night ledger: dark stock, brass-stamp accent. */
+:root[data-theme="midnight"] {
+  --paper:        #10140f;
+  --paper-deep:   #171d15;
+  --surface:      #1b221a;
+  --ink:          #ecefe8;
+  --ink-soft:     #9caa96;
+  --rule:         #262f24;
+  --rule-strong:  #435041;
+  --red:          #e2685a;
+  --ok:           #6fcf8e;
+  --focus:        #7fb0d9;
+  --accent:       #c9a227;
+  --accent-hover: #ddb939;
+  --accent-text:  #14180f;
+}
+
+/* Parchment — warm, aged sepia stock. */
+:root[data-theme="parchment"] {
+  --paper:        #f5ecd9;
+  --paper-deep:   #ecdfc2;
+  --surface:      #fffaf1;
+  --ink:          #3b2c1f;
+  --ink-soft:     #7a6650;
+  --rule:         #ddc9a3;
+  --rule-strong:  #b89b6b;
+  --red:          #9c3b2c;
+  --ok:           #4c6b3a;
+  --focus:        #4a6f8e;
+  --accent:       var(--ink);
+  --accent-hover: #54402c;
+  --accent-text:  var(--paper);
+}
+
+/* Slate — cool, contemporary, least "paper" of the four. */
+:root[data-theme="slate"] {
+  --paper:        #f4f6f8;
+  --paper-deep:   #e9edf1;
+  --surface:      #ffffff;
+  --ink:          #1b2430;
+  --ink-soft:     #5b6b7c;
+  --rule:         #d6dde3;
+  --rule-strong:  #aebbc7;
+  --red:          #b3392c;
+  --ok:           #1f7a52;
+  --focus:        #2f6fb0;
+  --accent:       var(--ink);
+  --accent-hover: #2c3a4c;
+  --accent-text:  var(--paper);
 }
 
 * { box-sizing: border-box; }
@@ -47,6 +104,7 @@ body {
   font-family: var(--sans); font-size: 0.72rem; font-weight: 400;
   color: var(--ink-soft); margin-left: 0.6rem; letter-spacing: 0.06em;
 }
+.topbar-right { display: flex; align-items: baseline; gap: 1.3rem; flex-wrap: wrap; }
 .topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
 .topbar nav a {
   color: var(--ink-soft); text-decoration: none; font-size: 0.92rem;
@@ -54,6 +112,16 @@ body {
 }
 .topbar nav a:hover { color: var(--ink); }
 .topbar nav a.active { color: var(--ink); border-bottom-color: var(--red); }
+
+.theme-picker select {
+  font: inherit; font-size: 0.8rem; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  padding: 0.2rem 0.4rem; border-radius: 2px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 
 main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 .footer {
@@ -73,8 +141,8 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
   padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.9rem;
   border-left: 3px solid;
 }
-.flash-ok  { border-color: var(--ok);  background: #e7f1e9; color: #234d34; }
-.flash-err { border-color: var(--red); background: #f6e9e6; color: #6f2a20; }
+.flash-ok  { border-color: var(--ok);  background: color-mix(in srgb, var(--ok) 14%, var(--paper));  color: var(--ok); }
+.flash-err { border-color: var(--red); background: color-mix(in srgb, var(--red) 14%, var(--paper)); color: var(--red); }
 
 /* -- the ledger table ---------------------------------------------------- */
 table.ledger {
@@ -131,7 +199,7 @@ label.field { display: flex; flex-direction: column; gap: 0.2rem;
               font-size: 0.78rem; color: var(--ink-soft); }
 input, select, textarea {
   font: inherit; color: var(--ink);
-  background: #fff; border: 1px solid var(--rule-strong);
+  background: var(--surface); border: 1px solid var(--rule-strong);
   padding: 0.35rem 0.5rem; border-radius: 2px;
 }
 input:focus, select:focus, textarea:focus, button:focus-visible {
@@ -143,10 +211,10 @@ input[type="number"], input.amount {
 }
 button {
   font: inherit; cursor: pointer;
-  background: var(--ink); color: var(--paper);
-  border: 1px solid var(--ink); padding: 0.42rem 1rem; border-radius: 2px;
+  background: var(--accent); color: var(--accent-text);
+  border: 1px solid var(--accent); padding: 0.42rem 1rem; border-radius: 2px;
 }
-button:hover { background: #2c4034; }
+button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 button:disabled { background: var(--rule); border-color: var(--rule);
                   color: var(--ink-soft); cursor: not-allowed; }
 button.quiet {
@@ -181,7 +249,7 @@ table.entry-grid .col-amount  { width: 15%; }
 /* -- entries browser ----------------------------------------------------- */
 details.entry {
   border: 1px solid var(--rule); border-left: 3px solid var(--rule-strong);
-  margin-bottom: 0.55rem; background: #fff;
+  margin-bottom: 0.55rem; background: var(--surface);
 }
 details.entry[open] { border-left-color: var(--red); }
 details.entry summary {
@@ -211,7 +279,7 @@ td.acct-name { font-variant-numeric: tabular-nums; }
 .inactive { opacity: 0.45; }
 
 .panel {
-  background: #fff; border: 1px solid var(--rule);
+  background: var(--surface); border: 1px solid var(--rule);
   padding: 1rem 1.1rem; margin-top: 1.4rem;
 }
 .panel h2 { margin-top: 0; }
@@ -225,4 +293,12 @@ td.acct-name { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: no-preference) {
   .flash { animation: slide-in 160ms ease-out; }
   @keyframes slide-in { from { opacity: 0; transform: translateY(-4px); } }
+
+  /* A theme switch recolors most of the page at once; ease it rather
+     than snap, since it's a deliberate user action, not page load. */
+  body, .topbar, table.ledger, .panel, details.entry, .balance-bar,
+  input, select, textarea, button {
+    transition: background-color 160ms ease, color 160ms ease,
+                border-color 160ms ease;
+  }
 }

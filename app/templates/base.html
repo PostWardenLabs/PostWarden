@@ -4,18 +4,37 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Libro{% endblock %} · Libro</title>
+<script>
+  // Applied before the stylesheet renders, so a saved theme shows on first
+  // paint instead of flashing Ledger and then switching.
+  (function () {
+    var t = localStorage.getItem("libro-theme");
+    if (t) document.documentElement.setAttribute("data-theme", t);
+  })();
+</script>
 <link rel="stylesheet" href="{{ asset('style.css') }}">
 </head>
 <body>
 <header class="topbar">
   <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
-  <nav>
-    <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
-    <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
-    <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
-    <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
-    <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
-  </nav>
+  <div class="topbar-right">
+    <nav>
+      <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
+      <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
+      <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
+      <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
+      <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
+    </nav>
+    <label class="theme-picker">
+      <span class="sr-only">Theme</span>
+      <select id="theme-select">
+        <option value="ledger">Ledger</option>
+        <option value="midnight">Midnight</option>
+        <option value="parchment">Parchment</option>
+        <option value="slate">Slate</option>
+      </select>
+    </label>
+  </div>
 </header>
 <main>
   {% if request.query_params.get('ok') or ok %}
@@ -27,6 +46,7 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">Libro · every entry balances, or it doesn't post.</footer>
+<script src="{{ asset('theme.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
