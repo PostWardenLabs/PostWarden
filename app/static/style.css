@@ -77,6 +77,75 @@
   --accent-text:  var(--paper);
 }
 
+/* Ink — a fountain-pen ledger: indigo ink on pale blue-white stock. */
+:root[data-theme="ink"] {
+  --paper:        #f5f6fb;
+  --paper-deep:   #eaecf7;
+  --surface:      #ffffff;
+  --ink:          #1f2247;
+  --ink-soft:     #5b5f8a;
+  --rule:         #d7d9ec;
+  --rule-strong:  #a9aed6;
+  --red:          #a13c4a;
+  --ok:           #2f6b5e;
+  --focus:        #3e5fa6;
+  --accent:       var(--ink);
+  --accent-hover: #33366b;
+  --accent-text:  var(--paper);
+}
+
+/* Terracotta — warm rust-and-clay stock, a hotter warmth than Parchment. */
+:root[data-theme="terracotta"] {
+  --paper:        #fbf3ec;
+  --paper-deep:   #f3e3d4;
+  --surface:      #ffffff;
+  --ink:          #4a2c1e;
+  --ink-soft:     #8a6653;
+  --rule:         #e8d2bd;
+  --rule-strong:  #c99b76;
+  --red:          #a3392a;
+  --ok:           #4f6b3a;
+  --focus:        #4a728e;
+  --accent:       #b1502c;
+  --accent-hover: #c56439;
+  --accent-text:  #fbf3ec;
+}
+
+/* Graphite — a second dark theme, cool where Midnight is warm: slate-black
+   stock, cyan accent. */
+:root[data-theme="graphite"] {
+  --paper:        #14181c;
+  --paper-deep:   #1b2126;
+  --surface:      #1f262c;
+  --ink:          #e6ecef;
+  --ink-soft:     #90a0a8;
+  --rule:         #262f35;
+  --rule-strong:  #3c4a52;
+  --red:          #e2685a;
+  --ok:           #5fbf9e;
+  --focus:        #6fb0d8;
+  --accent:       #46a8c9;
+  --accent-hover: #5cbdde;
+  --accent-text:  #0e1518;
+}
+
+/* Rose — dusty mauve stock, the softest of the eight. */
+:root[data-theme="rose"] {
+  --paper:        #fbf1f2;
+  --paper-deep:   #f3dfe1;
+  --surface:      #ffffff;
+  --ink:          #4a2530;
+  --ink-soft:     #8c6570;
+  --rule:         #ecd2d6;
+  --rule-strong:  #cd9aa4;
+  --red:          #a3324a;
+  --ok:           #4c6b52;
+  --focus:        #6a5a8e;
+  --accent:       #9c4f63;
+  --accent-hover: #b0637a;
+  --accent-text:  #fbf1f2;
+}
+
 * { box-sizing: border-box; }
 html { font-size: 16px; }
 body {
