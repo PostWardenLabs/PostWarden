@@ -655,6 +655,35 @@ def create_payee(request: Request, name: str = Form(...), csrf_token: str = Form
     return flash_redirect("/payees", ok=f"Payee {name!r} created")
 
 
+@app.post("/payees/quick-create")
+def quick_create_payee(request: Request, name: str = Form(...), csrf_token: str = Form(...)):
+    # Called from the payee combobox on New entry via fetch() — "+ Create
+    # <name>" there needs a real row back immediately so the <select> has
+    # something to point payee_id at, unlike tags (synced by name at
+    # submit time) or the /payees form (which redirects a whole page).
+    # ON CONFLICT DO UPDATE (a no-op update) rather than DO NOTHING is the
+    # standard trick to get RETURNING even when the name already exists —
+    # it also quietly reactivates a deactivated payee the user is now
+    # using again, which is what typing its name here signals.
+    try:
+        require_csrf(request, csrf_token)
+        name = name.strip()
+        if not name:
+            raise ValueError("Payee name is required")
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO payees (name) VALUES (%s)
+                   ON CONFLICT (name) DO UPDATE
+                       SET is_active = TRUE
+                   RETURNING id, name""",
+                (name,))
+            row = cur.fetchone()
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "id": row["id"], "name": row["name"]})
+
+
 @app.post("/payees/{payee_id}/toggle-active")
 def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
     try:

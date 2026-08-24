@@ -42,11 +42,18 @@
     let filtered = [];
     let activeIndex = -1;
 
+    // Optional "+ Create <name>" row — see entry_new.html's payee <select>
+    // (data-create-url points at a POST endpoint returning {ok, id, name}).
+    // Only single-value creatable selects are supported; multi-value
+    // pick-or-create lives in tags.js, which has its own chip UI.
+    const createUrl = select.dataset.createUrl || null;
+
     function options() {
       return Array.from(select.options);
     }
 
     function labelFor(opt) {
+      if (opt.__create) return "+ Create “" + opt.query + "”";
       return opt.textContent.trim();
     }
 
@@ -64,9 +71,14 @@
     }
 
     function renderPanel(filterText) {
-      const q = (filterText || "").trim().toLowerCase();
+      const q = (filterText || "").trim();
+      const qLower = q.toLowerCase();
       filtered = options().filter((o) => labelFor(o) &&
-        (!q || labelFor(o).toLowerCase().includes(q)));
+        (!qLower || labelFor(o).toLowerCase().includes(qLower)));
+      if (createUrl && q) {
+        const exact = options().some((o) => labelFor(o).toLowerCase() === qLower);
+        if (!exact) filtered = filtered.concat([{ __create: true, query: q, value: "" }]);
+      }
       panel.innerHTML = "";
       if (!filtered.length) {
         const empty = document.createElement("div");
@@ -76,7 +88,9 @@
       } else {
         filtered.forEach((o) => {
           const row = document.createElement("div");
-          row.className = "combobox-option" + (o.value === select.value ? " selected" : "");
+          row.className = "combobox-option" +
+            (o.value === select.value ? " selected" : "") +
+            (o.__create ? " combobox-create" : "");
           row.setAttribute("role", "option");
           row.textContent = labelFor(o);
           panel.appendChild(row);
@@ -111,12 +125,54 @@
       if (!wrap.contains(e.target)) close();
     }
 
+    function csrfToken() {
+      const el = document.querySelector('input[name="csrf_token"]');
+      return el ? el.value : "";
+    }
+
     function selectOption(opt) {
+      if (opt.__create) { createAndSelect(opt.query); return; }
       const changed = select.value !== opt.value;
       select.value = opt.value;
       if (changed) select.dispatchEvent(new Event("change", { bubbles: true }));
       syncInputFromSelect();
       close();
+    }
+
+    function createAndSelect(name) {
+      input.disabled = true;
+      panel.innerHTML = "";
+      const loading = document.createElement("div");
+      loading.className = "combobox-empty";
+      loading.textContent = "Creating…";
+      panel.appendChild(loading);
+      fetch(createUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name, csrf_token: csrfToken() }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          input.disabled = false;
+          if (!data.ok) { renderCreateError(data.error || "Couldn't create"); return; }
+          const opt = document.createElement("option");
+          opt.value = data.id;
+          opt.textContent = data.name;
+          select.appendChild(opt);
+          selectOption(opt);
+        })
+        .catch(() => {
+          input.disabled = false;
+          renderCreateError("Couldn't reach the server");
+        });
+    }
+
+    function renderCreateError(message) {
+      panel.innerHTML = "";
+      const err = document.createElement("div");
+      err.className = "combobox-empty combobox-error";
+      err.textContent = message;
+      panel.appendChild(err);
     }
 
     input.addEventListener("focus", () => {

@@ -324,7 +324,12 @@ button.quiet:hover { background: var(--paper-deep); }
   background: var(--accent); color: var(--accent-text);
 }
 .combobox-option.selected { font-weight: 600; }
+.combobox-option.combobox-create { font-style: italic; color: var(--accent); }
+.combobox-option.combobox-create.active, .combobox-option.combobox-create:hover {
+  font-style: italic; color: var(--accent-text);
+}
 .combobox-empty { padding: 0.35rem 0.6rem; color: var(--ink-soft); font-size: 0.85rem; }
+.combobox-empty.combobox-error { color: var(--red); }
 
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }

@@ -125,6 +125,47 @@ def test_post_with_valid_csrf_token_succeeds(conn):
         assert cur.fetchone() is not None
 
 
+def test_quick_create_payee_gets_or_creates_and_reactivates(conn):
+    # Powers the "+ Create <name>" row in the payee combobox on New entry —
+    # needs to (a) hand back a real id so the form has something to submit,
+    # (b) not duplicate a payee that already exists under that exact name,
+    # and (c) reactivate one the user had deactivated, since typing its
+    # name here is exactly them signalling they want to use it again.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r1 = c.post("/payees/quick-create",
+                     data={"name": "Whole Foods", "csrf_token": csrf_token})
+        assert r1.status_code == 200
+        first = r1.json()
+        assert first["ok"] is True
+        assert first["name"] == "Whole Foods"
+
+        with conn.cursor() as cur:
+            cur.execute("UPDATE payees SET is_active = FALSE WHERE id = %s", (first["id"],))
+        conn.commit()
+
+        r2 = c.post("/payees/quick-create",
+                     data={"name": "Whole Foods", "csrf_token": csrf_token})
+        second = r2.json()
+        assert second["id"] == first["id"]  # same row, not a duplicate
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n, bool_and(is_active) AS active "
+                     "FROM payees WHERE name = 'Whole Foods'")
+        row = cur.fetchone()
+        assert row["n"] == 1
+        assert row["active"] is True
+
+
 def test_logout_revokes_session(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
