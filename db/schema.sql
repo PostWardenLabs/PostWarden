@@ -108,6 +108,17 @@ CREATE TABLE account_levels (
 --   plan to spend on groceries this year," which never had a date or a
 --   counter-account to begin with; it's the wrong shape for "what if I
 --   buy a house," which does — that stays a full scenario.
+-- is_staging: FALSE for every scenario except the one seeded row this
+--   whole app treats as "Staging" — a holding pen for entries that
+--   shouldn't count as real books yet (materialize_due_schedules()'s
+--   copies today; a future CSV importer tomorrow). TRUE turns off
+--   *manual* entry into this scenario (fn_staging_manual_entry_guard
+--   below): a journal_entries row may only land here as the by-product of
+--   an automated producer (currently: scheduled_entry_id IS NOT NULL),
+--   never typed in from New entry — approving it into its real target
+--   scenario is the one way a Staging entry becomes a manual decision.
+--   uq_one_staging_scenario below caps this at one row, ever; the app
+--   looks it up by this flag instead of by a hardcoded scenario code.
 -- ---------------------------------------------------------------------------
 CREATE TABLE scenarios (
     id                     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -117,6 +128,7 @@ CREATE TABLE scenarios (
     scenario_type          scenario_type NOT NULL,
     enforce_balance        BOOLEAN NOT NULL DEFAULT TRUE,
     income_statement_only  BOOLEAN NOT NULL DEFAULT FALSE,
+    is_staging             BOOLEAN NOT NULL DEFAULT FALSE,
     is_locked              BOOLEAN NOT NULL DEFAULT FALSE,
     base_level_id          BIGINT REFERENCES account_levels(id) ON DELETE RESTRICT,
     notes                  TEXT,
@@ -131,6 +143,17 @@ ALTER TABLE scenarios ADD CONSTRAINT actual_must_balance
 -- every account type, always.
 ALTER TABLE scenarios ADD CONSTRAINT actual_not_income_statement_only
     CHECK (NOT (scenario_type = 'actual' AND income_statement_only));
+
+-- A staging scenario is a holding pen for real entries awaiting approval —
+-- it can never also be the income-statement-only kind, which has no
+-- journal entries (and so nothing to approve) in the first place.
+ALTER TABLE scenarios ADD CONSTRAINT staging_not_income_statement_only
+    CHECK (NOT (is_staging AND income_statement_only));
+
+-- At most one scenario is ever "the" staging scenario — indexing the
+-- column itself, filtered to true rows, means a second TRUE row collides
+-- with the first on the same indexed value.
+CREATE UNIQUE INDEX uq_one_staging_scenario ON scenarios (is_staging) WHERE is_staging;
 
 -- ---------------------------------------------------------------------------
 -- Chart of accounts (hierarchical)
@@ -576,6 +599,34 @@ END $$;
 CREATE TRIGGER trg_income_statement_only_guard
 BEFORE INSERT ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION fn_income_statement_only_guard();
+
+-- ---------------------------------------------------------------------------
+-- Integrity trigger 6 — a staging scenario only ever receives an entry as
+-- the by-product of an automated producer, never a manually-typed one.
+-- Today that means scheduled_entry_id IS NOT NULL (materialize_due_
+-- schedules()'s copies); a future CSV importer gets its own exemption
+-- added here the same way when it lands, rather than this trigger being
+-- loosened to "anything goes."
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_staging_manual_entry_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_staging BOOLEAN;
+    v_code    TEXT;
+BEGIN
+    SELECT is_staging, code INTO v_staging, v_code
+      FROM scenarios WHERE id = NEW.scenario_id;
+    IF v_staging AND NEW.scheduled_entry_id IS NULL THEN
+        RAISE EXCEPTION
+            'Scenario % only accepts entries from a schedule or an import, never a manual posting',
+            v_code;
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_staging_manual_entry_guard
+BEFORE INSERT ON journal_entries
+FOR EACH ROW EXECUTE FUNCTION fn_staging_manual_entry_guard();
 
 -- ---------------------------------------------------------------------------
 -- Budget lines — the income-statement-only counterpart to journal_entries.

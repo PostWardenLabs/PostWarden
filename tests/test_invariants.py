@@ -140,6 +140,58 @@ def test_budget_line_rejected_when_scenario_locked(conn):
 
 
 # ---------------------------------------------------------------------------
+# Staging — a holding pen only an automated producer may write to; at most
+# one such scenario ever exists.
+# ---------------------------------------------------------------------------
+def test_staging_scenario_rejects_manual_entry(conn):
+    # seed.sql already seeds the one real Staging scenario — use it rather
+    # than making a second (uq_one_staging_scenario forbids that anyway;
+    # see test_only_one_staging_scenario_allowed below).
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+    with expect_error(conn, match="never a manual posting"):
+        with conn.cursor() as cur:
+            mk_entry(cur, staging_id)
+
+
+def test_staging_scenario_allows_a_scheduled_entry(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        target = mk_scenario(cur)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, target_scenario_id, interval_unit, next_date)
+               VALUES ('Test schedule', %s, 'month', CURRENT_DATE) RETURNING id""",
+            (target["id"],))
+        sched_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries (scenario_id, entry_date, description, scheduled_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Materialized occurrence', %s) RETURNING id""",
+            (staging_id, sched_id))
+        eid = cur.fetchone()["id"]
+        mk_line(cur, eid, acct1["id"], 25, line_no=1)
+        mk_line(cur, eid, acct2["id"], -25, line_no=2)
+    conn.commit()  # must not raise
+
+
+def test_only_one_staging_scenario_allowed(conn):
+    # seed.sql already seeded the real one — a second is rejected outright.
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            mk_scenario(cur, is_staging=True)
+
+
+def test_staging_scenario_cannot_be_income_statement_only(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            mk_scenario(cur, is_staging=True, income_statement_only=True)
+
+
+# ---------------------------------------------------------------------------
 # Postable / active account guard
 # ---------------------------------------------------------------------------
 def test_line_rejected_on_summary_account(conn, actual_scenario_id):

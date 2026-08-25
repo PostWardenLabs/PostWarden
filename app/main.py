@@ -324,7 +324,7 @@ def dashboard(request: Request):
          WHERE s.code = 'ACTUAL'
          ORDER BY e.entry_date DESC, e.id DESC
          LIMIT 8""")
-    pending, _ = pending_scheduled_entries()
+    pending, _ = pending_staging_entries()
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "nav": "dashboard", "net_worth": net_worth,
@@ -1440,9 +1440,13 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
     # For the "+ New entry" panel inline below the filters — same data
     # entry_new.html used to fetch as its own page, since creating an
-    # entry now happens right here instead.
+    # entry now happens right here instead. Staging never accepts a manual
+    # entry (fn_staging_manual_entry_guard) — only a schedule or an import
+    # lands there — so it's excluded here the same as a locked or
+    # income-statement-only scenario would be.
     new_entry_scenarios = [s for s in scenarios_all()
-                          if not s["is_locked"] and not s["income_statement_only"]]
+                          if not s["is_locked"] and not s["income_statement_only"]
+                          and not s["is_staging"]]
     accounts_by_scenario = postable_accounts_by_scenario()
     new_entry_accounts = (accounts_by_scenario.get(new_entry_scenarios[0]["id"], [])
                           if new_entry_scenarios else [])
@@ -1782,9 +1786,13 @@ def scheduled_all():
          ORDER BY se.next_date, se.id""")
 
 
-def pending_scheduled_entries():
-    """Staging entries materialized from a schedule but not yet approved —
-    the admin page's whole reason to have a "Post" button."""
+def pending_staging_entries():
+    """Everything sitting in the Staging scenario, not yet approved — the
+    Staging page's whole reason to exist. Not limited to schedule-sourced
+    rows: this is *everything* Staging is holding regardless of what put
+    it there (materialized schedules today; a future importer too), so
+    the scheduled_entries join is a LEFT JOIN purely for the "which
+    schedule" display detail, not a filter."""
     entries = q("""
         SELECT e.id, e.entry_date, e.description, e.reference,
                p.name AS payee_name,
@@ -1792,8 +1800,9 @@ def pending_scheduled_entries():
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                  WHERE l.entry_id = e.id) AS total_debits
           FROM journal_entries e
-          JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
-          JOIN scenarios ts ON ts.id = se.target_scenario_id
+          JOIN scenarios stg ON stg.id = e.scenario_id AND stg.is_staging
+          LEFT JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+          LEFT JOIN scenarios ts ON ts.id = se.target_scenario_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE e.promoted_entry_id IS NULL
          ORDER BY e.entry_date, e.id""")
@@ -1816,7 +1825,7 @@ def materialize_due_schedules() -> None:
                ORDER BY id""")
     if not due:
         return
-    staging = q1("SELECT id FROM scenarios WHERE code = 'STAGING'")
+    staging = q1("SELECT id FROM scenarios WHERE is_staging")
     if not staging:
         return  # schema migrated but the seed row hasn't landed yet
     for sched in due:
@@ -1856,20 +1865,22 @@ def materialize_due_schedules() -> None:
 def scheduled_page(request: Request, ok: str = None, err: str = None):
     # income-statement-only scenarios can never receive a promoted journal
     # entry (fn_income_statement_only_guard) — same reason entries.html's
-    # "New entry" panel excludes them from its own scenario picker.
+    # "New entry" panel excludes them from its own scenario picker. Staging
+    # itself is excluded too: approving a schedule's occurrence *into*
+    # Staging would be circular — Staging is the layover, not a destination.
     scen = [s for s in scenarios_all()
-           if not s["is_locked"] and not s["income_statement_only"]]
+           if not s["is_locked"] and not s["income_statement_only"] and not s["is_staging"]]
     by_scenario = postable_accounts_by_scenario()
     postable = by_scenario.get(scen[0]["id"], []) if scen else []
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
-    pending, pending_lines = pending_scheduled_entries()
+    pending, _ = pending_staging_entries()
     return templates.TemplateResponse(request, "scheduled.html", {
         "nav": "scheduled", "schedules": scheduled_all(),
         "accounts": postable, "accounts_by_scenario": by_scenario,
         "scenarios": scen, "payees": active_payees,
         "all_tags": all_tags(), "today": date.today().isoformat(),
         "units": SCHEDULE_UNITS,
-        "pending": pending, "pending_lines": pending_lines,
+        "pending_count": len(pending),
         "ok": ok, "err": err,
     })
 
@@ -1949,36 +1960,58 @@ def toggle_schedule(scheduled_id: int, request: Request, csrf_token: str = Form(
     return flash_redirect("/scheduled", ok="Schedule updated")
 
 
-@app.post("/scheduled/post")
-async def post_scheduled_entries(request: Request):
+@app.get("/staging")
+def staging_page(request: Request, ok: str = None, err: str = None):
+    pending, pending_lines = pending_staging_entries()
+    return templates.TemplateResponse(request, "staging.html", {
+        "nav": "staging", "pending": pending, "pending_lines": pending_lines,
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/staging/approve")
+async def approve_staging_entries(request: Request):
     form = await request.form()
     try:
         require_csrf(request, form.get("csrf_token"))
     except ValueError as e:
-        return flash_redirect("/scheduled", err=str(e))
+        return flash_redirect("/staging", err=str(e))
 
     entry_ids = [int(v) for v in form.getlist("entry_id") if v]
     if not entry_ids:
-        return flash_redirect("/scheduled", err="Select at least one entry to post")
+        return flash_redirect("/staging", err="Select at least one entry to approve")
 
     posted, errors = [], []
     for eid in entry_ids:
         try:
-            staged = q1("""SELECT e.*, se.target_scenario_id
+            # LEFT JOIN, not INNER: a schedule-materialized entry carries
+            # its target via scheduled_entries, but nothing requires that
+            # link (a future importer's entries won't have one) — s.is_staging
+            # is what actually proves this row belongs here, not the join.
+            staged = q1("""SELECT e.*, s.is_staging, se.target_scenario_id
                              FROM journal_entries e
-                             JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+                             JOIN scenarios s ON s.id = e.scenario_id
+                             LEFT JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
                             WHERE e.id = %s""", (eid,))
-            if not staged:
-                raise ValueError(f"#{eid}: not a pending scheduled entry")
+            if not staged or not staged["is_staging"]:
+                raise ValueError(f"#{eid}: not a pending staging entry")
             if staged["promoted_entry_id"] is not None:
-                raise ValueError(f"#{eid}: already posted")
+                raise ValueError(f"#{eid}: already approved")
+            target_scenario_id = staged["target_scenario_id"]
+            if target_scenario_id is None:
+                # No schedule to say where this belongs (e.g. an imported
+                # entry) — ACTUAL is the only sensible default destination.
+                actual = q1("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+                target_scenario_id = actual["id"] if actual else None
+            if target_scenario_id is None:
+                raise ValueError(f"#{eid}: no target scenario to approve into")
             with tx() as cur:
                 cur.execute(
                     """INSERT INTO journal_entries
                            (scenario_id, entry_date, description, reference,
                             payee_id, created_by_user_id)
                        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (staged["target_scenario_id"], staged["entry_date"],
+                    (target_scenario_id, staged["entry_date"],
                      staged["description"], staged["reference"], staged["payee_id"],
                      auth.current_user(request)["user_id"]))
                 new_id = cur.fetchone()["id"]
@@ -1999,9 +2032,9 @@ async def post_scheduled_entries(request: Request):
         except (ValueError, psycopg.Error) as e:
             errors.append(_pg_msg(e) if isinstance(e, psycopg.Error) else str(e))
 
-    ok_msg = f"Posted {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}" if posted else None
+    ok_msg = f"Approved {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}" if posted else None
     err_msg = "; ".join(errors) or None
-    return flash_redirect("/scheduled", ok=ok_msg, err=err_msg)
+    return flash_redirect("/staging", ok=ok_msg, err=err_msg)
 
 
 # ---------------------------------------------------------------------------

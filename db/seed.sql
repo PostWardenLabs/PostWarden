@@ -15,13 +15,13 @@ INSERT INTO account_levels (name, depth) VALUES
     ('Account Detail',     3);
 
 -- Scenarios ------------------------------------------------------------------
-INSERT INTO scenarios (code, name, scenario_type, enforce_balance, income_statement_only, notes) VALUES
-    ('ACTUAL',  'Actual',       'actual', TRUE, FALSE,
+INSERT INTO scenarios (code, name, scenario_type, enforce_balance, income_statement_only, is_staging, notes) VALUES
+    ('ACTUAL',  'Actual',       'actual', TRUE, FALSE, FALSE,
      'The books. Always balanced.'),
-    ('BUD2026', 'Budget 2026',  'budget', TRUE, TRUE,
+    ('BUD2026', 'Budget 2026',  'budget', TRUE, TRUE, FALSE,
      'Annual income/expense budget. No journal entries — edited from the Budget page''s grid.'),
-    ('STAGING', 'Staging',      'what_if', TRUE, FALSE,
-     'Auto-posted by Scheduled entries, awaiting approval. Never counts as real books until promoted.');
+    ('STAGING', 'Staging',      'what_if', TRUE, FALSE, TRUE,
+     'A holding pen, not a scenario you post to: entries land here only from a schedule or an import, never typed in directly, and wait on the Staging page for approval into their real target scenario.');
 
 -- Chart of accounts ----------------------------------------------------------
 -- Summary (non-postable) parents first, then postable leaves.

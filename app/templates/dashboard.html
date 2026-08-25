@@ -7,7 +7,7 @@
 
 {% if pending_count %}
 <div class="flash flash-ok" style="margin-bottom: 1.2rem;">
-  <a href="/scheduled">{{ pending_count }} scheduled {{ 'entry' if pending_count == 1 else 'entries' }} waiting on your approval →</a>
+  <a href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a>
 </div>
 {% endif %}
 

@@ -86,14 +86,15 @@ def mk_account(cur, account_type="asset", parent_id=None, postable=True,
 
 def mk_scenario(cur, scenario_type="budget", enforce_balance=True,
                 is_locked=False, base_level_id=None, code=None,
-                income_statement_only=False) -> dict:
+                income_statement_only=False, is_staging=False) -> dict:
     code = code or rand_scenario_code()
     cur.execute(
         """INSERT INTO scenarios (code, name, scenario_type, enforce_balance,
-                                   is_locked, base_level_id, income_statement_only)
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, code""",
+                                   is_locked, base_level_id, income_statement_only,
+                                   is_staging)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id, code""",
         (code, f"Test scenario {code}", scenario_type, enforce_balance,
-         is_locked, base_level_id, income_statement_only))
+         is_locked, base_level_id, income_statement_only, is_staging))
     return cur.fetchone()
 
 

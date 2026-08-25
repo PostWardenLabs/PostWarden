@@ -230,16 +230,16 @@ def test_scheduled_entry_materializes_and_posts(conn):
                 (c.cookies["libro_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
-        r2 = c.post("/scheduled/post",
+        r2 = c.post("/staging/approve",
                     data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
         assert r2.status_code == 303
         assert "ok=" in r2.headers["location"]
 
-        # Re-posting the same (now-promoted) staging entry must fail, not
+        # Re-approving the same (now-promoted) staging entry must fail, not
         # silently duplicate the real entry.
-        r3 = c.post("/scheduled/post",
+        r3 = c.post("/staging/approve",
                     data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
-        assert "already+posted" in r3.headers["location"]
+        assert "already+approved" in r3.headers["location"]
 
     with conn.cursor() as cur:
         cur.execute("SELECT promoted_entry_id FROM journal_entries WHERE id = %s",
@@ -255,6 +255,107 @@ def test_scheduled_entry_materializes_and_posts(conn):
         cur.execute("SELECT COUNT(*) AS n FROM journal_lines WHERE entry_id = %s",
                     (promoted_id,))
         assert cur.fetchone()["n"] == 2
+
+
+def test_staging_excluded_from_new_entry_and_scheduled_target_pickers(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries?new=1")
+        select_html = re.search(
+            r'<select name="scenario_id" id="scenario">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{staging_id}"' not in select_html
+
+        r = c.get("/scheduled")
+        select_html = re.search(
+            r'<select name="scenario_id" id="scenario">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{staging_id}"' not in select_html
+
+
+def test_staging_page_lists_pending_entries_and_approves_them(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, target_scenario_id, interval_unit, next_date)
+               VALUES ('Staged via test', %s, 'month', CURRENT_DATE) RETURNING id""",
+            (actual_id,))
+        sched_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, scheduled_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Staged via test', %s) RETURNING id""",
+            (staging_id, sched_id))
+        eid = cur.fetchone()["id"]
+        mk_line(cur, eid, acct1["id"], 40, line_no=1)
+        mk_line(cur, eid, acct2["id"], -40, line_no=2)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/staging")
+        assert r.status_code == 200
+        assert "Staged via test" in r.text
+        assert f'value="{eid}"' in r.text
+        assert 'id="select-all"' in r.text
+        assert 'id="approve-btn" disabled' in r.text
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r2 = c.post("/staging/approve", data={"entry_id": str(eid), "csrf_token": csrf_token})
+        assert r2.status_code == 303
+        assert "ok=" in r2.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT promoted_entry_id FROM journal_entries WHERE id = %s", (eid,))
+        promoted_id = cur.fetchone()["promoted_entry_id"]
+        assert promoted_id is not None
+        cur.execute("SELECT scenario_id FROM journal_entries WHERE id = %s", (promoted_id,))
+        assert cur.fetchone()["scenario_id"] == actual_id
+
+
+def test_dashboard_links_to_staging_when_entries_pending(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, target_scenario_id, interval_unit, next_date)
+               VALUES ('Dashboard staged', %s, 'month', CURRENT_DATE) RETURNING id""",
+            (actual_id,))
+        sched_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, scheduled_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Dashboard staged', %s) RETURNING id""",
+            (staging_id, sched_id))
+        eid = cur.fetchone()["id"]
+        mk_line(cur, eid, acct1["id"], 15, line_no=1)
+        mk_line(cur, eid, acct2["id"], -15, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/")
+        assert r.status_code == 200
+        assert 'href="/staging"' in r.text
+        assert "waiting in Staging for your approval" in r.text
 
 
 def test_create_template_requires_balance_and_saves_lines(conn):

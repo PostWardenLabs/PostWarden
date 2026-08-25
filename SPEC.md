@@ -149,18 +149,29 @@ entry, without requiring one (direct SQL/import inserts still work).
 A schedule (`scheduled_entries` + `scheduled_entry_lines`, a template
 plus a recurrence rule) never posts directly to its
 `target_scenario_id`. Each due occurrence first becomes a real
-`journal_entries` row in the STAGING scenario
+`journal_entries` row in the Staging scenario
 (`materialize_due_schedules()`, run lazily on request rather than a real
 cron — there's no task runner in this deployment); only once a human
-approves it from the Scheduled page does a *second* entry get posted
-into the real target, linked back via `promoted_entry_id`. The
-alternative — post straight to ACTUAL on the due date — would mean an
-entry appears in your real books with nobody having looked at it, which
-defeats the point of a personal ledger being something you trust without
-double-checking. STAGING is an ordinary full scenario in every other
-respect (see `docs/SCHEMA.md`'s "Default scenarios" section) — the
-approval workflow is entirely an application-layer convention built on
-top of it, not a special table or column.
+approves it from the Staging page (`/staging`: checkboxes, select-all,
+"Approve entries") does a *second* entry get posted into the real
+target, linked back via `promoted_entry_id`. The alternative — post
+straight to ACTUAL on the due date — would mean an entry appears in your
+real books with nobody having looked at it, which defeats the point of
+a personal ledger being something you trust without double-checking.
+
+Staging is a real full scenario in every accounting respect
+(`enforce_balance = TRUE`, every account type) — the one thing that
+*is* special about it, `scenarios.is_staging`, is enforced at the
+trigger level (`fn_staging_manual_entry_guard`), not left as an
+application-layer convention: a Staging entry may only ever exist as
+the output of an automated producer (`scheduled_entry_id IS NOT NULL`
+today), never typed in from New entry. This was the one gap in an
+otherwise fully DB-enforced design — nothing stopped a manual entry from
+landing in Staging and sitting there, correct-looking but never
+reviewed, indistinguishable from a real approved posting to a query that
+didn't know to check `promoted_entry_id`. See `docs/SCHEMA.md`'s
+"Default scenarios" section for the guard and the companion
+`uq_one_staging_scenario` index capping this at one scenario, ever.
 
 ### 10. A simulated close is a query, never a posting
 

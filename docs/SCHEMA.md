@@ -74,6 +74,7 @@ erDiagram
         scenario_type scenario_type
         boolean enforce_balance
         boolean income_statement_only
+        boolean is_staging "at most one TRUE, ever"
         boolean is_locked
         bigint base_level_id FK
     }
@@ -182,28 +183,44 @@ those three are not ordinary user-created scenarios:
   `actual_not_income_statement_only`) — no combination of app bug or
   direct SQL can turn ACTUAL into a scenario that accepts an unbalanced
   or budget-shaped entry.
-- **STAGING** is not a budget concept at all — it's a layover.
-  `materialize_due_schedules()` (`app/main.py`) posts a Scheduled entry's
-  occurrence into STAGING once its `next_date` arrives, and a human has
-  to explicitly approve it from the Scheduled page before a *second*
-  entry gets posted into the schedule's real `target_scenario_id`
-  (`journal_entries.promoted_entry_id` links the two). STAGING itself is
-  an ordinary full scenario in every respect — `income_statement_only =
-  FALSE`, `enforce_balance = TRUE` — the app just knows its **code**,
-  literally the string `'STAGING'`, hard-coded in
-  `materialize_due_schedules()`. Rename it and scheduling silently stops
-  working; there is no other special-casing.
+- **STAGING** is a holding pen, not a budget concept — a real full
+  scenario (`income_statement_only = FALSE`, `enforce_balance = TRUE`)
+  whose `scenarios.is_staging` column is `TRUE`. That flag does two
+  things: `fn_staging_manual_entry_guard` rejects any `journal_entries`
+  INSERT into it unless `scheduled_entry_id IS NOT NULL` — a Staging
+  entry can only ever be the by-product of an automated producer
+  (`materialize_due_schedules()`'s copies today; a future CSV importer
+  gets its own exemption added the same way, not a loosened guard), never
+  typed in from New entry — and `uq_one_staging_scenario`, a unique index
+  on `is_staging` filtered to true rows, caps this at one scenario, ever.
+  The app looks it up by the flag (`SELECT id FROM scenarios WHERE
+  is_staging`) rather than a hardcoded code string, so renaming it in the
+  UI can't silently break scheduling the way it used to.
 
-**Neither is otherwise protected from editing, and neither needs to be**:
-there is no scenario *edit* route in the app at all — `POST /scenarios`
-only creates, and `POST /scenarios/{id}/toggle-lock` only flips
-`is_locked`. Every scenario, default or user-created, is immutable after
-creation through the UI, full stop. (There's no delete route either — a
-scenario with any history is meant to stay in the list, same as an
-account you deactivate instead of removing.) Locking ACTUAL or STAGING
-the same way you'd lock any other scenario is possible and occasionally
-useful (e.g. freezing ACTUAL during a month-end close) — it just isn't
-special to those two codes.
+  Approving one or more pending entries (the Staging page, `/staging`,
+  checkboxes + "Approve entries") posts a *second*, independent entry
+  into the schedule's real `target_scenario_id` and sets the original's
+  `promoted_entry_id` to link them — the staged copy is never edited or
+  deleted, just marked. Re-approving an already-promoted entry is
+  rejected in the app layer (`promoted_entry_id IS NOT NULL` check); nothing
+  currently doing that at the trigger level, since editing/deleting a
+  `journal_entries` row is already generally forbidden (integrity trigger
+  3) regardless of scenario.
+
+**Neither default scenario is otherwise protected from editing, and
+neither needs to be**: there is no scenario *edit* route in the app at
+all — `POST /scenarios` only creates, and `POST
+/scenarios/{id}/toggle-lock` only flips `is_locked`. Every scenario,
+default or user-created, is immutable after creation through the UI,
+full stop. (There's no delete route either — a scenario with any history
+is meant to stay in the list, same as an account you deactivate instead
+of removing.) Locking ACTUAL or STAGING the same way you'd lock any
+other scenario is possible and occasionally useful (e.g. freezing ACTUAL
+during a month-end close) — it just isn't special to those two codes.
+Neither `is_staging` nor `income_statement_only` is exposed as a
+checkbox on the "New scenario" form — both describe a structural role
+that (by design, enforced by `uq_one_staging_scenario` for the former)
+only ever applies to a seeded row, not something a user creates more of.
 
 ## Integrity triggers, in commit order
 
@@ -227,8 +244,11 @@ trigger N" comments — this is that list, in one place:
    new entries once `scenarios.is_locked`.
 5. **`fn_income_statement_only_guard`** (`journal_entries`, BEFORE INSERT)
    — no entries at all once `scenarios.income_statement_only`.
-6. **`fn_budget_line_guard`** (`budget_lines`, BEFORE INSERT OR UPDATE) —
-   the mirror image of 2/4/5 for the other table: scenario must be
+6. **`fn_staging_manual_entry_guard`** (`journal_entries`, BEFORE INSERT)
+   — once `scenarios.is_staging`, an entry may only land here with
+   `scheduled_entry_id IS NOT NULL` — never a manual posting.
+7. **`fn_budget_line_guard`** (`budget_lines`, BEFORE INSERT OR UPDATE) —
+   the mirror image of 2/4/5/6 for the other table: scenario must be
    `income_statement_only` and unlocked, account must be a postable
    income/expense account.
 

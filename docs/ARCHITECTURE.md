@@ -66,7 +66,8 @@ reading order:
 | Scenarios | `/scenarios`, `/scenarios/{id}/toggle-lock` | create + lock-toggle only — no edit, no delete (see SCHEMA.md) |
 | Account levels | `/account-levels` | |
 | Payees | `/payees`, `/payees/quick-create` | quick-create is called via `fetch()` from the New entry payee combobox |
-| Scheduled entries | `/scheduled`, `/scheduled/post` | `materialize_due_schedules()` runs lazily on request (no cron in this deployment) |
+| Scheduled entries | `/scheduled` | `materialize_due_schedules()` runs lazily on request (no cron in this deployment), posting each due occurrence into Staging |
+| Staging | `/staging`, `/staging/approve` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses |
 | Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
 | `/api/*` | JSON mirror | same data as the HTML screens, for scripts; not used by the app's own pages |
 
@@ -101,6 +102,7 @@ through the template context explicitly.
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.LibroMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
+| `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked. |
 | `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
 
 ## Patterns used more than once

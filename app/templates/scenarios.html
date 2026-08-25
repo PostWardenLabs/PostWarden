@@ -15,7 +15,7 @@
       <td class="mono">{{ s.code }}</td>
       <td>{{ s.name }}</td>
       <td class="dim">{{ s.scenario_type }}</td>
-      <td class="dim">{{ 'income statement only' if s.income_statement_only else 'full ledger' }}</td>
+      <td class="dim">{{ 'income statement only' if s.income_statement_only else ('staging (auto-populated only)' if s.is_staging else 'full ledger') }}</td>
       <td class="dim">{{ '—' if s.income_statement_only else ('must balance' if s.enforce_balance else 'single-sided OK') }}</td>
       <td class="dim">{{ '—' if s.income_statement_only else (s.base_level_name or '— leaves only —') }}</td>
       <td class="num mono">{{ s.entry_count }}</td>

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Staging{% endblock %}
+{% block content %}
+<h1>Staging</h1>
+<p class="page-sub">A holding pen, not a scenario you post to directly — every entry here arrived from a
+  schedule (or, eventually, an import), never typed in by hand. Nothing counts as your real books until
+  you approve it into its target scenario below.</p>
+
+{% if pending %}
+<form method="post" action="/staging/approve" id="staging-form">
+  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+  <p class="bar" style="align-items: center;">
+    <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
+    <button type="submit" id="approve-btn" disabled>Approve entries</button>
+  </p>
+  {% for e in pending %}
+  <details class="entry">
+    <summary>
+      <label class="checkline" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
+        <input type="checkbox" name="entry_id" value="{{ e.id }}" class="staging-check">
+      </label>
+      <span class="mono dim">{{ e.entry_date }}</span>
+      <span>{{ e.description }}
+        {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+        <span class="badge">→ {{ e.target_scenario_code or 'ACTUAL' }}</span>
+      </span>
+      <span class="num mono">{{ e.total_debits | money }}</span>
+      <span></span>
+    </summary>
+    <div class="lines">
+      <table class="ledger">
+        <thead><tr>
+          <th>Account</th>
+          <th class="num money money-first">Debit</th>
+          <th class="num money">Credit</th>
+          <th>Memo</th>
+        </tr></thead>
+        <tbody>
+          {% for l in pending_lines.get(e.id, []) %}
+          <tr>
+            <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
+            <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
+            <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
+            <td class="dim">{{ l.memo or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endfor %}
+  <p style="margin-top: 1rem;">
+    <button type="submit" id="approve-btn-bottom" disabled>Approve entries</button>
+  </p>
+</form>
+{% else %}
+<p class="dim">Nothing waiting on approval.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('staging.js') }}"></script>
+{% endblock %}
