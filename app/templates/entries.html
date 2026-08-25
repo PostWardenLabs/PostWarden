@@ -55,7 +55,7 @@
   </label>
   <label class="field">Amount
     <select name="amount_op">
-      <option value="">any</option>
+      <option value="">Any</option>
       <option value="gte" {{ 'selected' if amount_op == 'gte' }}>&ge; at least</option>
       <option value="lte" {{ 'selected' if amount_op == 'lte' }}>&le; at most</option>
       <option value="gt" {{ 'selected' if amount_op == 'gt' }}>&gt; more than</option>
@@ -78,7 +78,7 @@
     <div class="bar" style="margin-bottom: 0.8rem;">
       <label class="field" style="max-width: 20rem;">Load template
         <select id="template-select">
-          <option value="">— choose a template —</option>
+          <option value="">Choose a template</option>
           {% for t in tpls %}
           <option value="{{ t.id }}">{{ t.name }}</option>
           {% endfor %}
@@ -112,7 +112,7 @@
         </label>
         <label class="field">Payee
           <select name="payee_id" data-create-url="/payees/quick-create">
-            <option value="">— none —</option>
+            <option value="">None</option>
             {% for p in payees %}
             <option value="{{ p.id }}">{{ p.name }}</option>
             {% endfor %}

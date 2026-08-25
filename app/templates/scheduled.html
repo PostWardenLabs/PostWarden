@@ -82,7 +82,7 @@
       </label>
       <label class="field">Payee
         <select name="payee_id" data-create-url="/payees/quick-create">
-          <option value="">— none —</option>
+          <option value="">None</option>
           {% for p in payees %}
           <option value="{{ p.id }}">{{ p.name }}</option>
           {% endfor %}

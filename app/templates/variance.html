@@ -23,7 +23,7 @@
   </label>
   <label class="field">Roll up to
     <select name="level_id">
-      <option value="">— native depth, no rollup —</option>
+      <option value="">No rollup (native depth)</option>
       {% for lv in levels %}
       <option value="{{ lv.id }}" {{ 'selected' if level_id == lv.id | string }}>{{ lv.name }}</option>
       {% endfor %}

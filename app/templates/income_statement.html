@@ -21,7 +21,7 @@
   </label>
   <label class="field">Compare to
     <select name="compare">
-      <option value="">— none —</option>
+      <option value="">None</option>
       {% for s in scenarios %}
       <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
       {% endfor %}
