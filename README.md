@@ -64,6 +64,61 @@ What the database refuses to accept, no matter what client asks:
 - an entry in a locked scenario, or any entry at all in a budget-only scenario
 - a child account whose type differs from its parent, or a hierarchy cycle
 
+## Why double-entry for *personal* finance?
+
+The usual objection: double-entry is for businesses and accountants —
+overkill for tracking your own money, where a spreadsheet of
+transactions or a single-entry app (plain envelopes: money in, money
+out) is simpler. It looks simpler right up until you want to ask your
+tracking a second kind of question, and it turns out there was never
+one system to ask — there were several ad hoc ones that happened to
+agree so far.
+
+Say you loan a friend $500. In a single-entry tracker that's... what,
+exactly? An expense? A note in the memo field you'll have to remember to
+search for later? Whatever you pick, "how much does everyone currently
+owe me" isn't a number your tracker has — it's a number you'd
+reconstruct by hand, by remembering which past transactions were loans
+and adding them up again, every time you want to know. Now do the same
+exercise for "what did I actually plan to spend on groceries this
+month, and how far off was I" — in most personal finance tools that's a
+second, disconnected feature (a "budget" screen) that has to be kept in
+sync with the transaction list by hand or by an importer's best guess,
+because nothing about *how the data is modeled* ties the two together.
+
+Double-entry fixes this not by adding rigor for its own sake, but by
+giving every one of those questions the same answer: **an account**.
+Money someone owes you isn't a memo, it's an Accounts Receivable
+account — loan the $500 (debit A/R, credit Cash) and its balance *is*
+"how much they owe me," always current, no reconstruction. Pay a bill
+you'll be reimbursed for later and the reimbursement isn't a mental
+asterisk on an expense, it's Accounts Payable or A/R behaving exactly
+like any other account. A budget isn't a separate feature bolted onto
+the transaction list — in Libro specifically, it's the same data model
+with a second dimension (`scenario`) added, so "actual vs. budget" is a
+`GROUP BY` with two filters, and it's *why* Libro's own Budget page can
+show Actual and Variance next to what you typed without a reconciliation
+step gluing two systems together. An income statement isn't a workbook
+you maintain in parallel — it's a query over Income and Expense
+accounts, always in sync with the ledger because it's not a copy of the
+ledger, it's a view of it. Net worth isn't "let me go check six
+balances and hope I didn't forget the credit card" — it's Assets minus
+Liabilities, correct by construction.
+
+None of this asks you to think like an accountant day to day. Entering
+a transaction takes the same one action either way — you're recording
+the coffee purchase regardless — double-entry just also asks *where the
+money came from* (Checking, in this case), which New entry's keyboard
+flow (account, debit or credit, Tab) makes about as much extra effort as
+picking a category already is in a single-entry app. What you get for
+that one extra field is the thing single-entry can't give you at any
+price: every report is a query against one source of truth instead of a
+reconciliation project between however many separate views of your
+money you've accumulated. The "complexity" isn't overhead you pay for
+nothing — it's the complexity you were always going to hit eventually
+(reconciling a budget against actuals, tracking who owes whom), paid
+once, up front, as a data model, instead of over and over by hand.
+
 ## Quickstart (Docker)
 
 ```bash
