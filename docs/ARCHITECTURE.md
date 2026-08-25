@@ -78,9 +78,12 @@ Every template `{% extends "base.html" %}`, which owns the `<head>`
 (theme pre-paint script, so a saved theme applies before first paint),
 the sidebar nav, the flash-message banner, and three blocks a page fills
 in: `title`, `content`, and `scripts` (page-specific `<script src>` tags
-— most pages need none, since `base.html` already loads the always-on
-enhancements: `combobox.js`, `datepicker.js`, `tags.js`, `sidebar.js`,
-`theme.js`, `money-format.js`).
+— a page needs this block only for something `base.html` doesn't already
+load unconditionally: `combobox.js`, `datepicker.js`, `sidebar.js`,
+`theme.js`, `cents-entry.js`, `money-format.js`, `auto-refresh.js`.
+`tags.js` is the one common enhancement that *isn't* always-on — only
+pages with an actual tag input (`entries.html`, `scheduled.html`, ...)
+load it themselves).
 
 `request.state.user` (set by the auth middleware) carries `csrf_token` —
 every state-changing `<form>` reads it directly as
@@ -92,6 +95,7 @@ through the template context explicitly.
 | File | Enhances |
 |---|---|
 | `app.js` | The journal-entry line grid (New entry) — keyboard flow, live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed. |
+| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
 | `budget-grid.js` | The Budget page's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
 | `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`). |
@@ -177,6 +181,24 @@ losing everything already typed. The route itself checks
 when that header is present — every such route still supports a plain
 form POST too (the `wants_json` branch is additive), so it degrades
 gracefully without JS.
+
+### Auto-refreshing filter bars
+
+Every report's filter form and the Journal's are `<form class="bar"
+method="get">` — a plain GET, so the current filters are always a
+bookmarkable/shareable URL, no client-side state involved. `auto-refresh.js`
+is one delegated `change` listener per such form (found by that same
+class + method, no opt-in markup needed on individual fields) that calls
+`form.requestSubmit()` the moment a `<select>` or date/month field
+changes. It's a `change` listener on the *form*, not on each field, so it
+needs no re-binding when combobox.js/datepicker.js swap a plain `<select>`/
+`<input type="date">` for their own enhanced markup — both of those
+already dispatch a real bubbling `change` on the original element when a
+value is picked (see their own files), which is all a bubble-phase
+listener on an ancestor ever needed. Deliberately scoped to selects and
+date-ish fields only: a text field (Search, the Amount value) or the tag
+picker never matches, so typing never triggers a mid-word navigation —
+only a deliberate pick does.
 
 ### Flash messages
 

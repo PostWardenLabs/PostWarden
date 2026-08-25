@@ -23,7 +23,9 @@ through purpose-built reporting views, no export step required.
   real collapsible account hierarchy — a summary account like "Current
   Assets" shows the roll-up of everything beneath it, and every leaf
   amount is a link straight through to the exact journal postings
-  behind it.
+  behind it. Every report (and the Journal's own filters) refreshes the
+  moment you change a scenario, date, or any other dropdown — no
+  separate Refresh click.
 - **A Budget page** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No

@@ -1597,3 +1597,20 @@ def test_budget_cell_route_rejects_unknown_account(conn):
         })
         assert r.status_code == 400
         assert r.json()["ok"] is False
+
+
+def test_report_filter_bars_load_auto_refresh(conn):
+    # Every GET filter form (class="bar") auto-submits on a select/date
+    # change via one shared script — a regression guard that the script
+    # tag itself is still wired into base.html, not that the JS behavior
+    # works (that needs a real browser; see docs/ARCHITECTURE.md).
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/trial-balance", "/balance-sheet", "/income-statement",
+                   "/variance", "/budget", "/entries"):
+            r = c.get(url)
+            assert r.status_code == 200
+            assert 'auto-refresh.js' in r.text, url
