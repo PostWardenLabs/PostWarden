@@ -686,6 +686,37 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Every active account's own direct balance — leaf or summary, posted-to
+-- or not, no filtering at all. Unlike fn_trial_balance (which hides a
+-- summary account with nothing posted straight to it), this is the base
+-- Trial Balance/Balance Sheet build a hierarchical tree from: a summary
+-- account needs a row here even at $0 of its own, since its displayed
+-- total is computed by rolling its children up onto it in application
+-- code, not by this function.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_account_balances(
+    p_scenario TEXT DEFAULT 'ACTUAL',
+    p_as_of    DATE DEFAULT NULL,
+    p_from     DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    account_id BIGINT,
+    net        NUMERIC(18,2)
+)
+LANGUAGE sql STABLE AS $$
+    SELECT da.id,
+           COALESCE(SUM(f.amount), 0)::numeric(18,2)
+      FROM v_dim_account da
+      LEFT JOIN v_fact_lines f
+             ON f.account_id = da.id
+            AND f.scenario_code = p_scenario
+            AND f.entry_date <= COALESCE(p_as_of, 'infinity'::date)
+            AND f.entry_date >= COALESCE(p_from, '-infinity'::date)
+     WHERE da.is_active
+     GROUP BY da.id;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Rolled-up balance per account at a chosen depth — the budget-vs-actual
 -- base. Unlike fn_trial_balance (native depth, own postings only), this
 -- collapses every posting under a common ancestor at p_depth: a leaf's

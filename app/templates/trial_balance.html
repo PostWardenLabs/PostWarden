@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Trial balance{% endblock %}
 {% block content %}
+{% set report_url = "/trial-balance?scenario=" + scenario + "&as_of=" + as_of + "&zeros=" + (zeros | string) + "&raw=" + (raw | string) %}
+{% macro entry_link(code, value, is_flow) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start if (is_flow and not raw) else '' }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 <h1>Trial balance</h1>
 <p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span> —
   {% if raw %}
@@ -28,7 +30,7 @@
   <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
 </form>
 
-<table class="ledger">
+<table class="ledger" data-collapse-key="libro-trial-balance-collapsed">
   <thead>
     <tr>
       <th>Code</th>
@@ -41,18 +43,25 @@
     {% for g in grouped %}
     <tr class="type-head"><td colspan="4">{{ g.label }}</td></tr>
       {% for r in g.rows %}
-      <tr>
+      <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
-        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle">{{ '>' if r.has_children else '' }}</span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        {% if r.id is defined and not r.has_children and (r.debit_balance or r.credit_balance) %}
+        <td class="num money money-first">{{ entry_link(r.account_code, r.debit_balance, g.type in ('income', 'expense')) if r.debit_balance else '' }}</td>
+        <td class="num money">{{ entry_link(r.account_code, r.credit_balance, g.type in ('income', 'expense')) if r.credit_balance else '' }}</td>
+        {% else %}
         <td class="num money money-first">{{ r.debit_balance | money if r.debit_balance else '' }}</td>
         <td class="num money">{{ r.credit_balance | money if r.credit_balance else '' }}</td>
+        {% endif %}
       </tr>
       {% endfor %}
+    {% if g.show_type_total %}
     <tr class="subtotal">
       <td></td><td>{{ g.label }} subtotal</td>
       <td class="num money money-first">{{ g.sub_debits | money }}</td>
       <td class="num money">{{ g.sub_credits | money }}</td>
     </tr>
+    {% endif %}
     {% endfor %}
     <tr class="grand {{ '' if in_balance else 'out-of-balance' }}">
       <td></td>
@@ -65,3 +74,5 @@
 </table>
 {% if not grouped %}<p class="dim">No activity in this scenario yet. Post your first entry from <a href="/entries?new=1">+ New entry</a>.</p>{% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('report-tree.js') }}"></script>{% endblock %}

@@ -451,7 +451,14 @@ tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: 
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* -- forms --------------------------------------------------------------- */
-form.bar {
+/* Plain class selector, not "form.bar" — a .bar grouping a few fields
+   side by side shows up as a <div> just as often as a <form> (a filter
+   bar submits, a field group inside a bigger form doesn't), and only the
+   <form> ones were ever actually matching this. Every <div class="bar">
+   in the app (the entry grid's own field row included) was quietly
+   never flexed at all, each field stacking full-width on its own line
+   instead of sitting next to its neighbors. */
+.bar {
   display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap;
   margin-bottom: 1.1rem;
 }
@@ -484,6 +491,9 @@ button.quiet {
 button.quiet:hover { background: var(--paper-deep); }
 .checkline { display: flex; align-items: center; gap: 0.4rem;
              font-size: 0.85rem; color: var(--ink); }
+input[type="checkbox"], input[type="radio"] {
+  accent-color: var(--accent); width: 1rem; height: 1rem; cursor: pointer;
+}
 
 /* A same-row link styled to sit quietly next to a button — "Export CSV"
    beside "Filter"/"Refresh", not competing for primary-action weight. */
@@ -696,6 +706,18 @@ tr[data-postable="0"] .tree-toggle {
 tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
 tr[data-postable="0"]:hover td { background: var(--paper-deep); }
 tr.collapsed .tree-toggle { opacity: 1; transform: rotate(0deg); }
+
+/* Same tree on Trial Balance/Balance Sheet (see report-tree.js) — but the
+   toggle stays visible without hovering: scanning a report's numbers is
+   the point, not browsing structure, so which rows expand shouldn't be a
+   secret until you happen to mouse over them. */
+tr[data-has-children="1"] .acct-name { cursor: pointer; }
+tr[data-has-children="1"] .tree-toggle {
+  color: var(--ink-soft); transform: rotate(90deg);
+  transition: transform 120ms ease;
+}
+tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
+tr[data-has-children="1"].collapsed .tree-toggle { transform: rotate(0deg); }
 
 /* Inline "add category here" gap rows, Actual Budget-style — see
    accounts.js. Each is a slim hover strip between two account rows until

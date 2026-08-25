@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Journal{% endblock %}
 {% block content %}
+{% if back %}<p class="page-sub"><a class="quiet-link" href="{{ back }}">&larr; Back to report</a></p>{% endif %}
 <h1>Journal</h1>
 <p class="page-sub">Most recent first, {{ page_size }} at a time. History is append-only: fix mistakes with Reverse, never by editing.</p>
 
@@ -16,6 +17,7 @@
 
 <form class="bar" method="get" action="/entries">
   <input type="hidden" name="account" value="{{ account }}">
+  <input type="hidden" name="back" value="{{ back }}">
   <label class="field">Scenario
     <select name="scenario">
       <option value="">All</option>

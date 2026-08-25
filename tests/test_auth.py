@@ -7,6 +7,7 @@ the users/sessions rows it checks against.
 import json
 import re
 from datetime import date, timedelta
+from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi.testclient import TestClient
 
@@ -961,8 +962,13 @@ def test_entries_page_filters_by_account(conn):
         assert "Entry A" in r.text
         assert "Entry B" not in r.text
         assert f"postings to <span class=\"mono\">{acct_a['code']}</span>" in r.text
-        # The "clear" link drops the account filter but keeps nothing else stray.
-        assert 'href="/entries?scenario=&amp;date_from=&amp;date_to=&amp;qtext=&amp;tags="' in r.text
+        # The "clear" link drops the account filter (and back, since there's
+        # none here) but keeps nothing else stray.
+        m = re.search(r'href="/entries\?([^"]*)">clear</a>', r.text)
+        assert m, "no clear link found"
+        qs = parse_qs(m.group(1).replace("&amp;", "&"), keep_blank_values=True)
+        assert qs.get("account", [""]) == [""]
+        assert qs.get("back", [""]) == [""]
 
         r_csv = c.get(f"/entries/export.csv?account={acct_a['code']}")
         assert acct_a["code"] in r_csv.text
@@ -981,9 +987,15 @@ def test_income_statement_amounts_link_to_filtered_journal(conn):
         today = date.today().isoformat()
         r = c.get(f"/income-statement?scenario={scen['code']}&date_from={today}&date_to={today}")
         assert r.status_code == 200
-        expected_href = (f"/entries?scenario={scen['code']}&date_from={today}"
-                         f"&date_to={today}&account={income['code']}")
-        assert f'<a class="amount-link" href="{expected_href}">' in r.text
+        m = re.search(r'<a class="amount-link" href="([^"]+)">', r.text)
+        assert m, "no amount-link found"
+        qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
+        assert qs["scenario"] == [scen["code"]]
+        assert qs["date_from"] == [today]
+        assert qs["date_to"] == [today]
+        assert qs["account"] == [income["code"]]
+        back_path = urlparse(unquote(qs["back"][0])).path
+        assert back_path == "/income-statement"
 
 
 def test_balance_sheet_amounts_link_to_filtered_journal(conn):
@@ -997,5 +1009,103 @@ def test_balance_sheet_amounts_link_to_filtered_journal(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         r = c.get(f"/balance-sheet?scenario={scen['code']}")
         assert r.status_code == 200
-        expected_href = f"/entries?scenario={scen['code']}&date_to=&account={asset['code']}"
-        assert f'<a class="amount-link" href="{expected_href}">' in r.text
+        m = re.search(r'<a class="amount-link" href="([^"]+)">', r.text)
+        assert m, "no amount-link found"
+        qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
+        assert qs["scenario"] == [scen["code"]]
+        assert qs["account"] == [asset["code"]]
+        back_path = urlparse(unquote(qs["back"][0])).path
+        assert back_path == "/balance-sheet"
+
+
+def test_trial_balance_rolls_up_a_subdivided_summary_account(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        root = mk_account(cur, account_type="asset", postable=False)            # depth 1
+        current = mk_account(cur, account_type="asset", parent_id=root["id"],
+                             postable=False)                                    # depth 2
+        leaf_a = mk_account(cur, account_type="asset", parent_id=current["id"])  # depth 3
+        leaf_b = mk_account(cur, account_type="asset", parent_id=current["id"])  # depth 3
+        mk_line(cur, mk_entry(cur, scen["id"]), leaf_a["id"], 300)
+        mk_line(cur, mk_entry(cur, scen["id"]), leaf_b["id"], 200)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/trial-balance?scenario={scen['code']}")
+        assert r.status_code == 200
+        # "Current" never received a posting directly, but rolls up both
+        # leaves under it; the root rolls up "Current" in turn.
+        assert _account_row_value(r.text, current["code"]) == "500.00"
+        assert _account_row_value(r.text, root["code"]) == "500.00"
+        # Rendered as a collapsible summary row (has descendants) ...
+        m = re.search(rf'data-id="{current["id"]}"[^>]*data-has-children="(\d)"', r.text)
+        assert m and m.group(1) == "1"
+        # ... whose amount is plain text, not a link — it spans two
+        # accounts, so no single Journal filter captures it. Leaves stay
+        # individually clickable.
+        assert f"account={leaf_a['code']}" in r.text
+        assert f"account={current['code']}" not in r.text
+
+
+def test_balance_sheet_rolls_up_a_subdivided_summary_account(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        root = mk_account(cur, account_type="asset", postable=False)
+        current = mk_account(cur, account_type="asset", parent_id=root["id"], postable=False)
+        leaf_a = mk_account(cur, account_type="asset", parent_id=current["id"])
+        leaf_b = mk_account(cur, account_type="asset", parent_id=current["id"])
+        mk_line(cur, mk_entry(cur, scen["id"]), leaf_a["id"], 300)
+        mk_line(cur, mk_entry(cur, scen["id"]), leaf_b["id"], 200)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/balance-sheet?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, current["code"]) == "500.00"
+        assert _account_row_value(r.text, root["code"]) == "500.00"
+
+
+def test_journal_shows_back_to_report_link_for_a_safe_relative_target(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries?back=%2Ftrial-balance%3Fscenario%3DACTUAL")
+        assert r.status_code == 200
+        assert 'href="/trial-balance?scenario=ACTUAL">&larr; Back to report</a>' in r.text
+
+
+def test_journal_drops_an_unsafe_back_target(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r1 = c.get("/entries?back=https://evil.example.com")
+        assert "Back to report" not in r1.text
+        r2 = c.get("/entries?back=//evil.example.com")
+        assert "Back to report" not in r2.text
+
+
+def test_trial_balance_and_balance_sheet_render_raw_as_a_plain_int(conn):
+    # _trial_balance_rows/_balance_sheet_rows used to return their own
+    # "raw": True/False (a Python bool) inside the result dict spread
+    # into the template context *after* the route's own "raw": raw (the
+    # real int query param) — the later key silently won, so every link
+    # built from {{ raw }} rendered "raw=False"/"raw=True" instead of
+    # "raw=0"/"raw=1" and 422'd the moment anything actually followed it
+    # (Export CSV, the amount links' "back" URL, a Refresh resubmit).
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/trial-balance", "/balance-sheet"):
+            r = c.get(url)
+            assert r.status_code == 200
+            assert "raw=False" not in r.text
+            assert "raw=True" not in r.text
+            assert "raw=0" in r.text

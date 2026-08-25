@@ -354,71 +354,128 @@ def dashboard(request: Request):
 # entirely and shows every account's true, unmodified cumulative balance
 # instead — useful for auditing the real numbers underneath.
 # ---------------------------------------------------------------------------
-def _pnl_net(rows: list[dict]) -> float:
-    """Combined Income-minus-Expense across a row set, sign-corrected so a
-    positive result means real earnings (credit side of Equity)."""
-    return (-sum(r["net"] for r in rows if r["acct_type"] == "income")
-            - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
+def _pnl_net(accounts: list[dict], balances: dict) -> float:
+    """Combined Income-minus-Expense across a {account_id: net} balance
+    map, sign-corrected so a positive result means real earnings (credit
+    side of Equity)."""
+    income = sum(balances.get(a["id"], 0) for a in accounts if a["account_type"] == "income")
+    expense = sum(balances.get(a["id"], 0) for a in accounts if a["account_type"] == "expense")
+    return -income - expense
 
 
-def _earnings_row(name: str, amount) -> dict:
-    return {"account_code": "", "account_name": name, "path": "",
-            "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0)}
+def _earnings_row(name: str, amount, depth: int = 2) -> dict:
+    return {"account_code": "", "account_name": name, "path": "", "depth": depth,
+            "has_children": False, "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0)}
+
+
+def _build_account_tree(accounts: list[dict], balances_by_id: dict) -> list[dict]:
+    """The account forest (roots = accounts.parent_id IS NULL), each node
+    carrying a "subtotal" that rolls up every descendant's own direct
+    balance — the actual Trial Balance/Balance Sheet display figure.
+    "net" stays each account's own direct postings only, same as
+    fn_trial_balance always showed; "subtotal" is the new thing a summary
+    account with subdivisions (e.g. "Current Assets"/"Long-term Assets"
+    under "Assets") needed and never had."""
+    nodes = {}
+    for a in accounts:
+        nodes[a["id"]] = {
+            "id": a["id"], "parent_id": a["parent_id"], "account_code": a["code"],
+            "account_name": a["name"], "path": a["path"], "account_type": a["account_type"],
+            "depth": a["depth"], "net": balances_by_id.get(a["id"], 0), "children": [],
+        }
+    roots = []
+    for a in accounts:
+        node = nodes[a["id"]]
+        parent = nodes.get(a["parent_id"])
+        (parent["children"] if parent else roots).append(node)
+
+    def rollup(node):
+        total = node["net"] + sum(rollup(c) for c in node["children"])
+        node["subtotal"] = total
+        node["debit_balance"] = max(total, 0)
+        node["credit_balance"] = max(-total, 0)
+        return total
+    for r in roots:
+        rollup(r)
+    return roots
+
+
+def _flatten_tree(nodes: list[dict], zeros: bool) -> list[dict]:
+    """Depth-first flatten for template rendering, dropping any node (and
+    its whole subtree) whose rolled-up subtotal is zero, unless `zeros` —
+    the same "hide accounts with no activity" rule Trial Balance always
+    applied, just against the rollup instead of each account's own
+    balance now. Adds has_children counting only what survives that
+    filter, so a summary account left childless by it doesn't render a
+    collapse arrow with nothing behind it."""
+    out = []
+    for node in nodes:
+        if not zeros and node["subtotal"] == 0:
+            continue
+        kept_children = _flatten_tree(node["children"], zeros)
+        out.append({**node, "has_children": bool(kept_children)})
+        out.extend(kept_children)
+    return out
 
 
 def _trial_balance_rows(scenario: str, as_of: str, zeros: int, raw: int = 0) -> dict:
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
-    full_rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
-    total_debits = sum(r["debit_balance"] for r in full_rows)
-    total_credits = sum(r["credit_balance"] for r in full_rows)
+    accounts = q("SELECT * FROM v_dim_account WHERE is_active ORDER BY sort_path")
+    full_balances = {r["account_id"]: r["net"] for r in
+                     q("SELECT * FROM fn_account_balances(%s, %s)", (scenario, as_of_date))}
+    total_debits = sum(max(v, 0) for v in full_balances.values())
+    total_credits = sum(max(-v, 0) for v in full_balances.values())
 
-    if raw:
+    def build_sections(balances_by_id: dict, extra_equity: list[dict]) -> list[dict]:
+        roots = _build_account_tree(accounts, balances_by_id)
         grouped = []
         for t in ACCOUNT_TYPES:
-            sub = [r for r in full_rows if r["acct_type"] == t and (zeros or r["net"] != 0)]
-            if sub:
-                grouped.append({"type": t, "label": TYPE_LABELS[t], "rows": sub,
-                                "sub_debits": sum(r["debit_balance"] for r in sub),
-                                "sub_credits": sum(r["credit_balance"] for r in sub)})
+            type_roots = [r for r in roots if r["account_type"] == t]
+            extra = extra_equity if t == "equity" else []
+            flat = _flatten_tree(type_roots, zeros)
+            if flat or extra:
+                grouped.append({
+                    "type": t, "label": TYPE_LABELS[t], "rows": flat + extra,
+                    "sub_debits": sum(r["debit_balance"] for r in type_roots + extra),
+                    "sub_credits": sum(r["credit_balance"] for r in type_roots + extra),
+                    "show_type_total": len(type_roots) > 1 or bool(extra),
+                })
+        return grouped
+
+    if raw:
+        grouped = build_sections(full_balances, [])
         return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
-                "in_balance": total_debits == total_credits, "raw": True}
+                "in_balance": total_debits == total_credits}
 
     fy_start = date(as_of_dt.year, 1, 1).isoformat()
     month_start = date(as_of_dt.year, as_of_dt.month, 1).isoformat()
-    fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
-    mtd_rows = {r["account_id"]: r for r in
-               q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, month_start))}
+    fy_balances = {r["account_id"]: r["net"] for r in
+                  q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario, as_of_date, fy_start))}
+    mtd_balances = {r["account_id"]: r["net"] for r in
+                   q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario, as_of_date, month_start))}
 
-    all_time_earnings = _pnl_net(full_rows)
-    fy_earnings = _pnl_net(fy_rows)
-    mtd_earnings = _pnl_net(list(mtd_rows.values()))
+    all_time_earnings = _pnl_net(accounts, full_balances)
+    fy_earnings = _pnl_net(accounts, fy_balances)
+    mtd_earnings = _pnl_net(accounts, mtd_balances)
     prior_year_earnings = all_time_earnings - fy_earnings
     current_year_earnings = fy_earnings - mtd_earnings
 
-    grouped = []
-    for t in ACCOUNT_TYPES:
-        if t in ("income", "expense"):
-            sub = [mtd_rows[r["account_id"]] for r in full_rows
-                  if r["acct_type"] == t and r["account_id"] in mtd_rows
-                  and (zeros or mtd_rows[r["account_id"]]["net"] != 0)]
-        else:
-            sub = [r for r in full_rows if r["acct_type"] == t and (zeros or r["net"] != 0)]
-            if t == "equity" and (zeros or current_year_earnings != 0 or prior_year_earnings != 0):
-                sub = sub + [
-                    _earnings_row("Current Year Earnings (Unclosed)", current_year_earnings),
-                    _earnings_row("Prior Year Earnings (Unclosed)", prior_year_earnings),
-                ]
-        if sub:
-            grouped.append({
-                "type": t, "label": TYPE_LABELS[t], "rows": sub,
-                "sub_debits": sum(r["debit_balance"] for r in sub),
-                "sub_credits": sum(r["credit_balance"] for r in sub),
-            })
+    merged_balances = {a["id"]: (mtd_balances.get(a["id"], 0)
+                                 if a["account_type"] in ("income", "expense")
+                                 else full_balances.get(a["id"], 0))
+                       for a in accounts}
+    extra_equity = []
+    if zeros or current_year_earnings != 0 or prior_year_earnings != 0:
+        extra_equity = [
+            _earnings_row("Current Year Earnings (Unclosed)", current_year_earnings),
+            _earnings_row("Prior Year Earnings (Unclosed)", prior_year_earnings),
+        ]
+    grouped = build_sections(merged_balances, extra_equity)
 
     return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
             "in_balance": total_debits == total_credits, "fy_start": fy_start,
-            "month_start": month_start, "raw": False}
+            "month_start": month_start}
 
 
 @app.get("/trial-balance")
@@ -644,12 +701,10 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
 def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
-
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
-    assets = [r for r in rows if r["acct_type"] == "asset" and r["net"] != 0]
-    liabilities = [r for r in rows if r["acct_type"] == "liability" and r["net"] != 0]
-    equity = [r for r in rows if r["acct_type"] == "equity" and r["net"] != 0]
-    total_pnl = _pnl_net(rows)
+    accounts = q("SELECT * FROM v_dim_account WHERE is_active ORDER BY sort_path")
+    full_balances = {r["account_id"]: r["net"] for r in
+                     q("SELECT * FROM fn_account_balances(%s, %s)", (scenario, as_of_date))}
+    total_pnl = _pnl_net(accounts, full_balances)
 
     if raw:
         earnings_lines = [("Current earnings (unclosed)", total_pnl)]
@@ -660,19 +715,28 @@ def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
         # (MTD included) or Assets would stop reconciling against
         # Liabilities + Equity by exactly the MTD amount.
         fy_start = date(as_of_dt.year, 1, 1).isoformat()
-        fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
-        fy_earnings = _pnl_net(fy_rows)
+        fy_balances = {r["account_id"]: r["net"] for r in
+                       q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario, as_of_date, fy_start))}
+        fy_earnings = _pnl_net(accounts, fy_balances)
         earnings_lines = [
             ("Current Year Earnings (Unclosed)", fy_earnings),
             ("Prior Year Earnings (Unclosed)", total_pnl - fy_earnings),
         ]
 
-    total_assets = sum(r["net"] for r in assets)
-    total_liabilities = -sum(r["net"] for r in liabilities)
-    total_equity = -sum(r["net"] for r in equity) + total_pnl
+    roots = _build_account_tree(accounts, full_balances)
+    asset_roots = [r for r in roots if r["account_type"] == "asset"]
+    liability_roots = [r for r in roots if r["account_type"] == "liability"]
+    equity_roots = [r for r in roots if r["account_type"] == "equity"]
+    assets = _flatten_tree(asset_roots, zeros=False)
+    liabilities = _flatten_tree(liability_roots, zeros=False)
+    equity = _flatten_tree(equity_roots, zeros=False)
+
+    total_assets = sum(r["subtotal"] for r in asset_roots)
+    total_liabilities = -sum(r["subtotal"] for r in liability_roots)
+    total_equity = -sum(r["subtotal"] for r in equity_roots) + total_pnl
     return {
         "assets": assets, "liabilities": liabilities, "equity": equity,
-        "earnings_lines": earnings_lines, "raw": bool(raw),
+        "earnings_lines": earnings_lines,
         "total_assets": total_assets, "total_liabilities": total_liabilities,
         "total_equity": total_equity,
         "total_liab_and_equity": total_liabilities + total_equity,
@@ -696,11 +760,11 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
     w = csv.writer(buf)
     w.writerow(["Section", "Code", "Account", "Path", "Amount"])
     for r in result["assets"]:
-        w.writerow(["Assets", r["account_code"], r["account_name"], r["path"], r["net"]])
+        w.writerow(["Assets", r["account_code"], r["account_name"], r["path"], r["subtotal"]])
     for r in result["liabilities"]:
-        w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["net"]])
+        w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["subtotal"]])
     for r in result["equity"]:
-        w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["net"]])
+        w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["subtotal"]])
     for label, amount in result["earnings_lines"]:
         w.writerow(["Equity", "", label, "", amount])
     w.writerow([])
@@ -1139,8 +1203,12 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
 @app.get("/entries")
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
-                 page: int = 1, ok: str = None, err: str = None):
+                 back: str = "", page: int = 1, ok: str = None, err: str = None):
     page = max(page, 1)
+    # Only ever a same-origin relative path — a bare "/x", never "//x"
+    # (protocol-relative, i.e. an off-site redirect) or an absolute URL.
+    if not back.startswith("/") or back.startswith("//"):
+        back = ""
     where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags, account)
     account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
 
@@ -1189,10 +1257,10 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
     export_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
-        "qtext": qtext, "tags": tags, "account": account})
+        "qtext": qtext, "tags": tags, "account": account, "back": back})
     clear_account_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
-        "qtext": qtext, "tags": tags})
+        "qtext": qtext, "tags": tags, "back": back})
 
     # For the "+ New entry" panel inline below the filters — same data
     # entry_new.html used to fetch as its own page, since creating an
@@ -1209,6 +1277,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "scenarios": scenarios_all(), "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
+        "back": back,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
         "has_next": has_next, "has_prev": page > 1, "export_qs": export_qs,
         "new_entry_scenarios": new_entry_scenarios, "new_entry_accounts": new_entry_accounts,
