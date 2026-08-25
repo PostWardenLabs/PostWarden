@@ -94,7 +94,7 @@ through the template context explicitly.
 
 | File | Enhances |
 |---|---|
-| `app.js` | The journal-entry line grid (New entry) — keyboard flow, live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed. |
+| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, and Entry templates — keyboard flow, live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). |
 | `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
 | `budget-grid.js` | The Budget page's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |

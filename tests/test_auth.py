@@ -1614,3 +1614,15 @@ def test_report_filter_bars_load_auto_refresh(conn):
             r = c.get(url)
             assert r.status_code == 200
             assert 'auto-refresh.js' in r.text, url
+
+
+def test_entry_grids_offer_a_distribute_button(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/entries?new=1", "/scheduled", "/templates"):
+            r = c.get(url)
+            assert r.status_code == 200
+            assert 'id="distribute-row"' in r.text, url

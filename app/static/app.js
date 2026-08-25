@@ -202,6 +202,41 @@
     focusAccountField(makeRow());
     recalc();
   });
+
+  // Distribute — the line you're currently in (wherever focus is; the
+  // trailing blank row if nothing's focused) gets whatever amount would
+  // zero out the entry, on whichever side needs it. "Debit Cash 1000,
+  // credit A/R 500, distribute the last line" fills in Credit 500 rather
+  // than making you do the subtraction yourself. Always overwrites the
+  // target line's own amount rather than adding to it, so clicking twice
+  // is idempotent instead of compounding.
+  const distributeBtn = document.getElementById("distribute-row");
+  if (distributeBtn) {
+    distributeBtn.addEventListener("click", () => {
+      const active = document.activeElement;
+      const focusedRow = active && body.contains(active) ? active.closest("tr") : null;
+      const rs = rows();
+      const tr = focusedRow || rs[rs.length - 1];
+      if (!tr) return;
+      let deb = 0, cre = 0;
+      rs.forEach((r) => {
+        if (r === tr) return;
+        deb += parseFloat(r.querySelector('[name="debit"]').value) || 0;
+        cre += parseFloat(r.querySelector('[name="credit"]').value) || 0;
+      });
+      // More debit than credit so far (diff > 0) means the entry is short
+      // on the credit side — this line needs to *credit* the difference
+      // to zero it out, and vice versa. (Debits and credits net to zero;
+      // this line supplies whichever side is currently missing.)
+      const diff = Math.round((deb - cre) * 100) / 100;
+      const debitField = tr.querySelector('[name="debit"]');
+      const creditField = tr.querySelector('[name="credit"]');
+      creditField.value = diff > 0 ? diff.toFixed(2) : "";
+      debitField.value = diff < 0 ? (-diff).toFixed(2) : "";
+      debitField.dispatchEvent(new Event("input", { bubbles: true }));
+      (diff > 0 ? creditField : debitField).focus();
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if (e.altKey && e.key.toLowerCase() === "n") {
       e.preventDefault();
