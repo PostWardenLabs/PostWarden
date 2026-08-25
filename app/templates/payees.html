@@ -4,7 +4,7 @@
 {% set report_url = "/payees" %}
 {% macro entry_link(name, count) %}<a class="amount-link" href="/entries?payee={{ name | urlencode }}&back={{ report_url | urlencode }}">{{ count }}</a>{% endmacro %}
 <h1>Payees</h1>
-<p class="page-sub">Who the money went to or came from. Assign one per entry from the New entry screen; deactivating a payee here doesn't touch entries that already used it.</p>
+<p class="page-sub"><a href="/help#payees">How this works →</a></p>
 
 <table class="ledger">
   <thead><tr>

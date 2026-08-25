@@ -233,6 +233,16 @@ def logout(request: Request, csrf_token: str = Form(...)):
 
 
 # ---------------------------------------------------------------------------
+# Help — static reference content, one section per screen (see help.html).
+# Keeps the explanatory prose that used to sit atop every page in one place
+# instead of repeated inline; nothing here is dynamic, so no route params.
+# ---------------------------------------------------------------------------
+@app.get("/help")
+def help_page(request: Request):
+    return templates.TemplateResponse(request, "help.html", {"nav": "help"})
+
+
+# ---------------------------------------------------------------------------
 # User settings — username/password, and the theme picker (see settings.html)
 # ---------------------------------------------------------------------------
 USERNAME_PATTERN = re.compile(r"^[a-z0-9_.-]{3,32}$")

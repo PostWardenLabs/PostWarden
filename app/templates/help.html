@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Help{% endblock %}
+{% block content %}
+<h1>Help</h1>
+<p class="page-sub">How each screen works, in one place — so the screens themselves can stay short. For the
+  reasoning behind the app's design (why double-entry, why scenarios work the way they do), see the
+  <a href="https://github.com/mirelesde/libro" target="_blank" rel="noopener">README and SPEC</a> in the repo.</p>
+
+<div class="panel">
+  <p class="dim small" style="margin: 0;">Jump to:
+    <a href="#journal">Journal</a> ·
+    <a href="#scheduled">Scheduled entries</a> ·
+    <a href="#staging">Staging</a> ·
+    <a href="#import">Import</a> ·
+    <a href="#templates">Templates</a> ·
+    <a href="#budget-grid">Budget grid</a> ·
+    <a href="#reports">Reports &amp; simulated close</a> ·
+    <a href="#variance">Variance</a> ·
+    <a href="#scenarios">Scenarios</a> ·
+    <a href="#accounts">Accounts &amp; levels</a> ·
+    <a href="#payees">Payees</a>
+  </p>
+</div>
+
+<h2 id="journal">Journal</h2>
+<p>Every posted entry, most recent first, 50 at a time. History here is append-only: fix a mistake with
+  <strong>Reverse</strong> on the entry itself, never by editing a posted line — the database refuses edits
+  and deletes outright, so this isn't just a convention. <strong>+ New entry</strong> opens a keyboard-first
+  form right on this page: Tab flows account → debit/credit → memo, a new blank line appears once the last
+  one is in use, and <strong>Distribute</strong> fills in whatever amount would balance the entry on
+  whichever line has focus. Filters (scenario, dates, account, payee, amount, tags, search) narrow the list
+  and the CSV export alike, and every one of them refreshes the moment you change it — no separate button.
+
+<h2 id="scheduled">Scheduled entries</h2>
+<p>Recurring postings — rent, wages, subscriptions. Each occurrence lands in <a href="/staging">Staging</a>
+  on its due date automatically; nothing touches your real books until you approve it from there. A schedule
+  itself is just a template plus a repeat rule (every N days/weeks/months) and the scenario its occurrences
+  should eventually land in once approved.
+
+<h2 id="staging">Staging</h2>
+<p>A holding pen, not a scenario you ever post to directly — every entry here arrived from a schedule or a
+  CSV import, never typed in by hand (the database enforces that, too). Check the ones you want, hit
+  <strong>Approve entries</strong>, and each one becomes a real, independent posting in its target scenario.
+  The staged copy itself is never deleted, just marked approved, so nothing can be approved twice.
+
+<h2 id="import">Import</h2>
+<p>Brings entries in from a CSV — the same column layout <a href="/entries/export.csv">Export CSV</a>
+  produces, so export → edit in a spreadsheet → re-import is a real round trip. Required columns:
+  <span class="mono">Entry #</span> (groups rows into one entry — the value itself isn't kept),
+  <span class="mono">Date</span>, <span class="mono">Description</span>, <span class="mono">Account code</span>,
+  and exactly one of <span class="mono">Debit</span> / <span class="mono">Credit</span> per row.
+  <span class="mono">Reference</span>, <span class="mono">Payee</span>, and <span class="mono">Memo</span> are
+  optional; <span class="mono">Scenario</span> and <span class="mono">Account name</span> are ignored if
+  present — every entry in a group must balance on its own. Imported entries land in
+  <a href="/staging">Staging</a> for review, exactly like a scheduled entry, targeting whichever scenario you
+  pick on the upload form.
+
+<h2 id="templates">Templates</h2>
+<p>Reusable scaffolding for entries you post often. Save one here, then pick it from the "Load template"
+  list on the <a href="/entries?new=1">Journal's + New entry</a> panel to fill the whole form in one click.
+  A template isn't a posting and isn't tracked once loaded — it just fills in fields, the same as if you'd
+  typed them by hand.
+
+<h2 id="budget-grid">Budget grid</h2>
+<p>Income/expense targets, one month at a time — no journal entries, no date, no counter-account, just how
+  much. Budgeted is editable (type a number, tab to the next cell); Actual is what really posted to ACTUAL
+  that month, and Variance is the difference. This only works for a scenario created as
+  "income statement only" — see Scenarios below.
+
+<h2 id="reports">Reports &amp; the simulated monthly close</h2>
+<p>Trial Balance and Balance Sheet default to a <strong>simulated close</strong>: Income/Expense activity
+  shows only the current period (month-to-date on Trial Balance; fiscal-year-to-date on Balance Sheet,
+  since a balance sheet has no Income Statement section to hold the rest), with everything before that
+  folded into synthetic "Current/Prior Year Earnings (Unclosed)" lines under Equity — as if a real monthly
+  close had run. It hasn't: no entries are ever posted for this, it's computed fresh on every page load.
+  Check <strong>show true balances</strong> on either report to see the real, unmodified cumulative numbers
+  instead. Income Statement is different from both — it's always a date <em>range</em> you pick, never a
+  running balance since inception.
+
+<h2 id="variance">Variance</h2>
+<p>Compares two scenarios side by side, rolled up to a common level so a scenario entered straight against
+  a summary account like "Bank" still lines up against a finer one that split Checking/Savings, instead of
+  just not matching up at all.
+
+<h2 id="scenarios">Scenarios</h2>
+<p>The OneStream idea, in a ledger: ACTUAL and any full scenario (a forecast or what-if actually modeling
+  dated transactions, like "what if I buy a house") are journal entries tagged with a scenario, and Variance
+  is just a query across them. An <strong>income statement only</strong> scenario skips the ledger entirely
+  — no dates, no counter-accounts, just income/expense amounts edited from the <a href="/budget">Budget
+  grid</a>. <span class="mono">STAGING</span> is neither of these to configure yourself — it's a fixed
+  holding pen only Scheduled entries and Import can write to (see Staging above).
+
+<h2 id="accounts">Accounts &amp; levels</h2>
+<p>Summary accounts structure the chart; only postable leaves ever take a journal line. A child always
+  inherits its parent's type (an Expense account can't have an Asset child) — the database enforces that,
+  not just the form. <strong>Levels</strong> are just names for a depth in that hierarchy (depth 1 = every
+  account's root, depth 2 their children, and so on) — purely labels over the same tree, useful mainly for
+  picking a scenario's "base level" so it can post to a whole branch like "Bank" instead of every leaf
+  underneath it.
+
+<h2 id="payees">Payees</h2>
+<p>Who the money went to or came from. Assign one per entry from the New entry screen; deactivating a payee
+  here doesn't touch entries that already used it, and its entry count is a link straight through to them.
+{% endblock %}

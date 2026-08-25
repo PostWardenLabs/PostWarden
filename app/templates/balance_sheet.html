@@ -4,14 +4,8 @@
 {% set report_url = "/balance-sheet?scenario=" + scenario + "&as_of=" + as_of + "&raw=" + (raw | string) %}
 {% macro entry_link(code, value) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 <h1>Balance sheet</h1>
-<p class="page-sub">Assets, liabilities, and equity as of a date, scenario <span class="mono">{{ scenario }}</span> —
-  {% if raw %}
-  Income/Expense activity folds into one "Current earnings (unclosed)" line under Equity, its true all-time total.
-  {% else %}
-  Income/Expense activity folds into Equity here (there's no Income Statement section on a balance sheet to keep
-  it in): this fiscal year to date, month-to-date included, sits in "Current Year Earnings (Unclosed)," and
-  everything before that in "Prior Year Earnings (Unclosed)" — no entries actually posted.
-  {% endif %}</p>
+<p class="page-sub">As of {{ as_of or 'today' }} · scenario <span class="mono">{{ scenario }}</span>
+  {% if not raw %}· simulated monthly close (<a href="/help#reports">what's this?</a>){% endif %}</p>
 
 <form class="bar" method="get" action="/balance-sheet">
   <label class="field">Scenario

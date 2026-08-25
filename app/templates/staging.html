@@ -2,9 +2,7 @@
 {% block title %}Staging{% endblock %}
 {% block content %}
 <h1>Staging</h1>
-<p class="page-sub">A holding pen, not a scenario you post to directly — every entry here arrived from a
-  <a href="/scheduled">schedule</a> or a CSV <a href="/import">import</a>, never typed in by hand. Nothing
-  counts as your real books until you approve it into its target scenario below.</p>
+<p class="page-sub"><a href="/help#staging">How this works →</a></p>
 
 {% if pending %}
 <form method="post" action="/staging/approve" id="staging-form">

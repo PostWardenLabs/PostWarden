@@ -2,9 +2,7 @@
 {% block title %}Scheduled entries{% endblock %}
 {% block content %}
 <h1>Scheduled entries</h1>
-<p class="page-sub">Recurring postings — rent, wages, subscriptions. Each occurrence lands in the
-  <span class="mono">STAGING</span> scenario on its date; nothing touches your real books until it's
-  approved from the <a href="/staging">Staging page</a>.</p>
+<p class="page-sub"><a href="/help#scheduled">How this works →</a></p>
 
 {% if pending_count %}
 <p class="page-sub"><a href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a></p>

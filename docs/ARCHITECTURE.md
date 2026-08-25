@@ -69,6 +69,7 @@ reading order:
 | Staging | `/staging`, `/staging/approve` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses |
 | Import | `/import` | uploads a CSV in `/entries/export.csv`'s own column layout; `_parse_csv_import()` groups rows by `Entry #` and fully validates every group in Python before anything touches the database, then stages the valid ones in Staging under a new `import_batches` row |
 | Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
+| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, linked back with a short "How this works →" |
 | `/api/*` | JSON mirror | same data as the HTML screens, for scripts; not used by the app's own pages |
 
 ## Templates

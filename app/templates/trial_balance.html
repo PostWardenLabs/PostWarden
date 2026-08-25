@@ -4,14 +4,8 @@
 {% set report_url = "/trial-balance?scenario=" + scenario + "&as_of=" + as_of + "&zeros=" + (zeros | string) + "&raw=" + (raw | string) %}
 {% macro entry_link(code, value, is_flow) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start if (is_flow and not raw) else '' }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 <h1>Trial balance</h1>
-<p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span> —
-  {% if raw %}
-  true cumulative balances since each account's first posting, Income and Expense included.
-  {% else %}
-  Income/Expense accounts show month-to-date only, as if simulating a monthly close: everything from
-  {{ fy_start }} through the start of this month sits in "Current Year Earnings (Unclosed)," and everything
-  before {{ fy_start }} in "Prior Year Earnings (Unclosed)" — both under Equity, no entries actually posted.
-  {% endif %}</p>
+<p class="page-sub">{{ 'As of ' + as_of if as_of else 'Through today' }} · scenario <span class="mono">{{ scenario }}</span>
+  {% if not raw %}· simulated monthly close (<a href="/help#reports">what's this?</a>){% endif %}</p>
 
 <form class="bar" method="get" action="/trial-balance">
   <label class="field">Scenario

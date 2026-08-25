@@ -3,7 +3,6 @@
 {% block content %}
 {% if back %}<p class="page-sub"><a class="quiet-link" href="{{ back }}">&larr; Back to report</a></p>{% endif %}
 <h1>Journal</h1>
-<p class="page-sub">Most recent first, {{ page_size }} at a time. History is append-only: fix mistakes with Reverse, never by editing.</p>
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
 <script type="application/json" id="accounts-data">{{ new_entry_accounts | tojson }}</script>

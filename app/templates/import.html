@@ -2,18 +2,8 @@
 {% block title %}Import{% endblock %}
 {% block content %}
 <h1>Import</h1>
-<p class="page-sub">Bring entries in from a CSV — the same column layout the Journal's own
-  <a href="/entries/export.csv">Export CSV</a> produces, so export → edit in a spreadsheet → re-import is a
-  real round trip. Required columns: <span class="mono">Entry #</span> (groups rows into one entry — the
-  value itself isn't kept), <span class="mono">Date</span>, <span class="mono">Description</span>,
-  <span class="mono">Account code</span>, and exactly one of <span class="mono">Debit</span> /
-  <span class="mono">Credit</span> per row. <span class="mono">Reference</span>, <span class="mono">Payee</span>,
-  and <span class="mono">Memo</span> are optional; <span class="mono">Scenario</span> and
-  <span class="mono">Account name</span> are ignored if present. Every entry in a group must balance on its own.</p>
-
-<p class="page-sub">Nothing posts straight to a scenario — imported entries land in
-  <span class="mono">Staging</span> for review, same as a scheduled entry. Pick where they should end up once
-  approved below, then <a href="/staging">review and approve them</a> when you're ready.</p>
+<p class="page-sub">Imported entries land in <a href="/staging">Staging</a> for review, same as a scheduled
+  entry. <a href="/help#import">Required CSV columns and how this works →</a></p>
 
 <div class="panel">
   <h2>Upload a CSV</h2>
