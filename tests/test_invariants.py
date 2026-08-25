@@ -4,7 +4,8 @@ Each test hits Postgres directly (see conftest.py) so there is no code
 path — app, psql, or otherwise — that can route around what's asserted
 here.
 """
-from conftest import expect_error, mk_account, mk_entry, mk_line, mk_scenario
+from conftest import (expect_error, mk_account, mk_budget_line, mk_entry,
+                     mk_line, mk_scenario)
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +66,15 @@ def test_actual_scenario_must_enforce_balance(conn):
                    VALUES ('TACTUAL2', 'bad actual', 'actual', FALSE)""")
 
 
+def test_actual_scenario_cannot_be_income_statement_only(conn):
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO scenarios
+                       (code, name, scenario_type, income_statement_only)
+                   VALUES ('TACTUAL3', 'bad actual', 'actual', TRUE)""")
+
+
 # ---------------------------------------------------------------------------
 # Scenario locking
 # ---------------------------------------------------------------------------
@@ -73,6 +83,60 @@ def test_locked_scenario_rejects_new_entries(conn):
         with conn.cursor() as cur:
             scen = mk_scenario(cur, is_locked=True)
             mk_entry(cur, scen["id"])
+
+
+# ---------------------------------------------------------------------------
+# Income-statement-only scenarios — no journal entries, ever; only
+# budget_lines, and only for a postable income/expense account.
+# ---------------------------------------------------------------------------
+def test_income_statement_only_scenario_rejects_journal_entry(conn):
+    with expect_error(conn, match="income-statement-only"):
+        with conn.cursor() as cur:
+            scen = mk_scenario(cur, income_statement_only=True)
+            mk_entry(cur, scen["id"])
+
+
+def test_budget_line_commits_for_income_expense_leaf(conn):
+    with conn.cursor() as cur:
+        scen = mk_scenario(cur, income_statement_only=True)
+        acct = mk_account(cur, account_type="expense")
+        mk_budget_line(cur, scen["id"], acct["id"], 600)
+    conn.commit()  # must not raise
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT amount FROM budget_lines WHERE scenario_id = %s", (scen["id"],))
+        assert cur.fetchone()["amount"] == 600
+
+
+def test_budget_line_rejected_for_full_scenario(conn, actual_scenario_id):
+    with expect_error(conn, match="not income-statement-only"):
+        with conn.cursor() as cur:
+            acct = mk_account(cur, account_type="expense")
+            mk_budget_line(cur, actual_scenario_id, acct["id"], 600)
+
+
+def test_budget_line_rejected_on_asset_account(conn):
+    with expect_error(conn, match="not an income or expense account"):
+        with conn.cursor() as cur:
+            scen = mk_scenario(cur, income_statement_only=True)
+            acct = mk_account(cur, account_type="asset")
+            mk_budget_line(cur, scen["id"], acct["id"], 600)
+
+
+def test_budget_line_rejected_on_summary_account(conn):
+    with expect_error(conn, match="summary account"):
+        with conn.cursor() as cur:
+            scen = mk_scenario(cur, income_statement_only=True)
+            summary = mk_account(cur, account_type="expense", postable=False)
+            mk_budget_line(cur, scen["id"], summary["id"], 600)
+
+
+def test_budget_line_rejected_when_scenario_locked(conn):
+    with expect_error(conn, match="locked"):
+        with conn.cursor() as cur:
+            scen = mk_scenario(cur, income_statement_only=True, is_locked=True)
+            acct = mk_account(cur, account_type="expense")
+            mk_budget_line(cur, scen["id"], acct["id"], 600)
 
 
 # ---------------------------------------------------------------------------

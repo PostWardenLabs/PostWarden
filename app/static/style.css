@@ -623,6 +623,9 @@ table.entry-grid input { width: 100%; border-color: var(--rule); }
 table.entry-grid td { padding: 0.2rem 0.3rem; }
 table.entry-grid .col-account { width: 42%; }
 table.entry-grid .col-amount  { width: 15%; }
+
+/* -- budget grid (see budget-grid.js) ------------------------------------- */
+.budget-cell { width: 100%; border-color: var(--rule); }
 .balance-bar {
   display: flex; gap: 2rem; align-items: baseline; flex-wrap: wrap;
   margin-top: 0.9rem; padding: 0.7rem 0.9rem;

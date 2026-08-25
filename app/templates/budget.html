@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Budget{% endblock %}
+{% block content %}
+<h1>Budget</h1>
+<p class="page-sub">Income/expense targets, one month at a time — no journal entries, no date, no counter-account, just how much. Budgeted is editable; Actual is what actually posted to ACTUAL this month.</p>
+
+{% if not scenarios %}
+<p class="dim">No income-statement-only scenarios yet. Create one from <a href="/scenarios">Scenarios</a> — check "income statement only" when you do.</p>
+{% else %}
+
+<form class="bar" method="get" action="/budget">
+  <label class="field">Scenario
+    <select name="scenario">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Month
+    <input type="month" name="month" value="{{ month[:7] }}">
+  </label>
+  <button type="submit">Go</button>
+  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}">&larr; {{ prev_month[:7] }}</a>
+  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ next_month[:7] }}">{{ next_month[:7] }} &rarr;</a>
+</form>
+
+{% if not scen %}
+<p class="dim">Scenario <span class="mono">{{ scenario }}</span> not found or isn't income-statement-only.</p>
+{% else %}
+
+<table class="ledger" data-collapse-key="libro-budget-collapsed-{{ scenario }}">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Account</th>
+      <th class="num money money-first">Budgeted</th>
+      <th class="num money">Actual</th>
+      <th class="num money">Variance</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in grouped %}
+    <tr class="type-head"><td colspan="5">{{ g.label }}</td></tr>
+    {% for r in g.rows %}
+    <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"
+        data-type="{{ r.account_type }}" data-actual="{{ '%.2f' % r.actual }}">
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      {% if r.has_children %}
+      <td class="num money money-first budgeted-cell">{{ r.budgeted | money }}</td>
+      {% else %}
+      <td class="num money money-first">
+        <input type="text" class="amount budget-cell" inputmode="decimal"
+               data-scenario-id="{{ scen.id }}" data-account="{{ r.account_code }}"
+               data-month="{{ month }}"
+               value="{{ '%.2f' % r.budgeted if r.budgeted else '' }}">
+      </td>
+      {% endif %}
+      <td class="num money">{{ r.actual | money }}</td>
+      <td class="num money variance-cell {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="subtotal" data-type-subtotal="{{ g.type }}" data-actual="{{ '%.2f' % g.sub_actual }}">
+      <td></td><td>{{ g.label }} subtotal</td>
+      <td class="num money money-first budgeted-cell">{{ g.sub_budgeted | money }}</td>
+      <td class="num money">{{ g.sub_actual | money }}</td>
+      <td class="num money variance-cell {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="grand" data-net-row data-actual="{{ '%.2f' % net_actual }}">
+      <td></td>
+      <td>Net (Income &minus; Expenses)</td>
+      <td class="num money money-first budgeted-cell">{{ net_budgeted | money }}</td>
+      <td class="num money">{{ net_actual | money }}</td>
+      <td class="num money variance-cell {{ 'neg' if net_variance < 0 }}">{{ net_variance | money }}</td>
+    </tr>
+  </tbody>
+</table>
+<p id="budget-save-status" class="dim small" aria-live="polite"></p>
+<input type="hidden" id="budget-csrf" value="{{ request.state.user.csrf_token }}">
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ asset('report-tree.js') }}"></script>
+<script src="{{ asset('budget-grid.js') }}"></script>
+{% endblock %}

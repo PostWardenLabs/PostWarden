@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import mk_account, mk_entry, mk_line, mk_scenario, mk_user
+from conftest import mk_account, mk_budget_line, mk_entry, mk_line, mk_scenario, mk_user
 
 client_kwargs = {"base_url": "http://testserver", "follow_redirects": False}
 
@@ -1109,3 +1109,167 @@ def test_trial_balance_and_balance_sheet_render_raw_as_a_plain_int(conn):
             assert "raw=False" not in r.text
             assert "raw=True" not in r.text
             assert "raw=0" in r.text
+
+
+# ---------------------------------------------------------------------------
+# Budget — income-statement-only scenarios (grid, not journal entries)
+# ---------------------------------------------------------------------------
+def test_create_scenario_income_statement_only_via_route(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/scenarios", data={
+            "csrf_token": csrf_token, "code": "ISONLY1", "name": "Budget test",
+            "scenario_type": "budget", "income_statement_only": "on",
+        })
+        assert "ok=" in r.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT income_statement_only FROM scenarios WHERE code = 'ISONLY1'")
+        assert cur.fetchone()["income_statement_only"] is True
+
+
+def test_income_statement_only_scenario_excluded_from_new_entry_panel(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries?new=1")
+        assert r.status_code == 200
+        select_html = re.search(
+            r'<select name="scenario_id" id="scenario">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{scen["id"]}"' not in select_html
+
+
+def test_income_statement_only_scenario_excluded_from_scheduled_target(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/scheduled")
+        assert r.status_code == 200
+        select_html = re.search(
+            r'<select name="scenario_id" id="scenario">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{scen["id"]}"' not in select_html
+
+
+def test_variance_page_excludes_income_statement_only_scenarios(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/variance")
+        assert r.status_code == 200
+        assert f'value="{scen["code"]}"' not in r.text
+
+
+def test_budget_page_shows_budgeted_actual_and_variance(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        scen = mk_scenario(cur, income_statement_only=True)
+        expense = mk_account(cur, account_type="expense")
+        cash = mk_account(cur, account_type="asset")
+        mk_budget_line(cur, scen["id"], expense["id"], 600, period_month="2026-08-01")
+        cur.execute(
+            """INSERT INTO journal_entries (scenario_id, entry_date, description)
+               VALUES (%s, '2026-08-05', 'Test entry') RETURNING id""",
+            (actual_id,))
+        eid = cur.fetchone()["id"]
+        mk_line(cur, eid, expense["id"], 450)
+        mk_line(cur, eid, cash["id"], -450, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/budget?scenario={scen['code']}&month=2026-08")
+        assert r.status_code == 200
+        m = re.search(rf'data-account="{expense["code"]}"[^>]*value="([^"]*)"', r.text)
+        assert m and m.group(1) == "600.00"
+        assert _account_row_value(r.text, expense["code"]) == "450.00"  # Actual column
+        assert "-150.00" in r.text  # Variance = actual - budgeted = 450 - 600
+
+
+def test_budget_page_rolls_up_a_subdivided_summary_account(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+        root = mk_account(cur, account_type="expense", postable=False)
+        leaf_a = mk_account(cur, account_type="expense", parent_id=root["id"])
+        leaf_b = mk_account(cur, account_type="expense", parent_id=root["id"])
+        mk_budget_line(cur, scen["id"], leaf_a["id"], 300, period_month="2026-08-01")
+        mk_budget_line(cur, scen["id"], leaf_b["id"], 200, period_month="2026-08-01")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/budget?scenario={scen['code']}&month=2026-08")
+        assert r.status_code == 200
+        m = re.search(rf'data-account="{leaf_a["code"]}"[^>]*value="([^"]*)"', r.text)
+        assert m and m.group(1) == "300.00"
+        # The summary row rolls up both leaves — plain text, not an input
+        # (it isn't a postable account; there's nowhere for a budget_line
+        # to attach to it).
+        m2 = re.search(rf'data-id="{root["id"]}"[^>]*>.*?</tr>', r.text, re.S)
+        assert m2 and "500.00" in m2.group(0)
+        assert f'data-account="{root["code"]}"' not in r.text
+
+
+def test_budget_cell_route_upserts(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+        acct = mk_account(cur, account_type="expense")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r1 = c.post("/budget/cell", data={
+            "csrf_token": csrf_token, "scenario_id": str(scen["id"]),
+            "account": acct["code"], "period_month": "2026-08-01", "amount": "150",
+        })
+        assert r1.status_code == 200 and r1.json()["ok"] is True
+        r2 = c.post("/budget/cell", data={
+            "csrf_token": csrf_token, "scenario_id": str(scen["id"]),
+            "account": acct["code"], "period_month": "2026-08-01", "amount": "175.50",
+        })
+        assert r2.status_code == 200 and r2.json()["ok"] is True
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT amount FROM budget_lines WHERE scenario_id = %s AND account_id = %s",
+            (scen["id"], acct["id"]))
+        rows = cur.fetchall()
+        assert len(rows) == 1  # upsert, not a second row
+        assert str(rows[0]["amount"]) == "175.50"
+
+
+def test_budget_cell_route_rejects_unknown_account(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, income_statement_only=True)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/budget/cell", data={
+            "csrf_token": csrf_token, "scenario_id": str(scen["id"]),
+            "account": "NOPE999", "period_month": "2026-08-01", "amount": "10",
+        })
+        assert r.status_code == 400
+        assert r.json()["ok"] is False

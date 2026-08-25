@@ -85,15 +85,24 @@ def mk_account(cur, account_type="asset", parent_id=None, postable=True,
 
 
 def mk_scenario(cur, scenario_type="budget", enforce_balance=True,
-                is_locked=False, base_level_id=None, code=None) -> dict:
+                is_locked=False, base_level_id=None, code=None,
+                income_statement_only=False) -> dict:
     code = code or rand_scenario_code()
     cur.execute(
         """INSERT INTO scenarios (code, name, scenario_type, enforce_balance,
-                                   is_locked, base_level_id)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, code""",
+                                   is_locked, base_level_id, income_statement_only)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, code""",
         (code, f"Test scenario {code}", scenario_type, enforce_balance,
-         is_locked, base_level_id))
+         is_locked, base_level_id, income_statement_only))
     return cur.fetchone()
+
+
+def mk_budget_line(cur, scenario_id, account_id, amount, period_month="2026-08-01") -> int:
+    cur.execute(
+        """INSERT INTO budget_lines (scenario_id, account_id, period_month, amount)
+           VALUES (%s, %s, %s, %s) RETURNING id""",
+        (scenario_id, account_id, period_month, amount))
+    return cur.fetchone()["id"]
 
 
 def mk_account_level(cur, name, depth) -> dict:

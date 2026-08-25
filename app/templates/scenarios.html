@@ -2,11 +2,11 @@
 {% block title %}Scenarios{% endblock %}
 {% block content %}
 <h1>Scenarios</h1>
-<p class="page-sub">The OneStream idea, in a ledger: ACTUAL, budgets and forecasts are all journal entries tagged with a scenario. Variance is just a query across them.</p>
+<p class="page-sub">The OneStream idea, in a ledger: ACTUAL and any full scenario (a forecast or what-if actually modeling dated transactions) are journal entries tagged with a scenario, and Variance is just a query across them. An income-statement-only scenario skips the ledger entirely — no dates, no counter-accounts, just income/expense amounts edited from the <a href="/budget">Budget</a> page.</p>
 
 <table class="ledger">
   <thead><tr>
-    <th>Code</th><th>Name</th><th>Type</th><th>Balance rule</th><th>Base level</th>
+    <th>Code</th><th>Name</th><th>Type</th><th>Kind</th><th>Balance rule</th><th>Base level</th>
     <th class="num">Entries</th><th>Status</th><th></th>
   </tr></thead>
   <tbody>
@@ -15,8 +15,9 @@
       <td class="mono">{{ s.code }}</td>
       <td>{{ s.name }}</td>
       <td class="dim">{{ s.scenario_type }}</td>
-      <td class="dim">{{ 'must balance' if s.enforce_balance else 'single-sided OK' }}</td>
-      <td class="dim">{{ s.base_level_name or '— leaves only —' }}</td>
+      <td class="dim">{{ 'income statement only' if s.income_statement_only else 'full ledger' }}</td>
+      <td class="dim">{{ '—' if s.income_statement_only else ('must balance' if s.enforce_balance else 'single-sided OK') }}</td>
+      <td class="dim">{{ '—' if s.income_statement_only else (s.base_level_name or '— leaves only —') }}</td>
       <td class="num mono">{{ s.entry_count }}</td>
       <td>{% if s.is_locked %}<span class="badge rev">locked</span>{% else %}<span class="badge">open</span>{% endif %}</td>
       <td>
@@ -32,7 +33,7 @@
 
 <div class="panel">
   <h2>New scenario</h2>
-  <form method="post" action="/scenarios" class="grid-form">
+  <form method="post" action="/scenarios" class="grid-form" id="new-scenario-form">
     <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
     <label class="field">Code
       <input type="text" name="code" required pattern="[A-Za-z0-9_]{2,24}" placeholder="e.g. FCST_2026_09">
@@ -45,8 +46,9 @@
         {% for t in scenario_types if t != 'actual' %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
       </select>
     </label>
-    <label class="checkline"><input type="checkbox" name="enforce_balance"> require balanced entries</label>
-    <label class="field">Base level
+    <label class="checkline"><input type="checkbox" name="income_statement_only" id="income-statement-only"> income statement only (budget grid, no journal entries)</label>
+    <label class="checkline" id="enforce-balance-field"><input type="checkbox" name="enforce_balance"> require balanced entries</label>
+    <label class="field" id="base-level-field">Base level
       <select name="base_level_id">
         <option value="">— leaves only (default) —</option>
         {% for lv in levels %}
@@ -60,4 +62,24 @@
     <button type="submit">Create scenario</button>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// An income-statement-only scenario has no journal entries at all, so
+// "require balanced entries" and "base level" (both about how entries
+// post) don't apply — hide them rather than leave two controls on screen
+// that silently do nothing once income-statement-only is checked.
+(function () {
+  const toggle = document.getElementById("income-statement-only");
+  const balanceField = document.getElementById("enforce-balance-field");
+  const baseLevelField = document.getElementById("base-level-field");
+  function sync() {
+    balanceField.hidden = toggle.checked;
+    baseLevelField.hidden = toggle.checked;
+  }
+  toggle.addEventListener("change", sync);
+  sync();
+})();
+</script>
 {% endblock %}

@@ -775,15 +775,156 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
 
 
 # ---------------------------------------------------------------------------
+# Budget — the ActualBudget-style grid for an income-statement-only
+# scenario (scenarios.income_statement_only): one month at a time,
+# Budgeted (editable) next to Actual (this month's real postings) and the
+# Variance between them, income/expense accounts only, no journal entries
+# anywhere in sight. Reuses _build_account_tree twice — once over
+# budget_lines, once over ACTUAL's postings for the same month — and
+# merges the two node-for-node rather than inventing a second rollup
+# function, since both sides share the exact same account tree shape.
+# ---------------------------------------------------------------------------
+def _shift_month(month: str, delta_months: int) -> str:
+    d = date.fromisoformat(month)
+    total = d.month - 1 + delta_months
+    return date(d.year + total // 12, total % 12 + 1, 1).isoformat()
+
+
+def _budget_rows(scenario: str, month: str) -> dict:
+    month_start = date.fromisoformat(month)
+    month_end = date(month_start.year, month_start.month,
+                     calendar.monthrange(month_start.year, month_start.month)[1])
+
+    accounts = q("""SELECT * FROM v_dim_account
+                     WHERE is_active AND account_type IN ('income', 'expense')
+                     ORDER BY sort_path""")
+    scen = q1("SELECT id FROM scenarios WHERE code = %s AND income_statement_only",
+              (scenario,))
+    budgeted_by_id = {}
+    if scen:
+        budgeted_by_id = {r["account_id"]: r["amount"] for r in q(
+            "SELECT account_id, amount FROM budget_lines WHERE scenario_id = %s AND period_month = %s",
+            (scen["id"], month_start))}
+    actual_by_id = {r["account_id"]: r["net"] for r in q(
+        "SELECT * FROM fn_account_balances(%s, %s, %s)",
+        ("ACTUAL", month_end.isoformat(), month_start.isoformat()))}
+
+    budget_roots = _build_account_tree(accounts, budgeted_by_id)
+    actual_by_node_id = {}
+
+    def index(nodes):
+        for n in nodes:
+            actual_by_node_id[n["id"]] = n
+            index(n["children"])
+    index(_build_account_tree(accounts, actual_by_id))
+
+    def merge(nodes):
+        out = []
+        for n in nodes:
+            # journal amounts are debit-positive, so an income account's
+            # actual net comes out negative; budget_lines.amount is a
+            # plain target with no sign to juggle — flip actual's sign
+            # for income so both columns read as a positive "how much",
+            # same as Income Statement already does for income rows.
+            sign = -1 if n["account_type"] == "income" else 1
+            budgeted = n["subtotal"]
+            actual = sign * actual_by_node_id[n["id"]]["subtotal"]
+            out.append({
+                **n, "budgeted": budgeted, "actual": actual,
+                "variance": actual - budgeted,
+                "children": merge(n["children"]),
+            })
+        return out
+    merged_roots = merge(budget_roots)
+
+    def flatten(nodes):
+        out = []
+        for n in nodes:
+            out.append({**n, "has_children": bool(n["children"])})
+            out.extend(flatten(n["children"]))
+        return out
+
+    grouped_by_type = {}
+    for t in ("income", "expense"):
+        type_roots = [n for n in merged_roots if n["account_type"] == t]
+        grouped_by_type[t] = {
+            "type": t, "label": TYPE_LABELS[t], "rows": flatten(type_roots),
+            "sub_budgeted": sum(n["budgeted"] for n in type_roots),
+            "sub_actual": sum(n["actual"] for n in type_roots),
+            "sub_variance": sum(n["variance"] for n in type_roots),
+        }
+    grouped = [grouped_by_type["income"], grouped_by_type["expense"]]
+    net_budgeted = grouped_by_type["income"]["sub_budgeted"] - grouped_by_type["expense"]["sub_budgeted"]
+    net_actual = grouped_by_type["income"]["sub_actual"] - grouped_by_type["expense"]["sub_actual"]
+
+    return {
+        "grouped": grouped, "month_start": month_start.isoformat(),
+        "month_end": month_end.isoformat(),
+        "net_budgeted": net_budgeted, "net_actual": net_actual,
+        "net_variance": net_actual - net_budgeted,
+    }
+
+
+@app.get("/budget")
+def budget_page(request: Request, scenario: str = "", month: str = "",
+                ok: str = None, err: str = None):
+    scens = [s for s in scenarios_all() if s["income_statement_only"]]
+    scenario = scenario or (scens[0]["code"] if scens else "")
+    scen = next((s for s in scens if s["code"] == scenario), None)
+    month_in = month or date.today().isoformat()
+    if len(month_in) == 7:  # "YYYY-MM" — what <input type="month"> and the prev/next links send
+        month_in += "-01"
+    month = date.fromisoformat(month_in).replace(day=1).isoformat()
+
+    data = (_budget_rows(scenario, month) if scen else
+           {"grouped": [], "net_budgeted": 0, "net_actual": 0, "net_variance": 0,
+            "month_start": month, "month_end": month})
+    return templates.TemplateResponse(request, "budget.html", {
+        "nav": "budget", "scenarios": scens, "scenario": scenario, "scen": scen,
+        "month": month, "prev_month": _shift_month(month, -1),
+        "next_month": _shift_month(month, 1), **data,
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/budget/cell")
+async def save_budget_cell(request: Request):
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        scenario_id = int(form.get("scenario_id"))
+        code = (form.get("account") or "").strip()
+        period_month = form.get("period_month") or ""
+        amount_raw = (form.get("amount") or "").strip()
+        amount = round(float(amount_raw), 2) if amount_raw else 0.0
+        acct = q1("SELECT id FROM accounts WHERE code = %s", (code,))
+        if not acct:
+            raise ValueError(f"Unknown account code: {code}")
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO budget_lines (scenario_id, account_id, period_month, amount)
+                       VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (scenario_id, account_id, period_month)
+                       DO UPDATE SET amount = EXCLUDED.amount""",
+                (scenario_id, acct["id"], period_month, amount))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "amount": amount})
+
+
+# ---------------------------------------------------------------------------
 # Variance — budget (or any scenario) vs. actual (or any other scenario),
 # rolled up to a common level so a coarse scenario (posted straight to
 # "Bank") lines up against a fine one (Checking + Savings) instead of
-# just not matching up at all.
+# just not matching up at all. Scoped to full scenarios only — an
+# income-statement-only one never has the journal-entry facts this reads,
+# by design; see the Budget page above for that comparison instead.
 # ---------------------------------------------------------------------------
 def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) -> dict:
     """Shared by the variance page and its CSV export — same rollup, same
     baseline/compare resolution, so the export matches what's on screen."""
-    scens = scenarios_all()
+    scens = [s for s in scenarios_all() if not s["income_statement_only"]]
     codes = [s["code"] for s in scens]
     if not compare:
         others = [s["code"] for s in scens if s["code"] != baseline]
@@ -1265,7 +1406,8 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     # For the "+ New entry" panel inline below the filters — same data
     # entry_new.html used to fetch as its own page, since creating an
     # entry now happens right here instead.
-    new_entry_scenarios = [s for s in scenarios_all() if not s["is_locked"]]
+    new_entry_scenarios = [s for s in scenarios_all()
+                          if not s["is_locked"] and not s["income_statement_only"]]
     accounts_by_scenario = postable_accounts_by_scenario()
     new_entry_accounts = (accounts_by_scenario.get(new_entry_scenarios[0]["id"], [])
                           if new_entry_scenarios else [])
@@ -1380,6 +1522,7 @@ def scenarios_page(request: Request, ok: str = None, err: str = None):
 def create_scenario(request: Request, code: str = Form(...), name: str = Form(...),
                     scenario_type: str = Form(...),
                     enforce_balance: str = Form(None),
+                    income_statement_only: str = Form(None),
                     base_level_id: str = Form(""),
                     notes: str = Form(""), csrf_token: str = Form(...)):
     try:
@@ -1387,10 +1530,12 @@ def create_scenario(request: Request, code: str = Form(...), name: str = Form(..
         with tx() as cur:
             cur.execute(
                 """INSERT INTO scenarios
-                       (code, name, scenario_type, enforce_balance, base_level_id, notes)
-                   VALUES (%s, %s, %s, %s, %s, %s)""",
+                       (code, name, scenario_type, enforce_balance,
+                        income_statement_only, base_level_id, notes)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (code.strip().upper(), name.strip(), scenario_type,
                  enforce_balance is not None,
+                 income_statement_only is not None,
                  int(base_level_id) if base_level_id else None,
                  notes.strip() or None))
     except (ValueError, psycopg.Error) as e:
@@ -1664,7 +1809,11 @@ def materialize_due_schedules() -> None:
 
 @app.get("/scheduled")
 def scheduled_page(request: Request, ok: str = None, err: str = None):
-    scen = [s for s in scenarios_all() if not s["is_locked"]]
+    # income-statement-only scenarios can never receive a promoted journal
+    # entry (fn_income_statement_only_guard) — same reason entries.html's
+    # "New entry" panel excludes them from its own scenario picker.
+    scen = [s for s in scenarios_all()
+           if not s["is_locked"] and not s["income_statement_only"]]
     by_scenario = postable_accounts_by_scenario()
     postable = by_scenario.get(scen[0]["id"], []) if scen else []
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")

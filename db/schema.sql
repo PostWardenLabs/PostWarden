@@ -10,8 +10,15 @@
 --      The double-entry invariant is then simply SUM(amount) = 0 per entry.
 --      debit/credit presentation columns are GENERATED from amount.
 --   3. Scenario is a dimension of the fact, not a separate module
---      (the OneStream model). ACTUAL, budgets and forecasts are all just
---      journal entries tagged with a scenario. Variance is a query.
+--      (the OneStream model). ACTUAL and any full scenario (a forecast or
+--      what-if actually modeling dated hypothetical transactions — "what
+--      if I buy a house") are journal entries tagged with a scenario,
+--      same as always. An income-statement-only scenario (see
+--      scenarios.income_statement_only) opts out of the ledger entirely:
+--      a monthly expense/income budget isn't a transaction — no date, no
+--      counter-account, nothing to balance — so it lives in budget_lines
+--      instead, a plain table of amounts a scenario can never post
+--      journal entries into.
 --   4. Journal lines are immutable. Mistakes are fixed by posting a
 --      reversing entry, never by editing history.
 --   5. Every relationship is a real FOREIGN KEY. No slots table. No GUIDs.
@@ -88,24 +95,42 @@ CREATE TABLE account_levels (
 --   level, summary or not — e.g. base_level = "Subaccounts" lets a budget
 --   scenario post straight to "Bank" instead of splitting across
 --   Checking/Savings. Additive only: it never blocks posting to a real
---   leaf, even one deeper than base_level (fn_line_account_guard).
+--   leaf, even one deeper than base_level (fn_line_account_guard). Only
+--   meaningful for a full (non-income-statement-only) scenario — an
+--   income-statement-only one has no journal entries to relax the target
+--   of in the first place.
+-- income_statement_only: FALSE (the default) changes nothing — a full
+--   scenario, journal entries across the whole chart of accounts, same as
+--   ACTUAL. TRUE turns off journal-entry posting for this scenario
+--   entirely (fn_income_statement_only_guard below) — it can only carry
+--   income/expense amounts in budget_lines, edited from the Budget page's
+--   grid instead of the Journal. That's the right shape for "what do I
+--   plan to spend on groceries this year," which never had a date or a
+--   counter-account to begin with; it's the wrong shape for "what if I
+--   buy a house," which does — that stays a full scenario.
 -- ---------------------------------------------------------------------------
 CREATE TABLE scenarios (
-    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    code            TEXT NOT NULL UNIQUE
-                    CHECK (code = upper(code) AND code ~ '^[A-Z0-9_]{2,24}$'),
-    name            TEXT NOT NULL,
-    scenario_type   scenario_type NOT NULL,
-    enforce_balance BOOLEAN NOT NULL DEFAULT TRUE,
-    is_locked       BOOLEAN NOT NULL DEFAULT FALSE,
-    base_level_id   BIGINT REFERENCES account_levels(id) ON DELETE RESTRICT,
-    notes           TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code                   TEXT NOT NULL UNIQUE
+                           CHECK (code = upper(code) AND code ~ '^[A-Z0-9_]{2,24}$'),
+    name                   TEXT NOT NULL,
+    scenario_type          scenario_type NOT NULL,
+    enforce_balance        BOOLEAN NOT NULL DEFAULT TRUE,
+    income_statement_only  BOOLEAN NOT NULL DEFAULT FALSE,
+    is_locked              BOOLEAN NOT NULL DEFAULT FALSE,
+    base_level_id          BIGINT REFERENCES account_levels(id) ON DELETE RESTRICT,
+    notes                  TEXT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- The ACTUAL scenario must always enforce balance: your books are your books.
 ALTER TABLE scenarios ADD CONSTRAINT actual_must_balance
     CHECK (NOT (scenario_type = 'actual' AND enforce_balance = FALSE));
+
+-- ...and can't be income-statement-only either — that's a real ledger,
+-- every account type, always.
+ALTER TABLE scenarios ADD CONSTRAINT actual_not_income_statement_only
+    CHECK (NOT (scenario_type = 'actual' AND income_statement_only));
 
 -- ---------------------------------------------------------------------------
 -- Chart of accounts (hierarchical)
@@ -525,6 +550,104 @@ END $$;
 CREATE TRIGGER trg_scenario_lock_guard
 BEFORE INSERT ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION fn_scenario_lock_guard();
+
+-- ---------------------------------------------------------------------------
+-- Integrity trigger 5 — an income-statement-only scenario never gets a
+-- journal entry, full stop. Belt-and-suspenders alongside the app only
+-- ever offering such a scenario through the Budget grid, not the Journal:
+-- this is what actually makes it true regardless of what posts the INSERT.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_income_statement_only_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_only BOOLEAN;
+    v_code TEXT;
+BEGIN
+    SELECT income_statement_only, code INTO v_only, v_code
+      FROM scenarios WHERE id = NEW.scenario_id;
+    IF v_only THEN
+        RAISE EXCEPTION
+            'Scenario % is income-statement-only — use the Budget page instead of a journal entry',
+            v_code;
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_income_statement_only_guard
+BEFORE INSERT ON journal_entries
+FOR EACH ROW EXECUTE FUNCTION fn_income_statement_only_guard();
+
+-- ---------------------------------------------------------------------------
+-- Budget lines — the income-statement-only counterpart to journal_entries.
+-- One row per (scenario, account, month): a plain amount, not a
+-- transaction — no date beyond the month, no counter-account, nothing to
+-- balance. A cell in the Budget grid is a straight UPSERT here, and can be
+-- edited freely (unlike journal_lines, there's no audit-trail reason for
+-- append-only history over a working assumption).
+-- ---------------------------------------------------------------------------
+CREATE TABLE budget_lines (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    scenario_id  BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE CASCADE,
+    account_id   BIGINT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
+    period_month DATE NOT NULL CHECK (EXTRACT(DAY FROM period_month) = 1),
+    amount       NUMERIC(18,2) NOT NULL DEFAULT 0,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (scenario_id, account_id, period_month)
+);
+
+-- Integrity trigger 6 — a budget line only ever belongs to an
+-- income-statement-only scenario, only ever targets a postable income or
+-- expense account, and never lands in a locked scenario. Mirrors
+-- fn_line_account_guard/fn_scenario_lock_guard's job, just for this table.
+CREATE OR REPLACE FUNCTION fn_budget_line_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_only     BOOLEAN;
+    v_locked   BOOLEAN;
+    v_code     TEXT;
+    v_type     account_type;
+    v_postable BOOLEAN;
+    v_active   BOOLEAN;
+    v_acct     TEXT;
+    v_name     TEXT;
+BEGIN
+    SELECT income_statement_only, is_locked, code
+      INTO v_only, v_locked, v_code
+      FROM scenarios WHERE id = NEW.scenario_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Unknown scenario %', NEW.scenario_id;
+    END IF;
+    IF NOT v_only THEN
+        RAISE EXCEPTION
+            'Scenario % is not income-statement-only — budget lines aren''t allowed here',
+            v_code;
+    END IF;
+    IF v_locked THEN
+        RAISE EXCEPTION 'Scenario % is locked; unlock it to edit the budget', v_code;
+    END IF;
+
+    SELECT account_type, is_postable, is_active, code, name
+      INTO v_type, v_postable, v_active, v_acct, v_name
+      FROM accounts WHERE id = NEW.account_id;
+    IF v_type NOT IN ('income', 'expense') THEN
+        RAISE EXCEPTION
+            'Account % — % is not an income or expense account', v_acct, v_name;
+    END IF;
+    IF NOT v_postable THEN
+        RAISE EXCEPTION
+            'Account % — % is a summary account; budget a leaf account instead',
+            v_acct, v_name;
+    END IF;
+    IF NOT v_active THEN
+        RAISE EXCEPTION 'Account % — % is inactive', v_acct, v_name;
+    END IF;
+    NEW.updated_at := now();
+    RETURN NEW;
+END $$;
+
+CREATE TRIGGER trg_budget_line_guard
+BEFORE INSERT OR UPDATE ON budget_lines
+FOR EACH ROW EXECUTE FUNCTION fn_budget_line_guard();
 
 -- ---------------------------------------------------------------------------
 -- Reporting layer — the views Power BI / Excel will consume.

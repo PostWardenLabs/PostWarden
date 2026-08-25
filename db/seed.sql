@@ -15,12 +15,12 @@ INSERT INTO account_levels (name, depth) VALUES
     ('Account Detail',     3);
 
 -- Scenarios ------------------------------------------------------------------
-INSERT INTO scenarios (code, name, scenario_type, enforce_balance, notes) VALUES
-    ('ACTUAL',  'Actual',       'actual', TRUE,
+INSERT INTO scenarios (code, name, scenario_type, enforce_balance, income_statement_only, notes) VALUES
+    ('ACTUAL',  'Actual',       'actual', TRUE, FALSE,
      'The books. Always balanced.'),
-    ('BUD2026', 'Budget 2026',  'budget', FALSE,
-     'Annual budget. Single-sided planning entries allowed (CPM-style input).'),
-    ('STAGING', 'Staging',      'what_if', TRUE,
+    ('BUD2026', 'Budget 2026',  'budget', TRUE, TRUE,
+     'Annual income/expense budget. No journal entries — edited from the Budget page''s grid.'),
+    ('STAGING', 'Staging',      'what_if', TRUE, FALSE,
      'Auto-posted by Scheduled entries, awaiting approval. Never counts as real books until promoted.');
 
 -- Chart of accounts ----------------------------------------------------------
