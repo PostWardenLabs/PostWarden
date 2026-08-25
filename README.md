@@ -199,6 +199,12 @@ cookie; a browser still sees plain `http://localhost:8000`). If you put a
 reverse proxy in front that terminates real TLS itself, set
 `LIBRO_COOKIE_SECURE=true`.
 
+The session itself is always good for 30 days once created — "Remember
+me" on the login page only decides whether the *cookie* survives
+closing the browser. Unchecked, it's a plain session cookie (no
+`Max-Age`) the browser drops on its own; checked, the cookie gets an
+explicit 30-day lifetime matching the session behind it.
+
 `docker-compose.yml` still binds Postgres to `127.0.0.1` (Power BI/Excel/psql
 on the same machine connect fine; the network can't) — change the
 `libro`/`libro` database credentials before exposing this beyond a machine

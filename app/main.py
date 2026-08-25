@@ -217,7 +217,8 @@ def login_page(request: Request, err: str = None):
 
 
 @app.post("/login")
-def login_submit(username: str = Form(...), password: str = Form(...)):
+def login_submit(username: str = Form(...), password: str = Form(...),
+                 remember: str = Form(None)):
     username = username.strip().lower()
     if auth.is_rate_limited(username):
         return flash_redirect(
@@ -230,8 +231,14 @@ def login_submit(username: str = Form(...), password: str = Form(...)):
     auth.clear_failed_logins(username)
     token = auth.create_session(row["id"])
     resp = RedirectResponse("/", status_code=303)
+    # The session itself is good for SESSION_TTL either way (see
+    # auth.create_session) — "remember me" only decides whether the
+    # *cookie* survives closing the browser. Unchecked, no max_age at all
+    # makes it a session cookie the browser drops on its own; checked, it
+    # gets an explicit lifetime matching the session behind it.
     resp.set_cookie(auth.SESSION_COOKIE, token, httponly=True, samesite="lax",
-                    secure=auth.COOKIE_SECURE, max_age=int(auth.SESSION_TTL.total_seconds()))
+                    secure=auth.COOKIE_SECURE,
+                    max_age=int(auth.SESSION_TTL.total_seconds()) if remember is not None else None)
     return resp
 
 

@@ -1,15 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Log in{% endblock %}
-{% block content %}
-<div class="panel" style="max-width: 22rem; margin: 3rem auto 0;">
-  <form method="post" action="/login" class="grid-form" style="grid-template-columns: 1fr;">
-    <label class="field">Username
-      <input type="text" name="username" required autofocus autocomplete="username">
-    </label>
-    <label class="field">Password
-      <input type="password" name="password" required autocomplete="current-password">
-    </label>
-    <button type="submit">Log in</button>
-  </form>
+{% block chrome %}
+<div class="auth-split">
+  <div class="auth-brand">
+    <span class="auth-wordmark">Libro</span>
+    <span class="auth-version">v{{ version }}</span>
+  </div>
+  <div class="auth-panel">
+    <div class="auth-form-wrap">
+      <h2>Log in</h2>
+      {% if request.query_params.get('ok') %}
+      <div class="flash flash-ok">{{ request.query_params.get('ok') }}</div>
+      {% endif %}
+      {% if request.query_params.get('err') or err %}
+      <div class="flash flash-err">{{ request.query_params.get('err') or err }}</div>
+      {% endif %}
+      <form method="post" action="/login" class="grid-form" style="grid-template-columns: 1fr;">
+        <label class="field">Username
+          <input type="text" name="username" required autofocus autocomplete="username">
+        </label>
+        <label class="field">Password
+          <input type="password" name="password" required autocomplete="current-password">
+        </label>
+        <label class="checkline"><input type="checkbox" name="remember"> Remember me</label>
+        <button type="submit">Log in</button>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}

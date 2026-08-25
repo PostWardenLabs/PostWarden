@@ -51,7 +51,7 @@ reading order:
 
 | Section | Routes | Notes |
 |---|---|---|
-| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route |
+| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days |
 | Settings | `/settings`, `/settings/account` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
 | Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |
@@ -196,7 +196,18 @@ needs a top-right "?" help icon keeps a `.page-head` div for it
 (`justify-content: flex-end` now that it has nothing to space against);
 a page with neither just starts straight into its content.
 
-### Inline creation via `fetch()`, not a full-page POST
+### Opting out of the standard chrome
+
+Every page gets `base.html`'s topbar/main/footer for free — except
+Login, which wants a full-bleed split screen instead (brand on the
+left, the form on the right; see `.auth-split` in `style.css`). Rather
+than a second base template to keep in sync with the first, `base.html`
+wraps topbar+main+footer in `{% block chrome %}...{% endblock %}`; a
+page that needs something completely different just overrides that
+block instead of `{% block content %}`, and still inherits `<head>`
+(theme pre-paint script, stylesheet, `<title>`) for free. Login re-does
+the two flash-message `{% if %}`s itself since it isn't using `<main>`'s
+copy — the one bit of duplication this costs.
 
 New entry (`app.js`) and the Budget grid (`budget-grid.js`) both submit
 via `fetch()` with `Accept: application/json` instead of a normal form

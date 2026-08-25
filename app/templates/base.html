@@ -57,6 +57,7 @@
   </div>
 </nav>
 {% endif %}
+{% block chrome %}
 <header class="topbar">
   <div class="topbar-left">
     <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · Libro</span></a>
@@ -81,6 +82,7 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">Libro v{{ version }}</footer>
+{% endblock %}
 <script src="{{ asset('sidebar.js') }}"></script>
 <script src="{{ asset('combobox.js') }}"></script>
 <script src="{{ asset('datepicker.js') }}"></script>

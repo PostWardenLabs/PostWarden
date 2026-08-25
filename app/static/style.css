@@ -404,6 +404,39 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
   font-size: 0.78rem;
 }
 
+/* -- login: a split screen instead of the standard topbar/main chrome —
+   see login.html's {% block chrome %} override. Brand on the left (the
+   one place in the app "Libro" gets to be the whole point, rather than
+   a muted trailer after the page name), the form on the right. */
+.auth-split { display: flex; min-height: 100vh; }
+.auth-brand {
+  flex: 1 1 50%; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper-deep); border-right: 1px solid var(--rule-strong);
+  padding: 2rem;
+}
+.auth-wordmark {
+  font-family: var(--serif); font-size: 4.5rem; font-weight: 600;
+  letter-spacing: 0.01em; color: var(--ink);
+}
+.auth-version {
+  position: absolute; bottom: 1.3rem; left: 1.5rem;
+  font-size: 0.78rem; color: var(--ink-soft);
+}
+.auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.auth-form-wrap { width: 100%; max-width: 20rem; }
+.auth-form-wrap h2:first-child { margin-top: 0; }
+@media (max-width: 720px) {
+  .auth-split { flex-direction: column; }
+  .auth-brand {
+    flex: none; min-height: 10rem;
+    border-right: none; border-bottom: 1px solid var(--rule-strong);
+  }
+  .auth-wordmark { font-size: 3rem; }
+  .auth-version { bottom: 0.7rem; }
+  .auth-panel { flex: none; padding: 2.5rem 2rem; }
+}
+
 h1 { font-family: var(--serif); font-size: 1.55rem; font-weight: 600;
      margin: 0 0 0.25rem; }
 h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;

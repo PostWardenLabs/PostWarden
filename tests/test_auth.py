@@ -57,6 +57,24 @@ def test_login_correct_succeeds_and_grants_access(conn):
         assert '<a class="wordmark" href="/">Dashboard<span class="wordmark-brand"> · Libro</span></a>' in r.text
 
 
+def test_remember_me_controls_cookie_lifetime(conn):
+    """Unchecked, the cookie carries no Max-Age at all — a plain session
+    cookie the browser drops on its own — regardless of the *session*
+    row behind it still being good for the full SESSION_TTL either way
+    (see auth.create_session/login_submit)."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        r = c.post("/login", data={"username": user["username"], "password": user["password"]})
+        assert "max-age" not in r.headers["set-cookie"].lower()
+
+    with TestClient(app, **client_kwargs) as c:
+        r = c.post("/login", data={"username": user["username"], "password": user["password"],
+                                   "remember": "on"})
+        assert "max-age=2592000" in r.headers["set-cookie"].lower()
+
+
 def test_inactive_user_cannot_log_in(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
