@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import psycopg
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1789,20 +1789,25 @@ def scheduled_all():
 def pending_staging_entries():
     """Everything sitting in the Staging scenario, not yet approved — the
     Staging page's whole reason to exist. Not limited to schedule-sourced
-    rows: this is *everything* Staging is holding regardless of what put
-    it there (materialized schedules today; a future importer too), so
-    the scheduled_entries join is a LEFT JOIN purely for the "which
-    schedule" display detail, not a filter."""
+    rows: this is *everything* Staging is holding regardless of which of
+    the two producers put it there (a materialized schedule or a CSV
+    import), so both joins are LEFT — for the "where's this headed, and
+    where did it come from" display detail, not a filter — and each
+    entry has at most one of the two set, never both."""
     entries = q("""
         SELECT e.id, e.entry_date, e.description, e.reference,
                p.name AS payee_name,
-               ts.code AS target_scenario_code, ts.name AS target_scenario_name,
+               COALESCE(ts.code, ib_ts.code) AS target_scenario_code,
+               COALESCE(ts.name, ib_ts.name) AS target_scenario_name,
+               ib.filename AS import_filename,
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                  WHERE l.entry_id = e.id) AS total_debits
           FROM journal_entries e
           JOIN scenarios stg ON stg.id = e.scenario_id AND stg.is_staging
           LEFT JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
           LEFT JOIN scenarios ts ON ts.id = se.target_scenario_id
+          LEFT JOIN import_batches ib ON ib.id = e.import_batch_id
+          LEFT JOIN scenarios ib_ts ON ib_ts.id = ib.target_scenario_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE e.promoted_entry_id IS NULL
          ORDER BY e.entry_date, e.id""")
@@ -1984,14 +1989,17 @@ async def approve_staging_entries(request: Request):
     posted, errors = [], []
     for eid in entry_ids:
         try:
-            # LEFT JOIN, not INNER: a schedule-materialized entry carries
-            # its target via scheduled_entries, but nothing requires that
-            # link (a future importer's entries won't have one) — s.is_staging
-            # is what actually proves this row belongs here, not the join.
-            staged = q1("""SELECT e.*, s.is_staging, se.target_scenario_id
+            # LEFT JOINs, not INNER: an entry carries its target via
+            # exactly one of scheduled_entries or import_batches (or,
+            # hypothetically, neither) — s.is_staging is what actually
+            # proves this row belongs here, not either join.
+            staged = q1("""SELECT e.*, s.is_staging,
+                                  COALESCE(se.target_scenario_id, ib.target_scenario_id)
+                                      AS target_scenario_id
                              FROM journal_entries e
                              JOIN scenarios s ON s.id = e.scenario_id
                              LEFT JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+                             LEFT JOIN import_batches ib ON ib.id = e.import_batch_id
                             WHERE e.id = %s""", (eid,))
             if not staged or not staged["is_staging"]:
                 raise ValueError(f"#{eid}: not a pending staging entry")
@@ -1999,8 +2007,8 @@ async def approve_staging_entries(request: Request):
                 raise ValueError(f"#{eid}: already approved")
             target_scenario_id = staged["target_scenario_id"]
             if target_scenario_id is None:
-                # No schedule to say where this belongs (e.g. an imported
-                # entry) — ACTUAL is the only sensible default destination.
+                # Neither producer said where this belongs — ACTUAL is the
+                # only sensible default destination.
                 actual = q1("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
                 target_scenario_id = actual["id"] if actual else None
             if target_scenario_id is None:
@@ -2035,6 +2043,188 @@ async def approve_staging_entries(request: Request):
     ok_msg = f"Approved {len(posted)} entr{'y' if len(posted) == 1 else 'ies'}" if posted else None
     err_msg = "; ".join(errors) or None
     return flash_redirect("/staging", ok=ok_msg, err=err_msg)
+
+
+# ---------------------------------------------------------------------------
+# CSV import — the other producer Staging accepts entries from, alongside
+# Scheduled entries. Deliberately round-trips /entries/export.csv's own
+# column layout ("Entry #" groups rows back into one entry per journal
+# entry, everything else lines up 1:1) so export → edit in a spreadsheet →
+# re-import is a real workflow, not just a one-way dump.
+# ---------------------------------------------------------------------------
+IMPORT_REQUIRED_COLUMNS = ["Entry #", "Date", "Description", "Account code"]
+IMPORT_MAX_ERRORS_SHOWN = 20
+
+
+def _parse_csv_import(content: str) -> tuple[list[dict], list[str]]:
+    """(groups, errors) — every group in `groups` already passed every
+    check (a real account code, exactly one of debit/credit per line, and
+    the whole entry nets to zero) and is ready to insert; `errors`
+    describes every row/group that didn't, by original CSV row number,
+    and never touches the database. The "Entry #"/"Scenario"/"Account
+    name" columns an export produces are read only to group rows and are
+    otherwise ignored — the id isn't reused, and the scenario a batch
+    lands in comes from the import form, never trusted from inside the
+    file itself."""
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        return [], ["The file is empty"]
+    missing = [c for c in IMPORT_REQUIRED_COLUMNS if c not in reader.fieldnames]
+    if missing:
+        return [], [f"Missing required column(s): {', '.join(missing)}"]
+
+    raw_groups: dict[str, list[tuple[int, dict]]] = {}
+    order: list[str] = []
+    errors = []
+    for i, row in enumerate(reader, start=2):  # header is row 1
+        key = (row.get("Entry #") or "").strip()
+        if not key:
+            errors.append(f"Row {i}: missing Entry #")
+            continue
+        if key not in raw_groups:
+            raw_groups[key] = []
+            order.append(key)
+        raw_groups[key].append((i, row))
+
+    codes = {(row.get("Account code") or "").strip()
+             for rows in raw_groups.values() for _, row in rows}
+    codes.discard("")
+    found = ({r["code"] for r in q(
+        "SELECT code FROM accounts WHERE code = ANY(%s)", (list(codes),))}
+             if codes else set())
+
+    groups = []
+    for key in order:
+        rows = raw_groups[key]
+        first_row_no, first = rows[0]
+        lines, ok = [], True
+        for row_no, row in rows:
+            code = (row.get("Account code") or "").strip()
+            if not code:
+                errors.append(f"Row {row_no} (entry {key}): missing Account code")
+                ok = False
+                continue
+            if code not in found:
+                errors.append(f"Row {row_no} (entry {key}): unknown account code {code!r}")
+                ok = False
+                continue
+            d, c = (row.get("Debit") or "").strip(), (row.get("Credit") or "").strip()
+            try:
+                dv, cv = (float(d) if d else 0.0), (float(c) if c else 0.0)
+            except ValueError:
+                errors.append(f"Row {row_no} (entry {key}): Debit/Credit must be numeric")
+                ok = False
+                continue
+            if dv < 0 or cv < 0 or (dv > 0) == (cv > 0):
+                errors.append(f"Row {row_no} (entry {key}): enter exactly one positive Debit or Credit")
+                ok = False
+                continue
+            lines.append({"code": code, "amount": round(dv - cv, 2),
+                          "memo": (row.get("Memo") or "").strip() or None})
+        if not ok:
+            continue
+        total = round(sum(ln["amount"] for ln in lines), 2)
+        if total != 0:
+            errors.append(f"Entry {key} (row {first_row_no}): doesn't balance (off by {total:+.2f})")
+            continue
+        entry_date = (first.get("Date") or "").strip()
+        try:
+            date.fromisoformat(entry_date)
+        except ValueError:
+            errors.append(f"Entry {key} (row {first_row_no}): invalid Date {entry_date!r} — expected YYYY-MM-DD")
+            continue
+        description = (first.get("Description") or "").strip()
+        if not description:
+            errors.append(f"Entry {key} (row {first_row_no}): missing Description")
+            continue
+        groups.append({
+            "entry_date": entry_date, "description": description,
+            "reference": (first.get("Reference") or "").strip() or None,
+            "payee_name": (first.get("Payee") or "").strip() or None,
+            "lines": lines,
+        })
+    return groups, errors
+
+
+@app.get("/import")
+def import_page(request: Request, ok: str = None, err: str = None):
+    # Same exclusions as Scheduled's target-scenario picker: an import has
+    # to land somewhere it can eventually become real postings.
+    scen = [s for s in scenarios_all()
+           if not s["is_locked"] and not s["income_statement_only"] and not s["is_staging"]]
+    recent = q("""SELECT ib.id, ib.filename, ib.row_count, ib.created_at,
+                         s.code AS target_scenario_code, u.username AS imported_by
+                    FROM import_batches ib
+                    JOIN scenarios s ON s.id = ib.target_scenario_id
+                    LEFT JOIN users u ON u.id = ib.imported_by_user_id
+                   ORDER BY ib.created_at DESC LIMIT 10""")
+    return templates.TemplateResponse(request, "import.html", {
+        "nav": "import", "scenarios": scen, "recent": recent, "ok": ok, "err": err,
+    })
+
+
+@app.post("/import")
+async def import_csv(request: Request, target_scenario_id: str = Form(...),
+                     csrf_token: str = Form(...), file: UploadFile = File(...)):
+    try:
+        require_csrf(request, csrf_token)
+        raw = await file.read()
+        try:
+            content = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError("Could not read the file as UTF-8 text")
+
+        groups, errors = _parse_csv_import(content)
+        if not groups:
+            raise ValueError("; ".join(errors[:IMPORT_MAX_ERRORS_SHOWN]) or "No valid entries found in the file")
+
+        staging = q1("SELECT id FROM scenarios WHERE is_staging")
+        if not staging:
+            raise ValueError("No Staging scenario configured")
+
+        with tx() as cur:
+            cur.execute(
+                """INSERT INTO import_batches
+                       (filename, target_scenario_id, imported_by_user_id, row_count)
+                   VALUES (%s, %s, %s, %s) RETURNING id""",
+                (file.filename or "import.csv", int(target_scenario_id),
+                 auth.current_user(request)["user_id"], len(groups)))
+            batch_id = cur.fetchone()["id"]
+            for g in groups:
+                payee_id = None
+                if g["payee_name"]:
+                    cur.execute(
+                        """INSERT INTO payees (name) VALUES (%s)
+                           ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                           RETURNING id""",
+                        (g["payee_name"],))
+                    payee_id = cur.fetchone()["id"]
+                cur.execute(
+                    """INSERT INTO journal_entries
+                           (scenario_id, entry_date, description, reference,
+                            payee_id, import_batch_id)
+                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (staging["id"], g["entry_date"], g["description"],
+                     g["reference"], payee_id, batch_id))
+                entry_id = cur.fetchone()["id"]
+                for n, ln in enumerate(g["lines"], start=1):
+                    cur.execute(
+                        """INSERT INTO journal_lines
+                               (entry_id, line_no, account_id, amount, memo)
+                           VALUES (%s, %s, (SELECT id FROM accounts WHERE code = %s), %s, %s)""",
+                        (entry_id, n, ln["code"], ln["amount"], ln["memo"]))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/import", err=msg)
+
+    ok_msg = f"Staged {len(groups)} entr{'y' if len(groups) == 1 else 'ies'} for review in Staging"
+    err_msg = None
+    if errors:
+        shown = errors[:IMPORT_MAX_ERRORS_SHOWN]
+        if len(errors) > len(shown):
+            shown.append(f"...and {len(errors) - len(shown)} more")
+        err_msg = f"{len(errors)} row(s) skipped: " + "; ".join(shown)
+    return flash_redirect("/import", ok=ok_msg, err=err_msg)
 
 
 # ---------------------------------------------------------------------------

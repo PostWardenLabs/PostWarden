@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Import{% endblock %}
+{% block content %}
+<h1>Import</h1>
+<p class="page-sub">Bring entries in from a CSV — the same column layout the Journal's own
+  <a href="/entries/export.csv">Export CSV</a> produces, so export → edit in a spreadsheet → re-import is a
+  real round trip. Required columns: <span class="mono">Entry #</span> (groups rows into one entry — the
+  value itself isn't kept), <span class="mono">Date</span>, <span class="mono">Description</span>,
+  <span class="mono">Account code</span>, and exactly one of <span class="mono">Debit</span> /
+  <span class="mono">Credit</span> per row. <span class="mono">Reference</span>, <span class="mono">Payee</span>,
+  and <span class="mono">Memo</span> are optional; <span class="mono">Scenario</span> and
+  <span class="mono">Account name</span> are ignored if present. Every entry in a group must balance on its own.</p>
+
+<p class="page-sub">Nothing posts straight to a scenario — imported entries land in
+  <span class="mono">Staging</span> for review, same as a scheduled entry. Pick where they should end up once
+  approved below, then <a href="/staging">review and approve them</a> when you're ready.</p>
+
+<div class="panel">
+  <h2>Upload a CSV</h2>
+  <form method="post" action="/import" enctype="multipart/form-data" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <label class="field">Target scenario
+      <select name="target_scenario_id" required>
+        {% for s in scenarios %}
+        <option value="{{ s.id }}">{{ s.code }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">CSV file
+      <input type="file" name="file" accept=".csv,text/csv" required>
+    </label>
+    <button type="submit">Import</button>
+  </form>
+</div>
+
+{% if recent %}
+<h2 style="margin-top: 2rem;">Recent imports</h2>
+<table class="ledger">
+  <thead><tr>
+    <th>File</th><th>Target</th><th class="num">Entries</th><th>Imported by</th><th>When</th>
+  </tr></thead>
+  <tbody>
+    {% for b in recent %}
+    <tr>
+      <td>{{ b.filename }}</td>
+      <td class="mono dim">{{ b.target_scenario_code }}</td>
+      <td class="num mono">{{ b.row_count }}</td>
+      <td class="dim">{{ b.imported_by or '—' }}</td>
+      <td class="dim">{{ b.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

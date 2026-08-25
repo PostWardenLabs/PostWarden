@@ -163,15 +163,30 @@ Staging is a real full scenario in every accounting respect
 (`enforce_balance = TRUE`, every account type) — the one thing that
 *is* special about it, `scenarios.is_staging`, is enforced at the
 trigger level (`fn_staging_manual_entry_guard`), not left as an
-application-layer convention: a Staging entry may only ever exist as
-the output of an automated producer (`scheduled_entry_id IS NOT NULL`
-today), never typed in from New entry. This was the one gap in an
-otherwise fully DB-enforced design — nothing stopped a manual entry from
-landing in Staging and sitting there, correct-looking but never
-reviewed, indistinguishable from a real approved posting to a query that
-didn't know to check `promoted_entry_id`. See `docs/SCHEMA.md`'s
-"Default scenarios" section for the guard and the companion
-`uq_one_staging_scenario` index capping this at one scenario, ever.
+application-layer convention: a Staging entry may only ever exist as the
+output of one of its two automated producers — a schedule
+(`scheduled_entry_id IS NOT NULL`) or a CSV import
+(`import_batch_id IS NOT NULL`) — never typed in from New entry. This
+was the one gap in an otherwise fully DB-enforced design — nothing
+stopped a manual entry from landing in Staging and sitting there,
+correct-looking but never reviewed, indistinguishable from a real
+approved posting to a query that didn't know to check
+`promoted_entry_id`. See `docs/SCHEMA.md`'s "Default scenarios" section
+for the guard and the companion `uq_one_staging_scenario` index capping
+this at one scenario, ever.
+
+CSV import (`/import`) deliberately round-trips `/entries/export.csv`'s
+own column layout rather than inventing a new one — export, edit in a
+spreadsheet, re-import is then a real workflow, not a one-way dump. The
+target scenario for a whole batch is chosen on the import form itself,
+never read from a `Scenario` column inside the uploaded file: a CSV
+someone hands you isn't a trusted source for "which scenario this
+becomes real books in," the same reasoning that already put the target
+on `scheduled_entries` rather than trusting a per-occurrence value.
+Every group of rows is fully validated in Python before any of it
+touches the database — a bad row is reported by its original line
+number and simply never becomes a partial entry, rather than being
+inserted and then rolled back.
 
 ### 10. A simulated close is a query, never a posting
 

@@ -358,6 +358,123 @@ def test_dashboard_links_to_staging_when_entries_pending(conn):
         assert "waiting in Staging for your approval" in r.text
 
 
+def test_import_csv_stages_entries_and_approves_into_target(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        target = mk_scenario(cur, enforce_balance=False)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+    conn.commit()
+    csv_text = (
+        "Entry #,Date,Scenario,Description,Reference,Payee,Account code,Account name,Debit,Credit,Memo\n"
+        f"1,2026-08-01,ACTUAL,Imported entry,REF1,Acme,{acct1['code']},Acct 1,40,,\n"
+        f"1,2026-08-01,ACTUAL,Imported entry,REF1,Acme,{acct2['code']},Acct 2,,40,\n"
+    )
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r = c.post("/import",
+                   data={"csrf_token": csrf_token, "target_scenario_id": str(target["id"])},
+                   files={"file": ("bank.csv", csv_text, "text/csv")})
+        assert r.status_code == 303
+        assert "Staged+1+entry" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT e.id, e.promoted_entry_id, p.name AS payee_name
+                 FROM journal_entries e
+                 JOIN scenarios s ON s.id = e.scenario_id
+                 LEFT JOIN payees p ON p.id = e.payee_id
+                WHERE s.is_staging AND e.description = 'Imported entry'""")
+        staged = cur.fetchone()
+        assert staged is not None
+        assert staged["payee_name"] == "Acme"
+        assert staged["promoted_entry_id"] is None
+        cur.execute("SELECT COUNT(*) AS n FROM journal_lines WHERE entry_id = %s", (staged["id"],))
+        assert cur.fetchone()["n"] == 2
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/staging/approve",
+                   data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT promoted_entry_id FROM journal_entries WHERE id = %s", (staged["id"],))
+        promoted_id = cur.fetchone()["promoted_entry_id"]
+        assert promoted_id is not None
+        cur.execute("SELECT scenario_id FROM journal_entries WHERE id = %s", (promoted_id,))
+        assert cur.fetchone()["scenario_id"] == target["id"]
+
+
+def test_import_csv_reports_bad_rows_and_still_stages_the_valid_ones(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        target = mk_scenario(cur, enforce_balance=False)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+    conn.commit()
+    csv_text = (
+        "Entry #,Date,Description,Account code,Debit,Credit\n"
+        # Entry 1: valid, should stage.
+        f"1,2026-08-01,Good entry,{acct1['code']},40,\n"
+        f"1,2026-08-01,Good entry,{acct2['code']},,40\n"
+        # Entry 2: unbalanced — should be reported, not staged.
+        f"2,2026-08-02,Bad entry,{acct1['code']},50,\n"
+        f"2,2026-08-02,Bad entry,{acct2['code']},,30\n"
+        # Entry 3: unknown account code.
+        "3,2026-08-03,Unknown account,NOPE999,10,\n"
+    )
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/import",
+                   data={"csrf_token": csrf_token, "target_scenario_id": str(target["id"])},
+                   files={"file": ("bank.csv", csv_text, "text/csv")})
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert "ok=" in loc and "err=" in loc
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT description FROM journal_entries e
+                 JOIN scenarios s ON s.id = e.scenario_id
+                WHERE s.is_staging AND e.description IN ('Good entry', 'Bad entry', 'Unknown account')""")
+        staged_descriptions = {r["description"] for r in cur.fetchall()}
+        assert staged_descriptions == {"Good entry"}
+
+
+def test_import_csv_rejects_a_file_missing_required_columns(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        target = mk_scenario(cur)
+    conn.commit()
+    csv_text = "Date,Description\n2026-08-01,Nope\n"
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["libro_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/import",
+                   data={"csrf_token": csrf_token, "target_scenario_id": str(target["id"])},
+                   files={"file": ("bad.csv", csv_text, "text/csv")})
+        assert r.status_code == 303
+        assert "err=" in r.headers["location"]
+        assert "Missing+required+column" in r.headers["location"]
+
+
 def test_create_template_requires_balance_and_saves_lines(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

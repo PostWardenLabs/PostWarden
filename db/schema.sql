@@ -110,15 +110,16 @@ CREATE TABLE account_levels (
 --   buy a house," which does — that stays a full scenario.
 -- is_staging: FALSE for every scenario except the one seeded row this
 --   whole app treats as "Staging" — a holding pen for entries that
---   shouldn't count as real books yet (materialize_due_schedules()'s
---   copies today; a future CSV importer tomorrow). TRUE turns off
+--   shouldn't count as real books yet: materialize_due_schedules()'s
+--   copies, or a CSV import (see import_batches). TRUE turns off
 --   *manual* entry into this scenario (fn_staging_manual_entry_guard
 --   below): a journal_entries row may only land here as the by-product of
---   an automated producer (currently: scheduled_entry_id IS NOT NULL),
---   never typed in from New entry — approving it into its real target
---   scenario is the one way a Staging entry becomes a manual decision.
---   uq_one_staging_scenario below caps this at one row, ever; the app
---   looks it up by this flag instead of by a hardcoded scenario code.
+--   one of those two automated producers (scheduled_entry_id IS NOT NULL
+--   or import_batch_id IS NOT NULL), never typed in from New entry —
+--   approving it into its real target scenario is the one way a Staging
+--   entry becomes a manual decision. uq_one_staging_scenario below caps
+--   this at one row, ever; the app looks it up by this flag instead of by
+--   a hardcoded scenario code.
 -- ---------------------------------------------------------------------------
 CREATE TABLE scenarios (
     id                     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -270,6 +271,28 @@ CREATE TABLE scheduled_entry_lines (
 CREATE INDEX idx_scheduled_entry_lines_parent ON scheduled_entry_lines(scheduled_entry_id);
 
 -- ---------------------------------------------------------------------------
+-- Import batches — one row per CSV import (app/main.py's /import), the
+-- second producer Staging accepts entries from (see
+-- fn_staging_manual_entry_guard). A single upload targets exactly one
+-- scenario, chosen on the import form itself rather than trusted from a
+-- column inside the uploaded file — every journal_entries row the import
+-- creates carries this batch's id (journal_entries.import_batch_id) the
+-- same way a materialized schedule occurrence carries scheduled_entry_id.
+-- row_count is how many entries actually landed in Staging, which can be
+-- less than the CSV's own row count if some groups failed validation
+-- (an unbalanced group, an unknown account code, ...) — those are
+-- reported back to the importer and never touch the database at all.
+-- ---------------------------------------------------------------------------
+CREATE TABLE import_batches (
+    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    filename            TEXT NOT NULL,
+    target_scenario_id  BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
+    imported_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    row_count           SMALLINT NOT NULL CHECK (row_count > 0),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ---------------------------------------------------------------------------
 -- Entry templates — reusable scaffolding for New entry ("Load template"),
 -- not a posting on their own and not linked to any journal_entries row.
 -- Same shape as scheduled_entries minus the recurrence columns.
@@ -315,6 +338,10 @@ CREATE TABLE journal_entries (
     -- "everything from this schedule" and the app skip re-materializing
     -- the same occurrence twice.
     scheduled_entry_id BIGINT REFERENCES scheduled_entries(id) ON DELETE SET NULL,
+    -- The other producer allowed to write to Staging — set when this
+    -- entry came from a CSV import (see import_batches above) rather than
+    -- a schedule. An entry never has both set.
+    import_batch_id    BIGINT REFERENCES import_batches(id) ON DELETE SET NULL,
     -- Set on a Staging entry once approved: the id of the real entry it
     -- was copied into. NULL means "still awaiting approval" for anything
     -- sitting in Staging.
@@ -616,7 +643,7 @@ DECLARE
 BEGIN
     SELECT is_staging, code INTO v_staging, v_code
       FROM scenarios WHERE id = NEW.scenario_id;
-    IF v_staging AND NEW.scheduled_entry_id IS NULL THEN
+    IF v_staging AND NEW.scheduled_entry_id IS NULL AND NEW.import_batch_id IS NULL THEN
         RAISE EXCEPTION
             'Scenario % only accepts entries from a schedule or an import, never a manual posting',
             v_code;

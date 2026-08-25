@@ -27,6 +27,7 @@ erDiagram
 
     SCENARIOS ||--o{ JOURNAL_ENTRIES : "scenario_id"
     SCENARIOS ||--o{ SCHEDULED_ENTRIES : "target_scenario_id"
+    SCENARIOS ||--o{ IMPORT_BATCHES : "target_scenario_id"
     SCENARIOS ||--o{ BUDGET_LINES : "scenario_id"
 
     ACCOUNTS ||--o{ ACCOUNTS : "parent_id (tree)"
@@ -47,6 +48,9 @@ erDiagram
     SCHEDULED_ENTRIES ||--o{ SCHEDULED_ENTRY_LINES : "scheduled_entry_id"
     SCHEDULED_ENTRIES ||--o{ JOURNAL_ENTRIES : "scheduled_entry_id (materialized copies)"
     SCHEDULED_ENTRIES }o--o{ TAGS : "scheduled_entry_tags"
+
+    IMPORT_BATCHES ||--o{ JOURNAL_ENTRIES : "import_batch_id"
+    USERS ||--o{ IMPORT_BATCHES : "imported_by_user_id"
 
     ENTRY_TEMPLATES ||--o{ ENTRY_TEMPLATE_LINES : "template_id"
     ENTRY_TEMPLATES }o--o{ TAGS : "entry_template_tags"
@@ -103,6 +107,7 @@ erDiagram
         bigint reverses_entry_id FK
         bigint payee_id FK
         bigint scheduled_entry_id FK
+        bigint import_batch_id FK
         bigint promoted_entry_id FK
         bigint created_by_user_id FK
     }
@@ -127,6 +132,13 @@ erDiagram
         bigint scheduled_entry_id FK
         bigint account_id FK
         numeric amount
+    }
+    IMPORT_BATCHES {
+        bigint id PK
+        text filename
+        bigint target_scenario_id FK
+        bigint imported_by_user_id FK
+        smallint row_count
     }
     ENTRY_TEMPLATES {
         bigint id PK
@@ -187,10 +199,10 @@ those three are not ordinary user-created scenarios:
   scenario (`income_statement_only = FALSE`, `enforce_balance = TRUE`)
   whose `scenarios.is_staging` column is `TRUE`. That flag does two
   things: `fn_staging_manual_entry_guard` rejects any `journal_entries`
-  INSERT into it unless `scheduled_entry_id IS NOT NULL` — a Staging
-  entry can only ever be the by-product of an automated producer
-  (`materialize_due_schedules()`'s copies today; a future CSV importer
-  gets its own exemption added the same way, not a loosened guard), never
+  INSERT into it unless `scheduled_entry_id IS NOT NULL` or
+  `import_batch_id IS NOT NULL` — a Staging entry can only ever be the
+  by-product of one of Staging's two producers (`materialize_due_
+  schedules()`'s copies, or a CSV import — see `import_batches`), never
   typed in from New entry — and `uq_one_staging_scenario`, a unique index
   on `is_staging` filtered to true rows, caps this at one scenario, ever.
   The app looks it up by the flag (`SELECT id FROM scenarios WHERE
@@ -199,13 +211,29 @@ those three are not ordinary user-created scenarios:
 
   Approving one or more pending entries (the Staging page, `/staging`,
   checkboxes + "Approve entries") posts a *second*, independent entry
-  into the schedule's real `target_scenario_id` and sets the original's
-  `promoted_entry_id` to link them — the staged copy is never edited or
-  deleted, just marked. Re-approving an already-promoted entry is
-  rejected in the app layer (`promoted_entry_id IS NOT NULL` check); nothing
-  currently doing that at the trigger level, since editing/deleting a
-  `journal_entries` row is already generally forbidden (integrity trigger
-  3) regardless of scenario.
+  into the entry's resolved target scenario — the schedule's
+  `target_scenario_id` or the import batch's `target_scenario_id`,
+  whichever is set (an entry only ever has one), falling back to ACTUAL
+  if somehow neither is — and sets the original's `promoted_entry_id` to
+  link them; the staged copy is never edited or deleted, just marked.
+  Re-approving an already-promoted entry is rejected in the app layer
+  (`promoted_entry_id IS NOT NULL` check); nothing currently doing that
+  at the trigger level, since editing/deleting a `journal_entries` row is
+  already generally forbidden (integrity trigger 3) regardless of
+  scenario.
+
+  A CSV import (`/import`) round-trips `/entries/export.csv`'s own column
+  layout — `Entry #` groups rows back into one entry (the value itself
+  isn't kept as a real id), everything else lines up 1:1 — so export →
+  edit in a spreadsheet → re-import is a real workflow. Every group is
+  fully validated in Python (`_parse_csv_import()`: a real account code,
+  exactly one of Debit/Credit per row, the group nets to zero) *before*
+  anything touches the database; rows that fail are reported back by
+  original CSV row number and never create a partial entry. Unlike a
+  schedule, the target scenario for a whole batch is chosen on the import
+  form itself, not read from the file's own `Scenario` column — an
+  uploaded CSV is not a trusted source for "which scenario this becomes
+  real books in."
 
 **Neither default scenario is otherwise protected from editing, and
 neither needs to be**: there is no scenario *edit* route in the app at
@@ -246,7 +274,8 @@ trigger N" comments — this is that list, in one place:
    — no entries at all once `scenarios.income_statement_only`.
 6. **`fn_staging_manual_entry_guard`** (`journal_entries`, BEFORE INSERT)
    — once `scenarios.is_staging`, an entry may only land here with
-   `scheduled_entry_id IS NOT NULL` — never a manual posting.
+   `scheduled_entry_id IS NOT NULL` or `import_batch_id IS NOT NULL` —
+   never a manual posting.
 7. **`fn_budget_line_guard`** (`budget_lines`, BEFORE INSERT OR UPDATE) —
    the mirror image of 2/4/5/6 for the other table: scenario must be
    `income_statement_only` and unlocked, account must be a postable
@@ -336,13 +365,20 @@ Grouped the way `db/schema.sql` groups them.
   sign to juggle, unlike everything above). Unique on the triple, so a
   grid cell is a straight UPSERT.
 
-### Recurrence and reuse (neither one is a posting on its own)
+### Recurrence, import, and reuse (none of these is a posting on its own)
 - **`scheduled_entries`** + **`scheduled_entry_lines`** — a template plus
   a recurrence rule (`interval_unit`/`interval_count`/`next_date`).
   Lines carry the same signed-`amount`/generated-`debit`/`credit` shape
   as `journal_lines`. `materialize_due_schedules()` copies a due
-  schedule's lines into a brand new `journal_entries` row in STAGING —
+  schedule's lines into a brand new `journal_entries` row in Staging —
   the schedule row itself never becomes ledger data.
+- **`import_batches`** — one row per CSV upload (`/import`): `filename`,
+  `target_scenario_id` (chosen on the import form, not read from the
+  file), `imported_by_user_id`, `row_count` (how many entries actually
+  landed in Staging, which can be less than the file's own row count —
+  see `journal_entries.import_batch_id`). No lines table of its own: a
+  batch's entries are ordinary `journal_entries`/`journal_lines` rows in
+  Staging, just tagged with which batch produced them.
 - **`entry_templates`** + **`entry_template_lines`** — same shape minus
   the recurrence columns; scaffolding for "New entry"'s Load Template
   picker. Loading one only fills the form client-side (`entry_templates.js`)

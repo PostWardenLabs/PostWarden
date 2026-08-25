@@ -178,6 +178,28 @@ def test_staging_scenario_allows_a_scheduled_entry(conn):
     conn.commit()  # must not raise
 
 
+def test_staging_scenario_allows_an_import_batch_entry(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        target = mk_scenario(cur)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        cur.execute(
+            """INSERT INTO import_batches (filename, target_scenario_id, row_count)
+               VALUES ('test.csv', %s, 1) RETURNING id""",
+            (target["id"],))
+        batch_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries (scenario_id, entry_date, description, import_batch_id)
+               VALUES (%s, CURRENT_DATE, 'Imported row', %s) RETURNING id""",
+            (staging_id, batch_id))
+        eid = cur.fetchone()["id"]
+        mk_line(cur, eid, acct1["id"], 15, line_no=1)
+        mk_line(cur, eid, acct2["id"], -15, line_no=2)
+    conn.commit()  # must not raise
+
+
 def test_only_one_staging_scenario_allowed(conn):
     # seed.sql already seeded the real one — a second is rejected outright.
     with expect_error(conn):

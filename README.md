@@ -33,9 +33,12 @@ through purpose-built reporting views, no export step required.
   scenario is a normal set of journal entries tagged with its own
   scenario code, so it can be a fully projected P&L *and* balance sheet,
   comparable to ACTUAL with a query, not a spreadsheet reconciliation.
-- **Scheduled/recurring entries**, with a Staging approval step — a due
-  occurrence shows up for you to approve, never posts to your real books
-  unsupervised.
+- **Scheduled/recurring entries and CSV import**, both landing in a
+  Staging scenario for review — a due occurrence or an imported row
+  shows up for you to approve on one shared page, never posts to your
+  real books unsupervised. Import round-trips the same column layout
+  Export CSV produces, so export → edit in a spreadsheet → re-import is
+  a real workflow.
 - **CSV export everywhere**, a chart-of-accounts manager, payees, tags,
   and ten-odd hand-built visual themes if the default doesn't suit you.
 
