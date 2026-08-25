@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Staging{% endblock %}
 {% block content %}
-<h1>Staging</h1>
-<p class="page-sub"><a href="/help#staging">How this works →</a></p>
+<div class="page-head">
+  <h1>Staging</h1>
+  <a href="/help#staging" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 {% if pending %}
 <form method="post" action="/staging/approve" id="staging-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <p class="bar" style="align-items: center;">
-    <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
+    <label class="checkline list-toggle"><input type="checkbox" id="select-all"> select all</label>
     <button type="submit" id="approve-btn" disabled>Approve entries</button>
   </p>
   {% for e in pending %}

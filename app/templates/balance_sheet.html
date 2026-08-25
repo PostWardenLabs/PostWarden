@@ -3,9 +3,12 @@
 {% block content %}
 {% set report_url = "/balance-sheet?scenario=" + scenario + "&as_of=" + as_of + "&raw=" + (raw | string) %}
 {% macro entry_link(code, value) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
-<h1>Balance sheet</h1>
+<div class="page-head">
+  <h1>Balance sheet</h1>
+  <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 <p class="page-sub">As of {{ as_of or 'today' }} · scenario <span class="mono">{{ scenario }}</span>
-  {% if not raw %}· simulated monthly close (<a href="/help#reports">what's this?</a>){% endif %}</p>
+  {% if not raw %}· simulated monthly close{% endif %}</p>
 
 <form class="bar" method="get" action="/balance-sheet">
   <label class="field">Scenario

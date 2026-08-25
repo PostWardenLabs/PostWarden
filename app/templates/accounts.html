@@ -1,23 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Accounts{% endblock %}
 {% block content %}
-<h1>Chart of accounts</h1>
-<p class="page-sub"><a href="/help#accounts">How this works →</a></p>
+<div class="page-head">
+  <h1>Chart of accounts</h1>
+  <a href="/help#accounts" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
-<div class="accounts-layout">
-  <nav class="levels-panel">
-    <a href="/accounts" class="level-link {{ 'active' if not selected_level }}">All levels</a>
+<div class="two-col">
+  <nav class="side-nav">
+    <a href="/accounts" class="{{ 'active' if not selected_level }}">All levels</a>
     {% for lv in levels %}
     <a href="/accounts?level_id={{ lv.id }}"
-       class="level-link {{ 'active' if selected_level and selected_level.id == lv.id }}"
+       class="{{ 'active' if selected_level and selected_level.id == lv.id }}"
        style="padding-left: {{ 0.5 + ([lv.depth, 6] | min - 1) * 1 }}rem;">
       {{ lv.name }}
     </a>
     {% endfor %}
-    <a href="/account-levels" class="level-link dim small" style="margin-top: 0.4rem;">Manage levels…</a>
+    <a href="/account-levels" class="dim" style="margin-top: 0.4rem;">Manage levels…</a>
   </nav>
 
-  <div class="accounts-main">
+  <div class="two-col-main">
     {% if selected_level %}
     <p class="page-sub">Showing only <strong>{{ selected_level.name }}</strong> — every account sitting exactly at
       depth {{ selected_level.depth }}, wherever it lives in the tree.</p>

@@ -291,11 +291,15 @@ body {
    Midnight especially, on a dark ledger stock — render nearly
    unreadable. Use the same accent as buttons instead, so a link reads
    as "the app's color" rather than "whatever blue this browser ships."
-   Elements with their own link color (.topbar nav a, .sidebar a,
-   .quiet-link, .pager a, a.amount-link, a.button-link) already set
-   `color` explicitly and win by specificity. */
-a { color: var(--accent); }
-a:hover { color: var(--accent-hover); }
+   :where() keeps this at zero specificity on purpose: a real ":visited"
+   pseudo-class is (0,1,1), which would otherwise beat any plain single
+   class (.dim, .quiet-link, .username-link — all (0,1,0)) the moment a
+   link had been clicked once, silently recoloring exactly the links
+   that are supposed to stay muted. Elements with their own link color
+   (.topbar nav a, .sidebar a, .quiet-link, .pager a, a.amount-link,
+   a.button-link, .help-icon, ...) keep it, visited or not. */
+:where(a, a:visited) { color: var(--accent); }
+:where(a:hover, a:visited:hover) { color: var(--accent-hover); }
 
 /* -- top bar ------------------------------------------------------------- */
 .topbar {
@@ -401,6 +405,21 @@ h1 { font-family: var(--serif); font-size: 1.55rem; font-weight: 600;
 h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
      margin: 1.8rem 0 0.6rem; }
 .page-sub { color: var(--ink-soft); font-size: 0.88rem; margin: 0 0 1.2rem; }
+
+/* A page's <h1>, plus a small "?" that links to its own section of
+   Help — replaces the "How this works →" sentence every screen used to
+   carry under its title. That line read like a manual taped to the
+   front of the product; a page a newcomer could actually buy shouldn't
+   need a caption explaining itself before it's even been looked at. */
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.page-head h1 { margin-bottom: 0; }
+.help-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  border: 1px solid var(--rule-strong); color: var(--ink-soft);
+  font-family: var(--serif); font-size: 0.8rem; text-decoration: none;
+}
+.help-icon:hover { background: var(--paper-deep); color: var(--ink); border-color: var(--ink-soft); }
 
 /* -- flash messages ------------------------------------------------------ */
 .flash {
@@ -523,6 +542,16 @@ button.quiet {
 button.quiet:hover { background: var(--paper-deep); }
 .checkline { display: flex; align-items: center; gap: 0.4rem;
              font-size: 0.85rem; color: var(--ink); font-family: var(--sans); }
+/* A bulk-action toggle sitting over a list (Staging's "select all") is
+   a different kind of thing from a --data-field checkbox like "require
+   balanced entries" — it's a control over the list below it, not one
+   more setting, so it borrows that list's own mono/uppercase (the same
+   treatment table.ledger's headers and the Journal's dates already use)
+   instead of reading as just another sentence-case form field. */
+.list-toggle {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 0.78rem; color: var(--ink-soft);
+}
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which
@@ -602,6 +631,23 @@ a.amount-link:hover { text-decoration: underline; }
 .combobox-empty { padding: 0.35rem 0.6rem; color: var(--ink-soft); font-size: 0.85rem; }
 .combobox-empty.combobox-error { color: var(--red); }
 
+/* -- chevron (shared by the date picker, tree collapse/expand, and the
+   number stepper) -----------------------------------------------------
+   A solid clip-path triangle, not a font glyph (whose angle is whatever
+   the font happens to draw) and not a stroked border-corner either — a
+   hairline outline loses most of its ink to anti-aliasing at these
+   sizes and reads as noticeably fainter than solid text of the same
+   color, which is exactly what it was: same var(--ink-soft) as e.g. the
+   account-code column, just visibly weaker. A filled shape doesn't have
+   that problem, so it can be genuinely thin *and* fully opaque. Points
+   right by default; rotate per direction needed. */
+.chevron {
+  display: inline-block; flex: none;
+  width: 0.32rem; height: 0.5rem;
+  background: currentColor;
+  clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+}
+
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
 .date-input { width: 100%; padding-right: 1.9rem; font-family: var(--mono); }
@@ -613,15 +659,7 @@ a.amount-link:hover { text-decoration: underline; }
   display: flex; align-items: center; justify-content: center;
 }
 .date-trigger:hover { background: var(--paper-deep); }
-/* Same right-angle-corner trick as the tree chevron, rotated to point
-   down — a plain "open this" mark instead of the calendar emoji, which
-   was the only bit of color/emoji in an otherwise monochrome app. */
-.date-trigger::before {
-  content: ""; width: 0.4rem; height: 0.4rem;
-  border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor;
-  transform: rotate(135deg);
-  margin-top: -0.15rem;
-}
+.date-trigger .chevron { transform: rotate(90deg); }
 .date-panel {
   position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 16rem;
   background: var(--surface); border: 1px solid var(--rule-strong);
@@ -649,6 +687,28 @@ a.amount-link:hover { text-decoration: underline; }
 .date-day.today { border: 1px solid var(--rule-strong); }
 .date-day.selected { background: var(--accent); color: var(--accent-text); }
 .date-panel-foot { margin-top: 0.4rem; text-align: right; }
+
+/* -- number stepper (see number-stepper.js) -------------------------------- */
+.number-stepper { position: relative; display: block; width: 100%; }
+.number-input {
+  width: 100%; padding-right: 1.5rem; font-size: 0.85rem;
+  -moz-appearance: textfield;
+}
+.number-input::-webkit-inner-spin-button,
+.number-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.number-step {
+  position: absolute; right: 0.2rem; width: 1.1rem; height: 0.7rem;
+  background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
+  padding: 0; border-radius: 2px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.number-step:hover { background: var(--paper-deep); }
+.number-step:disabled { opacity: 0.35; cursor: default; }
+.number-step:disabled:hover { background: transparent; }
+.step-up { top: 0.15rem; }
+.step-down { bottom: 0.15rem; }
+.step-up .chevron { transform: rotate(-90deg); }
+.step-down .chevron { transform: rotate(90deg); }
 
 /* -- journal entry screen ------------------------------------------------ */
 table.entry-grid input { width: 100%; border-color: var(--rule); }
@@ -733,20 +793,25 @@ details.entry-new summary {
 }
 .tag-chip-remove:hover { color: var(--red); }
 
-/* -- accounts page: level browser + tree ---------------------------------- */
-.accounts-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
-.levels-panel {
+/* -- two-column layout: sticky side nav + main content --------------------
+   Originally just the Accounts page's level browser; generic enough
+   (and useful enough — see Help's own section nav) that it's named for
+   what it is rather than its first caller. */
+.two-col { display: flex; gap: 1.5rem; align-items: flex-start; }
+.side-nav {
   flex: 0 0 12rem; display: flex; flex-direction: column; gap: 0.15rem;
   border: 1px solid var(--rule); background: var(--surface); padding: 0.6rem;
   position: sticky; top: 1rem;
 }
-.levels-panel .level-link {
+.side-nav a {
   display: block; padding: 0.35rem 0.5rem; text-decoration: none;
   color: var(--ink); border-radius: 2px; font-size: 0.9rem;
 }
-.levels-panel .level-link:hover { background: var(--paper-deep); }
-.levels-panel .level-link.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
-.accounts-main { flex: 1; min-width: 0; }
+.side-nav a:hover { background: var(--paper-deep); }
+.side-nav a.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.side-nav a.dim { color: var(--ink-soft); font-size: 0.82rem; }
+.two-col-main { flex: 1; min-width: 0; }
+.two-col-main > h2:first-child { margin-top: 0; }
 
 td.acct-name { font-variant-numeric: tabular-nums; }
 /* table.ledger td's own padding shorthand (below) beats a bare .depth-N
@@ -772,23 +837,20 @@ table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
   display: inline-block; width: 0.9rem; margin-right: 0.15rem;
   text-align: center; vertical-align: middle;
 }
-/* The chevron is a right-angle corner (top + right border of a square)
-   rotated 45deg so its vertex points right — not a ">" glyph, whose
-   actual angle is whatever the font happens to draw. Hidden by default;
-   only rows with children (data-postable="0" / data-has-children="1")
-   turn it on, so leaf rows keep the reserved-but-empty span for
-   alignment. Nudged up and left of its layout box: an unrotated corner
-   sits low-and-right within its own square (its baseline-ish weight is
-   in the bottom-right, being built from the top+right edges), so
-   centering it against the account name next to it needs a small manual
-   offset rather than pure vertical-align. */
+/* The chevron itself is the shared .chevron shape (see above), drawn on
+   ::before rather than a real child element since every template just
+   emits an empty <span class="tree-toggle">. Hidden by default; only
+   rows with children (data-postable="0" / data-has-children="1") turn
+   it on, so leaf rows keep the reserved-but-empty span for alignment.
+   It points right at rest, so no extra rotation here — the row-state
+   rules below rotate the whole .tree-toggle 0deg (collapsed, pointing
+   right) or 90deg (expanded, pointing down). */
 .tree-toggle::before { content: ""; }
 tr[data-postable="0"] .tree-toggle::before,
 tr[data-has-children="1"] .tree-toggle::before {
-  display: inline-block; width: 0.36rem; height: 0.36rem;
-  border-top: 2px solid currentColor; border-right: 2px solid currentColor;
-  transform: rotate(45deg);
-  position: relative; top: -0.1rem; left: -0.08rem;
+  display: inline-block; width: 0.32rem; height: 0.5rem;
+  background: currentColor;
+  clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
 }
 tr[data-postable="0"] .acct-name { cursor: pointer; }
 tr[data-postable="0"] .tree-toggle {

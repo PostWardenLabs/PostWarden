@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Scheduled entries{% endblock %}
 {% block content %}
-<h1>Scheduled entries</h1>
-<p class="page-sub"><a href="/help#scheduled">How this works →</a></p>
+<div class="page-head">
+  <h1>Scheduled entries</h1>
+  <a href="/help#scheduled" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 {% if pending_count %}
 <p class="page-sub"><a href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a></p>

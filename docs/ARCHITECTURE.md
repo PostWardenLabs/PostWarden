@@ -69,7 +69,7 @@ reading order:
 | Staging | `/staging`, `/staging/approve` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses |
 | Import | `/import` | uploads a CSV in `/entries/export.csv`'s own column layout; `_parse_csv_import()` groups rows by `Entry #` and fully validates every group in Python before anything touches the database, then stages the valid ones in Staging under a new `import_batches` row |
 | Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
-| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, linked back with a short "How this works →" |
+| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, in a two-column layout (`.two-col`/`.side-nav`, [see below](#sticky-side-nav-layout)) with its own jump-to nav; every other page links back with a small "?" icon next to its `<h1>` (`.page-head`/`.help-icon`) rather than a sentence of caption text |
 | `/api/*` | JSON mirror | same data as the HTML screens, for scripts; not used by the app's own pages |
 
 ## Templates
@@ -99,6 +99,7 @@ through the template context explicitly.
 | `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
 | `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`). |
+| `number-stepper.js` | Every `<input type="number">` (Account levels' Depth, Scheduled's "Repeats every") — hides the browser's native spinner and adds the site's own chevron up/down buttons; typing and the keyboard's own arrow keys still work, input stays `type="number"` throughout. |
 | `tags.js` | The tag chip input (select-or-create, comma-separated hidden value underneath). |
 | `entry_templates.js` | "Load template" on New entry — fills the grid client-side from a page-embedded JSON blob. |
 | `cents-entry.js` | Optional "digits fill in from the right" amount entry (POS-terminal style), toggled in Settings. |
@@ -135,10 +136,10 @@ collapse/expand.
 - **Markup**: every row carries `data-id`, `data-parent`, and
   `data-has-children` on the `<tr>`, and an (initially empty) `<span
   class="tree-toggle">` in the name cell — the chevron itself is pure
-  CSS (a rotated border-corner, not a font glyph; see `style.css`'s
-  `.tree-toggle::before`), shown only via a `tr[data-has-children="1"]`
-  selector so a leaf row's span stays empty but still reserves the
-  indent width.
+  CSS (a solid `.chevron` clip-path triangle, not a font glyph; see
+  `style.css`'s `.tree-toggle::before`), shown only via a
+  `tr[data-has-children="1"]` selector so a leaf row's span stays empty
+  but still reserves the indent width.
 - **Client side**: `report-tree.js` (or `accounts.js` on the Accounts
   page) reads those `data-*` attributes to hide/show descendant rows and
   persist collapse state in `localStorage`, keyed by a
@@ -168,6 +169,19 @@ a way back.
   Back to report" link. `_entries_filter()` is the one place the
   resulting WHERE clause is built, shared by the HTML view and the CSV
   export so what you see is exactly what you'd export.
+
+### Sticky side-nav layout
+
+Accounts (browse by level) and Help (jump to a section) both need the
+same shape: a narrow list of links on the left that stays in view while
+a longer, scrollable body sits on the right. One CSS pattern covers
+both — `.two-col` (flex row) wrapping a `.side-nav` (`position: sticky`,
+fixed width) and a `.two-col-main` (`flex: 1`). `.side-nav a.active`
+marks the current entry; Accounts sets it server-side per request
+(which level is selected), Help has no equivalent since its nav links
+are same-page anchors, not separate pages, so it's left unset there.
+Named for what it is rather than its first caller (it started as
+Accounts-only, back when it was `.accounts-layout`/`.levels-panel`).
 
 ### Inline creation via `fetch()`, not a full-page POST
 

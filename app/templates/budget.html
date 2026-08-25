@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Budget grid{% endblock %}
 {% block content %}
-<h1>Budget grid</h1>
-<p class="page-sub"><a href="/help#budget-grid">How this works →</a></p>
+<div class="page-head">
+  <h1>Budget grid</h1>
+  <a href="/help#budget-grid" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 {% if not scenarios %}
 <p class="dim">No income-statement-only scenarios yet. Create one from <a href="/scenarios">Scenarios</a> — check "income statement only" when you do.</p>

@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Templates{% endblock %}
 {% block content %}
-<h1>Entry templates</h1>
-<p class="page-sub"><a href="/help#templates">How this works →</a></p>
+<div class="page-head">
+  <h1>Entry templates</h1>
+  <a href="/help#templates" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 <script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>

@@ -3,8 +3,10 @@
 {% block content %}
 {% set report_url = "/payees" %}
 {% macro entry_link(name, count) %}<a class="amount-link" href="/entries?payee={{ name | urlencode }}&back={{ report_url | urlencode }}">{{ count }}</a>{% endmacro %}
-<h1>Payees</h1>
-<p class="page-sub"><a href="/help#payees">How this works →</a></p>
+<div class="page-head">
+  <h1>Payees</h1>
+  <a href="/help#payees" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 <table class="ledger">
   <thead><tr>

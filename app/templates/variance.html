@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Variance{% endblock %}
 {% block content %}
-<h1>Variance</h1>
-<p class="page-sub"><a href="/help#variance">How this works →</a></p>
+<div class="page-head">
+  <h1>Variance</h1>
+  <a href="/help#variance" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 <form class="bar" method="get" action="/variance">
   <label class="field">Baseline

@@ -2,7 +2,10 @@
 {% block title %}Journal{% endblock %}
 {% block content %}
 {% if back %}<p class="page-sub"><a class="quiet-link" href="{{ back }}">&larr; Back to report</a></p>{% endif %}
-<h1>Journal</h1>
+<div class="page-head">
+  <h1>Journal</h1>
+  <a href="/help#journal" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
 <script type="application/json" id="accounts-data">{{ new_entry_accounts | tojson }}</script>

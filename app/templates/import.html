@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Import{% endblock %}
 {% block content %}
-<h1>Import</h1>
-<p class="page-sub">Imported entries land in <a href="/staging">Staging</a> for review, same as a scheduled
-  entry. <a href="/help#import">Required CSV columns and how this works →</a></p>
+<div class="page-head">
+  <h1>Import</h1>
+  <a href="/help#import" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
+<p class="page-sub">Imported entries land in <a href="/staging">Staging</a> for review, same as a scheduled entry.</p>
 
 <div class="panel">
   <h2>Upload a CSV</h2>

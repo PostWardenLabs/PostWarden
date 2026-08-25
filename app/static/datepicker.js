@@ -43,6 +43,7 @@
     trigger.className = "date-trigger";
     trigger.setAttribute("aria-label", "Open calendar");
     if (input.disabled) trigger.disabled = true;
+    trigger.innerHTML = '<span class="chevron"></span>';
     wrap.appendChild(trigger);
 
     const panel = document.createElement("div");
