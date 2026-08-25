@@ -492,12 +492,18 @@ input[type="file"]:hover::-webkit-file-upload-button {
   background: var(--accent-hover); border-color: var(--accent-hover);
 }
 
-button {
+/* .button-link: a plain navigation <a> styled to match <button> exactly,
+   for the rare case that's a link to another page rather than a form
+   action — a <button> nested inside an <a> is invalid HTML (interactive
+   content inside interactive content) and double-stops on Tab, so this
+   is the real fix rather than reaching for that. */
+button, a.button-link {
   font: inherit; cursor: pointer;
   background: var(--accent); color: var(--accent-text);
   border: 1px solid var(--accent); padding: 0.42rem 1rem; border-radius: 2px;
+  display: inline-block; text-decoration: none;
 }
-button:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+button:hover, a.button-link:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 button:disabled { background: var(--rule); border-color: var(--rule);
                   color: var(--ink-soft); cursor: not-allowed; }
 button.quiet {

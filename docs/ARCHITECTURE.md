@@ -52,7 +52,7 @@ reading order:
 | Section | Routes | Notes |
 |---|---|---|
 | Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route |
-| Settings | `/settings/*` | username/password change, theme preference |
+| Settings | `/settings`, `/settings/account` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
 | Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |
 | Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column |

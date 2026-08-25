@@ -261,6 +261,13 @@ def settings_page(request: Request, ok: str = None, err: str = None):
     })
 
 
+@app.get("/settings/account")
+def account_page(request: Request, ok: str = None, err: str = None):
+    return templates.TemplateResponse(request, "account.html", {
+        "nav": "settings", "ok": ok, "err": err,
+    })
+
+
 @app.post("/settings/username")
 def change_username(request: Request, username: str = Form(...),
                     csrf_token: str = Form(...)):
@@ -277,8 +284,8 @@ def change_username(request: Request, username: str = Form(...),
                        (username, user_id))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
-        return flash_redirect("/settings", err=msg)
-    return flash_redirect("/settings", ok=f"Username changed to {username!r}")
+        return flash_redirect("/settings/account", err=msg)
+    return flash_redirect("/settings/account", ok=f"Username changed to {username!r}")
 
 
 @app.post("/settings/password")
@@ -300,7 +307,7 @@ def change_password(request: Request, current_password: str = Form(...),
                        (auth.hash_password(new_password), session["user_id"]))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
-        return flash_redirect("/settings", err=msg)
+        return flash_redirect("/settings/account", err=msg)
     # Same as the CLI's reset-password: revoke every session for this user,
     # including the current one — logging back in with the new password is
     # itself the confirmation that it was set correctly.
