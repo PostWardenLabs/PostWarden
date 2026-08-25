@@ -43,28 +43,55 @@
     </tr>
   </thead>
   <tbody>
-    {% for g in grouped %}
-    <tr class="type-head"><td colspan="3">{{ g.label }}</td></tr>
+    {% for g in income_groups %}
+    <tr class="type-head"><td colspan="3">{{ g.name }}</td></tr>
       {% for r in g.rows %}
       <tr>
         <td class="mono dim">{{ r.account_code }}</td>
         <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ (-r.net if g.type == 'income' else r.net) | money }}</td>
+        <td class="num money money-first">{{ (-r.net) | money }}</td>
+      </tr>
+      {% endfor %}
+      {% if income_groups | length > 1 %}
+      <tr class="subtotal">
+        <td></td><td>Total {{ g.name }}</td>
+        <td class="num money money-first">{{ g.subtotal | money }}</td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total income</td>
+      <td class="num money money-first">{{ total_income | money }}</td>
+    </tr>
+
+    {% for g in expense_groups %}
+    <tr class="type-head"><td colspan="3">{{ g.name }}</td></tr>
+      {% for r in g.rows %}
+      <tr>
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ r.net | money }}</td>
       </tr>
       {% endfor %}
     <tr class="subtotal">
-      <td></td><td>{{ g.label }} total</td>
+      <td></td><td>Total {{ g.name }}</td>
       <td class="num money money-first">{{ g.subtotal | money }}</td>
     </tr>
-    {% endfor %}
     <tr class="grand">
       <td></td>
       <td>Net income</td>
-      <td class="num money money-first {{ 'neg' if net_income < 0 }}">{{ net_income | money }}</td>
+      <td class="num money money-first {{ 'neg' if g.running_after < 0 }}">{{ g.running_after | money }}</td>
     </tr>
+    {% else %}
+    <tr class="grand">
+      <td></td>
+      <td>Net income</td>
+      <td class="num money money-first {{ 'neg' if total_income < 0 }}">{{ total_income | money }}</td>
+    </tr>
+    {% endfor %}
   </tbody>
 </table>
-{% if not grouped %}<p class="dim">No income or expense activity in this period.</p>{% endif %}
+{% if not income_groups and not expense_groups %}<p class="dim">No income or expense activity in this period.</p>{% endif %}
 {% endblock %}
 
 {% block scripts %}<script src="{{ asset('period-picker.js') }}"></script>{% endblock %}

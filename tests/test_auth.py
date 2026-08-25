@@ -738,3 +738,31 @@ def test_balance_sheet_balances_via_current_earnings(conn):
         assert "out-of-balance" not in r.text
         assert _account_row_value(r.text, accts["asset"]["code"]) == "650.00"
         assert _account_row_value(r.text, accts["equity"]["code"]) == "500.00"
+
+
+def test_income_statement_splits_multiple_top_level_expense_groups(conn):
+    # A user with a second top-level expense account (e.g. "6000 Other
+    # expenses" next to the original "5000 Expenses") should see two
+    # sections, each with its own subtotal and its own running "Net
+    # income" line — not one merged Expenses bucket.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income", code="590100")
+        expense_a = mk_account(cur, account_type="expense", code="591100")
+        expense_b = mk_account(cur, account_type="expense", code="592100")
+        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -300)
+        mk_line(cur, mk_entry(cur, scen["id"]), expense_a["id"], 100)
+        mk_line(cur, mk_entry(cur, scen["id"]), expense_b["id"], 50)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        today = date.today().isoformat()
+        r = c.get(f"/income-statement?scenario={scen['code']}&date_from={today}&date_to={today}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, expense_a["code"]) == "100.00"
+        assert _account_row_value(r.text, expense_b["code"]) == "50.00"
+        assert r.text.count("Net income") == 2  # one running line per expense group
+        # The first group's running line (300 - 100 = 200) precedes the
+        # second's (200 - 50 = 150) in document order.
+        assert r.text.index('data-value="200.00"') < r.text.index('data-value="150.00"')

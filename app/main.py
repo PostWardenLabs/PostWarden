@@ -389,25 +389,55 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros:
 # the way it does for Assets/Liabilities/Equity. Defaults to month-to-date.
 # No physical period-close needed — see fn_trial_balance's p_from: the
 # range is just a WHERE clause, not a journal entry zeroing anything out.
+#
+# Expense rows are broken into their own section per *top-level* expense
+# account rather than one flat "Expenses" bucket — a user who adds a
+# second top-level expense account (e.g. "6000 Other expenses" alongside
+# the original "5000 Expenses") gets a waterfall: each section's own
+# subtotal, followed by a running "Net income" line reflecting everything
+# subtracted so far, in account-code order. With just the one usual
+# top-level expense account this collapses to exactly the old single
+# Expenses-section-then-Net-income layout.
 # ---------------------------------------------------------------------------
+def _top_level(r: dict) -> tuple[str, str]:
+    """(code, name) of a row's top-level (depth-1) ancestor — read straight
+    off fn_trial_balance's own path/sort_path columns, no extra query:
+    sort_path is dot-joined codes root-to-leaf, path is " : "-joined names,
+    so the first segment of each is always the top-level ancestor."""
+    return r["sort_path"].split(".")[0], r["path"].split(" : ")[0]
+
+
+def _grouped_by_top_level(rows: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for r in rows:
+        code, name = _top_level(r)
+        groups.setdefault(code, {"code": code, "name": name, "rows": []})["rows"].append(r)
+    return sorted(groups.values(), key=lambda g: g["code"])
+
+
 def _income_statement_rows(scenario: str, date_from: str, date_to: str) -> dict:
     rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)",
              (scenario, date_to or None, date_from or None))
-    grouped = []
-    for t in ("income", "expense"):
-        sub = [r for r in rows if r["acct_type"] == t and r["net"] != 0]
-        if sub:
-            grouped.append({
-                "type": t, "label": TYPE_LABELS[t], "rows": sub,
-                # Income is credit-normal (net < 0 for real income) — flip
-                # sign so both subtotals read as plain positive amounts.
-                "subtotal": -sum(r["net"] for r in sub) if t == "income"
-                            else sum(r["net"] for r in sub),
-            })
-    total_income = next((g["subtotal"] for g in grouped if g["type"] == "income"), 0)
-    total_expenses = next((g["subtotal"] for g in grouped if g["type"] == "expense"), 0)
-    return {"grouped": grouped, "total_income": total_income,
-            "total_expenses": total_expenses, "net_income": total_income - total_expenses}
+
+    income_groups = _grouped_by_top_level(
+        [r for r in rows if r["acct_type"] == "income" and r["net"] != 0])
+    for g in income_groups:
+        g["subtotal"] = -sum(r["net"] for r in g["rows"])  # credit-normal
+    total_income = sum(g["subtotal"] for g in income_groups)
+
+    expense_groups = _grouped_by_top_level(
+        [r for r in rows if r["acct_type"] == "expense" and r["net"] != 0])
+    running = total_income
+    for g in expense_groups:
+        g["subtotal"] = sum(r["net"] for r in g["rows"])
+        running -= g["subtotal"]
+        g["running_after"] = running
+
+    return {
+        "income_groups": income_groups, "total_income": total_income,
+        "expense_groups": expense_groups,
+        "net_income": running if expense_groups else total_income,
+    }
 
 
 @app.get("/income-statement")
@@ -429,13 +459,19 @@ def income_statement_export_csv(scenario: str = "ACTUAL", date_from: str = "", d
     result = _income_statement_rows(scenario, date_from, date_to)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Type", "Code", "Account", "Path", "Amount"])
-    for g in result["grouped"]:
+    w.writerow(["Section", "Code", "Account", "Path", "Amount"])
+    for g in result["income_groups"]:
         for r in g["rows"]:
-            amount = -r["net"] if g["type"] == "income" else r["net"]
-            w.writerow([g["label"], r["account_code"], r["account_name"], r["path"], amount])
-    w.writerow([])
-    w.writerow(["Net income", "", "", "", result["net_income"]])
+            w.writerow([g["name"], r["account_code"], r["account_name"], r["path"], -r["net"]])
+    w.writerow(["Income", "", "Total income", "", result["total_income"]])
+    for g in result["expense_groups"]:
+        w.writerow([])
+        for r in g["rows"]:
+            w.writerow([g["name"], r["account_code"], r["account_name"], r["path"], r["net"]])
+        w.writerow([g["name"], "", f"Total {g['name']}", "", g["subtotal"]])
+        w.writerow([g["name"], "", "Net income", "", g["running_after"]])
+    if not result["expense_groups"]:
+        w.writerow(["Income", "", "Net income", "", result["net_income"]])
     return Response(buf.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="libro-income-statement-{scenario}.csv"'})
 
