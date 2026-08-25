@@ -227,16 +227,18 @@ method="get">` — a plain GET, so the current filters are always a
 bookmarkable/shareable URL, no client-side state involved. `auto-refresh.js`
 is one delegated `change` listener per such form (found by that same
 class + method, no opt-in markup needed on individual fields) that calls
-`form.requestSubmit()` the moment a `<select>` or date/month field
-changes. It's a `change` listener on the *form*, not on each field, so it
-needs no re-binding when combobox.js/datepicker.js swap a plain `<select>`/
-`<input type="date">` for their own enhanced markup — both of those
-already dispatch a real bubbling `change` on the original element when a
-value is picked (see their own files), which is all a bubble-phase
-listener on an ancestor ever needed. Deliberately scoped to selects and
-date-ish fields only: a text field (Search, the Amount value) or the tag
-picker never matches, so typing never triggers a mid-word navigation —
-only a deliberate pick does.
+`form.requestSubmit()` the moment a `<select>`, date/month field, or
+checkbox changes (Trial Balance's "show zero balances"/"show true
+balances", Balance Sheet's "show true balances"). It's a `change`
+listener on the *form*, not on each field, so it needs no re-binding
+when combobox.js/datepicker.js swap a plain `<select>`/`<input
+type="date">` for their own enhanced markup — both of those already
+dispatch a real bubbling `change` on the original element when a value
+is picked (see their own files), which is all a bubble-phase listener
+on an ancestor ever needed. Deliberately excludes text fields (Search,
+the Amount value) and the tag picker: those are typed into, not picked
+from, so including them would turn every keystroke into a mid-word
+navigation.
 
 ### Flash messages
 

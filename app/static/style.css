@@ -673,29 +673,30 @@ a.amount-link:hover { text-decoration: underline; }
 /* -- chevron (shared by the date picker, tree collapse/expand, and the
    number stepper) -----------------------------------------------------
    A solid clip-path triangle, not a font glyph (whose angle is whatever
-   the font happens to draw) and not a stroked border-corner either — a
-   hairline outline loses most of its ink to anti-aliasing at these
-   sizes and reads as noticeably fainter than solid text of the same
-   color, which is exactly what it was: same var(--ink-soft) as e.g. the
-   account-code column, just visibly weaker. A filled shape doesn't have
-   that problem, so it can be genuinely thin *and* fully opaque.
-   Direction is a distinct clip-path per class, not one shape rotated
-   with transform: this browser (and apparently others — it's not a
-   headless-only quirk) visibly distorts a clip-path at exactly ±90deg
-   of rotation — the identical triangle renders thin at 0deg/45deg and
-   stubby/fat at ±90deg, confirmed with isolated test elements outside
-   any app CSS. Every direction actually used gets its own polygon
-   instead, so nothing here ever asks a browser to rotate a clip-path
-   by a cardinal angle. */
+   the font happens to draw) — an open corner, like the ">" it's
+   standing in for, not a solid arrowhead: a filled triangle (tried
+   briefly) reads as a totally different mark once you actually look at
+   it, however thin it's made. Two straight border edges meeting at a
+   right angle, rotated so the vertex points the right way. Thin on
+   purpose (1.5px) but not hairline-thin — this needs to stay legible at
+   a glance, not just technically visible.
+   Rotated with transform, same as any other rotated element — this is
+   NOT the clip-path shape an earlier pass here used, which had its own
+   separate bug (this browser distorts a *clip-path* rotated by exactly
+   ±90deg; a plain border box rotates however you'd expect, at any
+   angle, confirmed by every other rotated element in this file working
+   fine). Points right by default; .chevron-{up,down,left} cover every
+   other direction actually used. */
 .chevron {
   display: inline-block; flex: none;
-  width: 0.42rem; height: 0.42rem;
-  background: currentColor;
-  clip-path: polygon(0% 32%, 100% 50%, 0% 68%); /* right */
+  width: 0.4rem; height: 0.4rem;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: rotate(45deg); /* right */
 }
-.chevron-down { clip-path: polygon(32% 0%, 50% 100%, 68% 0%); }
-.chevron-up   { clip-path: polygon(32% 100%, 50% 0%, 68% 100%); }
-.chevron-left { clip-path: polygon(100% 32%, 0% 50%, 100% 68%); }
+.chevron-down { transform: rotate(135deg); }
+.chevron-up   { transform: rotate(-45deg); }
+.chevron-left { transform: rotate(225deg); }
 
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
@@ -883,25 +884,28 @@ table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
   display: inline-block; width: 0.9rem; margin-right: 0.15rem;
   text-align: center; vertical-align: middle;
 }
-/* The chevron itself is the shared .chevron shape (see above), drawn on
-   ::before rather than a real child element since every template just
-   emits an empty <span class="tree-toggle">. Hidden by default; only
-   rows with children (data-postable="0" / data-has-children="1") turn
-   it on, so leaf rows keep the reserved-but-empty span for alignment.
-   Expanded (default) points down, collapsed points right — as two
-   separate clip-path polygons, not one shape rotated 90deg between
-   states: see the .chevron comment above for why rotation is off the
-   table here. */
+/* Same border-corner recipe as the shared .chevron shape (see above),
+   drawn on ::before rather than a real child element since every
+   template just emits an empty <span class="tree-toggle">. Hidden by
+   default; only rows with children (data-postable="0" /
+   data-has-children="1") turn it on, so leaf rows keep the
+   reserved-but-empty span for alignment. Expanded (default) points
+   down (135deg), collapsed points right (45deg). Nudged up-left of its
+   own box: an unrotated corner sits low-and-right within it (its
+   weight is in the bottom-right, being built from the top+right
+   edges), so centering it against the account name next to it needs a
+   small manual offset rather than pure vertical-align. */
 .tree-toggle::before { content: ""; }
 tr[data-postable="0"] .tree-toggle::before,
 tr[data-has-children="1"] .tree-toggle::before {
-  display: inline-block; width: 0.42rem; height: 0.42rem;
-  background: currentColor;
-  clip-path: polygon(32% 0%, 50% 100%, 68% 0%); /* down */
-  transition: clip-path 120ms ease;
+  display: inline-block; width: 0.4rem; height: 0.4rem;
+  border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor;
+  transform: rotate(135deg); /* down */
+  position: relative; top: -0.1rem; left: -0.08rem;
+  transition: transform 120ms ease;
 }
 tr.collapsed .tree-toggle::before {
-  clip-path: polygon(0% 32%, 100% 50%, 0% 68%); /* right */
+  transform: rotate(45deg); /* right */
 }
 tr[data-postable="0"] .acct-name { cursor: pointer; }
 tr[data-postable="0"] .tree-toggle {
