@@ -2,7 +2,8 @@
 {% block title %}Trial balance{% endblock %}
 {% block content %}
 <h1>Trial balance</h1>
-<p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span></p>
+<p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span> —
+  Income/Expense shown since {{ fy_start }}, with everything earlier folded into "Prior years (unclosed)."</p>
 
 <form class="bar" method="get" action="/trial-balance">
   <label class="field">Scenario

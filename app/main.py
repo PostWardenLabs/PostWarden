@@ -336,19 +336,44 @@ def dashboard(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Trial balance
+# Trial balance — cumulative "as of" for Assets/Liabilities/Equity, same as
+# always (that's the whole point of a trial balance: verifying the *entire*
+# ledger's debits equal its credits). Income/Expense rows, though, are
+# bounded to the current fiscal year (Jan 1 of as-of's year through as-of)
+# rather than shown since account inception — an unbounded lifetime total
+# for a flow account only grows and is never actually the number anyone
+# wants on an at-a-glance balance check. Everything from before the fiscal
+# year folds into one "Prior years (unclosed)" line per section, so the
+# section subtotal (and the page's overall debit=credit check) still add
+# up to the true cumulative total — nothing is hidden, just regrouped.
+# This deliberately isn't a physical period close (no entries posted,
+# nothing to migrate): purely a reporting-query boundary, same spirit as
+# the Income Statement's p_from.
 # ---------------------------------------------------------------------------
-@app.get("/trial-balance")
-def trial_balance(request: Request, scenario: str = "ACTUAL",
-                  as_of: str = None, zeros: int = 0):
+def _trial_balance_rows(scenario: str, as_of: str, zeros: int) -> dict:
     as_of_date = as_of or None
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
-    if not zeros:
-        rows = [r for r in rows if r["net"] != 0]
+    as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
+    fy_start = date(as_of_dt.year, 1, 1).isoformat()
+
+    full_rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
+    fy_rows = {r["account_id"]: r for r in
+              q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))}
 
     grouped = []
     for t in ACCOUNT_TYPES:
-        sub = [r for r in rows if r["acct_type"] == t]
+        if t in ("income", "expense"):
+            sub = [fy_rows[r["account_id"]] for r in full_rows
+                  if r["acct_type"] == t and r["account_id"] in fy_rows
+                  and (zeros or fy_rows[r["account_id"]]["net"] != 0)]
+            prior_net = (sum(r["net"] for r in full_rows if r["acct_type"] == t)
+                        - sum(r["net"] for r in fy_rows.values() if r["acct_type"] == t))
+            if zeros or prior_net != 0:
+                sub = sub + [{
+                    "account_code": "", "account_name": "Prior years (unclosed)", "path": "",
+                    "debit_balance": max(prior_net, 0), "credit_balance": max(-prior_net, 0),
+                }]
+        else:
+            sub = [r for r in full_rows if r["acct_type"] == t and (zeros or r["net"] != 0)]
         if sub:
             grouped.append({
                 "type": t, "label": TYPE_LABELS[t], "rows": sub,
@@ -356,29 +381,32 @@ def trial_balance(request: Request, scenario: str = "ACTUAL",
                 "sub_credits": sum(r["credit_balance"] for r in sub),
             })
 
-    total_debits = sum(r["debit_balance"] for r in rows)
-    total_credits = sum(r["credit_balance"] for r in rows)
+    total_debits = sum(r["debit_balance"] for r in full_rows)
+    total_credits = sum(r["credit_balance"] for r in full_rows)
+    return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
+            "in_balance": total_debits == total_credits, "fy_start": fy_start}
+
+
+@app.get("/trial-balance")
+def trial_balance(request: Request, scenario: str = "ACTUAL",
+                  as_of: str = None, zeros: int = 0):
+    result = _trial_balance_rows(scenario, as_of, zeros)
     return templates.TemplateResponse(request, "trial_balance.html", {
-        "nav": "tb", "grouped": grouped, "scenario": scenario,
-        "as_of": as_of or "", "zeros": zeros,
-        "scenarios": scenarios_all(),
-        "total_debits": total_debits, "total_credits": total_credits,
-        "in_balance": total_debits == total_credits,
-        "today": date.today().isoformat(),
+        "nav": "tb", "scenario": scenario, "as_of": as_of or "", "zeros": zeros,
+        "scenarios": scenarios_all(), "today": date.today().isoformat(), **result,
     })
 
 
 @app.get("/export/trial-balance.csv")
 def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros: int = 0):
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of or None))
-    if not zeros:
-        rows = [r for r in rows if r["net"] != 0]
+    result = _trial_balance_rows(scenario, as_of, zeros)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Code", "Account", "Path", "Debit", "Credit"])
-    for r in rows:
-        w.writerow([r["account_code"], r["account_name"], r["path"],
-                   r["debit_balance"] or "", r["credit_balance"] or ""])
+    for g in result["grouped"]:
+        for r in g["rows"]:
+            w.writerow([r["account_code"], r["account_name"], r["path"],
+                       r["debit_balance"] or "", r["credit_balance"] or ""])
     return Response(buf.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="libro-trial-balance-{scenario}.csv"'})
 
@@ -398,80 +426,165 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros:
 # subtracted so far, in account-code order. With just the one usual
 # top-level expense account this collapses to exactly the old single
 # Expenses-section-then-Net-income layout.
+#
+# Optionally compares a second ("compare") scenario alongside the primary
+# one — e.g. Actual vs. a Budget scenario — with a % variance and each
+# subtotal/net line's share of total income, so a budget scenario reads
+# next to the real numbers instead of needing the separate Variance page.
 # ---------------------------------------------------------------------------
-def _top_level(r: dict) -> tuple[str, str]:
-    """(code, name) of a row's top-level (depth-1) ancestor — read straight
+def _pct_variance(base, compare_val):
+    """How much `base` differs from `compare_val`, as a % of `compare_val`
+    — "actual is 12% over budget." None (not 0%) when there's nothing to
+    compare against, so the template can render "—" instead of a
+    misleading 0%."""
+    if not compare_val:
+        return None
+    return round((base - compare_val) / abs(compare_val) * 100, 1)
+
+
+def _pct_of(amount, total):
+    if not total:
+        return None
+    return round(amount / total * 100, 1)
+
+
+def _income_statement_merge(scenario: str, compare: str, date_to, date_from) -> tuple[list, list]:
+    """One row per account with nonzero activity in *either* scenario —
+    same union-of-both-sides shape as Variance's own merge, but at each
+    account's native posting depth (no rollup) since Income Statement
+    isn't reconciling scenarios posted at different base levels the way
+    Variance is."""
+    rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, date_to, date_from))
+    compare_rows = (q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (compare, date_to, date_from))
+                    if compare else [])
+    base_by_id = {r["account_id"]: r for r in rows}
+    compare_by_id = {r["account_id"]: r for r in compare_rows}
+
+    def merged_of_type(t: str) -> list[dict]:
+        ids = ({r["account_id"] for r in rows if r["acct_type"] == t and r["net"] != 0} |
+               {r["account_id"] for r in compare_rows if r["acct_type"] == t and r["net"] != 0})
+        out = []
+        for aid in ids:
+            b, c = base_by_id.get(aid), compare_by_id.get(aid)
+            ref = b or c
+            out.append({
+                "account_code": ref["account_code"], "account_name": ref["account_name"],
+                "path": ref["path"], "sort_path": ref["sort_path"],
+                "base_net": b["net"] if b else 0, "compare_net": c["net"] if c else 0,
+            })
+        return out
+    return merged_of_type("income"), merged_of_type("expense")
+
+
+def _grouped_by_top_level(rows: list[dict], flip: bool) -> list[dict]:
+    """Buckets rows by their top-level (depth-1) ancestor — read straight
     off fn_trial_balance's own path/sort_path columns, no extra query:
-    sort_path is dot-joined codes root-to-leaf, path is " : "-joined names,
-    so the first segment of each is always the top-level ancestor."""
-    return r["sort_path"].split(".")[0], r["path"].split(" : ")[0]
-
-
-def _grouped_by_top_level(rows: list[dict]) -> list[dict]:
+    sort_path is dot-joined codes root-to-leaf and path is " : "-joined
+    names, so each row's first segment of either is its top-level
+    ancestor. `flip` sign-corrects credit-normal Income rows (net < 0 for
+    real income) so every amount from here on reads as a plain positive
+    figure in its "normal" direction."""
+    sign = -1 if flip else 1
     groups: dict[str, dict] = {}
     for r in rows:
-        code, name = _top_level(r)
-        groups.setdefault(code, {"code": code, "name": name, "rows": []})["rows"].append(r)
-    return sorted(groups.values(), key=lambda g: g["code"])
+        code, name = r["sort_path"].split(".")[0], r["path"].split(" : ")[0]
+        g = groups.setdefault(code, {"code": code, "name": name, "rows": []})
+        g["rows"].append({**r, "base_net": sign * r["base_net"], "compare_net": sign * r["compare_net"]})
+    out = sorted(groups.values(), key=lambda g: g["code"])
+    for g in out:
+        g["base_subtotal"] = sum(r["base_net"] for r in g["rows"])
+        g["compare_subtotal"] = sum(r["compare_net"] for r in g["rows"])
+        for r in g["rows"]:
+            r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"])
+        g["pct_variance"] = _pct_variance(g["base_subtotal"], g["compare_subtotal"])
+    return out
 
 
-def _income_statement_rows(scenario: str, date_from: str, date_to: str) -> dict:
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)",
-             (scenario, date_to or None, date_from or None))
+def _income_statement_rows(scenario: str, date_from: str, date_to: str, compare: str = "") -> dict:
+    income_rows, expense_rows = _income_statement_merge(
+        scenario, compare, date_to or None, date_from or None)
+    income_groups = _grouped_by_top_level(income_rows, flip=True)
+    expense_groups = _grouped_by_top_level(expense_rows, flip=False)
 
-    income_groups = _grouped_by_top_level(
-        [r for r in rows if r["acct_type"] == "income" and r["net"] != 0])
-    for g in income_groups:
-        g["subtotal"] = -sum(r["net"] for r in g["rows"])  # credit-normal
-    total_income = sum(g["subtotal"] for g in income_groups)
+    total_base_income = sum(g["base_subtotal"] for g in income_groups)
+    total_compare_income = sum(g["compare_subtotal"] for g in income_groups)
+    income_variance = _pct_variance(total_base_income, total_compare_income)
 
-    expense_groups = _grouped_by_top_level(
-        [r for r in rows if r["acct_type"] == "expense" and r["net"] != 0])
-    running = total_income
+    base_running, compare_running = total_base_income, total_compare_income
     for g in expense_groups:
-        g["subtotal"] = sum(r["net"] for r in g["rows"])
-        running -= g["subtotal"]
-        g["running_after"] = running
+        base_running -= g["base_subtotal"]
+        compare_running -= g["compare_subtotal"]
+        g["base_running_after"] = base_running
+        g["compare_running_after"] = compare_running
+        g["running_pct_variance"] = _pct_variance(base_running, compare_running)
+        g["base_pct_of_income"] = _pct_of(g["base_subtotal"], total_base_income)
+        g["compare_pct_of_income"] = _pct_of(g["compare_subtotal"], total_compare_income)
+        g["base_running_pct_of_income"] = _pct_of(base_running, total_base_income)
+        g["compare_running_pct_of_income"] = _pct_of(compare_running, total_compare_income)
 
+    net_income = base_running if expense_groups else total_base_income
+    compare_net_income = compare_running if expense_groups else total_compare_income
     return {
-        "income_groups": income_groups, "total_income": total_income,
-        "expense_groups": expense_groups,
-        "net_income": running if expense_groups else total_income,
+        "income_groups": income_groups, "expense_groups": expense_groups,
+        "total_base_income": total_base_income, "total_compare_income": total_compare_income,
+        "income_variance": income_variance,
+        "net_income": net_income, "compare_net_income": compare_net_income,
+        "net_income_variance": _pct_variance(net_income, compare_net_income),
+        "net_income_pct_of_income": _pct_of(net_income, total_base_income),
+        "compare_net_income_pct_of_income": _pct_of(compare_net_income, total_compare_income),
+        "has_compare": bool(compare),
     }
 
 
 @app.get("/income-statement")
-def income_statement_page(request: Request, scenario: str = "ACTUAL",
+def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: str = "",
                           date_from: str = "", date_to: str = ""):
     today = date.today()
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
-    result = _income_statement_rows(scenario, date_from, date_to)
+    result = _income_statement_rows(scenario, date_from, date_to, compare)
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
-        "scenario": scenario, "date_from": date_from, "date_to": date_to,
+        "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
         "today": today.isoformat(), **result,
     })
 
 
 @app.get("/export/income-statement.csv")
-def income_statement_export_csv(scenario: str = "ACTUAL", date_from: str = "", date_to: str = ""):
-    result = _income_statement_rows(scenario, date_from, date_to)
+def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
+                                date_from: str = "", date_to: str = ""):
+    result = _income_statement_rows(scenario, date_from, date_to, compare)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Section", "Code", "Account", "Path", "Amount"])
+    header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
+    if compare:
+        header += [compare, "% variance"]
+    w.writerow(header)
+
+    def row(section, code, name, path, base, comp=None, pct=None):
+        line = [section, code, name, path, base]
+        if compare:
+            line += [comp if comp is not None else "", pct if pct is not None else ""]
+        w.writerow(line)
+
     for g in result["income_groups"]:
         for r in g["rows"]:
-            w.writerow([g["name"], r["account_code"], r["account_name"], r["path"], -r["net"]])
-    w.writerow(["Income", "", "Total income", "", result["total_income"]])
+            row(g["name"], r["account_code"], r["account_name"], r["path"],
+                r["base_net"], r["compare_net"], r["pct_variance"])
+    row("Income", "", "Total income", "", result["total_base_income"],
+        result["total_compare_income"], result["income_variance"])
     for g in result["expense_groups"]:
         w.writerow([])
         for r in g["rows"]:
-            w.writerow([g["name"], r["account_code"], r["account_name"], r["path"], r["net"]])
-        w.writerow([g["name"], "", f"Total {g['name']}", "", g["subtotal"]])
-        w.writerow([g["name"], "", "Net income", "", g["running_after"]])
+            row(g["name"], r["account_code"], r["account_name"], r["path"],
+                r["base_net"], r["compare_net"], r["pct_variance"])
+        row(g["name"], "", f"Total {g['name']}", "", g["base_subtotal"],
+            g["compare_subtotal"], g["pct_variance"])
+        row(g["name"], "", "Net income", "", g["base_running_after"],
+            g["compare_running_after"], g["running_pct_variance"])
     if not result["expense_groups"]:
-        w.writerow(["Income", "", "Net income", "", result["net_income"]])
+        row("Income", "", "Net income", "", result["net_income"],
+            result["compare_net_income"], result["net_income_variance"])
     return Response(buf.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="libro-income-statement-{scenario}.csv"'})
 
@@ -481,25 +594,40 @@ def income_statement_export_csv(scenario: str = "ACTUAL", date_from: str = "", d
 # are stock accounts, not flow accounts — a range doesn't apply). Since
 # Libro never posts physical period-closing entries (see the Income
 # Statement above), Income/Expense activity since inception is still just
-# sitting unclosed — so it's folded in here as a synthetic "Current
-# earnings" line under Equity, exactly the way real accounting software
-# computes it on the fly rather than by zeroing accounts at period end.
+# sitting unclosed — so it's folded in here as synthetic lines under
+# Equity, exactly the way real accounting software computes it on the fly
+# rather than by zeroing accounts at period end. Split into "Current year
+# earnings" (since Jan 1 of as-of's year) and "Retained earnings, prior
+# years" — same split, same reasoning, as Trial Balance's "Prior years"
+# line: one lifetime-cumulative number is never actually the figure
+# anyone wants to look at, but the two together still total the exact
+# same unclosed P&L as before, so nothing about the balance changes.
 # ---------------------------------------------------------------------------
 def _balance_sheet_rows(scenario: str, as_of: str) -> dict:
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of or None))
+    as_of_date = as_of or None
+    as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
+    fy_start = date(as_of_dt.year, 1, 1).isoformat()
+
+    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
+    fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
     assets = [r for r in rows if r["acct_type"] == "asset" and r["net"] != 0]
     liabilities = [r for r in rows if r["acct_type"] == "liability" and r["net"] != 0]
     equity = [r for r in rows if r["acct_type"] == "equity" and r["net"] != 0]
-    current_earnings = (
-        -sum(r["net"] for r in rows if r["acct_type"] == "income")
-        - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
+
+    total_pnl = (-sum(r["net"] for r in rows if r["acct_type"] == "income")
+                - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
+    current_year_earnings = (
+        -sum(r["net"] for r in fy_rows if r["acct_type"] == "income")
+        - sum(r["net"] for r in fy_rows if r["acct_type"] == "expense"))
+    prior_years_earnings = total_pnl - current_year_earnings
 
     total_assets = sum(r["net"] for r in assets)
     total_liabilities = -sum(r["net"] for r in liabilities)
-    total_equity = -sum(r["net"] for r in equity) + current_earnings
+    total_equity = -sum(r["net"] for r in equity) + total_pnl
     return {
         "assets": assets, "liabilities": liabilities, "equity": equity,
-        "current_earnings": current_earnings,
+        "current_year_earnings": current_year_earnings,
+        "prior_years_earnings": prior_years_earnings, "fy_start": fy_start,
         "total_assets": total_assets, "total_liabilities": total_liabilities,
         "total_equity": total_equity,
         "total_liab_and_equity": total_liabilities + total_equity,
@@ -528,7 +656,8 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None):
         w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["net"]])
     for r in result["equity"]:
         w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["net"]])
-    w.writerow(["Equity", "", "Current earnings (unclosed)", "", result["current_earnings"]])
+    w.writerow(["Equity", "", "Current year earnings (unclosed)", "", result["current_year_earnings"]])
+    w.writerow(["Equity", "", "Retained earnings, prior years (unclosed)", "", result["prior_years_earnings"]])
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])

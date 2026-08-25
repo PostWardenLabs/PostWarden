@@ -3,7 +3,8 @@
 {% block content %}
 <h1>Balance sheet</h1>
 <p class="page-sub">Assets, liabilities, and equity as of a date, scenario <span class="mono">{{ scenario }}</span> —
-  "Current earnings" folds in Income/Expense activity to date, since nothing here ever physically closes to Equity.</p>
+  Income/Expense activity folds into Equity here, since nothing ever physically closes: this year's since {{ fy_start }},
+  everything earlier as "Retained earnings, prior years."</p>
 
 <form class="bar" method="get" action="/balance-sheet">
   <label class="field">Scenario
@@ -65,8 +66,13 @@
     {% endfor %}
     <tr>
       <td></td>
-      <td class="dim">Current earnings (unclosed)</td>
-      <td class="num money money-first">{{ current_earnings | money }}</td>
+      <td class="dim">Current year earnings (unclosed)</td>
+      <td class="num money money-first">{{ current_year_earnings | money }}</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td class="dim">Retained earnings, prior years (unclosed)</td>
+      <td class="num money money-first">{{ prior_years_earnings | money }}</td>
     </tr>
     <tr class="subtotal">
       <td></td><td>Total equity</td>

@@ -766,3 +766,118 @@ def test_income_statement_splits_multiple_top_level_expense_groups(conn):
         # The first group's running line (300 - 100 = 200) precedes the
         # second's (200 - 50 = 150) in document order.
         assert r.text.index('data-value="200.00"') < r.text.index('data-value="150.00"')
+
+
+def _labeled_row_value(html: str, label: str) -> str:
+    """Like _account_row_value, but for a synthetic row identified by its
+    label text instead of an account code (e.g. "Prior years (unclosed)",
+    which has no account of its own). Scoped to <tbody> — these reports'
+    own descriptive text above the table can legitimately mention the
+    same label (e.g. explaining what "Prior years" means), which would
+    otherwise be found first and throw the search off by a row."""
+    body = re.search(r"<tbody>.*?</tbody>", html, re.S).group(0)
+    m = re.search(rf'{re.escape(label)}.*?</td>.*?data-value="(-?[\d.]+)"', body, re.S)
+    assert m, f"no row found for label {label!r}"
+    return m.group(1)
+
+
+def _mk_backdated_entry(cur, scenario_id: int, entry_date: str, description: str) -> int:
+    """mk_entry always uses CURRENT_DATE — this is the same insert with an
+    explicit date, for testing the fiscal-year boundary on Trial Balance
+    and the Balance Sheet."""
+    cur.execute(
+        "INSERT INTO journal_entries (scenario_id, entry_date, description) VALUES (%s, %s, %s) RETURNING id",
+        (scenario_id, entry_date, description))
+    return cur.fetchone()["id"]
+
+
+def test_income_statement_compares_two_scenarios_with_variance_and_pct_of_income(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        budget = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        expense = mk_account(cur, account_type="expense")
+        mk_line(cur, mk_entry(cur, actual["id"]), income["id"], -400)
+        mk_line(cur, mk_entry(cur, actual["id"]), expense["id"], 100)
+        mk_line(cur, mk_entry(cur, budget["id"]), income["id"], -600)
+        mk_line(cur, mk_entry(cur, budget["id"]), expense["id"], 150)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        today = date.today().isoformat()
+        r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
+                 f"&date_from={today}&date_to={today}")
+        assert r.status_code == 200
+        # Income row: actual 400 vs budget 600 -> -33.3% variance.
+        assert 'data-value="400.00"' in r.text
+        assert 'data-value="600.00"' in r.text
+        assert '-33.3%' in r.text
+        # Net income: actual 300 vs budget 450 -> -33.3% again (same ratio here).
+        assert _account_row_value(r.text, expense["code"]) == "100.00"
+        # % of income on the Expenses subtotal (100/400 = 25%) and the
+        # final Net income line (300/400 = 75%).
+        assert "(25.0%)" in r.text
+        assert "(75.0%)" in r.text
+
+
+def test_income_statement_no_compare_has_no_variance_column(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -100)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        today = date.today().isoformat()
+        r = c.get(f"/income-statement?scenario={scen['code']}&date_from={today}&date_to={today}")
+        assert r.status_code == 200
+        assert "% variance" not in r.text
+
+
+def test_trial_balance_bounds_income_to_fiscal_year_with_prior_years_line(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        old_id = _mk_backdated_entry(cur, scen["id"], "2020-01-15", "Old income")
+        mk_line(cur, old_id, income["id"], -1000)
+        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -300)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/trial-balance?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, income["code"]) == "300.00"
+        assert _labeled_row_value(r.text, "Prior years (unclosed)") == "1000.00"
+
+
+def test_balance_sheet_splits_current_year_and_prior_years_earnings(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        asset = mk_account(cur, account_type="asset")
+        income = mk_account(cur, account_type="income")
+        expense = mk_account(cur, account_type="expense")
+
+        old_id = _mk_backdated_entry(cur, scen["id"], "2020-01-15", "Old income")
+        mk_line(cur, old_id, asset["id"], 500, line_no=1)
+        mk_line(cur, old_id, income["id"], -500, line_no=2)
+
+        e2 = mk_entry(cur, scen["id"])
+        mk_line(cur, e2, asset["id"], 200, line_no=1)
+        mk_line(cur, e2, income["id"], -200, line_no=2)
+
+        e3 = mk_entry(cur, scen["id"])
+        mk_line(cur, e3, expense["id"], 50, line_no=1)
+        mk_line(cur, e3, asset["id"], -50, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/balance-sheet?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert "out-of-balance" not in r.text
+        assert _account_row_value(r.text, asset["code"]) == "650.00"
+        assert _labeled_row_value(r.text, "Current year earnings (unclosed)") == "150.00"
+        assert _labeled_row_value(r.text, "Retained earnings, prior years (unclosed)") == "500.00"

@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Income statement{% endblock %}
 {% block content %}
+{% macro amt(value, pct) %}{{ value | money }}{% if pct is not none %} <span class="dim small">({{ pct }}%)</span>{% endif %}{% endmacro %}
+{% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
+
 <h1>Income statement</h1>
-<p class="page-sub">Income and expenses for a period, scenario <span class="mono">{{ scenario }}</span> —
+<p class="page-sub">Income and expenses for a period, scenario <span class="mono">{{ scenario }}</span>{% if compare %}
+  vs. <span class="mono">{{ compare }}</span>{% endif %} —
   not a running balance since inception the way Trial Balance is: pick a range below.</p>
 
 <form class="bar" method="get" action="/income-statement">
@@ -10,6 +14,14 @@
     <select name="scenario">
       {% for s in scenarios %}
       <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Compare to
+    <select name="compare">
+      <option value="">— none —</option>
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
       {% endfor %}
     </select>
   </label>
@@ -31,7 +43,7 @@
     <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
   </label>
   <button type="submit">Refresh</button>
-  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&date_from={{ date_from }}&date_to={{ date_to }}">Export CSV</a>
+  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}">Export CSV</a>
 </form>
 
 <table class="ledger">
@@ -39,54 +51,87 @@
     <tr>
       <th>Code</th>
       <th>Account</th>
-      <th class="num money money-first">Amount</th>
+      <th class="num money money-first">{{ scenario }}</th>
+      {% if has_compare %}
+      <th class="num money">{{ compare }}</th>
+      <th class="num">% variance</th>
+      {% endif %}
     </tr>
   </thead>
   <tbody>
+    {% set colspan = 5 if has_compare else 3 %}
     {% for g in income_groups %}
-    <tr class="type-head"><td colspan="3">{{ g.name }}</td></tr>
+    <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
       {% for r in g.rows %}
       <tr>
         <td class="mono dim">{{ r.account_code }}</td>
         <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ (-r.net) | money }}</td>
+        <td class="num money money-first">{{ r.base_net | money }}</td>
+        {% if has_compare %}
+        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num">{{ var(r.pct_variance) }}</td>
+        {% endif %}
       </tr>
       {% endfor %}
       {% if income_groups | length > 1 %}
       <tr class="subtotal">
         <td></td><td>Total {{ g.name }}</td>
-        <td class="num money money-first">{{ g.subtotal | money }}</td>
+        <td class="num money money-first">{{ g.base_subtotal | money }}</td>
+        {% if has_compare %}
+        <td class="num money">{{ g.compare_subtotal | money }}</td>
+        <td class="num">{{ var(g.pct_variance) }}</td>
+        {% endif %}
       </tr>
       {% endif %}
     {% endfor %}
     <tr class="subtotal">
       <td></td><td>Total income</td>
-      <td class="num money money-first">{{ total_income | money }}</td>
+      <td class="num money money-first">{{ total_base_income | money }}</td>
+      {% if has_compare %}
+      <td class="num money">{{ total_compare_income | money }}</td>
+      <td class="num">{{ var(income_variance) }}</td>
+      {% endif %}
     </tr>
 
     {% for g in expense_groups %}
-    <tr class="type-head"><td colspan="3">{{ g.name }}</td></tr>
+    <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
       {% for r in g.rows %}
       <tr>
         <td class="mono dim">{{ r.account_code }}</td>
         <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ r.net | money }}</td>
+        <td class="num money money-first">{{ r.base_net | money }}</td>
+        {% if has_compare %}
+        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num">{{ var(r.pct_variance) }}</td>
+        {% endif %}
       </tr>
       {% endfor %}
     <tr class="subtotal">
       <td></td><td>Total {{ g.name }}</td>
-      <td class="num money money-first">{{ g.subtotal | money }}</td>
+      <td class="num money money-first">{{ amt(g.base_subtotal, g.base_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money">{{ amt(g.compare_subtotal, g.compare_pct_of_income) }}</td>
+      <td class="num">{{ var(g.pct_variance) }}</td>
+      {% endif %}
     </tr>
     <tr class="grand">
       <td></td>
       <td>Net income</td>
-      <td class="num money money-first {{ 'neg' if g.running_after < 0 }}">{{ g.running_after | money }}</td>
+      <td class="num money money-first {{ 'neg' if g.base_running_after < 0 }}">{{ amt(g.base_running_after, g.base_running_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if g.compare_running_after < 0 }}">{{ amt(g.compare_running_after, g.compare_running_pct_of_income) }}</td>
+      <td class="num">{{ var(g.running_pct_variance) }}</td>
+      {% endif %}
     </tr>
     {% else %}
     <tr class="grand">
       <td></td>
       <td>Net income</td>
-      <td class="num money money-first {{ 'neg' if total_income < 0 }}">{{ total_income | money }}</td>
+      <td class="num money money-first {{ 'neg' if net_income < 0 }}">{{ amt(net_income, net_income_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if compare_net_income < 0 }}">{{ amt(compare_net_income, compare_net_income_pct_of_income) }}</td>
+      <td class="num">{{ var(net_income_variance) }}</td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>
