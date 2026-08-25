@@ -422,8 +422,11 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros:
 # account rather than one flat "Expenses" bucket — a user who adds a
 # second top-level expense account (e.g. "6000 Other expenses" alongside
 # the original "5000 Expenses") gets a waterfall: each section's own
-# subtotal, followed by a running "Net income" line reflecting everything
-# subtracted so far, in account-code order. With just the one usual
+# subtotal, followed by a running-total line reflecting everything
+# subtracted so far, in account-code order. Every running line but the
+# very last is labelled "Net income after {group}" so a waterfall of
+# several doesn't read as the same "Net income" repeated; the last one
+# always is, since it's the actual bottom line. With just the one usual
 # top-level expense account this collapses to exactly the old single
 # Expenses-section-then-Net-income layout.
 #
@@ -573,14 +576,16 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
                 r["base_net"], r["compare_net"], r["pct_variance"])
     row("Income", "", "Total income", "", result["total_base_income"],
         result["total_compare_income"], result["income_variance"])
-    for g in result["expense_groups"]:
+    for i, g in enumerate(result["expense_groups"]):
         w.writerow([])
         for r in g["rows"]:
             row(g["name"], r["account_code"], r["account_name"], r["path"],
                 r["base_net"], r["compare_net"], r["pct_variance"])
         row(g["name"], "", f"Total {g['name']}", "", g["base_subtotal"],
             g["compare_subtotal"], g["pct_variance"])
-        row(g["name"], "", "Net income", "", g["base_running_after"],
+        is_last = i == len(result["expense_groups"]) - 1
+        label = "Net income" if is_last else f"Net income after {g['name']}"
+        row(g["name"], "", label, "", g["base_running_after"],
             g["compare_running_after"], g["running_pct_variance"])
     if not result["expense_groups"]:
         row("Income", "", "Net income", "", result["net_income"],

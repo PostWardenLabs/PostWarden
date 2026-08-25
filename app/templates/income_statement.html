@@ -116,7 +116,7 @@
     </tr>
     <tr class="grand">
       <td></td>
-      <td>Net income</td>
+      <td>{{ 'Net income' if loop.last else 'Net income after ' + g.name }}</td>
       <td class="num money money-first {{ 'neg' if g.base_running_after < 0 }}">{{ amt(g.base_running_after, g.base_running_pct_of_income) }}</td>
       {% if has_compare %}
       <td class="num money {{ 'neg' if g.compare_running_after < 0 }}">{{ amt(g.compare_running_after, g.compare_running_pct_of_income) }}</td>
