@@ -6,7 +6,13 @@
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
 
+{% if account_row %}
+<p class="page-sub">Showing only postings to <span class="mono">{{ account_row.code }}</span> {{ account_row.name }} —
+  <a class="quiet-link" href="/entries?{{ clear_account_qs }}">clear</a></p>
+{% endif %}
+
 <form class="bar" method="get" action="/entries">
+  <input type="hidden" name="account" value="{{ account }}">
   <label class="field">Scenario
     <select name="scenario">
       <option value="">All</option>

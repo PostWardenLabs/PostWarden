@@ -493,6 +493,13 @@ button.quiet:hover { background: var(--paper-deep); }
 }
 .quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
 
+/* An amount on a report that drills through to the Journal postings
+   behind it — looks like plain text until hovered, so a report doesn't
+   read like it's full of links at a glance (see Income Statement,
+   Balance Sheet). */
+a.amount-link { color: inherit; text-decoration: none; }
+a.amount-link:hover { text-decoration: underline; }
+
 .pager {
   display: flex; align-items: center; justify-content: center; gap: 1.2rem;
   margin-top: 1.4rem; font-size: 0.88rem;

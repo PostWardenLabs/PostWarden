@@ -919,3 +919,59 @@ def test_balance_sheet_simulates_monthly_close_with_earnings_lines(conn):
         assert "out-of-balance" not in r_raw.text
         assert _labeled_row_value(r_raw.text, "Current earnings (unclosed)") == \
             f"{(550.00 if earlier else 150.00) + 500.00:.2f}"
+
+
+def test_entries_page_filters_by_account(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct_a = mk_account(cur)
+        acct_b = mk_account(cur)
+        mk_line(cur, mk_entry(cur, scen["id"], "Entry A"), acct_a["id"], 10)
+        mk_line(cur, mk_entry(cur, scen["id"], "Entry B"), acct_b["id"], 20)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/entries?account={acct_a['code']}")
+        assert r.status_code == 200
+        assert "Entry A" in r.text
+        assert "Entry B" not in r.text
+        assert f"postings to <span class=\"mono\">{acct_a['code']}</span>" in r.text
+        # The "clear" link drops the account filter but keeps nothing else stray.
+        assert 'href="/entries?scenario=&amp;date_from=&amp;date_to=&amp;qtext=&amp;tags="' in r.text
+
+        r_csv = c.get(f"/entries/export.csv?account={acct_a['code']}")
+        assert acct_a["code"] in r_csv.text
+        assert acct_b["code"] not in r_csv.text
+
+
+def test_income_statement_amounts_link_to_filtered_journal(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -100)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        today = date.today().isoformat()
+        r = c.get(f"/income-statement?scenario={scen['code']}&date_from={today}&date_to={today}")
+        assert r.status_code == 200
+        expected_href = (f"/entries?scenario={scen['code']}&date_from={today}"
+                         f"&date_to={today}&account={income['code']}")
+        assert f'<a class="amount-link" href="{expected_href}">' in r.text
+
+
+def test_balance_sheet_amounts_link_to_filtered_journal(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        asset = mk_account(cur, account_type="asset")
+        mk_line(cur, mk_entry(cur, scen["id"]), asset["id"], 100)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/balance-sheet?scenario={scen['code']}")
+        assert r.status_code == 200
+        expected_href = f"/entries?scenario={scen['code']}&date_to=&account={asset['code']}"
+        assert f'<a class="amount-link" href="{expected_href}">' in r.text

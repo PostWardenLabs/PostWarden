@@ -1109,7 +1109,7 @@ ENTRIES_PAGE_SIZE = 50
 
 
 def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
-                    tags: str) -> tuple[list[str], list, list[str]]:
+                    tags: str, account: str = "") -> tuple[list[str], list, list[str]]:
     """Shared by the paged HTML view and the CSV export — same filters,
     same WHERE clause, so what you see is exactly what you export."""
     try:
@@ -1135,15 +1135,23 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
                                    JOIN tags tg ON tg.id = jet.tag_id
                                   WHERE tg.name = ANY(%s))""")
         params.append(tag_list)
+    if account:
+        # Powers the "click an amount on Income Statement/Balance Sheet to
+        # see what posted to it" links — one specific account, exact code.
+        where.append("""e.id IN (SELECT jl.entry_id FROM journal_lines jl
+                                   JOIN accounts a ON a.id = jl.account_id
+                                  WHERE a.code = %s)""")
+        params.append(account)
     return where, params, tag_list
 
 
 @app.get("/entries")
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
-                 date_to: str = "", qtext: str = "", tags: str = "",
+                 date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
                  page: int = 1, ok: str = None, err: str = None):
     page = max(page, 1)
-    where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags)
+    where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags, account)
+    account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
 
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
@@ -1190,12 +1198,16 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
     export_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
+        "qtext": qtext, "tags": tags, "account": account})
+    clear_account_qs = urlencode({
+        "scenario": scenario, "date_from": date_from, "date_to": date_to,
         "qtext": qtext, "tags": tags})
     return templates.TemplateResponse(request, "entries.html", {
         "nav": "entries", "entries": entries, "lines_by_entry": lines_by_entry,
         "tags_by_entry": tags_by_entry, "tags": tags, "all_tags": all_tags(),
         "scenarios": scenarios_all(), "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
+        "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
         "has_next": has_next, "has_prev": page > 1, "export_qs": export_qs,
         "ok": ok, "err": err,
@@ -1204,11 +1216,11 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
 @app.get("/entries/export.csv")
 def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
-                       qtext: str = "", tags: str = ""):
+                       qtext: str = "", tags: str = "", account: str = ""):
     """Every entry matching the current filters (not just the current
     page) — one row per journal line, so it opens straight into a
     spreadsheet without the entry/line grouping the HTML view has."""
-    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags)
+    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags, account)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,

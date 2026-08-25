@@ -3,6 +3,7 @@
 {% block content %}
 {% macro amt(value, pct) %}{{ value | money }}{% if pct is not none %} <span class="dim small">({{ pct }}%)</span>{% endif %}{% endmacro %}
 {% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
+{% macro entry_link(scen_code, code, value) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_from={{ date_from }}&date_to={{ date_to }}&account={{ code }}">{{ value | money }}</a>{% endmacro %}
 
 <h1>Income statement</h1>
 <p class="page-sub">Income and expenses for a period, scenario <span class="mono">{{ scenario }}</span>{% if compare %}
@@ -66,9 +67,9 @@
       <tr>
         <td class="mono dim">{{ r.account_code }}</td>
         <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ r.base_net | money }}</td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
         {% endif %}
       </tr>
@@ -99,9 +100,9 @@
       <tr>
         <td class="mono dim">{{ r.account_code }}</td>
         <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ r.base_net | money }}</td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
         {% endif %}
       </tr>
