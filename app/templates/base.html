@@ -59,7 +59,7 @@
 {% endif %}
 <header class="topbar">
   <div class="topbar-left">
-    <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
+    <a class="wordmark" href="/">Libro</a>
   </div>
   <div class="topbar-right">
     {% if request.state.user %}
@@ -80,7 +80,7 @@
   {% endif %}
   {% block content %}{% endblock %}
 </main>
-<footer class="footer">Libro · every entry balances, or it doesn't post.</footer>
+<footer class="footer">Libro v{{ version }}</footer>
 <script src="{{ asset('sidebar.js') }}"></script>
 <script src="{{ asset('combobox.js') }}"></script>
 <script src="{{ asset('datepicker.js') }}"></script>

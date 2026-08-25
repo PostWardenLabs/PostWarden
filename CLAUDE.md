@@ -76,3 +76,7 @@ considering the task finished.
   de facto changelog; `SPEC.md`'s "Extension roadmap" section has
   started citing them directly (struck-through items note what actually
   shipped and how it differed from the original proposal).
+- **`VERSION`** (repo root, plain text, shown in the footer) bumps with
+  any user-visible change — patch for a fix/polish pass, minor for a new
+  feature, same pre-1.0 rules either way since this is still v0.x. Bump
+  it in the same commit as the change, not a separate one.

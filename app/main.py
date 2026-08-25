@@ -102,6 +102,12 @@ def tojson(value) -> Markup:
 templates.env.filters["money"] = money
 templates.env.filters["tojson"] = tojson
 templates.env.globals["asset"] = asset
+# Read once at startup, not per-request — the footer's version number
+# changes on deploy, not while the app is running. Bump VERSION (repo
+# root, plain text, no build step needed to pick it up) as part of
+# whatever commit it's marking, same as any other doc that ships with
+# the feature it describes.
+templates.env.globals["version"] = (BASE.parent / "VERSION").read_text().strip()
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
 TYPE_LABELS = {

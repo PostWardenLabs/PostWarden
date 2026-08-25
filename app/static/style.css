@@ -301,10 +301,6 @@ body {
   font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
   color: var(--ink); text-decoration: none;
 }
-.wordmark-sub {
-  font-family: var(--sans); font-size: 0.72rem; font-weight: 400;
-  color: var(--ink-soft); margin-left: 0.6rem; letter-spacing: 0.06em;
-}
 .topbar-right { display: flex; align-items: baseline; gap: 1.3rem; flex-wrap: wrap; }
 .topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
 .topbar nav a {
