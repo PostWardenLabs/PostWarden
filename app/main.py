@@ -144,7 +144,8 @@ def postable_accounts_by_scenario() -> dict:
     """{scenario_id: [{id, code, name, path}, ...]} — each scenario's own
     exact posting targets, matching fn_line_account_guard precisely (true
     leaves, plus anything at that scenario's own base_level depth if it
-    has one). Powers entry_new.html/scheduled.html's account picker,
+    has one). Powers entries.html's "New entry" panel and scheduled.html's
+    account picker,
     which re-filters to this when the Scenario field changes (see
     app.js's refreshAccountsForScenario()) instead of showing the same
     broadened list regardless of which scenario is selected."""
@@ -945,23 +946,13 @@ def toggle_account(account_id: int, request: Request, csrf_token: str = Form(...
 
 
 # ---------------------------------------------------------------------------
-# Journal entry — the keyboard-first screen
+# Journal entry — new entries are created inline on the Journal now (see
+# entries_page below); this URL is kept as a redirect so old links and
+# bookmarks land somewhere useful instead of 404ing.
 # ---------------------------------------------------------------------------
 @app.get("/entries/new")
-def entry_new(request: Request, err: str = None):
-    scen = [s for s in scenarios_all() if not s["is_locked"]]
-    by_scenario = postable_accounts_by_scenario()
-    # The scenario <select> defaults to its first <option> (no `selected`
-    # is ever set) — match that here so the grid's initial account list is
-    # right from first paint, before any change event fires.
-    postable = by_scenario.get(scen[0]["id"], []) if scen else []
-    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
-    return templates.TemplateResponse(request, "entry_new.html", {
-        "nav": "new", "accounts": postable, "accounts_by_scenario": by_scenario,
-        "scenarios": scen,
-        "payees": active_payees, "tpls": templates_full(),
-        "today": date.today().isoformat(), "err": err, "all_tags": all_tags(),
-    })
+def entry_new_redirect():
+    return RedirectResponse("/entries?new=1", status_code=303)
 
 
 TAG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9 _-]{0,39}$")
@@ -1095,7 +1086,7 @@ async def create_entry(request: Request):
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         if wants_json:
             return JSONResponse({"ok": False, "error": msg}, status_code=400)
-        return flash_redirect("/entries/new", err=msg)
+        return flash_redirect("/entries?new=1", err=msg)
     ok_msg = f"Entry #{entry_id} posted"
     if wants_json:
         return JSONResponse({"ok": True, "redirect": flash_url("/entries", ok=ok_msg)})
@@ -1202,6 +1193,16 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     clear_account_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
         "qtext": qtext, "tags": tags})
+
+    # For the "+ New entry" panel inline below the filters — same data
+    # entry_new.html used to fetch as its own page, since creating an
+    # entry now happens right here instead.
+    new_entry_scenarios = [s for s in scenarios_all() if not s["is_locked"]]
+    accounts_by_scenario = postable_accounts_by_scenario()
+    new_entry_accounts = (accounts_by_scenario.get(new_entry_scenarios[0]["id"], [])
+                          if new_entry_scenarios else [])
+    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
+
     return templates.TemplateResponse(request, "entries.html", {
         "nav": "entries", "entries": entries, "lines_by_entry": lines_by_entry,
         "tags_by_entry": tags_by_entry, "tags": tags, "all_tags": all_tags(),
@@ -1210,6 +1211,9 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
         "has_next": has_next, "has_prev": page > 1, "export_qs": export_qs,
+        "new_entry_scenarios": new_entry_scenarios, "new_entry_accounts": new_entry_accounts,
+        "accounts_by_scenario": accounts_by_scenario, "payees": active_payees,
+        "tpls": templates_full(), "today": date.today().isoformat(),
         "ok": ok, "err": err,
     })
 

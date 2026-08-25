@@ -607,6 +607,14 @@ details.entry summary {
 details.entry summary::-webkit-details-marker { display: none; }
 details.entry summary:hover { background: var(--paper-deep); }
 details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
+
+/* The "+ New entry" panel reuses .entry's box/border look but isn't a
+   data row — plain text instead of the date/id/description/amount grid,
+   and a dashed border so it reads as an action, not a posted entry. */
+details.entry-new { border-style: dashed; }
+details.entry-new summary {
+  display: block; font-weight: 600; color: var(--accent);
+}
 .badge {
   display: inline-block; font-size: 0.68rem; letter-spacing: 0.05em;
   text-transform: uppercase; padding: 0.1rem 0.45rem;

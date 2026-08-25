@@ -3,24 +3,30 @@
    the whole line grid) with what was saved, using the small APIs app.js
    (LibroEntryGrid) and tags.js (root.__libroTags) expose for exactly this.
    Entirely client-side against a #templates-data blob already on the page
-   — no round trip needed to "load" one. */
+   — no round trip needed to "load" one.
+
+   All lookups are scoped to a container (the entry form's nearest
+   <details> on the Journal page, or the whole document when there isn't
+   one) rather than a bare document.querySelector — the Journal's filter
+   bar has its own unrelated .tag-input (for filtering by tag), and a
+   global lookup would find that one first instead of the entry form's. */
 (function () {
-  function loadTemplateInto(tpl) {
+  function loadTemplateInto(tpl, root) {
     const grid = window.LibroEntryGrid;
     if (!grid) return;
 
-    const desc = document.querySelector('input[name="description"]');
+    const desc = root.querySelector('input[name="description"]');
     if (desc) desc.value = tpl.description || "";
-    const ref = document.querySelector('input[name="reference"]');
+    const ref = root.querySelector('input[name="reference"]');
     if (ref) ref.value = tpl.reference || "";
 
-    const payeeSel = document.querySelector('select[name="payee_id"]');
+    const payeeSel = root.querySelector('select[name="payee_id"]');
     if (payeeSel) {
       payeeSel.value = tpl.payee_id != null ? String(tpl.payee_id) : "";
       payeeSel.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    const tagsRoot = document.querySelector(".tag-input");
+    const tagsRoot = root.querySelector(".tag-input");
     if (tagsRoot && tagsRoot.__libroTags) {
       tagsRoot.__libroTags.setValue((tpl.tags || []).join(","));
     }
@@ -59,10 +65,11 @@
     const dataEl = document.getElementById("templates-data");
     if (!picker || !dataEl) return;
     const templates = JSON.parse(dataEl.textContent || "[]");
+    const root = picker.closest("details") || document;
 
     picker.addEventListener("change", () => {
       const tpl = templates.find((t) => String(t.id) === picker.value);
-      if (tpl) loadTemplateInto(tpl);
+      if (tpl) loadTemplateInto(tpl, root);
     });
   });
 })();

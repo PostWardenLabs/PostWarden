@@ -400,14 +400,25 @@ def test_scenario_base_level_relaxes_posting_through_the_real_routes(conn):
         assert cur.fetchone() is not None
 
 
-def test_new_entry_page_embeds_per_scenario_account_lists(conn):
+def test_entries_new_redirects_to_journal_with_panel_open(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries/new")
+        assert r.status_code == 303
+        assert r.headers["location"] == "/entries?new=1"
+
+
+def test_journal_page_embeds_per_scenario_account_lists_for_new_entry_panel(conn):
     # The account picker used to be one static list shared by every
-    # scenario (a known simplification); it's now scenario-aware — New
-    # entry embeds a {scenario_id: [account, ...]} blob and app.js
-    # re-filters the grid's <select>s to it when the Scenario field
-    # changes. Confirms the blob itself is correct at the source: a
-    # summary account only appears under scenarios whose base_level
-    # actually includes it.
+    # scenario (a known simplification); it's now scenario-aware — the
+    # Journal's "+ New entry" panel embeds a {scenario_id: [account, ...]}
+    # blob and app.js re-filters the grid's <select>s to it when the
+    # Scenario field changes. Confirms the blob itself is correct at the
+    # source: a summary account only appears under scenarios whose
+    # base_level actually includes it.
     with conn.cursor() as cur:
         user = mk_user(cur)
         cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
@@ -420,8 +431,9 @@ def test_new_entry_page_embeds_per_scenario_account_lists(conn):
 
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
-        r = c.get("/entries/new")
+        r = c.get("/entries?new=1")
         assert r.status_code == 200
+        assert 'id="new-entry-panel" open' in r.text
         blob = json.loads(
             re.search(
                 r'id="accounts-by-scenario-data">(.*?)</script>', r.text, re.S
@@ -551,6 +563,18 @@ def test_logout_revokes_session(conn):
         r = c.get("/")
         assert r.status_code == 303
         assert r.headers["location"] == "/login"
+
+
+def test_journal_new_entry_panel_closed_by_default(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries")
+        assert r.status_code == 200
+        assert 'id="new-entry-panel" >' in r.text  # present, but no "open" attribute
+        assert 'id="new-entry-panel" open' not in r.text
 
 
 def test_entries_page_paginates_older_entries_behind_a_link(conn):

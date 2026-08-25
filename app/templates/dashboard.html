@@ -47,7 +47,7 @@
       <td class="num money money-first">{{ e.total_debits | money }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="3" class="dim">No entries yet. Post one from <a href="/entries/new">New entry</a>.</td></tr>
+    <tr><td colspan="3" class="dim">No entries yet. Post one from <a href="/entries?new=1">+ New entry</a>.</td></tr>
     {% endfor %}
   </tbody>
 </table>
