@@ -423,7 +423,7 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
   position: absolute; bottom: 1.3rem; left: 1.5rem;
   font-size: 0.78rem; color: var(--ink-soft);
 }
-.auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+.auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start; padding: 2rem 2rem 2rem 3rem; }
 .auth-form-wrap { width: 100%; max-width: 20rem; }
 .auth-form-wrap h2:first-child { margin-top: 0; }
 @media (max-width: 720px) {
