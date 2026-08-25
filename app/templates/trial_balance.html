@@ -17,6 +17,7 @@
   </label>
   <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
   <button type="submit">Refresh</button>
+  <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 
 <table class="ledger">

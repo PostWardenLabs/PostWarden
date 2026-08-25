@@ -551,3 +551,80 @@ def test_logout_revokes_session(conn):
         r = c.get("/")
         assert r.status_code == 303
         assert r.headers["location"] == "/login"
+
+
+def test_entries_page_paginates_older_entries_behind_a_link(conn):
+    from app.main import ENTRIES_PAGE_SIZE
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)  # single-sided: one line per entry
+        acct = mk_account(cur)
+        for i in range(ENTRIES_PAGE_SIZE + 1):
+            eid = mk_entry(cur, scen["id"], description=f"Entry {i}")
+            mk_line(cur, eid, acct["id"], 10)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r1 = c.get("/entries")
+        assert r1.status_code == 200
+        assert f"Entry {ENTRIES_PAGE_SIZE}" in r1.text  # most recent: on page 1
+        assert "Entry 0" not in r1.text                 # oldest: pushed to page 2
+        assert "page=2" in r1.text                       # Older link present
+        assert "page=0" not in r1.text                   # no Newer link on page 1
+
+        r2 = c.get("/entries?page=2")
+        assert r2.status_code == 200
+        assert "Entry 0" in r2.text
+        assert f"Entry {ENTRIES_PAGE_SIZE}" not in r2.text
+        assert "page=1" in r2.text     # Newer link back to page 1
+        assert "page=3" not in r2.text  # no further Older link
+
+
+def test_entries_export_csv_respects_the_scenario_filter(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen_a = mk_scenario(cur, enforce_balance=False)
+        scen_b = mk_scenario(cur, enforce_balance=False)
+        acct_a = mk_account(cur)
+        acct_b = mk_account(cur)
+        mk_line(cur, mk_entry(cur, scen_a["id"]), acct_a["id"], 12.50)
+        mk_line(cur, mk_entry(cur, scen_b["id"]), acct_b["id"], 34.00)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/entries/export.csv?scenario={scen_a['code']}")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert acct_a["code"] in r.text
+        assert acct_b["code"] not in r.text
+
+
+def test_trial_balance_export_csv(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/export/trial-balance.csv?scenario=ACTUAL")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert r.text.splitlines()[0] == "Code,Account,Path,Debit,Credit"
+
+
+def test_variance_export_csv(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        budget = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        mk_line(cur, mk_entry(cur, budget["id"]), acct["id"], 77.00)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/export/variance.csv?baseline=ACTUAL&compare={budget['code']}")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/csv")
+        assert acct["code"] in r.text
+        assert "77.0" in r.text

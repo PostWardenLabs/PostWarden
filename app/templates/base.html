@@ -5,32 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Libro{% endblock %} · Libro</title>
 <script>
-  // Applied before the stylesheet renders, so a saved theme shows on first
-  // paint instead of flashing Ledger and then switching.
+  // Applied before the stylesheet renders, so a saved theme (and whether
+  // the sidebar is pinned open) is right on first paint instead of
+  // flashing the default and then jumping.
   (function () {
     var t = localStorage.getItem("libro-theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
+    if (localStorage.getItem("libro-sidebar-pinned") === "1") {
+      document.documentElement.classList.add("sidebar-pinned");
+    }
   })();
 </script>
 <link rel="stylesheet" href="{{ asset('style.css') }}">
 </head>
 <body>
+{% if request.state.user %}
+<button type="button" id="sidebar-toggle" class="sidebar-toggle" aria-label="Toggle menu" aria-expanded="false">
+  <span></span><span></span><span></span>
+</button>
+<nav id="sidebar" class="sidebar">
+  <div class="sidebar-group">
+    <div class="sidebar-label">Ledger</div>
+    <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
+    <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
+    <a href="/scheduled" class="{{ 'active' if nav == 'scheduled' }}">Scheduled</a>
+    <a href="/templates" class="{{ 'active' if nav == 'templates' }}">Templates</a>
+  </div>
+  <div class="sidebar-group">
+    <div class="sidebar-label">Reports</div>
+    <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
+    <a href="/variance" class="{{ 'active' if nav == 'variance' }}">Variance</a>
+  </div>
+  <div class="sidebar-group">
+    <div class="sidebar-label">Setup</div>
+    <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
+    <a href="/account-levels" class="{{ 'active' if nav == 'account_levels' }}">Levels</a>
+    <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
+    <a href="/payees" class="{{ 'active' if nav == 'payees' }}">Payees</a>
+  </div>
+</nav>
+{% endif %}
 <header class="topbar">
-  <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
+  <div class="topbar-left">
+    <a class="wordmark" href="/">Libro<span class="wordmark-sub">libro mayor · general ledger</span></a>
+  </div>
   <div class="topbar-right">
     {% if request.state.user %}
-    <nav>
-      <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
-      <a href="/variance" class="{{ 'active' if nav == 'variance' }}">Variance</a>
-      <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
-      <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
-      <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
-      <a href="/account-levels" class="{{ 'active' if nav == 'account_levels' }}">Levels</a>
-      <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
-      <a href="/payees" class="{{ 'active' if nav == 'payees' }}">Payees</a>
-      <a href="/scheduled" class="{{ 'active' if nav == 'scheduled' }}">Scheduled</a>
-      <a href="/templates" class="{{ 'active' if nav == 'templates' }}">Templates</a>
-    </nav>
     <a href="/settings" class="username-link dim small {{ 'active' if nav == 'settings' }}">{{ request.state.user.username }}</a>
     <form method="post" action="/logout" class="logout-form">
       <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
@@ -49,6 +69,7 @@
   {% block content %}{% endblock %}
 </main>
 <footer class="footer">Libro · every entry balances, or it doesn't post.</footer>
+<script src="{{ asset('sidebar.js') }}"></script>
 <script src="{{ asset('combobox.js') }}"></script>
 <script src="{{ asset('datepicker.js') }}"></script>
 <script src="{{ asset('theme.js') }}"></script>

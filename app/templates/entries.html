@@ -2,7 +2,7 @@
 {% block title %}Journal{% endblock %}
 {% block content %}
 <h1>Journal</h1>
-<p class="page-sub">Most recent first · showing up to 200 entries. History is append-only: fix mistakes with Reverse, never by editing.</p>
+<p class="page-sub">Most recent first, {{ page_size }} at a time. History is append-only: fix mistakes with Reverse, never by editing.</p>
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
 
@@ -24,6 +24,7 @@
     </div>
   </label>
   <button type="submit">Filter</button>
+  <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
 </form>
 
 {% for e in entries %}
@@ -73,6 +74,14 @@
 {% else %}
 <p class="dim">No entries match. Post one from <a href="/entries/new">New entry</a>.</p>
 {% endfor %}
+
+{% if has_prev or has_next %}
+<div class="pager">
+  {% if has_prev %}<a href="/entries?{{ export_qs }}&page={{ page - 1 }}">&larr; Newer</a>{% else %}<span class="dim">&larr; Newer</span>{% endif %}
+  <span class="dim small">page {{ page }}</span>
+  {% if has_next %}<a href="/entries?{{ export_qs }}&page={{ page + 1 }}">Older &rarr;</a>{% else %}<span class="dim">Older &rarr;</span>{% endif %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}<script src="{{ asset('tags.js') }}"></script>{% endblock %}

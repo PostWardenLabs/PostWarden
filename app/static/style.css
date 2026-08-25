@@ -221,6 +221,7 @@ body {
   border-bottom: 1px solid var(--rule-strong);
   background: var(--paper);
 }
+.topbar-left { padding-left: 2.3rem; } /* clears the fixed hamburger button */
 .wordmark {
   font-family: var(--serif);
   font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
@@ -238,6 +239,54 @@ body {
 }
 .topbar nav a:hover { color: var(--ink); }
 .topbar nav a.active { color: var(--ink); border-bottom-color: var(--red); }
+
+/* -- hamburger sidebar --------------------------------------------------- */
+/* Hover the button (or the panel) to preview the menu; click to pin it
+   open — see sidebar.js. Pinned state pushes the page over via the
+   html.sidebar-pinned rules below instead of overlaying it. */
+.sidebar-toggle {
+  position: fixed; top: 0.85rem; left: 1.1rem; z-index: 60;
+  width: 1.7rem; height: 1.7rem; padding: 0;
+  background: none; border: none; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+}
+.sidebar-toggle span {
+  display: block; height: 2px; width: 100%;
+  background: var(--ink-soft); border-radius: 1px;
+}
+.sidebar-toggle:hover span { background: var(--ink); }
+html.sidebar-pinned .sidebar-toggle span { background: var(--ink); }
+
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 14rem; z-index: 55;
+  background: var(--surface); border-right: 1px solid var(--rule-strong);
+  padding: 3.4rem 0 1rem; overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 160ms ease;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15);
+}
+.sidebar.open { transform: translateX(0); }
+html.sidebar-pinned .sidebar { box-shadow: none; }
+
+.sidebar-group { padding: 0 0.4rem 1.2rem 1.5rem; }
+.sidebar-label {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-soft); margin-bottom: 0.35rem;
+}
+.sidebar a {
+  display: block; padding: 0.3rem 0 0.3rem 0.6rem; margin-left: -0.6rem;
+  color: var(--ink-soft); text-decoration: none; font-size: 0.92rem;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--ink); }
+.sidebar a.active { color: var(--ink); border-left-color: var(--red); }
+
+/* Pinned: push the page content over instead of the sidebar overlaying it.
+   Only the fixed-width centered blocks need it — the sidebar itself and
+   the hamburger button are already fixed to the viewport. */
+html.sidebar-pinned .topbar,
+html.sidebar-pinned main,
+html.sidebar-pinned .footer { margin-left: 14rem; }
 
 .theme-picker select {
   font: inherit; font-size: 0.8rem; color: var(--ink-soft);
@@ -361,6 +410,21 @@ button.quiet {
 button.quiet:hover { background: var(--paper-deep); }
 .checkline { display: flex; align-items: center; gap: 0.4rem;
              font-size: 0.85rem; color: var(--ink); }
+
+/* A same-row link styled to sit quietly next to a button — "Export CSV"
+   beside "Filter"/"Refresh", not competing for primary-action weight. */
+.quiet-link {
+  color: var(--ink-soft); font-size: 0.82rem; padding-bottom: 0.5rem;
+  text-decoration: none; border-bottom: 1px dotted var(--rule-strong);
+}
+.quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+.pager {
+  display: flex; align-items: center; justify-content: center; gap: 1.2rem;
+  margin-top: 1.4rem; font-size: 0.88rem;
+}
+.pager a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule-strong); }
+.pager a:hover { border-bottom-color: var(--ink); }
 
 /* -- combobox (searchable <select>, see combobox.js) ---------------------- */
 .combobox { position: relative; width: 100%; }
@@ -579,6 +643,12 @@ tr.add-gap .add-gap-type { max-width: 11rem; }
 @media (max-width: 720px) {
   details.entry summary { grid-template-columns: 1fr auto; }
   .topbar { gap: 0.6rem; }
+  /* Too narrow to push content over without squeezing it unusably —
+     pinned still overlays here, same as an unpinned hover-preview. */
+  .sidebar { width: 82vw; box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15); }
+  html.sidebar-pinned .topbar,
+  html.sidebar-pinned main,
+  html.sidebar-pinned .footer { margin-left: 0; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .flash { animation: slide-in 160ms ease-out; }

@@ -3,6 +3,8 @@
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
 import calendar
+import csv
+import io
 import json
 import re
 import secrets
@@ -13,7 +15,7 @@ from urllib.parse import urlencode
 
 import psycopg
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -324,15 +326,30 @@ def trial_balance(request: Request, scenario: str = "ACTUAL",
     })
 
 
+@app.get("/export/trial-balance.csv")
+def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros: int = 0):
+    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of or None))
+    if not zeros:
+        rows = [r for r in rows if r["net"] != 0]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Code", "Account", "Path", "Debit", "Credit"])
+    for r in rows:
+        w.writerow([r["account_code"], r["account_name"], r["path"],
+                   r["debit_balance"] or "", r["credit_balance"] or ""])
+    return Response(buf.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="libro-trial-balance-{scenario}.csv"'})
+
+
 # ---------------------------------------------------------------------------
 # Variance — budget (or any scenario) vs. actual (or any other scenario),
 # rolled up to a common level so a coarse scenario (posted straight to
 # "Bank") lines up against a fine one (Checking + Savings) instead of
 # just not matching up at all.
 # ---------------------------------------------------------------------------
-@app.get("/variance")
-def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
-                  level_id: str = "", as_of: str = None):
+def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) -> dict:
+    """Shared by the variance page and its CSV export — same rollup, same
+    baseline/compare resolution, so the export matches what's on screen."""
     scens = scenarios_all()
     codes = [s["code"] for s in scens]
     if not compare:
@@ -386,6 +403,18 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
                 "sub_compare": sum(r["compare_net"] for r in sub),
                 "sub_variance": sum(r["variance"] for r in sub),
             })
+    return {
+        "scens": scens, "compare": compare, "level_id": level_id,
+        "merged": merged, "grouped": grouped,
+    }
+
+
+@app.get("/variance")
+def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
+                  level_id: str = "", as_of: str = None):
+    v = _compute_variance(baseline, compare, level_id, as_of)
+    merged, grouped, scens, compare, level_id = (
+        v["merged"], v["grouped"], v["scens"], v["compare"], v["level_id"])
 
     return templates.TemplateResponse(request, "variance.html", {
         "nav": "variance", "grouped": grouped, "scenarios": scens,
@@ -396,6 +425,22 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
         "total_variance": sum(r["variance"] for r in merged),
         "today": date.today().isoformat(),
     })
+
+
+@app.get("/export/variance.csv")
+def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
+                        level_id: str = "", as_of: str = None):
+    v = _compute_variance(baseline, compare, level_id, as_of)
+    compare = v["compare"]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Code", "Account", "Path", baseline, compare, "Variance"])
+    for r in v["merged"]:
+        w.writerow([r["account_code"], r["account_name"], r["path"],
+                   r["baseline_net"], r["compare_net"], r["variance"]])
+    return Response(buf.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition":
+            f'attachment; filename="libro-variance-{baseline}-vs-{compare}.csv"'})
 
 
 # ---------------------------------------------------------------------------
@@ -692,10 +737,13 @@ async def create_entry(request: Request):
 # ---------------------------------------------------------------------------
 # Journal browser
 # ---------------------------------------------------------------------------
-@app.get("/entries")
-def entries_page(request: Request, scenario: str = "", date_from: str = "",
-                 date_to: str = "", qtext: str = "", tags: str = "",
-                 ok: str = None, err: str = None):
+ENTRIES_PAGE_SIZE = 50
+
+
+def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
+                    tags: str) -> tuple[list[str], list, list[str]]:
+    """Shared by the paged HTML view and the CSV export — same filters,
+    same WHERE clause, so what you see is exactly what you export."""
     try:
         tag_list = _parse_tags(tags) if tags else []
     except ValueError:
@@ -719,6 +767,15 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
                                    JOIN tags tg ON tg.id = jet.tag_id
                                   WHERE tg.name = ANY(%s))""")
         params.append(tag_list)
+    return where, params, tag_list
+
+
+@app.get("/entries")
+def entries_page(request: Request, scenario: str = "", date_from: str = "",
+                 date_to: str = "", qtext: str = "", tags: str = "",
+                 page: int = 1, ok: str = None, err: str = None):
+    page = max(page, 1)
+    where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags)
 
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
@@ -737,7 +794,12 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE {' AND '.join(where)}
          ORDER BY e.entry_date DESC, e.id DESC
-         LIMIT 200""", params)
+         LIMIT %s OFFSET %s""",
+        params + [ENTRIES_PAGE_SIZE + 1, (page - 1) * ENTRIES_PAGE_SIZE])
+    # Fetched one extra row purely to know whether a next page exists —
+    # trim it back off before it's ever shown.
+    has_next = len(entries) > ENTRIES_PAGE_SIZE
+    entries = entries[:ENTRIES_PAGE_SIZE]
 
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
@@ -758,13 +820,50 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
                         ORDER BY tg.name""", (ids,)):
             tags_by_entry.setdefault(tg["entry_id"], []).append(tg["name"])
 
+    export_qs = urlencode({
+        "scenario": scenario, "date_from": date_from, "date_to": date_to,
+        "qtext": qtext, "tags": tags})
     return templates.TemplateResponse(request, "entries.html", {
         "nav": "entries", "entries": entries, "lines_by_entry": lines_by_entry,
         "tags_by_entry": tags_by_entry, "tags": tags, "all_tags": all_tags(),
         "scenarios": scenarios_all(), "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
+        "page": page, "page_size": ENTRIES_PAGE_SIZE,
+        "has_next": has_next, "has_prev": page > 1, "export_qs": export_qs,
         "ok": ok, "err": err,
     })
+
+
+@app.get("/entries/export.csv")
+def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
+                       qtext: str = "", tags: str = ""):
+    """Every entry matching the current filters (not just the current
+    page) — one row per journal line, so it opens straight into a
+    spreadsheet without the entry/line grouping the HTML view has."""
+    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags)
+    rows = q(f"""
+        SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
+               e.description, e.reference, p.name AS payee_name,
+               a.code AS account_code, a.name AS account_name,
+               l.debit, l.credit, l.memo
+          FROM journal_lines l
+          JOIN journal_entries e ON e.id = l.entry_id
+          JOIN scenarios s ON s.id = e.scenario_id
+          JOIN accounts a ON a.id = l.account_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE {' AND '.join(where)}
+         ORDER BY e.entry_date DESC, e.id DESC, l.line_no""", params)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Entry #", "Date", "Scenario", "Description", "Reference",
+               "Payee", "Account code", "Account name", "Debit", "Credit", "Memo"])
+    for r in rows:
+        w.writerow([r["entry_id"], r["entry_date"], r["scenario_code"],
+                   r["description"], r["reference"] or "", r["payee_name"] or "",
+                   r["account_code"], r["account_name"],
+                   r["debit"] or "", r["credit"] or "", r["memo"] or ""])
+    return Response(buf.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="libro-journal.csv"'})
 
 
 @app.post("/entries/{entry_id}/reverse")
