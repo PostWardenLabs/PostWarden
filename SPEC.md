@@ -34,25 +34,53 @@ touched entry. If it isn't zero (in an enforcing scenario), the commit
 fails and the entire entry vanishes atomically. There is no code path
 around this — not from the app, not from psql, not from a future importer.
 
-### 3. Scenario is a dimension, not a module (the OneStream model)
+### 3. Scenario is a dimension, not a module (the OneStream model) — with two shapes
 
-`scenarios(code, scenario_type, enforce_balance, is_locked)` and every
-entry carries `scenario_id`. ACTUAL, BUD2026, FCST_2026_09 are all just
-tags on the same fact table, so budget-vs-actual is a `GROUP BY` with two
-`FILTER` clauses — never a reconciliation between modules.
+`scenarios(code, scenario_type, enforce_balance, income_statement_only,
+is_locked)` and every entry carries `scenario_id`. ACTUAL, a real
+forecast, STAGING — all just tags on the same fact table, so comparing
+any two of them is a `GROUP BY` with two `FILTER` clauses, never a
+reconciliation between modules.
 
-`enforce_balance` resolves the tension between ledger purity and CPM-style
-planning:
+The first iteration of this decision let a non-ACTUAL scenario set
+`enforce_balance = FALSE` and post single-sided planning lines —
+"Groceries 6,000 in March," no counter-account — straight into
+`journal_entries`, the same table as real postings. It worked, but it
+was wrong: a monthly expense/income budget has no date that matters
+within the month, no counter-account, and nothing to balance — it isn't
+a transaction, hypothetical or otherwise, and shoehorning it into a
+table whose entire reason to exist is "a transaction, verified balanced
+at commit" meant either a confusing UI (a journal-entry form for
+something with no journal-entry-shaped fields) or a footer tagline
+("every entry balances, or it doesn't post") that was quietly no longer
+true for a whole class of rows sitting right there in the Journal.
 
-- **TRUE** — the scenario is a real set of books. A budget built this way
-  is a fully articulated *projected* P&L and balance sheet (credit Checking
-  when you plan rent — cash forecasting falls out for free).
-- **FALSE** — single-sided planning entries allowed: "Groceries 6,000 in
-  March," no counter-account, the way you'd type it into a CPM grid.
+So a scenario is now one of two disjoint shapes, chosen at creation and
+never mixed:
 
-A CHECK constraint forbids ACTUAL from ever having `enforce_balance =
-FALSE`. Locking a scenario (month-end close, board-approved budget) blocks
-new entries via trigger.
+- **A full scenario** (`income_statement_only = FALSE` — ACTUAL, STAGING,
+  or a real forecast/what-if actually modeling a dated hypothetical event
+  like "what if I buy a house") posts to `journal_entries`/`journal_lines`
+  exactly like ACTUAL always has, `enforce_balance` still deciding
+  whether it must net to zero. A fully articulated forecast built this
+  way is a projected P&L *and* balance sheet — credit Checking when you
+  plan rent, cash forecasting falls out for free — because the event
+  being modeled is genuinely transaction-shaped, just hypothetical.
+- **An income-statement-only scenario** (a budget) never touches
+  `journal_entries` at all — `fn_income_statement_only_guard` blocks it
+  at the trigger level regardless of which client tries. Its numbers
+  live in `budget_lines` instead: one row per (scenario, account, month),
+  a plain amount, postable income/expense accounts only, no balance
+  concept, editable in place rather than append-only (see decision 4 —
+  a budget number is a working assumption, not an audit record, so the
+  "reverse, never edit" discipline that matters for real postings has no
+  reason to apply here). See `docs/SCHEMA.md` for the full guard-trigger
+  list and the table comparing the two shapes side by side.
+
+A CHECK constraint forbids ACTUAL from ever being `enforce_balance =
+FALSE` or `income_statement_only = TRUE`. Locking a scenario (month-end
+close, a budget you're done revising) blocks new entries/budget lines
+via trigger either way.
 
 ### 4. History is append-only
 
@@ -116,7 +144,75 @@ extends the existing audit-trail philosophy — history was already
 append-only and reversal-only; this adds *who* posted or reversed each
 entry, without requiring one (direct SQL/import inserts still work).
 
+### 9. Scheduled entries land in Staging, not straight in the target scenario
+
+A schedule (`scheduled_entries` + `scheduled_entry_lines`, a template
+plus a recurrence rule) never posts directly to its
+`target_scenario_id`. Each due occurrence first becomes a real
+`journal_entries` row in the STAGING scenario
+(`materialize_due_schedules()`, run lazily on request rather than a real
+cron — there's no task runner in this deployment); only once a human
+approves it from the Scheduled page does a *second* entry get posted
+into the real target, linked back via `promoted_entry_id`. The
+alternative — post straight to ACTUAL on the due date — would mean an
+entry appears in your real books with nobody having looked at it, which
+defeats the point of a personal ledger being something you trust without
+double-checking. STAGING is an ordinary full scenario in every other
+respect (see `docs/SCHEMA.md`'s "Default scenarios" section) — the
+approval workflow is entirely an application-layer convention built on
+top of it, not a special table or column.
+
+### 10. A simulated close is a query, never a posting
+
+Trial Balance defaults to showing Income/Expense accounts as
+month-to-date only, with the gap to their true cumulative balance folded
+into two synthetic "Current/Prior Year Earnings (Unclosed)" lines under
+Equity — as if a monthly close had actually run. It hasn't: this is
+computed at request time from `fn_account_balances` called with two
+different date windows and combined in Python
+(`_trial_balance_rows()`), and `raw=1` turns it off to show the true
+unmodified cumulative balances instead. No closing entry is ever posted,
+consistent with "if a number matters, it should be computable by SQL
+alone" (decision 6) — closing the books for real would mean a second
+write path outside the one the balance trigger governs, which is exactly
+what decision 2 exists to prevent.
+
+### 11. Hierarchical rollups are built in the app, not SQL, and drill through uniformly
+
+Trial Balance, Balance Sheet, and the Budget page all show a summary
+account's *rolled-up* subtotal (everything under it), not just its own
+direct postings, with collapse/expand. `v_dim_account`'s recursive CTE
+already gives every account its `path`/`depth` for free, but the rollup
+itself (`_build_account_tree()` in `app/main.py`) is plain Python over
+that flat list, not a second SQL recursion — the Budget page needs to
+merge *two* independent rollups (Budgeted from `budget_lines`, Actual
+from `journal_lines`) node-for-node, which is awkward to express as one
+SQL query but a straightforward tree walk once the balances are already
+fetched. Every leaf amount that resulted from this rollup links through
+to the Journal filtered to exactly what produced it (`account=` or,
+on Payees, `payee=`), with a `back=` link returning to the report with
+every filter it had applied still in place; a summary row's amount
+stays plain text, deliberately, since no single Journal filter can mean
+"everything under this node." See `docs/ARCHITECTURE.md` for the
+mechanics (the `data-id`/`data-parent`/`data-has-children` markup,
+`report-tree.js`, the `entry_link` macro convention).
+
+### 12. Presentation preferences live in the browser, not Postgres
+
+Theme, money symbol/decimal/thousands formatting, cents-first amount
+entry, and which tree rows are collapsed are all `localStorage`, keyed
+per browser — never a column in `users` or anywhere else in the schema.
+A personal single-user ledger has no "my preferences follow me to
+another device" requirement, and keeping this out of Postgres means the
+schema stays exactly as large as the accounting actually requires — a
+theme name has no business being join-adjacent to a journal line.
+
 ## Extension roadmap
+
+Shipped since this list was first written: recurring/scheduled entries
+(decision 9), reusable entry templates, and the income-statement-only
+Budget grid (decision 3) — struck through below, left in place as a
+record of what was originally proposed and how it actually landed.
 
 - **Entity dimension** — add `entities` and `entity_id` on entries, and the
   same fact table consolidates multiple sets of books (elimination entries
@@ -126,7 +222,17 @@ entry, without requiring one (direct SQL/import inserts still work).
   table (GnuCash's one good idea worth importing) and translate in views.
 - **Periods & closing** — a fiscal calendar table, closing entries
   generated per period, `is_locked` graduating from scenario-level to
-  period-level.
-- **Recurring entries** — templates + a scheduler posting real entries.
+  period-level. Partly pre-empted by decision 10 (the simulated close is
+  a query, not a posting) — a real periods table would still be worth it
+  for multi-period locking, just not for the close itself.
+- ~~**Recurring entries** — templates + a scheduler posting real
+  entries.~~ Shipped as `scheduled_entries` (decision 9) — with an
+  approval layover through STAGING that wasn't part of the original
+  proposal, added because posting straight to the target on the due
+  date turned out to be the wrong default for a personal ledger.
 - **Import** — CSV/CAMT bank import posting suggested entries to a staging
-  scenario for review before promotion to ACTUAL.
+  scenario for review before promotion to ACTUAL. The staging-and-approve
+  mechanism this describes now already exists (decision 9) for a
+  different producer (schedules, not an importer) — a CSV importer could
+  likely reuse `materialize_due_schedules()`'s pattern (or the STAGING
+  scenario itself) directly rather than inventing a second approval flow.
