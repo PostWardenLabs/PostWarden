@@ -976,6 +976,56 @@ def test_entries_page_filters_by_account(conn):
         assert acct_b["code"] not in r_csv.text
 
 
+def test_entries_page_filters_by_amount(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        mk_line(cur, mk_entry(cur, scen["id"], "Small one"), acct["id"], 10)
+        mk_line(cur, mk_entry(cur, scen["id"], "Big one"), acct["id"], 20)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=gte&amount_value=15")
+        assert r.status_code == 200
+        assert "Big one" in r.text
+        assert "Small one" not in r.text
+
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=lt&amount_value=15")
+        assert "Small one" in r.text
+        assert "Big one" not in r.text
+
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=eq&amount_value=10")
+        assert "Small one" in r.text
+        assert "Big one" not in r.text
+
+        # A hand-edited/garbage amount_value doesn't 500 — it's just ignored.
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=gte&amount_value=not-a-number")
+        assert r.status_code == 200
+        assert "Small one" in r.text and "Big one" in r.text
+
+        r_csv = c.get(f"/entries/export.csv?scenario={scen['code']}&amount_op=gte&amount_value=15")
+        assert "Big one" in r_csv.text
+        assert "Small one" not in r_csv.text
+
+
+def test_entries_page_filter_form_offers_account_and_payee_dropdowns(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        acct = mk_account(cur)
+        payee = mk_payee(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries")
+        assert r.status_code == 200
+        account_select = re.search(r'<select name="account">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{acct["code"]}"' in account_select
+        payee_select = re.search(r'<select name="payee">.*?</select>', r.text, re.S).group(0)
+        assert f'value="{payee["name"]}"' in payee_select
+
+
 def test_entries_page_filters_by_payee(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

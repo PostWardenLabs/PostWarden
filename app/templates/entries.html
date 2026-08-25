@@ -20,8 +20,6 @@
 {% endif %}
 
 <form class="bar" method="get" action="/entries">
-  <input type="hidden" name="account" value="{{ account }}">
-  <input type="hidden" name="payee" value="{{ payee }}">
   <input type="hidden" name="back" value="{{ back }}">
   <label class="field">Scenario
     <select name="scenario">
@@ -38,6 +36,36 @@
     <div class="tag-input" data-placeholder="Filter by tag…" data-creatable="0">
       <input type="hidden" name="tags" value="{{ tags }}">
     </div>
+  </label>
+  <label class="field" style="min-width: 12rem;">Account
+    <select name="account">
+      <option value="">All</option>
+      {% for a in filter_accounts %}
+      <option value="{{ a.code }}" {{ 'selected' if a.code == account }}>{{ a.code }} · {{ a.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field" style="min-width: 10rem;">Payee
+    <select name="payee">
+      <option value="">All</option>
+      {% for name in filter_payee_names %}
+      <option value="{{ name }}" {{ 'selected' if name == payee }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Amount
+    <select name="amount_op">
+      <option value="">any</option>
+      <option value="gte" {{ 'selected' if amount_op == 'gte' }}>&ge; at least</option>
+      <option value="lte" {{ 'selected' if amount_op == 'lte' }}>&le; at most</option>
+      <option value="gt" {{ 'selected' if amount_op == 'gt' }}>&gt; more than</option>
+      <option value="lt" {{ 'selected' if amount_op == 'lt' }}>&lt; less than</option>
+      <option value="eq" {{ 'selected' if amount_op == 'eq' }}>= exactly</option>
+    </select>
+  </label>
+  <label class="field">&nbsp;
+    <input type="text" name="amount_value" class="amount" inputmode="decimal"
+           value="{{ amount_value }}" placeholder="0.00" style="width: 7rem;">
   </label>
   <button type="submit">Filter</button>
   <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
