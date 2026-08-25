@@ -203,6 +203,80 @@
   --accent-text:  #ffffff;
 }
 
+/* Forest — a third dark theme, distinct from Midnight (warm brass) and
+   Graphite (cool cyan): full pine-green-black with a mossy accent, the
+   ledger's own green pushed into a night register. */
+:root[data-theme="forest"] {
+  --paper:        #0f1811;
+  --paper-deep:   #16211a;
+  --surface:      #1a2620;
+  --ink:          #e3ede6;
+  --ink-soft:     #93a897;
+  --rule:         #24332a;
+  --rule-strong:  #3d5445;
+  --red:          #e2776a;
+  --ok:           #7ed9a0;
+  --focus:        #6fa8d8;
+  --accent:       #4f9863;
+  --accent-hover: #5fac74;
+  --accent-text:  #0d140f;
+}
+
+/* Plum — dusty grape stock, the only theme that goes violet rather than
+   pink (Rose) or indigo (Ink). */
+:root[data-theme="plum"] {
+  --paper:        #f7f2f7;
+  --paper-deep:   #eee3ee;
+  --surface:      #ffffff;
+  --ink:          #3a2440;
+  --ink-soft:     #7c6382;
+  --rule:         #e2d1e4;
+  --rule-strong:  #bd9ac2;
+  --red:          #a3324a;
+  --ok:           #4c6b52;
+  --focus:        #5a5a8e;
+  --accent:       #7a4a8f;
+  --accent-hover: #8f5da4;
+  --accent-text:  #f7f2f7;
+}
+
+/* Cobalt — a confident, saturated blue, brighter and more "brand" than
+   the muted cool tones of Slate, Ink, or Budget. */
+:root[data-theme="cobalt"] {
+  --paper:        #f4f8fc;
+  --paper-deep:   #e7f0fa;
+  --surface:      #ffffff;
+  --ink:          #142033;
+  --ink-soft:     #4f6478;
+  --rule:         #d3e2f0;
+  --rule-strong:  #9fc0e0;
+  --red:          #c23b3b;
+  --ok:           #1f8a5f;
+  --focus:        #2f6fb0;
+  --accent:       #1c6fd6;
+  --accent-hover: #3480e0;
+  --accent-text:  #f4f8fc;
+}
+
+/* Contrast — an accessibility theme: pure black on white, no soft grays
+   in the borders that carry structure (rule-strong), for readers who
+   need the sharpest edges the design system can offer. */
+:root[data-theme="contrast"] {
+  --paper:        #ffffff;
+  --paper-deep:   #eeeeee;
+  --surface:      #ffffff;
+  --ink:          #000000;
+  --ink-soft:     #333333;
+  --rule:         #555555;
+  --rule-strong:  #000000;
+  --red:          #b30000;
+  --ok:           #006622;
+  --focus:        #0000cc;
+  --accent:       #000000;
+  --accent-hover: #262626;
+  --accent-text:  #ffffff;
+}
+
 * { box-sizing: border-box; }
 html { font-size: 16px; }
 body {
