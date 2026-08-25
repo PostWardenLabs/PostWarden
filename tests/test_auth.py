@@ -6,7 +6,7 @@ the users/sessions rows it checks against.
 """
 import json
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -836,24 +836,48 @@ def test_income_statement_no_compare_has_no_variance_column(conn):
         assert "% variance" not in r.text
 
 
-def test_trial_balance_bounds_income_to_fiscal_year_with_prior_years_line(conn):
+def _earlier_this_year_or_none() -> str | None:
+    """The last day of the previous month, if that's still this year — i.e.
+    a date in the "current fiscal year but not the current month" bucket.
+    None in January, when no such date exists (the fiscal year and the
+    month both just started) — callers skip that part of the setup then,
+    since Current Year Earnings is structurally zero anyway that month."""
+    candidate = date.today().replace(day=1) - timedelta(days=1)
+    return candidate.isoformat() if candidate.year == date.today().year else None
+
+
+def test_trial_balance_simulates_monthly_close_with_earnings_lines(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
         scen = mk_scenario(cur, enforce_balance=False)
         income = mk_account(cur, account_type="income")
         old_id = _mk_backdated_entry(cur, scen["id"], "2020-01-15", "Old income")
         mk_line(cur, old_id, income["id"], -1000)
-        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -300)
+        earlier = _earlier_this_year_or_none()
+        if earlier:
+            mid_id = _mk_backdated_entry(cur, scen["id"], earlier, "Earlier this year")
+            mk_line(cur, mid_id, income["id"], -400)
+        mk_line(cur, mk_entry(cur, scen["id"]), income["id"], -300)  # this month
     conn.commit()
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
+
         r = c.get(f"/trial-balance?scenario={scen['code']}")
         assert r.status_code == 200
-        assert _account_row_value(r.text, income["code"]) == "300.00"
-        assert _labeled_row_value(r.text, "Prior years (unclosed)") == "1000.00"
+        assert _account_row_value(r.text, income["code"]) == "300.00"  # MTD only
+        assert _labeled_row_value(r.text, "Prior Year Earnings (Unclosed)") == "1000.00"
+        assert _labeled_row_value(r.text, "Current Year Earnings (Unclosed)") == \
+            ("400.00" if earlier else "0.00")
+
+        # raw=1 turns the simulation off: the account shows its true,
+        # un-simulated lifetime total, and neither synthetic line exists.
+        r_raw = c.get(f"/trial-balance?scenario={scen['code']}&raw=1")
+        expected_total = 1700.00 if earlier else 1300.00
+        assert _account_row_value(r_raw.text, income["code"]) == f"{expected_total:.2f}"
+        assert "Unclosed" not in r_raw.text
 
 
-def test_balance_sheet_splits_current_year_and_prior_years_earnings(conn):
+def test_balance_sheet_simulates_monthly_close_with_earnings_lines(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
         scen = mk_scenario(cur, enforce_balance=False)
@@ -865,19 +889,33 @@ def test_balance_sheet_splits_current_year_and_prior_years_earnings(conn):
         mk_line(cur, old_id, asset["id"], 500, line_no=1)
         mk_line(cur, old_id, income["id"], -500, line_no=2)
 
-        e2 = mk_entry(cur, scen["id"])
+        earlier = _earlier_this_year_or_none()
+        if earlier:
+            mid_id = _mk_backdated_entry(cur, scen["id"], earlier, "Earlier this year")
+            mk_line(cur, mid_id, asset["id"], 400, line_no=1)
+            mk_line(cur, mid_id, income["id"], -400, line_no=2)
+
+        e2 = mk_entry(cur, scen["id"])  # this month
         mk_line(cur, e2, asset["id"], 200, line_no=1)
         mk_line(cur, e2, income["id"], -200, line_no=2)
 
-        e3 = mk_entry(cur, scen["id"])
+        e3 = mk_entry(cur, scen["id"])  # this month
         mk_line(cur, e3, expense["id"], 50, line_no=1)
         mk_line(cur, e3, asset["id"], -50, line_no=2)
     conn.commit()
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        expected_asset_total = 1050.00 if earlier else 650.00
         r = c.get(f"/balance-sheet?scenario={scen['code']}")
         assert r.status_code == 200
         assert "out-of-balance" not in r.text
-        assert _account_row_value(r.text, asset["code"]) == "650.00"
-        assert _labeled_row_value(r.text, "Current year earnings (unclosed)") == "150.00"
-        assert _labeled_row_value(r.text, "Retained earnings, prior years (unclosed)") == "500.00"
+        assert _account_row_value(r.text, asset["code"]) == f"{expected_asset_total:.2f}"
+        assert _labeled_row_value(r.text, "Current Year Earnings (Unclosed)") == \
+            ("550.00" if earlier else "150.00")  # (400 or 0) + (200 - 50)
+        assert _labeled_row_value(r.text, "Prior Year Earnings (Unclosed)") == "500.00"
+
+        r_raw = c.get(f"/balance-sheet?scenario={scen['code']}&raw=1")
+        assert "out-of-balance" not in r_raw.text
+        assert _labeled_row_value(r_raw.text, "Current earnings (unclosed)") == \
+            f"{(550.00 if earlier else 150.00) + 500.00:.2f}"

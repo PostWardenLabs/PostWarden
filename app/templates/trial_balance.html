@@ -3,7 +3,13 @@
 {% block content %}
 <h1>Trial balance</h1>
 <p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span> —
-  Income/Expense shown since {{ fy_start }}, with everything earlier folded into "Prior years (unclosed)."</p>
+  {% if raw %}
+  true cumulative balances since each account's first posting, Income and Expense included.
+  {% else %}
+  Income/Expense accounts show month-to-date only, as if simulating a monthly close: everything from
+  {{ fy_start }} through the start of this month sits in "Current Year Earnings (Unclosed)," and everything
+  before {{ fy_start }} in "Prior Year Earnings (Unclosed)" — both under Equity, no entries actually posted.
+  {% endif %}</p>
 
 <form class="bar" method="get" action="/trial-balance">
   <label class="field">Scenario
@@ -17,8 +23,9 @@
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
   <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
+  <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
   <button type="submit">Refresh</button>
-  <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}">Export CSV</a>
+  <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
 </form>
 
 <table class="ledger">

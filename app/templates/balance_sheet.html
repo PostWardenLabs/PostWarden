@@ -3,8 +3,13 @@
 {% block content %}
 <h1>Balance sheet</h1>
 <p class="page-sub">Assets, liabilities, and equity as of a date, scenario <span class="mono">{{ scenario }}</span> —
-  Income/Expense activity folds into Equity here, since nothing ever physically closes: this year's since {{ fy_start }},
-  everything earlier as "Retained earnings, prior years."</p>
+  {% if raw %}
+  Income/Expense activity folds into one "Current earnings (unclosed)" line under Equity, its true all-time total.
+  {% else %}
+  Income/Expense activity folds into Equity here (there's no Income Statement section on a balance sheet to keep
+  it in): this fiscal year to date, month-to-date included, sits in "Current Year Earnings (Unclosed)," and
+  everything before that in "Prior Year Earnings (Unclosed)" — no entries actually posted.
+  {% endif %}</p>
 
 <form class="bar" method="get" action="/balance-sheet">
   <label class="field">Scenario
@@ -17,8 +22,9 @@
   <label class="field">As of
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
+  <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
   <button type="submit">Refresh</button>
-  <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}">Export CSV</a>
+  <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}">Export CSV</a>
 </form>
 
 <table class="ledger">
@@ -64,16 +70,13 @@
       <td class="num money money-first">{{ (-r.net) | money }}</td>
     </tr>
     {% endfor %}
+    {% for label, amount in earnings_lines %}
     <tr>
       <td></td>
-      <td class="dim">Current year earnings (unclosed)</td>
-      <td class="num money money-first">{{ current_year_earnings | money }}</td>
+      <td class="dim">{{ label }}</td>
+      <td class="num money money-first">{{ amount | money }}</td>
     </tr>
-    <tr>
-      <td></td>
-      <td class="dim">Retained earnings, prior years (unclosed)</td>
-      <td class="num money money-first">{{ prior_years_earnings | money }}</td>
-    </tr>
+    {% endfor %}
     <tr class="subtotal">
       <td></td><td>Total equity</td>
       <td class="num money money-first">{{ total_equity | money }}</td>

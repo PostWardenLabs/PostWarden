@@ -338,42 +338,76 @@ def dashboard(request: Request):
 # ---------------------------------------------------------------------------
 # Trial balance — cumulative "as of" for Assets/Liabilities/Equity, same as
 # always (that's the whole point of a trial balance: verifying the *entire*
-# ledger's debits equal its credits). Income/Expense rows, though, are
-# bounded to the current fiscal year (Jan 1 of as-of's year through as-of)
-# rather than shown since account inception — an unbounded lifetime total
-# for a flow account only grows and is never actually the number anyone
-# wants on an at-a-glance balance check. Everything from before the fiscal
-# year folds into one "Prior years (unclosed)" line per section, so the
-# section subtotal (and the page's overall debit=credit check) still add
-# up to the true cumulative total — nothing is hidden, just regrouped.
-# This deliberately isn't a physical period close (no entries posted,
-# nothing to migrate): purely a reporting-query boundary, same spirit as
-# the Income Statement's p_from.
+# ledger's debits equal its credits). Income/Expense account rows default
+# to a *simulated monthly close*: each account shows only month-to-date
+# activity, as if every prior month had actually been closed to Equity.
+# The two synthetic Equity lines this implies:
+#   "Current Year Earnings (Unclosed)" — this fiscal year's earnings not
+#   already reflected in this month (i.e. everything since Jan 1 except
+#   MTD), and
+#   "Prior Year Earnings (Unclosed)" — every fiscal year before this one,
+# together account for exactly the gap between MTD and the true lifetime
+# total, so the page's overall debit=credit check still holds — nothing
+# is hidden, just regrouped the way it would look after an actual monthly
+# close, without ever posting one. `raw=1` turns the simulation off
+# entirely and shows every account's true, unmodified cumulative balance
+# instead — useful for auditing the real numbers underneath.
 # ---------------------------------------------------------------------------
-def _trial_balance_rows(scenario: str, as_of: str, zeros: int) -> dict:
+def _pnl_net(rows: list[dict]) -> float:
+    """Combined Income-minus-Expense across a row set, sign-corrected so a
+    positive result means real earnings (credit side of Equity)."""
+    return (-sum(r["net"] for r in rows if r["acct_type"] == "income")
+            - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
+
+
+def _earnings_row(name: str, amount) -> dict:
+    return {"account_code": "", "account_name": name, "path": "",
+            "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0)}
+
+
+def _trial_balance_rows(scenario: str, as_of: str, zeros: int, raw: int = 0) -> dict:
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
-    fy_start = date(as_of_dt.year, 1, 1).isoformat()
-
     full_rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
-    fy_rows = {r["account_id"]: r for r in
-              q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))}
+    total_debits = sum(r["debit_balance"] for r in full_rows)
+    total_credits = sum(r["credit_balance"] for r in full_rows)
+
+    if raw:
+        grouped = []
+        for t in ACCOUNT_TYPES:
+            sub = [r for r in full_rows if r["acct_type"] == t and (zeros or r["net"] != 0)]
+            if sub:
+                grouped.append({"type": t, "label": TYPE_LABELS[t], "rows": sub,
+                                "sub_debits": sum(r["debit_balance"] for r in sub),
+                                "sub_credits": sum(r["credit_balance"] for r in sub)})
+        return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
+                "in_balance": total_debits == total_credits, "raw": True}
+
+    fy_start = date(as_of_dt.year, 1, 1).isoformat()
+    month_start = date(as_of_dt.year, as_of_dt.month, 1).isoformat()
+    fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
+    mtd_rows = {r["account_id"]: r for r in
+               q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, month_start))}
+
+    all_time_earnings = _pnl_net(full_rows)
+    fy_earnings = _pnl_net(fy_rows)
+    mtd_earnings = _pnl_net(list(mtd_rows.values()))
+    prior_year_earnings = all_time_earnings - fy_earnings
+    current_year_earnings = fy_earnings - mtd_earnings
 
     grouped = []
     for t in ACCOUNT_TYPES:
         if t in ("income", "expense"):
-            sub = [fy_rows[r["account_id"]] for r in full_rows
-                  if r["acct_type"] == t and r["account_id"] in fy_rows
-                  and (zeros or fy_rows[r["account_id"]]["net"] != 0)]
-            prior_net = (sum(r["net"] for r in full_rows if r["acct_type"] == t)
-                        - sum(r["net"] for r in fy_rows.values() if r["acct_type"] == t))
-            if zeros or prior_net != 0:
-                sub = sub + [{
-                    "account_code": "", "account_name": "Prior years (unclosed)", "path": "",
-                    "debit_balance": max(prior_net, 0), "credit_balance": max(-prior_net, 0),
-                }]
+            sub = [mtd_rows[r["account_id"]] for r in full_rows
+                  if r["acct_type"] == t and r["account_id"] in mtd_rows
+                  and (zeros or mtd_rows[r["account_id"]]["net"] != 0)]
         else:
             sub = [r for r in full_rows if r["acct_type"] == t and (zeros or r["net"] != 0)]
+            if t == "equity" and (zeros or current_year_earnings != 0 or prior_year_earnings != 0):
+                sub = sub + [
+                    _earnings_row("Current Year Earnings (Unclosed)", current_year_earnings),
+                    _earnings_row("Prior Year Earnings (Unclosed)", prior_year_earnings),
+                ]
         if sub:
             grouped.append({
                 "type": t, "label": TYPE_LABELS[t], "rows": sub,
@@ -381,25 +415,25 @@ def _trial_balance_rows(scenario: str, as_of: str, zeros: int) -> dict:
                 "sub_credits": sum(r["credit_balance"] for r in sub),
             })
 
-    total_debits = sum(r["debit_balance"] for r in full_rows)
-    total_credits = sum(r["credit_balance"] for r in full_rows)
     return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
-            "in_balance": total_debits == total_credits, "fy_start": fy_start}
+            "in_balance": total_debits == total_credits, "fy_start": fy_start,
+            "month_start": month_start, "raw": False}
 
 
 @app.get("/trial-balance")
 def trial_balance(request: Request, scenario: str = "ACTUAL",
-                  as_of: str = None, zeros: int = 0):
-    result = _trial_balance_rows(scenario, as_of, zeros)
+                  as_of: str = None, zeros: int = 0, raw: int = 0):
+    result = _trial_balance_rows(scenario, as_of, zeros, raw)
     return templates.TemplateResponse(request, "trial_balance.html", {
-        "nav": "tb", "scenario": scenario, "as_of": as_of or "", "zeros": zeros,
+        "nav": "tb", "scenario": scenario, "as_of": as_of or "", "zeros": zeros, "raw": raw,
         "scenarios": scenarios_all(), "today": date.today().isoformat(), **result,
     })
 
 
 @app.get("/export/trial-balance.csv")
-def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros: int = 0):
-    result = _trial_balance_rows(scenario, as_of, zeros)
+def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
+                             zeros: int = 0, raw: int = 0):
+    result = _trial_balance_rows(scenario, as_of, zeros, raw)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Code", "Account", "Path", "Debit", "Credit"])
@@ -596,43 +630,48 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
 
 # ---------------------------------------------------------------------------
 # Balance sheet — Assets, Liabilities, Equity, always "as of" a date (these
-# are stock accounts, not flow accounts — a range doesn't apply). Since
-# Libro never posts physical period-closing entries (see the Income
-# Statement above), Income/Expense activity since inception is still just
-# sitting unclosed — so it's folded in here as synthetic lines under
-# Equity, exactly the way real accounting software computes it on the fly
-# rather than by zeroing accounts at period end. Split into "Current year
-# earnings" (since Jan 1 of as-of's year) and "Retained earnings, prior
-# years" — same split, same reasoning, as Trial Balance's "Prior years"
-# line: one lifetime-cumulative number is never actually the figure
-# anyone wants to look at, but the two together still total the exact
-# same unclosed P&L as before, so nothing about the balance changes.
+# are stock accounts, not flow accounts — a range doesn't apply). Same
+# simulated-monthly-close split as Trial Balance, and for the same reason
+# (see there): "Current Year Earnings (Unclosed)" is this fiscal year's
+# earnings not already reflected this month, "Prior Year Earnings
+# (Unclosed)" is every year before this one — together they total the
+# exact same unclosed P&L as a single lifetime figure would, so nothing
+# about the balance changes, only how it reads. `raw=1` collapses this
+# back to one plain "Current earnings (unclosed)" line — the true,
+# un-simulated all-time total.
 # ---------------------------------------------------------------------------
-def _balance_sheet_rows(scenario: str, as_of: str) -> dict:
+def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
-    fy_start = date(as_of_dt.year, 1, 1).isoformat()
 
     rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of_date))
-    fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
     assets = [r for r in rows if r["acct_type"] == "asset" and r["net"] != 0]
     liabilities = [r for r in rows if r["acct_type"] == "liability" and r["net"] != 0]
     equity = [r for r in rows if r["acct_type"] == "equity" and r["net"] != 0]
+    total_pnl = _pnl_net(rows)
 
-    total_pnl = (-sum(r["net"] for r in rows if r["acct_type"] == "income")
-                - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
-    current_year_earnings = (
-        -sum(r["net"] for r in fy_rows if r["acct_type"] == "income")
-        - sum(r["net"] for r in fy_rows if r["acct_type"] == "expense"))
-    prior_years_earnings = total_pnl - current_year_earnings
+    if raw:
+        earnings_lines = [("Current earnings (unclosed)", total_pnl)]
+    else:
+        # No MTD carve-out here, unlike Trial Balance: a balance sheet has
+        # no Income/Expense section of its own to hold that money in, so
+        # "Current Year" has to mean the *whole* fiscal year to date
+        # (MTD included) or Assets would stop reconciling against
+        # Liabilities + Equity by exactly the MTD amount.
+        fy_start = date(as_of_dt.year, 1, 1).isoformat()
+        fy_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, as_of_date, fy_start))
+        fy_earnings = _pnl_net(fy_rows)
+        earnings_lines = [
+            ("Current Year Earnings (Unclosed)", fy_earnings),
+            ("Prior Year Earnings (Unclosed)", total_pnl - fy_earnings),
+        ]
 
     total_assets = sum(r["net"] for r in assets)
     total_liabilities = -sum(r["net"] for r in liabilities)
     total_equity = -sum(r["net"] for r in equity) + total_pnl
     return {
         "assets": assets, "liabilities": liabilities, "equity": equity,
-        "current_year_earnings": current_year_earnings,
-        "prior_years_earnings": prior_years_earnings, "fy_start": fy_start,
+        "earnings_lines": earnings_lines, "raw": bool(raw),
         "total_assets": total_assets, "total_liabilities": total_liabilities,
         "total_equity": total_equity,
         "total_liab_and_equity": total_liabilities + total_equity,
@@ -641,17 +680,17 @@ def _balance_sheet_rows(scenario: str, as_of: str) -> dict:
 
 
 @app.get("/balance-sheet")
-def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None):
-    result = _balance_sheet_rows(scenario, as_of)
+def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None, raw: int = 0):
+    result = _balance_sheet_rows(scenario, as_of, raw)
     return templates.TemplateResponse(request, "balance_sheet.html", {
         "nav": "balance_sheet", "scenarios": scenarios_all(), "scenario": scenario,
-        "as_of": as_of or "", "today": date.today().isoformat(), **result,
+        "as_of": as_of or "", "raw": raw, "today": date.today().isoformat(), **result,
     })
 
 
 @app.get("/export/balance-sheet.csv")
-def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None):
-    result = _balance_sheet_rows(scenario, as_of)
+def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: int = 0):
+    result = _balance_sheet_rows(scenario, as_of, raw)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Section", "Code", "Account", "Path", "Amount"])
@@ -661,8 +700,8 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None):
         w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["net"]])
     for r in result["equity"]:
         w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["net"]])
-    w.writerow(["Equity", "", "Current year earnings (unclosed)", "", result["current_year_earnings"]])
-    w.writerow(["Equity", "", "Retained earnings, prior years (unclosed)", "", result["prior_years_earnings"]])
+    for label, amount in result["earnings_lines"]:
+        w.writerow(["Equity", "", label, "", amount])
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
