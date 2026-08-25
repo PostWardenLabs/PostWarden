@@ -1,4 +1,4 @@
-/* Libro — tag chip input. A hidden input holds the actual comma-separated
+/* PostWarden — tag chip input. A hidden input holds the actual comma-separated
    value that submits with the form (or drives the Journal filter); this
    renders it as removable pill chips plus a text field that behaves like
    combobox.js's picker rather than a free-text box: typing filters a list
@@ -190,7 +190,7 @@
     // entry_templates.js's "Load template", which needs to replace the
     // whole set at once the same way picking a saved template replaces
     // every other field on the form.
-    root.__libroTags = {
+    root.__postwardenTags = {
       setValue(csv) {
         tags = (csv || "").split(",").map((s) => s.trim()).filter(Boolean);
         sync();
@@ -205,5 +205,5 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => enhanceAll());
-  window.LibroTags = { enhance, enhanceAll };
+  window.PostWardenTags = { enhance, enhanceAll };
 })();

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Libro — design system
+   PostWarden — design system
    Grounded in the artifact this software replaces: columnar ledger paper.
    Pale green stock, green ruling, the red vertical rule beside money
    columns, tabular monospaced figures, and the accountant's double-rule
@@ -406,7 +406,7 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 
 /* -- login: a split screen instead of the standard topbar/main chrome —
    see login.html's {% block chrome %} override. Brand on the left (the
-   one place in the app "Libro" gets to be the whole point, rather than
+   one place in the app "PostWarden" gets to be the whole point, rather than
    a muted trailer after the page name), the form on the right. */
 .auth-split { display: flex; min-height: 100vh; }
 .auth-brand {

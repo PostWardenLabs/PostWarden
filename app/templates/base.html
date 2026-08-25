@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Libro{% endblock %} · Libro</title>
+<title>{% block title %}PostWarden{% endblock %} · PostWarden</title>
 <script>
   // Applied before the stylesheet renders, so a saved theme (and whether
   // the sidebar is pinned open) is right on first paint instead of
@@ -60,7 +60,7 @@
 {% block chrome %}
 <header class="topbar">
   <div class="topbar-left">
-    <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · Libro</span></a>
+    <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · PostWarden</span></a>
   </div>
   <div class="topbar-right">
     {% if request.state.user %}
@@ -81,7 +81,7 @@
   {% endif %}
   {% block content %}{% endblock %}
 </main>
-<footer class="footer">Libro v{{ version }}</footer>
+<footer class="footer">PostWarden v{{ version }}</footer>
 {% endblock %}
 <script src="{{ asset('sidebar.js') }}"></script>
 <script src="{{ asset('combobox.js') }}"></script>

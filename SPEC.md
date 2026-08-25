@@ -1,10 +1,10 @@
-# Libro — design specification
+# PostWarden — design specification
 
 ## The single organizing idea
 
 A general ledger is a set of facts (journal lines) constrained by one
 invariant: within an entry, debits equal credits. Everything else —
-statements, budgets, variance — is a *query over those facts*. Libro
+statements, budgets, variance — is a *query over those facts*. PostWarden
 therefore has exactly one write path (post an entry) and pushes every
 invariant into PostgreSQL, so the set of facts can never be inconsistent
 regardless of which client wrote them.
@@ -27,7 +27,7 @@ in SQL, DAX and Excel without a /100 convention.
 
 A plain CHECK cannot see across rows. Application-level checks can be
 bypassed by any other client — which is exactly GnuCash's architecture and
-the failure mode to avoid. So Libro uses a `CONSTRAINT TRIGGER ... 
+the failure mode to avoid. So PostWarden uses a `CONSTRAINT TRIGGER ... 
 DEFERRABLE INITIALLY DEFERRED`: the app inserts header and lines inside one
 transaction, and at COMMIT PostgreSQL re-derives `SUM(amount)` for every
 touched entry. If it isn't zero (in an enforcing scenario), the commit

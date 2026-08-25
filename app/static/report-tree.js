@@ -1,4 +1,4 @@
-/* Libro — collapsible account hierarchy on Trial Balance / Balance Sheet.
+/* PostWarden — collapsible account hierarchy on Trial Balance / Balance Sheet.
    Same interaction as the Accounts page's own tree (accounts.js): click a
    summary row to hide/show its descendants, state persisted per browser
    in localStorage. Deliberately a separate, smaller script rather than

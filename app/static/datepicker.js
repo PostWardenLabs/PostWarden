@@ -1,4 +1,4 @@
-/* Libro — calendar date picker, progressively enhancing a plain
+/* PostWarden — calendar date picker, progressively enhancing a plain
    <input type="date">. Every date input on the page gets this
    automatically (see enhanceAll() below).
 
@@ -157,5 +157,5 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => enhanceAll());
-  window.LibroDatePicker = { enhance: enhanceDate, enhanceAll };
+  window.PostWardenDatePicker = { enhance: enhanceDate, enhanceAll };
 })();

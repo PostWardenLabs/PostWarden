@@ -1,4 +1,4 @@
-/* Libro — custom up/down stepper for <input type="number">, replacing
+/* PostWarden — custom up/down stepper for <input type="number">, replacing
    the browser's own spinner arrows with the site's own chevron so a
    plain OS control doesn't sit inside an otherwise hand-styled page —
    same idea as datepicker.js: a skin over the native input, not a
@@ -78,5 +78,5 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => enhanceAll());
-  window.LibroNumberStepper = { enhance: enhanceNumber, enhanceAll };
+  window.PostWardenNumberStepper = { enhance: enhanceNumber, enhanceAll };
 })();

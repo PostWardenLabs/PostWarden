@@ -1,4 +1,4 @@
-/* Libro — theme picker. Loaded on every page (see base.html).
+/* PostWarden — theme picker. Loaded on every page (see base.html).
    The actual switch-before-paint logic lives inline in base.html's <head>,
    so a saved choice applies before the stylesheet renders; this file only
    wires the <select> once the page is interactive. */

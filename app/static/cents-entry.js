@@ -1,4 +1,4 @@
-/* Libro — optional "digits fill in from the right" mode for amount fields
+/* PostWarden — optional "digits fill in from the right" mode for amount fields
    (the debit/credit inputs in every entry grid), the same input style as
    a bank transfer app or a POS terminal: typing 6200 produces 62.00, and
    there's never a decimal point to type. Off by default, toggled from
@@ -75,5 +75,5 @@
     });
   });
 
-  window.LibroCentsEntry = { KEY, enabled };
+  window.PostWardenCentsEntry = { KEY, enabled };
 })();

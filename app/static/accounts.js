@@ -1,4 +1,4 @@
-/* Libro — collapsible, drillable chart of accounts.
+/* PostWarden — collapsible, drillable chart of accounts.
    Summary accounts (the ones with children) get a toggle arrow, revealed
    on hover, that shows/hides their descendants. Collapse state persists
    in localStorage per browser, not per user in the database — it's a

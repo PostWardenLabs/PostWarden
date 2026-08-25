@@ -1,4 +1,4 @@
-# Libro
+# PostWarden
 
 A personal general ledger where **the database guarantees the
 accounting** — not the application, not the UI, the database. Real
@@ -49,7 +49,7 @@ through purpose-built reporting views, no export step required.
 GnuCash stores in SQL but enforces nothing there — no foreign keys,
 balance checked only in C++, key-value `slots` everywhere. Actual
 Budget has a clean schema but is single-entry envelope budgeting at
-heart. Libro takes the opposite bet: push every accounting invariant
+heart. PostWarden takes the opposite bet: push every accounting invariant
 into PostgreSQL itself, keep the application thin, and treat a scenario
 as just a dimension on the same fact table so that *comparing two of
 them is a query, not a module*.
@@ -94,9 +94,9 @@ account — loan the $500 (debit A/R, credit Cash) and its balance *is*
 you'll be reimbursed for later and the reimbursement isn't a mental
 asterisk on an expense, it's Accounts Payable or A/R behaving exactly
 like any other account. A budget isn't a separate feature bolted onto
-the transaction list — in Libro specifically, it's the same data model
+the transaction list — in PostWarden specifically, it's the same data model
 with a second dimension (`scenario`) added, so "actual vs. budget" is a
-`GROUP BY` with two filters, and it's *why* Libro's own Budget grid can
+`GROUP BY` with two filters, and it's *why* PostWarden's own Budget grid can
 show Actual and Variance next to what you typed without a reconciliation
 step gluing two systems together. An income statement isn't a workbook
 you maintain in parallel — it's a query over Income and Expense

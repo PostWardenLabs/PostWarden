@@ -1,4 +1,4 @@
-/* Libro — auto-refresh a filter bar when a combobox or date picker
+/* PostWarden — auto-refresh a filter bar when a combobox or date picker
    changes, instead of waiting for its Refresh/Filter/Go button. Every
    `<form class="bar" method="get">` on the page gets this automatically
    (see enhanceAll() below) — that's every report's filter form and the

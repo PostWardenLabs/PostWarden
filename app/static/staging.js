@@ -1,4 +1,4 @@
-/* Libro — Staging approval page. "select all" toggles every entry
+/* PostWarden — Staging approval page. "select all" toggles every entry
    checkbox at once; both Approve buttons (top and bottom of a possibly
    long list) stay disabled until at least one entry is checked, so
    there's no accidental empty submit. */

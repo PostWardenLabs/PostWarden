@@ -1,4 +1,4 @@
-/* Libro — period preset dropdown for date-ranged reports (Income
+/* PostWarden — period preset dropdown for date-ranged reports (Income
    statement). Purely a convenience that fills in the two real date
    inputs the form actually submits; the backend only ever sees plain
    date_from/date_to, same as Journal's filters. Picking "Custom range"

@@ -1,7 +1,7 @@
-/* Libro — "Load template" on New entry. Picking a saved template replaces
+/* PostWarden — "Load template" on New entry. Picking a saved template replaces
    every other field on the form (description, reference, payee, tags, and
    the whole line grid) with what was saved, using the small APIs app.js
-   (LibroEntryGrid) and tags.js (root.__libroTags) expose for exactly this.
+   (PostWardenEntryGrid) and tags.js (root.__postwardenTags) expose for exactly this.
    Entirely client-side against a #templates-data blob already on the page
    — no round trip needed to "load" one.
 
@@ -12,7 +12,7 @@
    global lookup would find that one first instead of the entry form's. */
 (function () {
   function loadTemplateInto(tpl, root) {
-    const grid = window.LibroEntryGrid;
+    const grid = window.PostWardenEntryGrid;
     if (!grid) return;
 
     const desc = root.querySelector('input[name="description"]');
@@ -27,8 +27,8 @@
     }
 
     const tagsRoot = root.querySelector(".tag-input");
-    if (tagsRoot && tagsRoot.__libroTags) {
-      tagsRoot.__libroTags.setValue((tpl.tags || []).join(","));
+    if (tagsRoot && tagsRoot.__postwardenTags) {
+      tagsRoot.__postwardenTags.setValue((tpl.tags || []).join(","));
     }
 
     grid.clear();

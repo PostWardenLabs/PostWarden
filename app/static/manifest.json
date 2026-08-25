@@ -1,6 +1,6 @@
 {
-  "name": "Libro",
-  "short_name": "Libro",
+  "name": "PostWarden",
+  "short_name": "PostWarden",
   "icons": [
     {"src": "/static/favicon-192.png", "sizes": "192x192", "type": "image/png"},
     {"src": "/static/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}

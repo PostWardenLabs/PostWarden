@@ -1,4 +1,4 @@
-/* Libro — journal entry grid.
+/* PostWarden — journal entry grid.
    Keyboard-first: Tab flows through account → debit → credit → memo;
    a new blank line appears once the last line is in use. Entering a debit
    clears the credit on that line (and vice versa) — one side per line,
@@ -36,8 +36,8 @@
   // {{ x | money }} span (see money-format.js) — this bar is the one
   // money display in the app computed entirely client-side, so it needs
   // its own call in rather than a data-value span to rewrite.
-  const fmt = (n) => window.LibroMoney
-    ? window.LibroMoney.format(n)
+  const fmt = (n) => window.PostWardenMoney
+    ? window.PostWardenMoney.format(n)
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function buildAccountOptions(select) {
@@ -86,7 +86,7 @@
     tr.appendChild(memoTd);
 
     body.appendChild(tr);
-    if (window.LibroCombobox) window.LibroCombobox.enhance(acctSelect);
+    if (window.PostWardenCombobox) window.PostWardenCombobox.enhance(acctSelect);
     return tr;
   }
 
@@ -187,7 +187,7 @@
       const prevValue = select.value;
       buildAccountOptions(select);
       select.value = ACCOUNTS.some((a) => a.code === prevValue) ? prevValue : "";
-      if (window.LibroCombobox) window.LibroCombobox.resync(select);
+      if (window.PostWardenCombobox) window.PostWardenCombobox.resync(select);
     });
   }
 
@@ -284,7 +284,7 @@
   // template", the only current caller. Deliberately narrow: callers set
   // field values and dispatch their own change/input events (as
   // createAndSelect in combobox.js does), then call recalc().
-  window.LibroEntryGrid = {
+  window.PostWardenEntryGrid = {
     addRow: () => { const tr = makeRow(); return tr; },
     clear: () => { body.innerHTML = ""; },
     ensureTrailingBlank,

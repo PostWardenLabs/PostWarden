@@ -1,4 +1,4 @@
-"""Authentication for Libro — session cookies backed by a sessions table.
+"""Authentication for PostWarden — session cookies backed by a sessions table.
 
 No JWT, no signing secret to manage: a session is a random opaque token
 stored in Postgres (see db/schema.sql), looked up on every request. Log out

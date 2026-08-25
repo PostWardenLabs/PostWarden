@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Create (or reset) a Libro login. Prompts for the password interactively
+# Create (or reset) a PostWarden login. Prompts for the password interactively
 # (never as a command-line argument, so it doesn't end up in shell history).
 #
 # Needs DATABASE_URL pointed at a running instance — defaults to

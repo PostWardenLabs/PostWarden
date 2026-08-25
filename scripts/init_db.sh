@@ -13,4 +13,4 @@ if [[ "${1:-}" == "--with-demo" ]]; then
     $PSQL -d libro -f db/seed_demo.sql
     echo "Demo entries loaded."
 fi
-echo "Libro database ready."
+echo "PostWarden database ready."

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GCE metadata startup-script for the Libro VM.
+# GCE metadata startup-script for the PostWarden VM.
 #
 # Runs as root on every boot. Installs Docker if it isn't there yet, wires
 # up the read-only GitHub deploy key from this instance's metadata, clones

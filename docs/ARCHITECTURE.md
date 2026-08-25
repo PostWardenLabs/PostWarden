@@ -106,7 +106,7 @@ through the template context explicitly.
 | `accounts.js` | The Chart of Accounts page's collapsible tree, plus its inline "+" add-category form. |
 | `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
-| `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.LibroMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
+| `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
 | `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked. |
 | `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
@@ -188,9 +188,9 @@ Accounts-only, back when it was `.accounts-layout`/`.levels-panel`).
 No template has its own `<h1>PageName</h1>` any more — `base.html`'s
 topbar-left renders `{{ self.title() }}` (Jinja's way to call a
 `{% block %}` from outside where it's defined) followed by a muted
-`<span class="wordmark-brand"> · Libro</span>`, reusing the exact same
+`<span class="wordmark-brand"> · PostWarden</span>`, reusing the exact same
 `{% block title %}` every page already sets for `<title>Dashboard ·
-Libro</title>`. One string, two places, always in sync — there's no
+PostWarden</title>`. One string, two places, always in sync — there's no
 second place to update when a page's name changes. A page that still
 needs a top-right "?" help icon keeps a `.page-head` div for it
 (`justify-content: flex-end` now that it has nothing to space against);

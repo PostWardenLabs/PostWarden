@@ -1,7 +1,7 @@
-/* Libro — searchable combobox, progressively enhancing a plain <select>.
+/* PostWarden — searchable combobox, progressively enhancing a plain <select>.
    Every <select> on the page gets this automatically (see enhanceAll()
    below); dynamically-created selects (the account picker's per-line
-   dropdown — see app.js) call LibroCombobox.enhance() themselves.
+   dropdown — see app.js) call PostWardenCombobox.enhance() themselves.
 
    The original <select> stays in the DOM (display:none) and stays the
    thing that actually submits with the form — this is a UI skin, not a
@@ -228,5 +228,5 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => enhanceAll());
-  window.LibroCombobox = { enhance: enhanceSelect, enhanceAll, resync };
+  window.PostWardenCombobox = { enhance: enhanceSelect, enhanceAll, resync };
 })();

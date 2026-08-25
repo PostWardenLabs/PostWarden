@@ -54,7 +54,7 @@ def test_login_correct_succeeds_and_grants_access(conn):
 
         r = c.get("/")
         assert r.status_code == 200
-        assert '<a class="wordmark" href="/">Dashboard<span class="wordmark-brand"> · Libro</span></a>' in r.text
+        assert '<a class="wordmark" href="/">Dashboard<span class="wordmark-brand"> · PostWarden</span></a>' in r.text
 
 
 def test_remember_me_controls_cookie_lifetime(conn):
@@ -902,7 +902,7 @@ def test_trial_balance_moved_off_root(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         r = c.get("/trial-balance")
         assert r.status_code == 200
-        assert '<a class="wordmark" href="/">Trial balance<span class="wordmark-brand"> · Libro</span></a>' in r.text
+        assert '<a class="wordmark" href="/">Trial balance<span class="wordmark-brand"> · PostWarden</span></a>' in r.text
 
 
 def _mk_balanced_book(conn):

@@ -12,7 +12,7 @@ Deployment has its own doc, next to what it documents:
 [`../deploy/gcp/README.md`](../deploy/gcp/README.md) (provisioning,
 redeploying, backups, connecting BI tools remotely).
 
-The root [`../README.md`](../README.md) is the front door — what Libro
+The root [`../README.md`](../README.md) is the front door — what PostWarden
 is, how to run it, how to log in. Start there if you haven't already.
 
 ## Keeping this current

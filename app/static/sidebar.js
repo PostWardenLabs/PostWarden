@@ -1,4 +1,4 @@
-/* Libro — hamburger sidebar. Hovering the hamburger (or the sidebar
+/* PostWarden — hamburger sidebar. Hovering the hamburger (or the sidebar
    itself) previews the menu; it closes again once the mouse leaves both.
    Clicking the hamburger pins it open instead — the sidebar stays put
    (and pushes the page over, see style.css's html.sidebar-pinned rules)

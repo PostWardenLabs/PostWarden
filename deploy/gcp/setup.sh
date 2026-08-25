@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time provisioning for Libro on Google Cloud: a single Compute Engine
+# One-time provisioning for PostWarden on Google Cloud: a single Compute Engine
 # VM running docker-compose, reachable ONLY through an IAP tunnel — no
 # firewall rule opens the app (or SSH) to the public internet at all.
 #

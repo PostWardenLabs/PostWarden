@@ -1,4 +1,4 @@
-"""Database access for Libro — a thin layer over psycopg3.
+"""Database access for PostWarden — a thin layer over psycopg3.
 
 No ORM on purpose: db/schema.sql is the source of truth, and every query in
 the app is plain SQL you can read, run in psql, or paste into Power BI.

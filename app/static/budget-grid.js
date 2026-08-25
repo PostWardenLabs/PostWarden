@@ -1,4 +1,4 @@
-/* Libro — Budget grid (see app/templates/budget.html). A leaf account's
+/* PostWarden — Budget grid (see app/templates/budget.html). A leaf account's
    Budgeted cell is a plain text input; typing into it recomputes every
    ancestor's rolled-up Budgeted/Variance live (client-side, no round
    trip — Actual never changes here, so only Budgeted needs recomputing),
@@ -14,8 +14,8 @@
   const status = document.getElementById("budget-save-status");
   const csrfEl = document.getElementById("budget-csrf");
 
-  const fmt = (n) => window.LibroMoney
-    ? window.LibroMoney.format(n)
+  const fmt = (n) => window.PostWardenMoney
+    ? window.PostWardenMoney.format(n)
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   function setVariance(tr, budgeted) {

@@ -1,4 +1,4 @@
-# Deploying Libro on Google Cloud
+# Deploying PostWarden on Google Cloud
 
 One Compute Engine VM runs `docker-compose.yml` almost exactly as it runs
 locally — app and Postgres together, same images, same schema/seed

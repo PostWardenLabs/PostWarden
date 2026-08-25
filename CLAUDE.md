@@ -1,6 +1,6 @@
 # Working in this repo
 
-Libro is a personal general ledger — PostgreSQL enforces the accounting
+PostWarden is a personal general ledger — PostgreSQL enforces the accounting
 (double-entry balance, immutability, hierarchy integrity) at the schema
 level via triggers; FastAPI + Jinja2 + vanilla JS is a thin layer on top.
 No ORM, no build step, no SPA. Before touching anything, read:

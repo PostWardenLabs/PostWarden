@@ -1,4 +1,4 @@
-"""Libro — a personal general ledger with scenarios.
+"""PostWarden — a personal general ledger with scenarios.
 
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 
 BASE = Path(__file__).parent
-app = FastAPI(title="Libro", lifespan=lifespan)
+app = FastAPI(title="PostWarden", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 

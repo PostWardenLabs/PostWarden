@@ -1,4 +1,4 @@
-"""Command-line user management for Libro.
+"""Command-line user management for PostWarden.
 
 Needs DATABASE_URL pointed at a running instance (same convention as the
 app itself — see app/db.py). Prefer scripts/create_user.sh over calling
