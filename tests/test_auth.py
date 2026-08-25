@@ -855,7 +855,9 @@ def test_trial_balance_export_csv(conn):
         r = c.get("/export/trial-balance.csv?scenario=ACTUAL")
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/csv")
-        assert r.text.splitlines()[0] == "Code,Account,Path,Debit,Credit"
+        # Leading ﻿ is a deliberate UTF-8 BOM so Excel doesn't mangle
+        # accented characters — strip it before comparing the header row.
+        assert r.text.lstrip("﻿").splitlines()[0] == "Code,Account,Path,Debit,Credit"
 
 
 def test_variance_export_csv(conn):

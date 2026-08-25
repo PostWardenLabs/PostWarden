@@ -195,6 +195,17 @@ def require_csrf(request: Request, token: str | None):
         raise ValueError("Your session expired or the form was stale — please retry.")
 
 
+def csv_response(buf: io.StringIO, filename: str) -> Response:
+    """Wrap a finished csv.writer buffer as a download. Excel — still the
+    most likely destination for these files — assumes the system codepage
+    for a UTF-8 file with no signature, so any accented name or currency
+    symbol comes back as mojibake; a leading BOM is what tells it the file
+    is actually UTF-8. /import already decodes with utf-8-sig, so a
+    round-tripped export reads back in fine."""
+    return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={
+        "Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -522,8 +533,7 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
         for r in g["rows"]:
             w.writerow([r["account_code"], r["account_name"], r["path"],
                        r["debit_balance"] or "", r["credit_balance"] or ""])
-    return Response(buf.getvalue(), media_type="text/csv", headers={
-        "Content-Disposition": f'attachment; filename="libro-trial-balance-{scenario}.csv"'})
+    return csv_response(buf, f"libro-trial-balance-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -705,8 +715,7 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
     if not result["expense_groups"]:
         row("Income", "", "Net income", "", result["net_income"],
             result["compare_net_income"], result["net_income_variance"])
-    return Response(buf.getvalue(), media_type="text/csv", headers={
-        "Content-Disposition": f'attachment; filename="libro-income-statement-{scenario}.csv"'})
+    return csv_response(buf, f"libro-income-statement-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -793,8 +802,7 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
-    return Response(buf.getvalue(), media_type="text/csv", headers={
-        "Content-Disposition": f'attachment; filename="libro-balance-sheet-{scenario}.csv"'})
+    return csv_response(buf, f"libro-balance-sheet-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -1035,9 +1043,7 @@ def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
     for r in v["merged"]:
         w.writerow([r["account_code"], r["account_name"], r["path"],
                    r["baseline_net"], r["compare_net"], r["variance"]])
-    return Response(buf.getvalue(), media_type="text/csv", headers={
-        "Content-Disposition":
-            f'attachment; filename="libro-variance-{baseline}-vs-{compare}.csv"'})
+    return csv_response(buf, f"libro-variance-{baseline}-vs-{compare}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -1529,8 +1535,7 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
                    r["description"], r["reference"] or "", r["payee_name"] or "",
                    r["account_code"], r["account_name"],
                    r["debit"] or "", r["credit"] or "", r["memo"] or ""])
-    return Response(buf.getvalue(), media_type="text/csv", headers={
-        "Content-Disposition": 'attachment; filename="libro-journal.csv"'})
+    return csv_response(buf, "libro-journal.csv")
 
 
 @app.post("/entries/{entry_id}/reverse")
