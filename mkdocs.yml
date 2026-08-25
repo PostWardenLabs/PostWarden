@@ -1,0 +1,43 @@
+site_name: PostWarden Docs
+site_description: Technical reference for PostWarden — schema, architecture, and design rationale.
+site_url: https://docs.postwarden.org
+repo_url: https://github.com/PostWardenLabs/PostWarden
+repo_name: PostWardenLabs/PostWarden
+edit_uri: edit/master/docs/
+
+docs_dir: docs
+
+nav:
+  - Home: README.md
+  - Design spec: SPEC.md
+  - Schema reference: SCHEMA.md
+  - Architecture: ARCHITECTURE.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: green
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: green
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.highlight

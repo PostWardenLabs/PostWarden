@@ -3,6 +3,11 @@ __pycache__/
 .pytest_cache/
 .env
 
+# mkdocs build output (docs.postwarden.org) — built fresh on deploy, see
+# mkdocs.yml and docs/ (this is not the source, just what `mkdocs build`
+# produces from it).
+site/
+
 # GitHub deploy key for deploy/gcp — generated locally by setup.sh, holds
 # the VM's read-only credential for cloning the private repo. Never commit
 # this; it lives in GCE instance metadata, not git.

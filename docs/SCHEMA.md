@@ -4,7 +4,7 @@
 it, not a replacement for reading it. Every table/trigger/view below is
 named exactly as it appears there; grep the name if you want the real
 definition and the comment explaining it. For *why* the schema is shaped
-this way, see [`SPEC.md`](../SPEC.md) — this document is the *what*, SPEC
+this way, see [`SPEC.md`](SPEC.md) — this document is the *what*, SPEC
 is the *why*.
 
 ## Entity-relationship diagram

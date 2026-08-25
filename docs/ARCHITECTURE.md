@@ -1,7 +1,7 @@
 # Application architecture
 
 How the code is organized and the conventions repeated across it. For
-*what the database enforces and why*, see [`SPEC.md`](../SPEC.md); for
+*what the database enforces and why*, see [`SPEC.md`](SPEC.md); for
 *what the tables are*, see [`SCHEMA.md`](SCHEMA.md). This document is
 about the FastAPI app, the templates, and the static JS/CSS layered on
 top of the schema those two describe.

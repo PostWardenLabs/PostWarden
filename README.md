@@ -304,3 +304,13 @@ Or locally, with `psycopg[binary]` and `pytest` installed and `LIBRO_TEST_ADMIN_
 pip install -r requirements-dev.txt
 pytest tests -v
 ```
+
+## License
+
+[GNU AGPL v3](LICENSE). The short version: self-host it, modify it, fork
+it, no restrictions — but if you run a modified version as a network
+service for others, you have to make that modified source available to
+them too. Chosen deliberately over a permissive license for exactly one
+reason: it keeps the door open to a possible future hosted offering of
+this same project without a closed fork undercutting it first, while
+imposing zero obligations on anyone just self-hosting it for themselves.
