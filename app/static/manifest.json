@@ -1,0 +1,11 @@
+{
+  "name": "Libro",
+  "short_name": "Libro",
+  "icons": [
+    {"src": "/static/favicon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ],
+  "theme_color": "#1d2b22",
+  "background_color": "#f7faf4",
+  "display": "standalone"
+}
