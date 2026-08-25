@@ -205,12 +205,12 @@ what decision 2 exists to prevent.
 
 ### 11. Hierarchical rollups are built in the app, not SQL, and drill through uniformly
 
-Trial Balance, Balance Sheet, and the Budget page all show a summary
+Trial Balance, Balance Sheet, and the Budget grid all show a summary
 account's *rolled-up* subtotal (everything under it), not just its own
 direct postings, with collapse/expand. `v_dim_account`'s recursive CTE
 already gives every account its `path`/`depth` for free, but the rollup
 itself (`_build_account_tree()` in `app/main.py`) is plain Python over
-that flat list, not a second SQL recursion — the Budget page needs to
+that flat list, not a second SQL recursion — the Budget grid needs to
 merge *two* independent rollups (Budgeted from `budget_lines`, Actual
 from `journal_lines`) node-for-node, which is awkward to express as one
 SQL query but a straightforward tree walk once the balances are already

@@ -176,7 +176,7 @@ which one it is decides what table can even reference it.
 | Does it have a date?     | Yes — `journal_entries.entry_date`, one specific day | No — just `period_month`, a whole calendar month |
 | Can you edit a posted value? | No — journal lines are immutable; fix mistakes with a reversing entry | Yes — a budget number is a working assumption, not a legal record; `budget_lines` rows are UPSERTed in place |
 | Enforced by              | `fn_income_statement_only_guard` (blocks `journal_entries` INSERT) | `fn_budget_line_guard` (blocks `budget_lines` INSERT/UPDATE unless the scenario says `income_statement_only`) |
-| App screen               | Journal (`/entries`) | Budget (`/budget`) |
+| App screen               | Journal (`/entries`) | Budget grid (`/budget`) |
 
 Both guard triggers run `BEFORE INSERT` regardless of which client is
 writing — psql, the app, a future importer. See `SPEC.md` decision 3 for
@@ -298,7 +298,7 @@ every one is callable identically from the app, `psql`, or a BI tool.
 | `v_monthly_activity` | view | `v_fact_lines` pre-aggregated to account × month × scenario — the budget-vs-actual base for BI tools that don't want to aggregate 3M rows themselves. |
 | `v_dim_date` | view | A plain date dimension, 2020–2035, for BI tools that want one. |
 | `fn_trial_balance(scenario, as_of, from)` | function | Every postable account with activity in the window — the literal Trial Balance report's data source, filtered (unlike `fn_account_balances` below). |
-| `fn_account_balances(scenario, as_of, from)` | function | Every *active* account's own direct balance, unconditionally — no postable/has-activity filtering. The base the app's Python-side account-tree rollup (Trial Balance, Balance Sheet, the Budget page's Actual column) builds subtotals from; a summary account needs a row here even at $0 so it can be positioned in the tree. |
+| `fn_account_balances(scenario, as_of, from)` | function | Every *active* account's own direct balance, unconditionally — no postable/has-activity filtering. The base the app's Python-side account-tree rollup (Trial Balance, Balance Sheet, the Budget grid's Actual column) builds subtotals from; a summary account needs a row here even at $0 so it can be positioned in the tree. |
 | `fn_rollup_balance(scenario, depth, as_of)` | function | Balances rolled up to a common `account_levels` depth — lets a scenario posted straight to "Bank" line up against one that split Checking/Savings. Backs the Variance page. |
 
 ## Table-by-table reference

@@ -36,8 +36,7 @@ tests/test_auth.py        drives the actual FastAPI app (TestClient) — routes,
 deploy/gcp/               Google Cloud deployment (Compute Engine + IAP tunnel) — see its own README
 ```
 
-`app/main.py` is deliberately one file (~2100 lines as of the Budget
-page). That's a real tradeoff, not an oversight: every route is
+`app/main.py` is deliberately one file (~2100 lines as of the Budget grid). That's a real tradeoff, not an oversight: every route is
 `grep`-able in one place, there's no question of which module owns a
 helper, and "thin application, no ORM" (SPEC.md decision 7) has held up
 well enough in practice that splitting it hasn't paid for itself yet. If
@@ -55,10 +54,10 @@ reading order:
 | Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route |
 | Settings | `/settings/*` | username/password change, theme preference |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
-| Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget page |
+| Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |
 | Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column |
 | Balance sheet | `/balance-sheet`, `/export/balance-sheet.csv` | |
-| Budget | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern) |
+| Budget grid | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern) |
 | Variance | `/variance`, `/export/variance.csv` | general two-scenario diff, rolled up to a common `account_levels` depth |
 | Chart of accounts | `/accounts`, `/accounts/quick-create` | |
 | Journal entry create | `/entries` POST | `_parse_lines()` turns the grid's parallel `account[]/debit[]/credit[]` arrays into line dicts |
@@ -96,14 +95,14 @@ through the template context explicitly.
 |---|---|
 | `app.js` | The journal-entry line grid, shared by New entry, Scheduled, and Entry templates — keyboard flow, live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). |
 | `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
-| `budget-grid.js` | The Budget page's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
+| `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
 | `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`). |
 | `tags.js` | The tag chip input (select-or-create, comma-separated hidden value underneath). |
 | `entry_templates.js` | "Load template" on New entry — fills the grid client-side from a page-embedded JSON blob. |
 | `cents-entry.js` | Optional "digits fill in from the right" amount entry (POS-terminal style), toggled in Settings. |
 | `accounts.js` | The Chart of Accounts page's collapsible tree, plus its inline "+" add-category form. |
-| `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Budget — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
+| `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.LibroMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
@@ -116,7 +115,7 @@ Rather than re-explain these at every call site, here's each one, once.
 
 ### The account-tree / rollup pattern
 
-Trial Balance, Balance Sheet, and the Budget page all show the same
+Trial Balance, Balance Sheet, and the Budget grid all show the same
 kind of thing: a hierarchical chart of accounts where a summary account
 (e.g. "Current Assets") needs to display the *sum* of everything under
 it, not just its own direct postings, and the whole thing needs to
@@ -128,7 +127,7 @@ collapse/expand.
   rolls each node's `subtotal` up from its own balance plus every
   descendant's. `_flatten_tree(nodes, zeros)` walks it depth-first for
   template rendering, dropping a zero-subtotal subtree unless `zeros`.
-  The Budget page needs *two* numbers per node (Budgeted and Actual), so
+  The Budget grid needs *two* numbers per node (Budgeted and Actual), so
   `_budget_rows()` calls `_build_account_tree` twice and merges the two
   trees node-for-node rather than teaching the tree builder about
   multiple values — see its own comment for why.

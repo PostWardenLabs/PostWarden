@@ -775,7 +775,7 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
 
 
 # ---------------------------------------------------------------------------
-# Budget — the ActualBudget-style grid for an income-statement-only
+# Budget grid — the ActualBudget-style grid for an income-statement-only
 # scenario (scenarios.income_statement_only): one month at a time,
 # Budgeted (editable) next to Actual (this month's real postings) and the
 # Variance between them, income/expense accounts only, no journal entries
@@ -919,7 +919,7 @@ async def save_budget_cell(request: Request):
 # "Bank") lines up against a fine one (Checking + Savings) instead of
 # just not matching up at all. Scoped to full scenarios only — an
 # income-statement-only one never has the journal-entry facts this reads,
-# by design; see the Budget page above for that comparison instead.
+# by design; see the Budget grid above for that comparison instead.
 # ---------------------------------------------------------------------------
 def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) -> dict:
     """Shared by the variance page and its CSV export — same rollup, same

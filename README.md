@@ -26,7 +26,7 @@ through purpose-built reporting views, no export step required.
   behind it. Every report (and the Journal's own filters) refreshes the
   moment you change a scenario, date, or any other dropdown — no
   separate Refresh click.
-- **A Budget page** — an [Actual Budget](https://actualbudget.org)-style
+- **A Budget grid** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No
   journal entries involved — a budget isn't a transaction, so it isn't
@@ -96,7 +96,7 @@ asterisk on an expense, it's Accounts Payable or A/R behaving exactly
 like any other account. A budget isn't a separate feature bolted onto
 the transaction list — in Libro specifically, it's the same data model
 with a second dimension (`scenario`) added, so "actual vs. budget" is a
-`GROUP BY` with two filters, and it's *why* Libro's own Budget page can
+`GROUP BY` with two filters, and it's *why* Libro's own Budget grid can
 show Actual and Variance next to what you typed without a reconciliation
 step gluing two systems together. An income statement isn't a workbook
 you maintain in parallel — it's a query over Income and Expense
