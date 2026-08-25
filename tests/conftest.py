@@ -112,12 +112,18 @@ def mk_account_level(cur, name, depth) -> dict:
     return cur.fetchone()
 
 
-def mk_entry(cur, scenario_id, description="Test entry") -> int:
+def mk_entry(cur, scenario_id, description="Test entry", payee_id=None) -> int:
     cur.execute(
-        """INSERT INTO journal_entries (scenario_id, entry_date, description)
-           VALUES (%s, CURRENT_DATE, %s) RETURNING id""",
-        (scenario_id, description))
+        """INSERT INTO journal_entries (scenario_id, entry_date, description, payee_id)
+           VALUES (%s, CURRENT_DATE, %s, %s) RETURNING id""",
+        (scenario_id, description, payee_id))
     return cur.fetchone()["id"]
+
+
+def mk_payee(cur, name=None) -> dict:
+    name = name or ("Payee " + "".join(random.choices(string.ascii_uppercase, k=8)))
+    cur.execute("INSERT INTO payees (name) VALUES (%s) RETURNING id, name", (name,))
+    return cur.fetchone()
 
 
 def mk_line(cur, entry_id, account_id, amount, line_no=1, memo=None):

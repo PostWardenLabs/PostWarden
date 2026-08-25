@@ -14,9 +14,14 @@
 <p class="page-sub">Showing only postings to <span class="mono">{{ account_row.code }}</span> {{ account_row.name }} —
   <a class="quiet-link" href="/entries?{{ clear_account_qs }}">clear</a></p>
 {% endif %}
+{% if payee_row %}
+<p class="page-sub">Showing only entries for payee <span class="mono">{{ payee_row.name }}</span> —
+  <a class="quiet-link" href="/entries?{{ clear_payee_qs }}">clear</a></p>
+{% endif %}
 
 <form class="bar" method="get" action="/entries">
   <input type="hidden" name="account" value="{{ account }}">
+  <input type="hidden" name="payee" value="{{ payee }}">
   <input type="hidden" name="back" value="{{ back }}">
   <label class="field">Scenario
     <select name="scenario">

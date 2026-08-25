@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Payees{% endblock %}
 {% block content %}
+{% set report_url = "/payees" %}
+{% macro entry_link(name, count) %}<a class="amount-link" href="/entries?payee={{ name | urlencode }}&back={{ report_url | urlencode }}">{{ count }}</a>{% endmacro %}
 <h1>Payees</h1>
 <p class="page-sub">Who the money went to or came from. Assign one per entry from the New entry screen; deactivating a payee here doesn't touch entries that already used it.</p>
 
@@ -12,7 +14,7 @@
     {% for p in payees %}
     <tr class="{{ 'inactive' if not p.is_active }}">
       <td>{{ p.name }}</td>
-      <td class="num mono">{{ p.entry_count }}</td>
+      <td class="num mono">{{ entry_link(p.name, p.entry_count) if p.entry_count else p.entry_count }}</td>
       <td class="dim">{{ 'active' if p.is_active else 'inactive' }}</td>
       <td>
         <form method="post" action="/payees/{{ p.id }}/toggle-active" style="display:inline">

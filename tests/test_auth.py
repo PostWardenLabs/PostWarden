@@ -12,7 +12,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 from fastapi.testclient import TestClient
 
 from app.main import app
-from conftest import mk_account, mk_budget_line, mk_entry, mk_line, mk_scenario, mk_user
+from conftest import (mk_account, mk_budget_line, mk_entry, mk_line, mk_payee,
+                     mk_scenario, mk_user)
 
 client_kwargs = {"base_url": "http://testserver", "follow_redirects": False}
 
@@ -973,6 +974,61 @@ def test_entries_page_filters_by_account(conn):
         r_csv = c.get(f"/entries/export.csv?account={acct_a['code']}")
         assert acct_a["code"] in r_csv.text
         assert acct_b["code"] not in r_csv.text
+
+
+def test_entries_page_filters_by_payee(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        payee_a = mk_payee(cur)
+        payee_b = mk_payee(cur)
+        mk_line(cur, mk_entry(cur, scen["id"], "Entry A", payee_id=payee_a["id"]), acct["id"], 10)
+        mk_line(cur, mk_entry(cur, scen["id"], "Entry B", payee_id=payee_b["id"]), acct["id"], 20)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/entries?payee={payee_a['name']}")
+        assert r.status_code == 200
+        assert "Entry A" in r.text
+        assert "Entry B" not in r.text
+        assert f'entries for payee <span class="mono">{payee_a["name"]}</span>' in r.text
+        m = re.search(r'href="/entries\?([^"]*)">clear</a>', r.text)
+        assert m, "no clear link found"
+        qs = parse_qs(m.group(1).replace("&amp;", "&"), keep_blank_values=True)
+        assert qs.get("payee", [""]) == [""]
+
+        r_csv = c.get(f"/entries/export.csv?payee={payee_a['name']}")
+        assert "Entry A" in r_csv.text
+        assert "Entry B" not in r_csv.text
+
+
+def test_payees_page_amount_links_to_filtered_journal(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        payee = mk_payee(cur)
+        empty_payee = mk_payee(cur)
+        mk_line(cur, mk_entry(cur, scen["id"], payee_id=payee["id"]), acct["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/payees")
+        assert r.status_code == 200
+        # The test DB is shared across the whole pytest run, so anchor on
+        # this payee's own row rather than the first count-of-1 link found
+        # anywhere on the page.
+        m = re.search(rf'<td>{payee["name"]}</td>.*?<a class="amount-link" href="([^"]+)">1</a>',
+                      r.text, re.S)
+        assert m, "no amount-link found for the payee with one entry"
+        qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
+        assert qs["payee"] == [payee["name"]]
+        back_path = urlparse(unquote(qs["back"][0])).path
+        assert back_path == "/payees"
+        # A payee with no entries at all isn't a link — nothing to click through to.
+        empty_row = re.search(rf'<td>{empty_payee["name"]}</td>.*?</tr>', r.text, re.S)
+        assert empty_row and "amount-link" not in empty_row.group(0)
 
 
 def test_income_statement_amounts_link_to_filtered_journal(conn):

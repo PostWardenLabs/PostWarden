@@ -1305,7 +1305,7 @@ ENTRIES_PAGE_SIZE = 50
 
 
 def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
-                    tags: str, account: str = "") -> tuple[list[str], list, list[str]]:
+                    tags: str, account: str = "", payee: str = "") -> tuple[list[str], list, list[str]]:
     """Shared by the paged HTML view and the CSV export — same filters,
     same WHERE clause, so what you see is exactly what you export."""
     try:
@@ -1338,20 +1338,28 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
                                    JOIN accounts a ON a.id = jl.account_id
                                   WHERE a.code = %s)""")
         params.append(account)
+    if payee:
+        # Powers the same click-through from Payees' entry count — both
+        # queries this feeds already LEFT JOIN payees p ON e.payee_id, so
+        # this can reference p.name directly rather than a subquery.
+        where.append("p.name = %s")
+        params.append(payee)
     return where, params, tag_list
 
 
 @app.get("/entries")
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
-                 back: str = "", page: int = 1, ok: str = None, err: str = None):
+                 payee: str = "", back: str = "", page: int = 1,
+                 ok: str = None, err: str = None):
     page = max(page, 1)
     # Only ever a same-origin relative path — a bare "/x", never "//x"
     # (protocol-relative, i.e. an off-site redirect) or an absolute URL.
     if not back.startswith("/") or back.startswith("//"):
         back = ""
-    where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags, account)
+    where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags, account, payee)
     account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
+    payee_row = q1("SELECT name FROM payees WHERE name = %s", (payee,)) if payee else None
 
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
@@ -1398,10 +1406,13 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
     export_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
-        "qtext": qtext, "tags": tags, "account": account, "back": back})
+        "qtext": qtext, "tags": tags, "account": account, "payee": payee, "back": back})
     clear_account_qs = urlencode({
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
-        "qtext": qtext, "tags": tags, "back": back})
+        "qtext": qtext, "tags": tags, "payee": payee, "back": back})
+    clear_payee_qs = urlencode({
+        "scenario": scenario, "date_from": date_from, "date_to": date_to,
+        "qtext": qtext, "tags": tags, "account": account, "back": back})
 
     # For the "+ New entry" panel inline below the filters — same data
     # entry_new.html used to fetch as its own page, since creating an
@@ -1419,6 +1430,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "scenarios": scenarios_all(), "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
+        "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,
         "back": back,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
         "has_next": has_next, "has_prev": page > 1, "export_qs": export_qs,
@@ -1431,11 +1443,11 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 
 @app.get("/entries/export.csv")
 def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
-                       qtext: str = "", tags: str = "", account: str = ""):
+                       qtext: str = "", tags: str = "", account: str = "", payee: str = ""):
     """Every entry matching the current filters (not just the current
     page) — one row per journal line, so it opens straight into a
     spreadsheet without the entry/line grouping the HTML view has."""
-    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags, account)
+    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags, account, payee)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,
