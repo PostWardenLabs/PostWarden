@@ -286,6 +286,16 @@ body {
   font-family: var(--sans);
   line-height: 1.45;
 }
+/* Plain in-content links (flash banners, page-sub pointers, Help body
+   copy) default to the browser's own blue, which several themes —
+   Midnight especially, on a dark ledger stock — render nearly
+   unreadable. Use the same accent as buttons instead, so a link reads
+   as "the app's color" rather than "whatever blue this browser ships."
+   Elements with their own link color (.topbar nav a, .sidebar a,
+   .quiet-link, .pager a, a.amount-link, a.button-link) already set
+   `color` explicitly and win by specificity. */
+a { color: var(--accent); }
+a:hover { color: var(--accent-hover); }
 
 /* -- top bar ------------------------------------------------------------- */
 .topbar {
