@@ -575,10 +575,21 @@ a.amount-link:hover { text-decoration: underline; }
 .date-input { width: 100%; padding-right: 1.9rem; font-family: var(--mono); }
 .date-trigger {
   position: absolute; top: 50%; right: 0.3rem; transform: translateY(-50%);
+  width: 1.3rem; height: 1.3rem;
   background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
-  padding: 0.1rem 0.3rem; font-size: 0.9rem; border-radius: 2px; line-height: 1;
+  padding: 0; border-radius: 2px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
 .date-trigger:hover { background: var(--paper-deep); }
+/* Same right-angle-corner trick as the tree chevron, rotated to point
+   down — a plain "open this" mark instead of the calendar emoji, which
+   was the only bit of color/emoji in an otherwise monochrome app. */
+.date-trigger::before {
+  content: ""; width: 0.4rem; height: 0.4rem;
+  border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor;
+  transform: rotate(135deg);
+  margin-top: -0.15rem;
+}
 .date-panel {
   position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 16rem;
   background: var(--surface); border: 1px solid var(--rule-strong);
@@ -723,20 +734,26 @@ table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
    rows, and stays visible once a group is collapsed so the state itself
    is legible without hovering. */
 .tree-toggle {
-  display: inline-block; width: 0.9rem; text-align: center; vertical-align: middle;
+  display: inline-block; width: 0.9rem; margin-right: 0.15rem;
+  text-align: center; vertical-align: middle;
 }
 /* The chevron is a right-angle corner (top + right border of a square)
    rotated 45deg so its vertex points right — not a ">" glyph, whose
    actual angle is whatever the font happens to draw. Hidden by default;
    only rows with children (data-postable="0" / data-has-children="1")
    turn it on, so leaf rows keep the reserved-but-empty span for
-   alignment. */
+   alignment. Nudged up and left of its layout box: an unrotated corner
+   sits low-and-right within its own square (its baseline-ish weight is
+   in the bottom-right, being built from the top+right edges), so
+   centering it against the account name next to it needs a small manual
+   offset rather than pure vertical-align. */
 .tree-toggle::before { content: ""; }
 tr[data-postable="0"] .tree-toggle::before,
 tr[data-has-children="1"] .tree-toggle::before {
   display: inline-block; width: 0.36rem; height: 0.36rem;
   border-top: 2px solid currentColor; border-right: 2px solid currentColor;
   transform: rotate(45deg);
+  position: relative; top: -0.1rem; left: -0.08rem;
 }
 tr[data-postable="0"] .acct-name { cursor: pointer; }
 tr[data-postable="0"] .tree-toggle {

@@ -42,7 +42,6 @@
     trigger.type = "button";
     trigger.className = "date-trigger";
     trigger.setAttribute("aria-label", "Open calendar");
-    trigger.textContent = "\u{1F4C5}"; // 📅
     if (input.disabled) trigger.disabled = true;
     wrap.appendChild(trigger);
 
