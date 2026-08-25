@@ -56,7 +56,7 @@
     up.className = "number-step step-up";
     up.setAttribute("aria-label", "Increase");
     up.tabIndex = -1;
-    up.innerHTML = '<span class="chevron"></span>';
+    up.innerHTML = '<span class="chevron chevron-up"></span>';
     wrap.appendChild(up);
 
     const down = document.createElement("button");
@@ -64,7 +64,7 @@
     down.className = "number-step step-down";
     down.setAttribute("aria-label", "Decrease");
     down.tabIndex = -1;
-    down.innerHTML = '<span class="chevron"></span>';
+    down.innerHTML = '<span class="chevron chevron-down"></span>';
     wrap.appendChild(down);
 
     up.addEventListener("click", () => step(input, 1));

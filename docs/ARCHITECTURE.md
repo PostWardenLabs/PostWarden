@@ -69,7 +69,7 @@ reading order:
 | Staging | `/staging`, `/staging/approve` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses |
 | Import | `/import` | uploads a CSV in `/entries/export.csv`'s own column layout; `_parse_csv_import()` groups rows by `Entry #` and fully validates every group in Python before anything touches the database, then stages the valid ones in Staging under a new `import_batches` row |
 | Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
-| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, in a two-column layout (`.two-col`/`.side-nav`, [see below](#sticky-side-nav-layout)) with its own jump-to nav; every other page links back with a small "?" icon next to its `<h1>` (`.page-head`/`.help-icon`) rather than a sentence of caption text |
+| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, in a two-column layout (`.two-col`/`.side-nav`, [see below](#sticky-side-nav-layout)) with its own jump-to nav; every other page links back with a small "?" icon in its own top-right corner (`.page-head`/`.help-icon`) rather than a sentence of caption text |
 | `/api/*` | JSON mirror | same data as the HTML screens, for scripts; not used by the app's own pages |
 
 ## Templates
@@ -182,6 +182,19 @@ marks the current entry; Accounts sets it server-side per request
 are same-page anchors, not separate pages, so it's left unset there.
 Named for what it is rather than its first caller (it started as
 Accounts-only, back when it was `.accounts-layout`/`.levels-panel`).
+
+### The page title lives in the topbar, not the content
+
+No template has its own `<h1>PageName</h1>` any more — `base.html`'s
+topbar-left renders `{{ self.title() }}` (Jinja's way to call a
+`{% block %}` from outside where it's defined) followed by a muted
+`<span class="wordmark-brand"> · Libro</span>`, reusing the exact same
+`{% block title %}` every page already sets for `<title>Dashboard ·
+Libro</title>`. One string, two places, always in sync — there's no
+second place to update when a page's name changes. A page that still
+needs a top-right "?" help icon keeps a `.page-head` div for it
+(`justify-content: flex-end` now that it has nothing to space against);
+a page with neither just starts straight into its content.
 
 ### Inline creation via `fetch()`, not a full-page POST
 

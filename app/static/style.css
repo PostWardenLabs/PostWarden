@@ -315,6 +315,10 @@ body {
   font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
   color: var(--ink); text-decoration: none;
 }
+/* The current page's own name, e.g. "Dashboard" — the app's actual
+   name trails after it, de-emphasized, the way a browser tab reads
+   "Page · Site" rather than leading with the site every time. */
+.wordmark-brand { color: var(--ink-soft); font-weight: 400; }
 .topbar-right { display: flex; align-items: baseline; gap: 1.3rem; flex-wrap: wrap; }
 .topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
 .topbar nav a {
@@ -411,8 +415,10 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
    carry under its title. That line read like a manual taped to the
    front of the product; a page a newcomer could actually buy shouldn't
    need a caption explaining itself before it's even been looked at. */
-.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-.page-head h1 { margin-bottom: 0; }
+/* The page's own name now lives in the topbar (see .wordmark-brand) —
+   this just reserves a row for the "?" help icon, right-aligned, above
+   whatever the page actually starts with. */
+.page-head { display: flex; justify-content: flex-end; margin-bottom: 0.6rem; }
 .help-icon {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 1.35rem; height: 1.35rem; border-radius: 50%;
@@ -639,14 +645,24 @@ a.amount-link:hover { text-decoration: underline; }
    sizes and reads as noticeably fainter than solid text of the same
    color, which is exactly what it was: same var(--ink-soft) as e.g. the
    account-code column, just visibly weaker. A filled shape doesn't have
-   that problem, so it can be genuinely thin *and* fully opaque. Points
-   right by default; rotate per direction needed. */
+   that problem, so it can be genuinely thin *and* fully opaque.
+   Direction is a distinct clip-path per class, not one shape rotated
+   with transform: this browser (and apparently others — it's not a
+   headless-only quirk) visibly distorts a clip-path at exactly ±90deg
+   of rotation — the identical triangle renders thin at 0deg/45deg and
+   stubby/fat at ±90deg, confirmed with isolated test elements outside
+   any app CSS. Every direction actually used gets its own polygon
+   instead, so nothing here ever asks a browser to rotate a clip-path
+   by a cardinal angle. */
 .chevron {
   display: inline-block; flex: none;
-  width: 0.32rem; height: 0.5rem;
+  width: 0.42rem; height: 0.42rem;
   background: currentColor;
-  clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+  clip-path: polygon(0% 32%, 100% 50%, 0% 68%); /* right */
 }
+.chevron-down { clip-path: polygon(32% 0%, 50% 100%, 68% 0%); }
+.chevron-up   { clip-path: polygon(32% 100%, 50% 0%, 68% 100%); }
+.chevron-left { clip-path: polygon(100% 32%, 0% 50%, 100% 68%); }
 
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
@@ -659,7 +675,6 @@ a.amount-link:hover { text-decoration: underline; }
   display: flex; align-items: center; justify-content: center;
 }
 .date-trigger:hover { background: var(--paper-deep); }
-.date-trigger .chevron { transform: rotate(90deg); }
 .date-panel {
   position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 16rem;
   background: var(--surface); border: 1px solid var(--rule-strong);
@@ -707,8 +722,6 @@ a.amount-link:hover { text-decoration: underline; }
 .number-step:disabled:hover { background: transparent; }
 .step-up { top: 0.15rem; }
 .step-down { bottom: 0.15rem; }
-.step-up .chevron { transform: rotate(-90deg); }
-.step-down .chevron { transform: rotate(90deg); }
 
 /* -- journal entry screen ------------------------------------------------ */
 table.entry-grid input { width: 100%; border-color: var(--rule); }
@@ -842,36 +855,36 @@ table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
    emits an empty <span class="tree-toggle">. Hidden by default; only
    rows with children (data-postable="0" / data-has-children="1") turn
    it on, so leaf rows keep the reserved-but-empty span for alignment.
-   It points right at rest, so no extra rotation here — the row-state
-   rules below rotate the whole .tree-toggle 0deg (collapsed, pointing
-   right) or 90deg (expanded, pointing down). */
+   Expanded (default) points down, collapsed points right — as two
+   separate clip-path polygons, not one shape rotated 90deg between
+   states: see the .chevron comment above for why rotation is off the
+   table here. */
 .tree-toggle::before { content: ""; }
 tr[data-postable="0"] .tree-toggle::before,
 tr[data-has-children="1"] .tree-toggle::before {
-  display: inline-block; width: 0.32rem; height: 0.5rem;
+  display: inline-block; width: 0.42rem; height: 0.42rem;
   background: currentColor;
-  clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+  clip-path: polygon(32% 0%, 50% 100%, 68% 0%); /* down */
+  transition: clip-path 120ms ease;
+}
+tr.collapsed .tree-toggle::before {
+  clip-path: polygon(0% 32%, 100% 50%, 0% 68%); /* right */
 }
 tr[data-postable="0"] .acct-name { cursor: pointer; }
 tr[data-postable="0"] .tree-toggle {
-  color: var(--ink-soft); transform: rotate(90deg);
-  opacity: 0; transition: opacity 120ms ease, transform 120ms ease;
+  color: var(--ink-soft); opacity: 0; transition: opacity 120ms ease;
 }
 tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
 tr[data-postable="0"]:hover td { background: var(--paper-deep); }
-tr.collapsed .tree-toggle { opacity: 1; transform: rotate(0deg); }
+tr.collapsed .tree-toggle { opacity: 1; }
 
 /* Same tree on Trial Balance/Balance Sheet (see report-tree.js) — but the
    toggle stays visible without hovering: scanning a report's numbers is
    the point, not browsing structure, so which rows expand shouldn't be a
    secret until you happen to mouse over them. */
 tr[data-has-children="1"] .acct-name { cursor: pointer; }
-tr[data-has-children="1"] .tree-toggle {
-  color: var(--ink-soft); transform: rotate(90deg);
-  transition: transform 120ms ease;
-}
+tr[data-has-children="1"] .tree-toggle { color: var(--ink-soft); }
 tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
-tr[data-has-children="1"].collapsed .tree-toggle { transform: rotate(0deg); }
 
 /* Inline "add category here" gap rows, Actual Budget-style — see
    accounts.js. Each is a slim hover strip between two account rows until

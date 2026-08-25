@@ -59,7 +59,7 @@
 {% endif %}
 <header class="topbar">
   <div class="topbar-left">
-    <a class="wordmark" href="/">Libro</a>
+    <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · Libro</span></a>
   </div>
   <div class="topbar-right">
     {% if request.state.user %}
