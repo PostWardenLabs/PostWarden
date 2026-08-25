@@ -4,7 +4,7 @@
 <h1>Trial balance</h1>
 <p class="page-sub">Every postable account with activity, {{ 'as of ' + as_of if as_of else 'through today' }} · scenario <span class="mono">{{ scenario }}</span></p>
 
-<form class="bar" method="get" action="/">
+<form class="bar" method="get" action="/trial-balance">
   <label class="field">Scenario
     <select name="scenario">
       {% for s in scenarios %}

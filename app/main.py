@@ -294,9 +294,51 @@ def change_password(request: Request, current_password: str = Form(...),
 
 
 # ---------------------------------------------------------------------------
-# Trial balance
+# Dashboard — the landing page. Always ACTUAL: "how are my real finances
+# doing," not a scenario picker. Trial Balance/Income Statement/Balance
+# Sheet/Variance are the tools for anything more specific than that.
 # ---------------------------------------------------------------------------
 @app.get("/")
+def dashboard(request: Request):
+    today = date.today()
+    month_start = today.replace(day=1).isoformat()
+    today_iso = today.isoformat()
+
+    as_of_rows = q("SELECT * FROM fn_trial_balance(%s, %s)", ("ACTUAL", today_iso))
+    net_worth = (sum(r["net"] for r in as_of_rows if r["acct_type"] == "asset")
+                + sum(r["net"] for r in as_of_rows if r["acct_type"] == "liability"))
+
+    mtd_rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)",
+                ("ACTUAL", today_iso, month_start))
+    mtd_income = -sum(r["net"] for r in mtd_rows if r["acct_type"] == "income")
+    mtd_expenses = sum(r["net"] for r in mtd_rows if r["acct_type"] == "expense")
+
+    recent = q("""
+        SELECT e.id, e.entry_date, e.description, p.name AS payee_name,
+               (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                 WHERE l.entry_id = e.id) AS total_debits
+          FROM journal_entries e
+          JOIN scenarios s ON s.id = e.scenario_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE s.code = 'ACTUAL'
+         ORDER BY e.entry_date DESC, e.id DESC
+         LIMIT 8""")
+    pending, _ = pending_scheduled_entries()
+
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "nav": "dashboard", "net_worth": net_worth,
+        "mtd_income": mtd_income, "mtd_expenses": mtd_expenses,
+        "mtd_net": mtd_income - mtd_expenses,
+        "month_label": today.strftime("%B %Y"),
+        "recent": recent, "pending_count": len(pending),
+        "today": today_iso,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Trial balance
+# ---------------------------------------------------------------------------
+@app.get("/trial-balance")
 def trial_balance(request: Request, scenario: str = "ACTUAL",
                   as_of: str = None, zeros: int = 0):
     as_of_date = as_of or None
@@ -339,6 +381,123 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None, zeros:
                    r["debit_balance"] or "", r["credit_balance"] or ""])
     return Response(buf.getvalue(), media_type="text/csv", headers={
         "Content-Disposition": f'attachment; filename="libro-trial-balance-{scenario}.csv"'})
+
+
+# ---------------------------------------------------------------------------
+# Income statement (P&L) — Income and Expense only, always period-ranged:
+# these are flow accounts, so "as of a date" doesn't mean anything for them
+# the way it does for Assets/Liabilities/Equity. Defaults to month-to-date.
+# No physical period-close needed — see fn_trial_balance's p_from: the
+# range is just a WHERE clause, not a journal entry zeroing anything out.
+# ---------------------------------------------------------------------------
+def _income_statement_rows(scenario: str, date_from: str, date_to: str) -> dict:
+    rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)",
+             (scenario, date_to or None, date_from or None))
+    grouped = []
+    for t in ("income", "expense"):
+        sub = [r for r in rows if r["acct_type"] == t and r["net"] != 0]
+        if sub:
+            grouped.append({
+                "type": t, "label": TYPE_LABELS[t], "rows": sub,
+                # Income is credit-normal (net < 0 for real income) — flip
+                # sign so both subtotals read as plain positive amounts.
+                "subtotal": -sum(r["net"] for r in sub) if t == "income"
+                            else sum(r["net"] for r in sub),
+            })
+    total_income = next((g["subtotal"] for g in grouped if g["type"] == "income"), 0)
+    total_expenses = next((g["subtotal"] for g in grouped if g["type"] == "expense"), 0)
+    return {"grouped": grouped, "total_income": total_income,
+            "total_expenses": total_expenses, "net_income": total_income - total_expenses}
+
+
+@app.get("/income-statement")
+def income_statement_page(request: Request, scenario: str = "ACTUAL",
+                          date_from: str = "", date_to: str = ""):
+    today = date.today()
+    date_from = date_from or today.replace(day=1).isoformat()
+    date_to = date_to or today.isoformat()
+    result = _income_statement_rows(scenario, date_from, date_to)
+    return templates.TemplateResponse(request, "income_statement.html", {
+        "nav": "income_statement", "scenarios": scenarios_all(),
+        "scenario": scenario, "date_from": date_from, "date_to": date_to,
+        "today": today.isoformat(), **result,
+    })
+
+
+@app.get("/export/income-statement.csv")
+def income_statement_export_csv(scenario: str = "ACTUAL", date_from: str = "", date_to: str = ""):
+    result = _income_statement_rows(scenario, date_from, date_to)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Type", "Code", "Account", "Path", "Amount"])
+    for g in result["grouped"]:
+        for r in g["rows"]:
+            amount = -r["net"] if g["type"] == "income" else r["net"]
+            w.writerow([g["label"], r["account_code"], r["account_name"], r["path"], amount])
+    w.writerow([])
+    w.writerow(["Net income", "", "", "", result["net_income"]])
+    return Response(buf.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="libro-income-statement-{scenario}.csv"'})
+
+
+# ---------------------------------------------------------------------------
+# Balance sheet — Assets, Liabilities, Equity, always "as of" a date (these
+# are stock accounts, not flow accounts — a range doesn't apply). Since
+# Libro never posts physical period-closing entries (see the Income
+# Statement above), Income/Expense activity since inception is still just
+# sitting unclosed — so it's folded in here as a synthetic "Current
+# earnings" line under Equity, exactly the way real accounting software
+# computes it on the fly rather than by zeroing accounts at period end.
+# ---------------------------------------------------------------------------
+def _balance_sheet_rows(scenario: str, as_of: str) -> dict:
+    rows = q("SELECT * FROM fn_trial_balance(%s, %s)", (scenario, as_of or None))
+    assets = [r for r in rows if r["acct_type"] == "asset" and r["net"] != 0]
+    liabilities = [r for r in rows if r["acct_type"] == "liability" and r["net"] != 0]
+    equity = [r for r in rows if r["acct_type"] == "equity" and r["net"] != 0]
+    current_earnings = (
+        -sum(r["net"] for r in rows if r["acct_type"] == "income")
+        - sum(r["net"] for r in rows if r["acct_type"] == "expense"))
+
+    total_assets = sum(r["net"] for r in assets)
+    total_liabilities = -sum(r["net"] for r in liabilities)
+    total_equity = -sum(r["net"] for r in equity) + current_earnings
+    return {
+        "assets": assets, "liabilities": liabilities, "equity": equity,
+        "current_earnings": current_earnings,
+        "total_assets": total_assets, "total_liabilities": total_liabilities,
+        "total_equity": total_equity,
+        "total_liab_and_equity": total_liabilities + total_equity,
+        "in_balance": total_assets == total_liabilities + total_equity,
+    }
+
+
+@app.get("/balance-sheet")
+def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None):
+    result = _balance_sheet_rows(scenario, as_of)
+    return templates.TemplateResponse(request, "balance_sheet.html", {
+        "nav": "balance_sheet", "scenarios": scenarios_all(), "scenario": scenario,
+        "as_of": as_of or "", "today": date.today().isoformat(), **result,
+    })
+
+
+@app.get("/export/balance-sheet.csv")
+def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None):
+    result = _balance_sheet_rows(scenario, as_of)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Section", "Code", "Account", "Path", "Amount"])
+    for r in result["assets"]:
+        w.writerow(["Assets", r["account_code"], r["account_name"], r["path"], r["net"]])
+    for r in result["liabilities"]:
+        w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["net"]])
+    for r in result["equity"]:
+        w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["net"]])
+    w.writerow(["Equity", "", "Current earnings (unclosed)", "", result["current_earnings"]])
+    w.writerow([])
+    w.writerow(["Total assets", "", "", "", result["total_assets"]])
+    w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
+    return Response(buf.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="libro-balance-sheet-{scenario}.csv"'})
 
 
 # ---------------------------------------------------------------------------

@@ -52,7 +52,7 @@ def test_login_correct_succeeds_and_grants_access(conn):
 
         r = c.get("/")
         assert r.status_code == 200
-        assert "Trial balance" in r.text
+        assert "<h1>Dashboard</h1>" in r.text
 
 
 def test_inactive_user_cannot_log_in(conn):
@@ -628,3 +628,113 @@ def test_variance_export_csv(conn):
         assert r.headers["content-type"].startswith("text/csv")
         assert acct["code"] in r.text
         assert "77.0" in r.text
+
+
+def test_trial_balance_moved_off_root(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/trial-balance")
+        assert r.status_code == 200
+        assert "<h1>Trial balance</h1>" in r.text
+
+
+def _mk_balanced_book(conn):
+    """Asset 500 <- Equity 500 (opening), Asset +200 <- Income 200,
+    Expense 50 <- Asset -50. Everything dated today (mk_entry always
+    uses CURRENT_DATE) — used by the dashboard/income-statement/
+    balance-sheet tests below to check the arithmetic, not date exclusion
+    (that's covered separately for the income statement)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        asset = mk_account(cur, account_type="asset")
+        equity = mk_account(cur, account_type="equity")
+        income = mk_account(cur, account_type="income")
+        expense = mk_account(cur, account_type="expense")
+
+        e1 = mk_entry(cur, actual_id, "Opening")
+        mk_line(cur, e1, asset["id"], 500, line_no=1)
+        mk_line(cur, e1, equity["id"], -500, line_no=2)
+
+        e2 = mk_entry(cur, actual_id, "Income")
+        mk_line(cur, e2, asset["id"], 200, line_no=1)
+        mk_line(cur, e2, income["id"], -200, line_no=2)
+
+        e3 = mk_entry(cur, actual_id, "Expense")
+        mk_line(cur, e3, expense["id"], 50, line_no=1)
+        mk_line(cur, e3, asset["id"], -50, line_no=2)
+    conn.commit()
+    return {"asset": asset, "equity": equity, "income": income, "expense": expense}
+
+
+def _account_row_value(html: str, code: str) -> str:
+    """The money-fmt data-value from a specific account's own table row.
+    Anchored on that account's code rather than a bare data-value search:
+    the test database is shared across the *whole* pytest run (see
+    conftest.py — one disposable DB per run, not per test), so ACTUAL
+    already carries postings from every other test that touched it by
+    the time this one runs. A page-wide total is not isolated; a single
+    account's own row still is, since every test uses a fresh randomly-
+    coded account no other test ever posts to."""
+    m = re.search(rf'<td class="mono dim">{code}</td>.*?data-value="(-?[\d.]+)"', html, re.S)
+    assert m, f"no row found for account {code}"
+    return m.group(1)
+
+
+def test_dashboard_computes_net_worth_and_month_to_date(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        # Same contamination problem as the trial balance's totals — the
+        # dashboard's stat tiles are aggregates over the whole ACTUAL
+        # scenario, so check the *delta* a known-size book adds rather
+        # than an absolute figure.
+        before = [float(v) for v in re.findall(r'data-value="(-?[\d.]+)"', c.get("/").text)[:4]]
+        _mk_balanced_book(conn)
+        after = [float(v) for v in re.findall(r'data-value="(-?[\d.]+)"', c.get("/").text)[:4]]
+        deltas = [round(a - b, 2) for a, b in zip(after, before)]
+        assert deltas == [650.00, 200.00, 50.00, 150.00]  # net worth, income, expenses, net
+
+
+def test_income_statement_date_range_excludes_out_of_window_activity(conn):
+    accts = _mk_balanced_book(conn)
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        # A window entirely before today excludes all of it.
+        r_past = c.get("/income-statement?date_from=2000-01-01&date_to=2000-01-31")
+        assert r_past.status_code == 200
+        assert accts["income"]["code"] not in r_past.text
+        assert "No income or expense activity" in r_past.text
+
+        # A window covering today (the only date mk_entry ever uses) includes it.
+        today = date.today().isoformat()
+        r_now = c.get(f"/income-statement?date_from={today}&date_to={today}")
+        assert _account_row_value(r_now.text, accts["income"]["code"]) == "200.00"
+        assert _account_row_value(r_now.text, accts["expense"]["code"]) == "50.00"
+
+
+def test_balance_sheet_balances_via_current_earnings(conn):
+    accts = _mk_balanced_book(conn)
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/balance-sheet")
+        assert r.status_code == 200
+        # The books balance regardless of how much other tests have
+        # posted to ACTUAL in this shared run — that's the actual
+        # invariant "Current earnings" exists to preserve without ever
+        # posting a physical period-closing entry.
+        assert "out-of-balance" not in r.text
+        assert _account_row_value(r.text, accts["asset"]["code"]) == "650.00"
+        assert _account_row_value(r.text, accts["equity"]["code"]) == "500.00"

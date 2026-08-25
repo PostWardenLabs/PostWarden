@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Income statement{% endblock %}
+{% block content %}
+<h1>Income statement</h1>
+<p class="page-sub">Income and expenses for a period, scenario <span class="mono">{{ scenario }}</span> —
+  not a running balance since inception the way Trial Balance is: pick a range below.</p>
+
+<form class="bar" method="get" action="/income-statement">
+  <label class="field">Scenario
+    <select name="scenario">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Period
+    <select id="period-preset">
+      <option value="custom">Custom range</option>
+      <option value="this_month">This month</option>
+      <option value="last_month">Last month</option>
+      <option value="this_quarter">This quarter</option>
+      <option value="last_quarter">Last quarter</option>
+      <option value="this_year">This year</option>
+      <option value="last_year">Last year</option>
+    </select>
+  </label>
+  <label class="field">From
+    <input type="date" name="date_from" id="date_from" value="{{ date_from }}">
+  </label>
+  <label class="field">To
+    <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
+  </label>
+  <button type="submit">Refresh</button>
+  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&date_from={{ date_from }}&date_to={{ date_to }}">Export CSV</a>
+</form>
+
+<table class="ledger">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Account</th>
+      <th class="num money money-first">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for g in grouped %}
+    <tr class="type-head"><td colspan="3">{{ g.label }}</td></tr>
+      {% for r in g.rows %}
+      <tr>
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ (-r.net if g.type == 'income' else r.net) | money }}</td>
+      </tr>
+      {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>{{ g.label }} total</td>
+      <td class="num money money-first">{{ g.subtotal | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="grand">
+      <td></td>
+      <td>Net income</td>
+      <td class="num money money-first {{ 'neg' if net_income < 0 }}">{{ net_income | money }}</td>
+    </tr>
+  </tbody>
+</table>
+{% if not grouped %}<p class="dim">No income or expense activity in this period.</p>{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="{{ asset('period-picker.js') }}"></script>{% endblock %}

@@ -25,6 +25,9 @@
 </button>
 <nav id="sidebar" class="sidebar">
   <div class="sidebar-group">
+    <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Dashboard</a>
+  </div>
+  <div class="sidebar-group">
     <div class="sidebar-label">Ledger</div>
     <a href="/entries/new" class="{{ 'active' if nav == 'new' }}">New entry</a>
     <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
@@ -33,7 +36,9 @@
   </div>
   <div class="sidebar-group">
     <div class="sidebar-label">Reports</div>
-    <a href="/" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
+    <a href="/income-statement" class="{{ 'active' if nav == 'income_statement' }}">Income statement</a>
+    <a href="/balance-sheet" class="{{ 'active' if nav == 'balance_sheet' }}">Balance sheet</a>
+    <a href="/trial-balance" class="{{ 'active' if nav == 'tb' }}">Trial balance</a>
     <a href="/variance" class="{{ 'active' if nav == 'variance' }}">Variance</a>
   </div>
   <div class="sidebar-group">

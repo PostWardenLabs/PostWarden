@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Balance sheet{% endblock %}
+{% block content %}
+<h1>Balance sheet</h1>
+<p class="page-sub">Assets, liabilities, and equity as of a date, scenario <span class="mono">{{ scenario }}</span> —
+  "Current earnings" folds in Income/Expense activity to date, since nothing here ever physically closes to Equity.</p>
+
+<form class="bar" method="get" action="/balance-sheet">
+  <label class="field">Scenario
+    <select name="scenario">
+      {% for s in scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">As of
+    <input type="date" name="as_of" value="{{ as_of }}">
+  </label>
+  <button type="submit">Refresh</button>
+  <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}">Export CSV</a>
+</form>
+
+<table class="ledger">
+  <thead>
+    <tr>
+      <th>Code</th>
+      <th>Account</th>
+      <th class="num money money-first">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="type-head"><td colspan="3">Assets</td></tr>
+    {% for r in assets %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="num money money-first">{{ r.net | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total assets</td>
+      <td class="num money money-first">{{ total_assets | money }}</td>
+    </tr>
+
+    <tr class="type-head"><td colspan="3">Liabilities</td></tr>
+    {% for r in liabilities %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="num money money-first">{{ (-r.net) | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total liabilities</td>
+      <td class="num money money-first">{{ total_liabilities | money }}</td>
+    </tr>
+
+    <tr class="type-head"><td colspan="3">Equity</td></tr>
+    {% for r in equity %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="num money money-first">{{ (-r.net) | money }}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td></td>
+      <td class="dim">Current earnings (unclosed)</td>
+      <td class="num money money-first">{{ current_earnings | money }}</td>
+    </tr>
+    <tr class="subtotal">
+      <td></td><td>Total equity</td>
+      <td class="num money money-first">{{ total_equity | money }}</td>
+    </tr>
+
+    <tr class="grand {{ '' if in_balance else 'out-of-balance' }}">
+      <td></td>
+      <td>Total liabilities + equity {% if not in_balance %}<span class="small dim">(doesn't match total assets)</span>{% endif %}</td>
+      <td class="num money money-first">{{ total_liab_and_equity | money }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endblock %}

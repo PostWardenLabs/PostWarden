@@ -615,14 +615,25 @@ SELECT d::date                        AS date,
   FROM generate_series('2020-01-01'::date, '2035-12-31'::date, '1 day') AS d;
 
 -- ---------------------------------------------------------------------------
--- Trial balance as a set-returning function (parameterised: scenario, as-of).
--- Includes every active postable account, even with no activity, so the
--- statement reads like a real TB. Debit/credit balance presented per the
--- classic convention: net > 0 sits in the debit column, net < 0 in credit.
+-- Trial balance as a set-returning function (parameterised: scenario, as-of,
+-- and an optional period start). Includes every active postable account,
+-- even with no activity, so the statement reads like a real TB. Debit/
+-- credit balance presented per the classic convention: net > 0 sits in the
+-- debit column, net < 0 in credit.
+--
+-- p_from is optional and defaults to NULL (the beginning of time) — every
+-- existing 2-argument call site (Trial Balance, Balance Sheet: both
+-- inherently cumulative-since-inception "as of" reports) is unaffected.
+-- Passing p_from turns this into a *period* balance instead of a running
+-- one — that's what the Income Statement uses it for, since Income/Expense
+-- are flow accounts (measured over a range) rather than stock accounts
+-- (measured as of a point in time). Deliberately the same function rather
+-- than a second one: one balance-computation query, two ways to bound it.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_trial_balance(
     p_scenario TEXT DEFAULT 'ACTUAL',
-    p_as_of    DATE DEFAULT NULL
+    p_as_of    DATE DEFAULT NULL,
+    p_from     DATE DEFAULT NULL
 )
 RETURNS TABLE (
     account_id     BIGINT,
@@ -652,18 +663,22 @@ LANGUAGE sql STABLE AS $$
              ON f.account_id = da.id
             AND f.scenario_code = p_scenario
             AND f.entry_date <= COALESCE(p_as_of, 'infinity'::date)
+            AND f.entry_date >= COALESCE(p_from, '-infinity'::date)
      WHERE da.is_active
        -- True leaves always show, same as always. A summary account only
-       -- shows if it actually has postings in *this* scenario — that's
-       -- how a scenario's base_level (fn_line_account_guard) lets one
-       -- post straight to e.g. "Bank" without every leaf under it; if
-       -- this stayed is_postable-only, that money would silently vanish
-       -- from Trial Balance despite genuinely being posted. Each account
-       -- still shows its own direct postings only — no rollup summing a
-       -- summary account's descendants into it.
+       -- shows if it actually has postings in *this* scenario (within the
+       -- same window) — that's how a scenario's base_level
+       -- (fn_line_account_guard) lets one post straight to e.g. "Bank"
+       -- without every leaf under it; if this stayed is_postable-only,
+       -- that money would silently vanish from Trial Balance despite
+       -- genuinely being posted. Each account still shows its own direct
+       -- postings only — no rollup summing a summary account's
+       -- descendants into it.
        AND (da.is_postable OR EXISTS (
            SELECT 1 FROM v_fact_lines f2
-            WHERE f2.account_id = da.id AND f2.scenario_code = p_scenario))
+            WHERE f2.account_id = da.id AND f2.scenario_code = p_scenario
+              AND f2.entry_date <= COALESCE(p_as_of, 'infinity'::date)
+              AND f2.entry_date >= COALESCE(p_from, '-infinity'::date)))
      GROUP BY da.id, da.code, da.name, da.account_type, da.path, da.sort_path
      ORDER BY da.sort_path;
 $$;

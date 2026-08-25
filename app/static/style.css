@@ -706,6 +706,25 @@ tr.add-gap.open .add-gap-form { display: flex; }
 tr.add-gap .add-gap-form input[type="text"] { flex: 1; min-width: 10rem; }
 tr.add-gap .add-gap-type { max-width: 11rem; }
 
+/* -- dashboard ------------------------------------------------------------ */
+.stat-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem; margin-bottom: 2rem;
+}
+.stat-tile {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-top: 3px solid var(--accent); padding: 0.9rem 1rem;
+}
+.stat-label {
+  font-size: 0.78rem; color: var(--ink-soft); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.3rem;
+}
+.stat-value {
+  font-family: var(--mono); font-size: 1.5rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; margin-bottom: 0.4rem;
+}
+.stat-value.neg { color: var(--red); }
+
 .panel {
   background: var(--surface); border: 1px solid var(--rule);
   padding: 1rem 1.1rem; margin-top: 1.4rem;
