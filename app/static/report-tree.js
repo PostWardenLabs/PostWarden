@@ -11,9 +11,11 @@
    this behavior opts in with data-collapse-key="some-storage-key" and
    rows shaped like:
      <tr data-id="…" data-parent="…" data-has-children="1|0">
-       <td class="acct-name depth-N"><span class="tree-toggle">&gt;</span>…</td>
+       <td class="acct-name depth-N"><span class="tree-toggle"></span>…</td>
        ...
-     </tr> */
+     </tr>
+   The chevron itself is CSS-drawn (see style.css), not this empty span's
+   text — it just reserves the indent's arrow column. */
 (function () {
   function initTree(table) {
     const key = table.dataset.collapseKey;

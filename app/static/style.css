@@ -490,9 +490,36 @@ button.quiet {
 }
 button.quiet:hover { background: var(--paper-deep); }
 .checkline { display: flex; align-items: center; gap: 0.4rem;
-             font-size: 0.85rem; color: var(--ink); }
+             font-size: 0.85rem; color: var(--ink); font-family: var(--sans); }
+
+/* Custom checkbox/radio — accent-color alone still leaves the browser's
+   own native shape (rounded, its own font/background/border), which
+   reads as an OS control dropped into a page styled nothing like the
+   rest of the app's square-cornered, --surface/--rule-strong inputs.
+   appearance:none strips that native rendering so these match a select
+   box exactly, and the check/dot is drawn by hand since accent-color has
+   nothing left to paint once appearance is gone. */
 input[type="checkbox"], input[type="radio"] {
-  accent-color: var(--accent); width: 1rem; height: 1rem; cursor: pointer;
+  appearance: none; -webkit-appearance: none;
+  width: 1rem; height: 1rem; margin: 0; padding: 0; flex: none; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  position: relative;
+}
+input[type="checkbox"] { border-radius: 2px; }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked, input[type="radio"]:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 3px; top: 0px;
+  width: 4px; height: 8px;
+  border: solid var(--accent-text); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type="radio"]:checked::after {
+  content: ""; position: absolute; left: 3px; top: 3px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent-text);
 }
 
 /* A same-row link styled to sit quietly next to a button — "Export CSV"
@@ -696,7 +723,20 @@ table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
    rows, and stays visible once a group is collapsed so the state itself
    is legible without hovering. */
 .tree-toggle {
-  display: inline-block; width: 0.9rem; text-align: center;
+  display: inline-block; width: 0.9rem; text-align: center; vertical-align: middle;
+}
+/* The chevron is a right-angle corner (top + right border of a square)
+   rotated 45deg so its vertex points right — not a ">" glyph, whose
+   actual angle is whatever the font happens to draw. Hidden by default;
+   only rows with children (data-postable="0" / data-has-children="1")
+   turn it on, so leaf rows keep the reserved-but-empty span for
+   alignment. */
+.tree-toggle::before { content: ""; }
+tr[data-postable="0"] .tree-toggle::before,
+tr[data-has-children="1"] .tree-toggle::before {
+  display: inline-block; width: 0.36rem; height: 0.36rem;
+  border-top: 2px solid currentColor; border-right: 2px solid currentColor;
+  transform: rotate(45deg);
 }
 tr[data-postable="0"] .acct-name { cursor: pointer; }
 tr[data-postable="0"] .tree-toggle {
