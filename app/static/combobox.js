@@ -122,7 +122,38 @@
     }
 
     function onDocMouseDown(e) {
-      if (!wrap.contains(e.target)) close();
+      if (!wrap.contains(e.target)) resolveAndClose();
+    }
+
+    // Losing focus without an explicit pick (Tab, or clicking elsewhere)
+    // used to just revert to whatever was already selected, discarding
+    // anything typed — so typing a match and pressing Tab worked
+    // differently from typing the same thing and pressing Enter, and
+    // there was no way to clear a selection at all short of picking a
+    // different option (deleting the text and tabbing away just snapped
+    // back to the old value). This makes losing focus resolve the same
+    // way Enter does: commit the best filtered match if there is one
+    // (never a "+ Create" row — that only ever fires on a deliberate
+    // Enter or click, not an incidental blur), clear the selection
+    // outright if the field was emptied and this list actually has a
+    // blank "unset" option to clear to (most do — see
+    // buildAccountOptions' "blank = unset"; Scenario and a few other
+    // required pickers don't, and keep reverting since there's nothing
+    // valid to clear to), or just revert if what's left doesn't match
+    // anything.
+    function resolveAndClose() {
+      if (panel.hidden) return;
+      if (input.value.trim() === "") {
+        if (select.value !== "" && options().some((o) => o.value === "")) {
+          select.value = "";
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        close();
+      } else if (filtered[activeIndex] && !filtered[activeIndex].__create) {
+        selectOption(filtered[activeIndex]);
+      } else {
+        close();
+      }
     }
 
     function csrfToken() {
@@ -199,7 +230,7 @@
       } else if (e.key === "Escape") {
         if (!panel.hidden) { e.preventDefault(); close(); }
       } else if (e.key === "Tab") {
-        close();
+        resolveAndClose();
       }
     });
     panel.addEventListener("mousedown", (e) => {
