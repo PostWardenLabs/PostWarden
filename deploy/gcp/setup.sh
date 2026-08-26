@@ -14,15 +14,15 @@ cd "$(dirname "$0")"
 
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID, e.g. PROJECT_ID=my-project ./setup.sh}"
 ZONE="${ZONE:-us-central1-a}"                 # free-tier-eligible region
-VM_NAME="${VM_NAME:-libro-vm}"
-NETWORK="${NETWORK:-libro-vpc}"
+VM_NAME="${VM_NAME:-postwarden-vm}"
+NETWORK="${NETWORK:-postwarden-vpc}"
 ACCOUNT="$(gcloud config get-value account)"
 
 echo "== Project: $PROJECT_ID  Zone: $ZONE  Account: $ACCOUNT =="
 
 echo "-- Ensuring a GitHub deploy key exists (the repo is private)"
 if [ ! -f deploy_key ]; then
-  ssh-keygen -t ed25519 -f deploy_key -N "" -C "libro-vm-deploy-key" -q
+  ssh-keygen -t ed25519 -f deploy_key -N "" -C "postwarden-vm-deploy-key" -q
   cat <<EOF
 
 Generated deploy_key / deploy_key.pub (gitignored — never committed).

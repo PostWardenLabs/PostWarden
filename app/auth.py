@@ -15,7 +15,7 @@ from fastapi import Request
 
 from .db import q1, tx
 
-SESSION_COOKIE = "libro_session"
+SESSION_COOKIE = "postwarden_session"
 SESSION_TTL = timedelta(days=30)
 
 # Cookies are always HttpOnly + SameSite=Lax. The Secure flag additionally
@@ -23,9 +23,9 @@ SESSION_TTL = timedelta(days=30)
 # either of this project's documented deployment paths by default (an IAP
 # tunnel or a plain-HTTP Docker network both present as http://localhost —
 # the encryption happens at the tunnel layer, outside the cookie's view).
-# Set LIBRO_COOKIE_SECURE=true if you terminate real TLS in front of uvicorn
+# Set POSTWARDEN_COOKIE_SECURE=true if you terminate real TLS in front of uvicorn
 # yourself.
-COOKIE_SECURE = os.environ.get("LIBRO_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+COOKIE_SECURE = os.environ.get("POSTWARDEN_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
 
 # Minimal, single-process brute-force throttle (the Dockerfile runs one
 # uvicorn worker, so an in-memory dict is consistent — it would need to move
@@ -112,12 +112,12 @@ def current_user(request: Request):
 
 
 def bootstrap_admin_from_env() -> None:
-    """First-boot convenience for Docker deployments: if LIBRO_ADMIN_USER /
-    LIBRO_ADMIN_PASSWORD are set and no user exists yet at all, create one.
+    """First-boot convenience for Docker deployments: if POSTWARDEN_ADMIN_USER /
+    POSTWARDEN_ADMIN_PASSWORD are set and no user exists yet at all, create one.
     Silently does nothing once any user exists, so it's safe to leave the
     env vars set across redeploys — it never overwrites a password."""
-    username = os.environ.get("LIBRO_ADMIN_USER", "").strip().lower()
-    password = os.environ.get("LIBRO_ADMIN_PASSWORD", "")
+    username = os.environ.get("POSTWARDEN_ADMIN_USER", "").strip().lower()
+    password = os.environ.get("POSTWARDEN_ADMIN_PASSWORD", "")
     if not username or not password:
         return
     if q1("SELECT id FROM users LIMIT 1"):

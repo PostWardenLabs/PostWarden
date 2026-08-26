@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://libro:libro@localhost:5432/libro"
+    "DATABASE_URL", "postgresql://postwarden:postwarden@localhost:5432/postwarden"
 )
 
 pool = ConnectionPool(

@@ -112,16 +112,16 @@ templates.env.globals["asset"] = asset
 # the feature it describes.
 templates.env.globals["version"] = (BASE.parent / "VERSION").read_text().strip()
 # Opt-in, off by default, and deliberately a *second* flag rather than just
-# checking whether LIBRO_ADMIN_USER/PASSWORD are set: those two are meant
+# checking whether POSTWARDEN_ADMIN_USER/PASSWORD are set: those two are meant
 # for a normal self-hoster's own private first-boot convenience (see
 # auth.bootstrap_admin_from_env), and plenty of READMEs recommend setting
 # them. If showing the banner just meant "those two are set," every such
 # self-hoster's own real password would get echoed onto their own login
-# page. LIBRO_DEMO_MODE has to be set on top of them, only ever true on
+# page. POSTWARDEN_DEMO_MODE has to be set on top of them, only ever true on
 # the actual public demo, for the banner to appear at all.
-templates.env.globals["demo_banner"] = os.environ.get("LIBRO_DEMO_MODE", "").lower() in ("1", "true", "yes")
-templates.env.globals["demo_user"] = os.environ.get("LIBRO_ADMIN_USER", "")
-templates.env.globals["demo_password"] = os.environ.get("LIBRO_ADMIN_PASSWORD", "")
+templates.env.globals["demo_banner"] = os.environ.get("POSTWARDEN_DEMO_MODE", "").lower() in ("1", "true", "yes")
+templates.env.globals["demo_user"] = os.environ.get("POSTWARDEN_ADMIN_USER", "")
+templates.env.globals["demo_password"] = os.environ.get("POSTWARDEN_ADMIN_PASSWORD", "")
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
 TYPE_LABELS = {
@@ -300,16 +300,16 @@ def account_page(request: Request, ok: str = None, err: str = None):
     })
 
 
-# libro_bi (db/migrations/001_add_bi_role.sql, SPEC.md decision 14) is a
+# postwarden_bi (SPEC.md decision 14) is a
 # fixed, hardcoded-password role by design — same tradeoff docker-compose.yml
-# already makes for the app's own libro/libro login: a real per-instance
+# already makes for the app's own postwarden/postwarden login: a real per-instance
 # secret would need a place to be generated and stored, and this project has
 # exactly one of those (Postgres itself). Host/port are the only things that
 # actually vary per install, so those are the only two read from the
-# environment; LIBRO_BI_PORT is purely informational, see its
+# environment; POSTWARDEN_BI_PORT is purely informational, see its
 # docker-compose.yml comment.
-BI_DB = "libro"
-BI_USER = "libro_bi"
+BI_DB = "postwarden"
+BI_USER = "postwarden_bi"
 BI_OBJECTS = [
     ("v_dim_account", "Account dimension — hierarchy path, depth, normal side"),
     ("v_fact_lines", "Fact table — one row per journal line, fully denormalized"),
@@ -324,7 +324,7 @@ def connect_bi_page(request: Request):
     return templates.TemplateResponse(request, "connect_bi.html", {
         "nav": "settings",
         "bi_host": request.url.hostname,
-        "bi_port": os.environ.get("LIBRO_BI_PORT", "5432"),
+        "bi_port": os.environ.get("POSTWARDEN_BI_PORT", "5432"),
         "bi_db": BI_DB,
         "bi_user": BI_USER,
         "bi_objects": BI_OBJECTS,
@@ -336,13 +336,13 @@ def connect_bi_pbids(request: Request):
     """A Power BI Data Source file — double-clicking it in Power BI Desktop
     opens straight to a PostgreSQL connection dialog pre-filled with this
     instance's host/port/database, nothing to type by hand. No credentials
-    in it: Power BI still prompts for the libro_bi password itself, the same
+    in it: Power BI still prompts for the postwarden_bi password itself, the same
     as it would connecting manually. See https://learn.microsoft.com/power-bi/connect-data/desktop-data-sources#pbids-files"""
     pbids = {
         "version": "0.1",
         "connections": [{
             "details": {"protocol": "postgresql", "address": {
-                "server": f'{request.url.hostname}:{os.environ.get("LIBRO_BI_PORT", "5432")}',
+                "server": f'{request.url.hostname}:{os.environ.get("POSTWARDEN_BI_PORT", "5432")}',
                 "database": BI_DB,
             }},
             "mode": "Import",
@@ -606,7 +606,7 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
         for r in g["rows"]:
             w.writerow([r["account_code"], r["account_name"], r["path"],
                        r["debit_balance"] or "", r["credit_balance"] or ""])
-    return csv_response(buf, f"libro-trial-balance-{scenario}.csv")
+    return csv_response(buf, f"postwarden-trial-balance-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +788,7 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
     if not result["expense_groups"]:
         row("Income", "", "Net income", "", result["net_income"],
             result["compare_net_income"], result["net_income_variance"])
-    return csv_response(buf, f"libro-income-statement-{scenario}.csv")
+    return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -875,7 +875,7 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
-    return csv_response(buf, f"libro-balance-sheet-{scenario}.csv")
+    return csv_response(buf, f"postwarden-balance-sheet-{scenario}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -1116,7 +1116,7 @@ def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
     for r in v["merged"]:
         w.writerow([r["account_code"], r["account_name"], r["path"],
                    r["baseline_net"], r["compare_net"], r["variance"]])
-    return csv_response(buf, f"libro-variance-{baseline}-vs-{compare}.csv")
+    return csv_response(buf, f"postwarden-variance-{baseline}-vs-{compare}.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -1608,7 +1608,7 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
                    r["description"], r["reference"] or "", r["payee_name"] or "",
                    r["account_code"], r["account_name"],
                    r["debit"] or "", r["credit"] or "", r["memo"] or ""])
-    return csv_response(buf, "libro-journal.csv")
+    return csv_response(buf, "postwarden-journal.csv")
 
 
 @app.post("/entries/{entry_id}/reverse")

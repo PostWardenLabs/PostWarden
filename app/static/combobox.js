@@ -216,7 +216,7 @@
     // <option>s programmatically (see app.js's refreshAccountsForScenario())
     // and needs the visible text to catch up, since nothing here is
     // listening for that kind of external mutation.
-    select.__libroComboboxSync = syncInputFromSelect;
+    select.__postwardenComboboxSync = syncInputFromSelect;
   }
 
   function enhanceAll(root) {
@@ -224,7 +224,7 @@
   }
 
   function resync(select) {
-    if (select && select.__libroComboboxSync) select.__libroComboboxSync();
+    if (select && select.__postwardenComboboxSync) select.__postwardenComboboxSync();
   }
 
   document.addEventListener("DOMContentLoaded", () => enhanceAll());

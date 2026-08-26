@@ -18,7 +18,7 @@
   const body = document.getElementById("accounts-body");
   if (!body) return;
 
-  const STORAGE_KEY = "libro-accounts-collapsed";
+  const STORAGE_KEY = "postwarden-accounts-collapsed";
   const rows = Array.from(body.querySelectorAll("tr.acct-row"));
   const gapRows = Array.from(body.querySelectorAll("tr.add-gap"));
   const byId = {};

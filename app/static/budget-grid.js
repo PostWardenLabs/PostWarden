@@ -9,7 +9,7 @@
    attribute (server-rendered, never touched by this script) — Variance
    is just actual - (live) budgeted, recomputed alongside it. */
 (function () {
-  const table = document.querySelector("table[data-collapse-key^='libro-budget-collapsed']");
+  const table = document.querySelector("table[data-collapse-key^='postwarden-budget-collapsed']");
   if (!table) return;
   const status = document.getElementById("budget-save-status");
   const csrfEl = document.getElementById("budget-csrf");

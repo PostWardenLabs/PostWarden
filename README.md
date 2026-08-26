@@ -142,7 +142,7 @@ first boot: schema, a starter chart of accounts, and a few demo entries
 (remove the `03_seed_demo.sql` line in `docker-compose.yml` for a
 completely clean start).
 
-Postgres is exposed on `localhost:5432` (user/db/password: `libro`) so
+Postgres is exposed on `localhost:5432` (user/db/password: `postwarden`) so
 Power BI, Excel, or `psql` can connect directly alongside the app.
 
 ## Run it (local, no Docker)
@@ -155,13 +155,13 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Set `DATABASE_URL` if your Postgres isn't `libro:libro@localhost:5432/libro`.
+Set `DATABASE_URL` if your Postgres isn't `postwarden:postwarden@localhost:5432/postwarden`.
 
 ## Creating a login
 
 No login exists until you create one.
 
-**Docker, easiest:** set `LIBRO_ADMIN_USER` / `LIBRO_ADMIN_PASSWORD` in
+**Docker, easiest:** set `POSTWARDEN_ADMIN_USER` / `POSTWARDEN_ADMIN_PASSWORD` in
 `.env` (copy `.env.example`) before the first `docker compose up` — that
 account is created automatically on boot if no user exists yet, and never
 overwrites a password on later boots.
@@ -218,13 +218,13 @@ password deletes it, no signing secret to manage. State-changing POSTs
 per-session CSRF token, rendered as a hidden field on every form.
 
 Sessions cookies are `HttpOnly` and `SameSite=Lax` always. They're
-`Secure` (HTTPS-only) only if `LIBRO_COOKIE_SECURE=true` is set — that's
+`Secure` (HTTPS-only) only if `POSTWARDEN_COOKIE_SECURE=true` is set — that's
 **not** the default, because neither of this project's documented
 deployment paths terminates HTTPS at uvicorn itself (an IAP tunnel and a
 Cloudflare Tunnel both encrypt at the tunnel layer, invisible to the
 cookie; a browser still sees plain `http://localhost:8000`). If you put a
 reverse proxy in front that terminates real TLS itself, set
-`LIBRO_COOKIE_SECURE=true`.
+`POSTWARDEN_COOKIE_SECURE=true`.
 
 The session itself is always good for 30 days once created — "Remember
 me" on the login page only decides whether the *cookie* survives
@@ -234,7 +234,7 @@ explicit 30-day lifetime matching the session behind it.
 
 `docker-compose.yml` still binds Postgres to `127.0.0.1` (Power BI/Excel/psql
 on the same machine connect fine; the network can't) — change the
-`libro`/`libro` *and* `libro_bi`/`libro_bi` database credentials (see
+`postwarden`/`postwarden` *and* `postwarden_bi`/`postwarden_bi` database credentials (see
 "Connect Power BI / Excel" below) before exposing this beyond a machine you
 trust, login or not; the app's login only protects the app, not a direct
 Postgres connection.
@@ -253,7 +253,7 @@ GCP's always-free tier for a personal, low-traffic ledger.
 Live connection details (host/port already filled in for this instance) are
 in the app itself — **Settings → Connect Power BI / Excel** — including a
 `.pbids` download for Power BI Desktop. The short version: connect to
-PostgreSQL (`localhost:5432`, database `libro`) as `libro_bi`/`libro_bi` — a
+PostgreSQL (`localhost:5432`, database `postwarden`) as `postwarden_bi`/`postwarden_bi` — a
 dedicated read-only role (SPEC.md decision 14) that can only `SELECT` the
 reporting views/function below, not the base ledger tables — and load:
 
@@ -323,18 +323,18 @@ hierarchy, immutability, reversal integrity — so they hold regardless of
 which client writes to the database. `tests/test_auth.py` drives the
 actual FastAPI app instead, for the things only the app layer enforces:
 login, session and CSRF checks, logout. Each run gets a disposable
-`libro_test` database (dropped and recreated from `db/schema.sql` +
+`postwarden_test` database (dropped and recreated from `db/schema.sql` +
 `db/seed.sql`).
 
 With `docker compose up -d db` already running:
 
 ```bash
-docker run --rm --network postwarden_default -v "$PWD":/srv/libro -w /srv/libro \
+docker run --rm --network postwarden_default -v "$PWD":/srv/postwarden -w /srv/postwarden \
   python:3.12-slim bash -c "pip install -q -r requirements-dev.txt && python -m pytest tests -v"
 ```
 
-Or locally, with `psycopg[binary]` and `pytest` installed and `LIBRO_TEST_ADMIN_URL`
-/ `LIBRO_TEST_URL` pointed at a reachable Postgres:
+Or locally, with `psycopg[binary]` and `pytest` installed and `POSTWARDEN_TEST_ADMIN_URL`
+/ `POSTWARDEN_TEST_URL` pointed at a reachable Postgres:
 
 ```bash
 pip install -r requirements-dev.txt

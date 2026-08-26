@@ -5,8 +5,8 @@ thing under test is "does the database enforce what SPEC.md claims," not
 the app. Every test run gets a disposable database (dropped and recreated
 from db/schema.sql + db/seed.sql), so tests are free to commit real rows.
 
-Point LIBRO_TEST_ADMIN_URL at a superuser-ish connection (able to
-CREATE/DROP DATABASE) and LIBRO_TEST_URL at the disposable database itself;
+Point POSTWARDEN_TEST_ADMIN_URL at a superuser-ish connection (able to
+CREATE/DROP DATABASE) and POSTWARDEN_TEST_URL at the disposable database itself;
 both default to the docker-compose "db" service.
 """
 import os
@@ -21,20 +21,20 @@ import pytest
 from psycopg.rows import dict_row
 
 ROOT = Path(__file__).parent.parent
-TEST_DB = "libro_test"
+TEST_DB = "postwarden_test"
 ADMIN_URL = os.environ.get(
-    "LIBRO_TEST_ADMIN_URL", "postgresql://libro:libro@db:5432/postgres"
+    "POSTWARDEN_TEST_ADMIN_URL", "postgresql://postwarden:postwarden@db:5432/postgres"
 )
 TEST_URL = os.environ.get(
-    "LIBRO_TEST_URL", f"postgresql://libro:libro@db:5432/{TEST_DB}"
+    "POSTWARDEN_TEST_URL", f"postgresql://postwarden:postwarden@db:5432/{TEST_DB}"
 )
-# Same host/port/database as TEST_URL, but as libro_bi — the read-only role
-# from db/migrations/001_add_bi_role.sql (SPEC.md decision 14) — instead of
-# the superuser-ish libro. Derived rather than a separate env var: it's
+# Same host/port/database as TEST_URL, but as postwarden_bi — the read-only
+# role from SPEC.md decision 14 — instead of the superuser-ish postwarden.
+# Derived rather than a separate env var: it's
 # always the same Postgres cluster/database as TEST_URL, just a different
 # login, so there's nothing a second override would actually let you vary.
 BI_URL = urlunsplit(urlsplit(TEST_URL)._replace(netloc=(
-    f"libro_bi:libro_bi@{urlsplit(TEST_URL).hostname}"
+    f"postwarden_bi:postwarden_bi@{urlsplit(TEST_URL).hostname}"
     f":{urlsplit(TEST_URL).port}"
 )))
 

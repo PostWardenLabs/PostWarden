@@ -54,8 +54,8 @@ reading order:
 
 | Section | Routes | Notes |
 |---|---|---|
-| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days. `LIBRO_DEMO_MODE=true` (off by default, only set on the public demo) shows a banner on `login.html` and pre-fills the username/password fields with `LIBRO_ADMIN_USER`/`PASSWORD` — server-rendered `value=` attributes, no JavaScript, so the credentials are genuinely visible in the page rather than silently injected. Deliberately a *second* flag rather than triggering off `LIBRO_ADMIN_USER`/`PASSWORD` being set alone — those two are also the normal self-hoster first-boot convenience, and this keeps a self-hoster's own real password from ever appearing on their own login page |
-| Settings | `/settings`, `/settings/account`, `/settings/connect-bi`, `/settings/connect-bi/download.pbids` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default. `connect_bi.html` shows the `libro_bi` read-only role's host/port/database (SPEC.md decision 14) — host/port come from `request.url.hostname`/`LIBRO_BI_PORT` since they're the only two things that vary per install; the `.pbids` route hands back the same two as a downloadable Power BI Data Source file, no credentials in it |
+| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days. `POSTWARDEN_DEMO_MODE=true` (off by default, only set on the public demo) shows a banner on `login.html` and pre-fills the username/password fields with `POSTWARDEN_ADMIN_USER`/`PASSWORD` — server-rendered `value=` attributes, no JavaScript, so the credentials are genuinely visible in the page rather than silently injected. Deliberately a *second* flag rather than triggering off `POSTWARDEN_ADMIN_USER`/`PASSWORD` being set alone — those two are also the normal self-hoster first-boot convenience, and this keeps a self-hoster's own real password from ever appearing on their own login page |
+| Settings | `/settings`, `/settings/account`, `/settings/connect-bi`, `/settings/connect-bi/download.pbids` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default. `connect_bi.html` shows the `postwarden_bi` read-only role's host/port/database (SPEC.md decision 14) — host/port come from `request.url.hostname`/`POSTWARDEN_BI_PORT` since they're the only two things that vary per install; the `.pbids` route hands back the same two as a downloadable Power BI Data Source file, no credentials in it |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
 | Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |
 | Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column |
@@ -266,7 +266,7 @@ involved) — it's asserting what SPEC.md and SCHEMA.md claim the
 `tests/test_auth.py` drives the real app through `TestClient` — routes,
 templates, session/CSRF handling, the things only the app layer
 enforces. Both share `tests/conftest.py`'s `mk_*` row-builder helpers and
-get a disposable `libro_test` database per run (dropped and recreated
+get a disposable `postwarden_test` database per run (dropped and recreated
 from `db/schema.sql` + `db/seed.sql` — no demo data — via
 `pytest_configure`).
 
@@ -274,8 +274,8 @@ Run them (from the repo root, with `docker compose up -d db` already
 running):
 
 ```bash
-LIBRO_TEST_ADMIN_URL=postgresql://libro:libro@localhost:5432/postgres \
-LIBRO_TEST_URL=postgresql://libro:libro@localhost:5432/libro_test \
+POSTWARDEN_TEST_ADMIN_URL=postgresql://postwarden:postwarden@localhost:5432/postgres \
+POSTWARDEN_TEST_URL=postgresql://postwarden:postwarden@localhost:5432/postwarden_test \
 pytest -q
 ```
 

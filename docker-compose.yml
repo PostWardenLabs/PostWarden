@@ -2,11 +2,11 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: libro
-      POSTGRES_PASSWORD: libro
-      POSTGRES_DB: libro
+      POSTGRES_USER: postwarden
+      POSTGRES_PASSWORD: postwarden
+      POSTGRES_DB: postwarden
     volumes:
-      - libro_pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
       # On first boot, postgres runs these in order to create the schema.
       # Delete 03 if you want a clean start with no demo entries.
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
@@ -16,14 +16,14 @@ services:
       # Bound to loopback only: Power BI / Excel / psql on this same machine
       # can still connect via localhost, but the database isn't reachable
       # from the network. Widen to "5432:5432" deliberately if you need
-      # remote BI access — and change the libro/libro password first.
+      # remote BI access — and change the postwarden/postwarden password first.
       # DB_PORT only matters if you're running more than one instance of
       # this compose file on the same host (e.g. demo + beta side by side
       # on the public deploy VM) and need each on its own port — a single
       # self-hosted instance never needs to set it.
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U libro -d libro"]
+      test: ["CMD-SHELL", "pg_isready -U postwarden -d postwarden"]
       interval: 3s
       timeout: 3s
       retries: 15
@@ -31,29 +31,29 @@ services:
   app:
     build: .
     environment:
-      DATABASE_URL: postgresql://libro:libro@db:5432/libro
+      DATABASE_URL: postgresql://postwarden:postwarden@db:5432/postwarden
       # First-boot convenience: if both are set and no user exists yet,
       # this account is created automatically — see app/auth.py. Leave
       # unset and use `docker compose exec app python -m app.cli
       # create-user <name>` instead if you'd rather not put a password
       # in .env. Never overwrites an existing password.
-      LIBRO_ADMIN_USER: ${LIBRO_ADMIN_USER:-}
-      LIBRO_ADMIN_PASSWORD: ${LIBRO_ADMIN_PASSWORD:-}
+      POSTWARDEN_ADMIN_USER: ${POSTWARDEN_ADMIN_USER:-}
+      POSTWARDEN_ADMIN_PASSWORD: ${POSTWARDEN_ADMIN_PASSWORD:-}
       # Set to true only if uvicorn itself is terminating real HTTPS (not
       # the case for the documented IAP-tunnel or Cloudflare-tunnel
       # deployments — both encrypt at the tunnel layer instead). See
       # app/auth.py's COOKIE_SECURE comment.
-      LIBRO_COOKIE_SECURE: ${LIBRO_COOKIE_SECURE:-}
+      POSTWARDEN_COOKIE_SECURE: ${POSTWARDEN_COOKIE_SECURE:-}
       # Shows a banner on the login page and pre-fills it with
-      # LIBRO_ADMIN_USER/PASSWORD above — off by default on purpose, a
+      # POSTWARDEN_ADMIN_USER/PASSWORD above — off by default on purpose, a
       # normal self-hoster's own login should never appear on their own
       # login page. See app/main.py's demo_banner comment.
-      LIBRO_DEMO_MODE: ${LIBRO_DEMO_MODE:-}
+      POSTWARDEN_DEMO_MODE: ${POSTWARDEN_DEMO_MODE:-}
       # Purely informational — lets Settings > Connect Power BI / Excel show
       # the right port to connect to. Not a real connection: the app never
       # talks to Postgres over this, it just mirrors whatever DB_PORT the
       # "db" service below is actually bound to.
-      LIBRO_BI_PORT: ${DB_PORT:-5432}
+      POSTWARDEN_BI_PORT: ${DB_PORT:-5432}
     ports:
       # Same story as DB_PORT above — only relevant when two instances of
       # this compose file share one host.
@@ -79,4 +79,4 @@ services:
     profiles: ["cloudflared"]
 
 volumes:
-  libro_pgdata:
+  pgdata:

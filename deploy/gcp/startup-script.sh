@@ -8,8 +8,8 @@
 set -euo pipefail
 
 REPO_URL="git@github.com:PostWardenLabs/PostWarden.git"
-APP_DIR="/opt/libro"
-DEPLOY_KEY="/root/.ssh/libro_deploy_key"
+APP_DIR="/opt/postwarden"
+DEPLOY_KEY="/root/.ssh/postwarden_deploy_key"
 
 if ! command -v docker >/dev/null 2>&1; then
   apt-get update

@@ -9,9 +9,9 @@
   // the sidebar is pinned open) is right on first paint instead of
   // flashing the default and then jumping.
   (function () {
-    var t = localStorage.getItem("libro-theme");
+    var t = localStorage.getItem("postwarden-theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
-    if (localStorage.getItem("libro-sidebar-pinned") === "1") {
+    if (localStorage.getItem("postwarden-sidebar-pinned") === "1") {
       document.documentElement.classList.add("sidebar-pinned");
     }
   })();

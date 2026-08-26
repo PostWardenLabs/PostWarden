@@ -3,7 +3,7 @@
 # (never as a command-line argument, so it doesn't end up in shell history).
 #
 # Needs DATABASE_URL pointed at a running instance — defaults to
-# libro:libro@localhost:5432/libro, same as the app. Inside Docker, run it
+# postwarden:postwarden@localhost:5432/postwarden, same as the app. Inside Docker, run it
 # through the app container instead: `docker compose exec app
 # python -m app.cli create-user someone`.
 #

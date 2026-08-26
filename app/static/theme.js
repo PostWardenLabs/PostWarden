@@ -3,7 +3,7 @@
    so a saved choice applies before the stylesheet renders; this file only
    wires the <select> once the page is interactive. */
 (function () {
-  var KEY = "libro-theme";
+  var KEY = "postwarden-theme";
   var DEFAULT = "ledger";
   var select = document.getElementById("theme-select");
   if (!select) return;

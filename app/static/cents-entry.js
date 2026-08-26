@@ -8,7 +8,7 @@
    covers rows app.js adds to the entry grid after page load without this
    file needing to know anything about app.js. */
 (function () {
-  const KEY = "libro-cents-entry";
+  const KEY = "postwarden-cents-entry";
 
   function enabled() {
     return localStorage.getItem(KEY) === "1";

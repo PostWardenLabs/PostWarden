@@ -55,7 +55,7 @@ considering the task finished.
   --build`; if `db/schema.sql` changed, `docker compose down -v` first
   (init scripts only run on a fresh volume) — see `docs/ARCHITECTURE.md`
   and the README's "Tests" section for the exact pytest invocation
-  (`LIBRO_TEST_ADMIN_URL`/`LIBRO_TEST_URL` pointed at `127.0.0.1:5432`
+  (`POSTWARDEN_TEST_ADMIN_URL`/`POSTWARDEN_TEST_URL` pointed at `127.0.0.1:5432`
   when running pytest from the host against the Dockerized Postgres).
 - **Manual browser verification for anything visual or interactive** —
   the Playwright-driven browser tools in this environment, not just
@@ -77,26 +77,26 @@ considering the task finished.
     push --tags` first). `reset-demo.sh` runs nightly via cron **on
     that VM**, independent of deploys, wiping demo back to seed data —
     it's the one public, anonymous, unauthenticated instance.
-  - Any schema change gets a `pg_dump` backup on the relevant VM
-    *first*, applied either via a plain re-init (`docker compose down
-    -v` — acceptable for the maintainer's own instance, which holds
-    only dummy/test data, confirmed by the user; demo gets this
-    automatically every night anyway) or, for an existing database
-    that has to keep its data (beta, and eventually the maintainer's
-    own real instance), by adding a numbered file to
-    `db/migrations/` — see that directory's `README.md` and
-    `app/migrate.py`'s docstring. `app/migrate.py` runs automatically
-    from FastAPI's `lifespan` on every startup and applies whatever's
-    pending, in order, each in its own transaction, so a normal
-    `git pull && docker compose up -d --build` (see the README's
-    "Updating" section) is enough for beta and any future
-    keep-the-data deploy — no separate migration step to remember, no
-    manual `psql` unless a change is unusually large or risky and
-    you want to watch it run. The migration file *also* gets folded
-    into `db/schema.sql` directly (with `schema_version`'s seed
-    bumped to match) so a fresh install still gets the full current
-    state in one shot rather than replaying history — the two have to
-    move together, `db/migrations/README.md` says so too.
+  - **Numbered migrations are on the shelf for now — do not add files
+    to `db/migrations/`.** The mechanism (`app/migrate.py`,
+    `schema_version`, `db/migrations/README.md`'s own instructions)
+    stays in the repo and stays correct, because it's real
+    infrastructure worth having once it's needed — it's just unused at
+    the moment. Every instance that exists right now (the maintainer's
+    own, `beta.postwarden.org`, `demo.postwarden.org`) holds only
+    dummy/test data, confirmed by the user, and nobody outside this
+    project depends on any of it surviving a redeploy. That makes a
+    migration's entire reason to exist — applying a schema change to
+    an existing database *without* losing what's in it — a cost with
+    no matching benefit right now, so schema changes ship the simple
+    way everywhere: fold the change into `db/schema.sql` directly, `git
+    pull`, `docker compose down -v` (a `pg_dump` backup first if you'd
+    rather not retype anything), `docker compose up -d --build`. This
+    is a deliberate, revisitable choice, not a permanent one — the
+    moment any instance holds data worth preserving across a schema
+    change (the maintainer's own real ledger, most likely first),
+    switch back: resume adding `db/migrations/NNN_*.sql` files per that
+    directory's own README, and update this bullet to say so.
     Verify after every deploy: check `docker compose logs app` for
     startup errors, hit a few unauthenticated routes to confirm `303`
     (not `500`), and directly exercise any new SQL function/trigger

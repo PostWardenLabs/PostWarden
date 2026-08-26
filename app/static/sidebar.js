@@ -10,7 +10,7 @@
   const sidebar = document.getElementById("sidebar");
   if (!toggle || !sidebar) return;
 
-  const KEY = "libro-sidebar-pinned";
+  const KEY = "postwarden-sidebar-pinned";
   const root = document.documentElement;
   let closeTimer = null;
 

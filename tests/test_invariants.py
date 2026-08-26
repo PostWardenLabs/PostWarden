@@ -591,9 +591,9 @@ def test_double_reversal_rejected(conn, actual_scenario_id):
 
 
 # ---------------------------------------------------------------------------
-# libro_bi — the read-only BI role (db/migrations/001_add_bi_role.sql,
-# SPEC.md decision 14). Connects as its own login, BI_URL, rather than
-# through the `conn` fixture (the superuser-ish `libro`) — the point is to
+# postwarden_bi — the read-only BI role (SPEC.md decision 14). Connects
+# as its own login, BI_URL, rather than
+# through the `conn` fixture (the superuser-ish `postwarden`) — the point is to
 # exercise the grants Postgres actually enforces for this role, not just
 # what the app happens to query.
 # ---------------------------------------------------------------------------
@@ -616,7 +616,7 @@ def test_bi_role_cannot_write_a_journal_entry(actual_scenario_id):
             with bi_conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO journal_entries (scenario_id, entry_date, description) "
-                    "VALUES (%s, CURRENT_DATE, 'libro_bi should not be able to do this')",
+                    "VALUES (%s, CURRENT_DATE, 'postwarden_bi should not be able to do this')",
                     (actual_scenario_id,))
 
 

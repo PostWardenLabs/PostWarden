@@ -4,15 +4,15 @@
 # your own machine. Requires the gcloud CLI (for gsutil) on the VM and a
 # bucket the VM's service account can write to.
 #
-# Usage: LIBRO_BACKUP_BUCKET=gs://my-libro-backups ./backup.sh
+# Usage: POSTWARDEN_BACKUP_BUCKET=gs://my-postwarden-backups ./backup.sh
 set -euo pipefail
 
-BUCKET="${LIBRO_BACKUP_BUCKET:?Set LIBRO_BACKUP_BUCKET, e.g. gs://my-libro-backups}"
+BUCKET="${POSTWARDEN_BACKUP_BUCKET:?Set POSTWARDEN_BACKUP_BUCKET, e.g. gs://my-postwarden-backups}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-DUMP="/tmp/libro-$STAMP.sql.gz"
+DUMP="/tmp/postwarden-$STAMP.sql.gz"
 
-cd /opt/libro
-docker compose exec -T db pg_dump -U libro -d libro | gzip > "$DUMP"
-gsutil cp "$DUMP" "$BUCKET/libro-$STAMP.sql.gz"
+cd /opt/postwarden
+docker compose exec -T db pg_dump -U postwarden -d postwarden | gzip > "$DUMP"
+gsutil cp "$DUMP" "$BUCKET/postwarden-$STAMP.sql.gz"
 rm -f "$DUMP"
-echo "Backed up to $BUCKET/libro-$STAMP.sql.gz"
+echo "Backed up to $BUCKET/postwarden-$STAMP.sql.gz"

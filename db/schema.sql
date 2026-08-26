@@ -42,11 +42,16 @@ CREATE TYPE scenario_type AS ENUM ('actual', 'budget', 'forecast', 'what_if');
 -- matters for an *existing* database catching up after a `git pull`.
 -- One row, one column, on purpose — there's exactly one database per
 -- instance, never a fleet to track independently.
+--
+-- Seeded to 0, not a leftover migration number: db/migrations/ is
+-- currently empty on purpose (see its own README.md and CLAUDE.md's
+-- "Numbered migrations are on the shelf for now") — every schema change
+-- right now folds straight into this file instead.
 -- ---------------------------------------------------------------------------
 CREATE TABLE schema_version (
     version INTEGER NOT NULL
 );
-INSERT INTO schema_version (version) VALUES (1);
+INSERT INTO schema_version (version) VALUES (0);
 
 -- ---------------------------------------------------------------------------
 -- Users and sessions — application-level authentication.
@@ -991,21 +996,19 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- Read-only role for BI tools (Power BI, Excel, psql) connecting straight to
--- the database instead of through the app — SPEC.md decision 14. Folded in
--- from db/migrations/001_add_bi_role.sql; the two must move together, see
--- that file's header and db/migrations/README.md.
+-- the database instead of through the app — SPEC.md decision 14.
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'libro_bi') THEN
-        CREATE ROLE libro_bi LOGIN PASSWORD 'libro_bi';
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postwarden_bi') THEN
+        CREATE ROLE postwarden_bi LOGIN PASSWORD 'postwarden_bi';
     END IF;
 END
 $$;
 
-GRANT CONNECT ON DATABASE libro TO libro_bi;
-GRANT USAGE ON SCHEMA public TO libro_bi;
-GRANT SELECT ON v_dim_account, v_fact_lines, v_dim_date, v_monthly_activity TO libro_bi;
-GRANT EXECUTE ON FUNCTION fn_trial_balance(TEXT, DATE, DATE) TO libro_bi;
+GRANT CONNECT ON DATABASE postwarden TO postwarden_bi;
+GRANT USAGE ON SCHEMA public TO postwarden_bi;
+GRANT SELECT ON v_dim_account, v_fact_lines, v_dim_date, v_monthly_activity TO postwarden_bi;
+GRANT EXECUTE ON FUNCTION fn_trial_balance(TEXT, DATE, DATE) TO postwarden_bi;
 
 COMMIT;

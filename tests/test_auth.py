@@ -39,7 +39,7 @@ def test_login_wrong_password_fails(conn):
         r = c.post("/login", data={"username": user["username"], "password": "nope"})
         assert r.status_code == 303
         assert r.headers["location"].startswith("/login?err=")
-        assert "libro_session" not in c.cookies
+        assert "postwarden_session" not in c.cookies
 
 
 def test_login_correct_succeeds_and_grants_access(conn):
@@ -50,7 +50,7 @@ def test_login_correct_succeeds_and_grants_access(conn):
         r = c.post("/login", data={"username": user["username"], "password": user["password"]})
         assert r.status_code == 303
         assert r.headers["location"] == "/"
-        assert "libro_session" in c.cookies
+        assert "postwarden_session" in c.cookies
 
         r = c.get("/")
         assert r.status_code == 200
@@ -83,7 +83,7 @@ def test_inactive_user_cannot_log_in(conn):
     with TestClient(app, **client_kwargs) as c:
         r = c.post("/login", data={"username": user["username"], "password": user["password"]})
         assert r.headers["location"].startswith("/login?err=")
-        assert "libro_session" not in c.cookies
+        assert "postwarden_session" not in c.cookies
 
 
 def test_post_without_csrf_token_is_rejected(conn):
@@ -134,7 +134,7 @@ def test_post_with_valid_csrf_token_succeeds(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r = c.post("/accounts", data={
@@ -163,7 +163,7 @@ def test_quick_create_payee_gets_or_creates_and_reactivates(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r1 = c.post("/payees/quick-create",
@@ -208,7 +208,7 @@ def test_scheduled_entry_materializes_and_posts(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r = c.post("/scheduled", data={
@@ -245,7 +245,7 @@ def test_scheduled_entry_materializes_and_posts(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r2 = c.post("/staging/approve",
@@ -330,7 +330,7 @@ def test_staging_page_lists_pending_entries_and_approves_them(conn):
 
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r2 = c.post("/staging/approve", data={"entry_id": str(eid), "csrf_token": csrf_token})
         assert r2.status_code == 303
@@ -392,7 +392,7 @@ def test_import_csv_stages_entries_and_approves_into_target(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r = c.post("/import",
@@ -419,7 +419,7 @@ def test_import_csv_stages_entries_and_approves_into_target(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post("/staging/approve",
                    data={"entry_id": str(staged["id"]), "csrf_token": csrf_token})
@@ -455,7 +455,7 @@ def test_import_csv_reports_bad_rows_and_still_stages_the_valid_ones(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post("/import",
                    data={"csrf_token": csrf_token, "target_scenario_id": str(target["id"])},
@@ -483,7 +483,7 @@ def test_import_csv_rejects_a_file_missing_required_columns(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post("/import",
                    data={"csrf_token": csrf_token, "target_scenario_id": str(target["id"])},
@@ -504,7 +504,7 @@ def test_create_template_requires_balance_and_saves_lines(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         # Unbalanced — rejected, nothing saved.
@@ -554,7 +554,7 @@ def test_quick_create_account_inherits_parent_type_and_generates_code(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r1 = c.post("/accounts/quick-create", data={
@@ -609,7 +609,7 @@ def test_scenario_base_level_relaxes_posting_through_the_real_routes(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r1 = c.post("/scenarios", data={
@@ -691,7 +691,7 @@ def test_account_levels_crud(conn):
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT csrf_token FROM sessions WHERE token = %s",
-                (c.cookies["libro_session"],))
+                (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
 
         r1 = c.post("/account-levels", data={
@@ -786,7 +786,7 @@ def test_logout_revokes_session(conn):
     conn.commit()
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
-        session_token = c.cookies["libro_session"]
+        session_token = c.cookies["postwarden_session"]
 
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s", (session_token,))
@@ -1466,7 +1466,7 @@ def test_create_scenario_income_statement_only_via_route(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post("/scenarios", data={
             "csrf_token": csrf_token, "code": "ISONLY1", "name": "Budget test",
@@ -1579,7 +1579,7 @@ def test_budget_cell_route_upserts(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r1 = c.post("/budget/cell", data={
             "csrf_token": csrf_token, "scenario_id": str(scen["id"]),
@@ -1609,7 +1609,7 @@ def test_budget_cell_route_rejects_unknown_account(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
-                       (c.cookies["libro_session"],))
+                       (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post("/budget/cell", data={
             "csrf_token": csrf_token, "scenario_id": str(scen["id"]),
@@ -1650,8 +1650,8 @@ def test_entry_grids_offer_a_distribute_button(conn):
 
 def test_demo_banner_off_by_default(conn):
     """The default state every self-hoster gets: no banner, empty fields —
-    LIBRO_DEMO_MODE unset means demo_user/demo_password never even reach
-    the page, regardless of whether LIBRO_ADMIN_USER/PASSWORD are set."""
+    POSTWARDEN_DEMO_MODE unset means demo_user/demo_password never even reach
+    the page, regardless of whether POSTWARDEN_ADMIN_USER/PASSWORD are set."""
     with TestClient(app, **client_kwargs) as c:
         r = c.get("/login")
         assert r.status_code == 200
@@ -1661,8 +1661,8 @@ def test_demo_banner_off_by_default(conn):
 
 
 def test_demo_banner_shows_and_prefills_credentials_when_enabled():
-    """LIBRO_DEMO_MODE is a second, explicit flag on top of
-    LIBRO_ADMIN_USER/PASSWORD, not implied by them being set — this is
+    """POSTWARDEN_DEMO_MODE is a second, explicit flag on top of
+    POSTWARDEN_ADMIN_USER/PASSWORD, not implied by them being set — this is
     what actually keeps a normal self-hoster's own password off their own
     login page. Patches the Jinja globals directly (they're read once at
     import time from the environment, like VERSION) rather than the

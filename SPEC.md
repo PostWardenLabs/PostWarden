@@ -274,7 +274,7 @@ arrive at the same place.
 ### 14. BI tools get their own read-only role, not the app's login
 
 Decision 6 made the reporting layer part of the schema; in practice
-"connect Power BI" meant handing someone the app's own `libro`/`libro`
+"connect Power BI" meant handing someone the app's own `postwarden`/`postwarden`
 Postgres credentials, because that was the only role that existed. That's
 a bigger grant than the use case needs — a BI connection string has no
 reason to be able to `INSERT` a journal line, `UPDATE` a locked scenario,
@@ -286,26 +286,28 @@ pasted into a Power BI data source, a `.pbids` file, a colleague's laptop
 if the ledger ever stopped being personal.
 
 Rejected: generating a random per-instance BI password at first boot, the
-way `LIBRO_ADMIN_PASSWORD` works for the app's own admin user. That's a
+way `POSTWARDEN_ADMIN_PASSWORD` works for the app's own admin user. That's a
 real option and arguably the more correct one, but it needs a place to
 persist the generated value so the Settings page can keep showing it
 later — either a table (schema growth for a value that's really "the
 Postgres role's own password, restated"), or re-deriving it from
 Postgres each time (`ALTER ROLE ... PASSWORD` is one-way; Postgres itself
-can't hand a password back out). `LIBRO_ADMIN_PASSWORD` avoids this
+can't hand a password back out). `POSTWARDEN_ADMIN_PASSWORD` avoids this
 because the app hashes it into `users.password_hash` once and never needs
 the plaintext again. A BI role's password has no such hash to fall back
 on — psql, Power BI, and Excel all need the plaintext every time. Given
-that, a fixed default (`libro_bi`/`libro_bi`) matching the existing
-`libro`/`libro` tradeoff is at least consistent, and the Connect Power BI
+that, a fixed default (`postwarden_bi`/`postwarden_bi`) matching the existing
+`postwarden`/`postwarden` tradeoff is at least consistent, and the Connect Power BI
 page (and README, and `deploy/gcp/README.md`) say the same thing that
 page already says about the app's own login: change it with `ALTER ROLE`
 before widening Postgres's bind address past `127.0.0.1`.
 
-What shipped: `db/migrations/001_add_bi_role.sql` creates `libro_bi`
-(`LOGIN`, guarded by a `pg_roles` existence check since `CREATE ROLE` has
-no `IF NOT EXISTS`) and grants it `SELECT` on the four `v_*` reporting
-views and `EXECUTE` on `fn_trial_balance` — nothing else. Settings →
+What shipped: `db/schema.sql` creates `postwarden_bi` (`LOGIN`, guarded by
+a `pg_roles` existence check since `CREATE ROLE` has no `IF NOT EXISTS` —
+this ships straight in `schema.sql` rather than as a numbered migration
+per the "migrations are on the shelf for now" policy in `CLAUDE.md`) and
+grants it `SELECT` on the four `v_*` reporting views and `EXECUTE` on
+`fn_trial_balance` — nothing else. Settings →
 Connect Power BI / Excel (`docs/ARCHITECTURE.md`'s Settings row) shows the
 resulting host/port/database/login live, plus a downloadable `.pbids` so
 Power BI Desktop opens pre-pointed at the right server without anyone
