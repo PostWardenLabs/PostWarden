@@ -241,7 +241,7 @@ restricted to specific emails.
   setup for your own fork (one-time, from your own machine):
   ```bash
   gcloud iam service-accounts create postwarden-ci-deploy --project "$PROJECT_ID"
-  for ROLE in roles/iap.tunnelResourceAccessor roles/compute.osAdminLogin roles/compute.viewer; do
+  for ROLE in roles/iap.tunnelResourceAccessor roles/compute.instanceAdmin.v1; do
     gcloud projects add-iam-policy-binding "$PROJECT_ID" \
       --member="serviceAccount:postwarden-ci-deploy@$PROJECT_ID.iam.gserviceaccount.com" \
       --role="$ROLE" --condition=None
@@ -256,11 +256,24 @@ restricted to specific emails.
   # resulting principalSet://.../attribute.repository/<your-org>/<your-repo> —
   # see `gcloud iam service-accounts add-iam-policy-binding --help`.
   ```
-  Also enable OS Login on the VM (`gcloud compute instances add-metadata
-  postwarden-public --metadata enable-oslogin=TRUE`) — without it,
-  `gcloud compute ssh` needs metadata *write* access to push an ephemeral
-  key, which is broader than the three roles above grant on purpose.
-  And in the workflow itself, `mkdir -p ~/.ssh` has to run before the
+  **Do not enable OS Login on this VM** (leave `enable-oslogin` unset, or
+  explicitly `FALSE`) — this was tried first, with `roles/compute.osAdminLogin`
+  scoped tighter than `instanceAdmin.v1`, and it doesn't work for a
+  *service account* identity on a project that belongs to a Cloud
+  Identity/Workspace organization (which most real GCP accounts do):
+  `google_authorized_keys` on the VM rejects it with "OS Login user ...
+  does not have login permission — Could not grant access to
+  organization user," regardless of IAM role, seemingly an org-policy
+  interaction with service-account OS Login specifically that a plain
+  project-level role grant can't satisfy. `roles/compute.instanceAdmin.v1`
+  (broader than the OS Login roles, but the one that actually works)
+  falls back to the older metadata-based flow instead: `gcloud compute
+  ssh` pushes an ephemeral key straight into the instance's metadata,
+  which needs `compute.instances.setMetadata` — this is the same
+  mechanism your own manual access already uses via `setup.sh`'s deploy
+  key, just done automatically per-run instead of once.
+
+  Also, in the workflow itself, `mkdir -p ~/.ssh` has to run before the
   `gcloud compute ssh` step — a fresh Actions runner has no `~/.ssh` at
   all, and `gcloud compute ssh` can't create that directory *and*
   generate its managed keypair in one non-interactive shot; without it,
