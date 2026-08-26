@@ -792,9 +792,16 @@ input[type="file"]:hover::-webkit-file-upload-button {
    kinds looked like they belonged to different design systems the
    moment they shared a toolbar. 0.88rem matches this app's own most
    common UI-chrome size (table.ledger's 0.9rem) rather than either
-   button variant's old number — both share it now, and the fill vs.
-   outline (plus a size difference in padding, not font) is what's left
-   to read as "primary" vs. "secondary," which is plenty. */
+   button variant's old number — both share it now. That pass left
+   button.quiet with its own smaller padding (0.3rem 0.75rem vs. 0.4rem
+   0.9rem), on the theory that a size difference on top of fill-vs-outline
+   would read as "primary" vs. "secondary." In practice a 0.1rem padding
+   gap is too small to read as a size *system* — it just reads as one
+   button being slightly, unexplainably taller than its neighbor
+   (Post entry next to Add line/Distribute is the clearest case: same
+   font, same line-height, still visibly mismatched). Padding is equal
+   now too; fill vs. outline alone carries "primary" vs. "secondary,"
+   which is plenty on its own. */
 button, a.button-link {
   font: inherit; font-size: 0.88rem; cursor: pointer;
   background: var(--accent); color: var(--accent-text);
@@ -806,7 +813,6 @@ button:disabled { background: var(--rule); border-color: var(--rule);
                   color: var(--ink-soft); cursor: not-allowed; }
 button.quiet {
   background: transparent; color: var(--ink); border-color: var(--rule-strong);
-  padding: 0.3rem 0.75rem;
 }
 button.quiet:hover { background: var(--paper-deep); }
 /* Every checkbox label in the app uses this one style: mono/uppercase,
