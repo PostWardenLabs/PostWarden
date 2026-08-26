@@ -89,6 +89,63 @@
       grid</a>. <span class="mono">STAGING</span> is neither of these to configure yourself — it's a fixed
       holding pen only Scheduled entries and Import can write to (see Staging above).
 
+    <p>The <a href="/scenarios">New scenario</a> form has two independent checkboxes — <strong>income statement
+      only</strong> and <strong>require balanced entries</strong> — which looks like four possible combinations.
+      In practice it's three: once a scenario is income statement only, it never takes a journal entry at all
+      (the database refuses one regardless of what asks), so "require balanced entries" has nothing left to
+      apply to and the checkbox itself hides on the form the moment you check the first one. Both are set once,
+      at creation, and there's no edit screen for either afterward — the only thing you can ever change about an
+      existing scenario is <strong>Lock</strong>/<strong>Unlock</strong> (blocks new entries or budget lines
+      without touching what's already posted) on the <a href="/scenarios">Scenarios</a> list itself. Pick
+      carefully; "change my mind later" means creating a new scenario, not editing this one.</p>
+
+    <table class="ledger">
+      <thead><tr>
+        <th>Income statement only</th><th>Require balanced entries</th><th>What you get</th>
+        <th>Add numbers from</th><th>Use it for</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono dim">off</td><td class="mono dim">on</td>
+          <td>A full scenario where every entry must net to zero, same rule ACTUAL always follows.</td>
+          <td><a href="/entries">Journal</a></td>
+          <td>ACTUAL itself; STAGING; a <em>fully articulated</em> forecast or what-if you want to double as a
+            real projected balance sheet, not just an income statement — "what if I buy a house" done properly
+            credits Checking when it debits the mortgage, so a cash-flow projection falls out of it for free.</td>
+        </tr>
+        <tr>
+          <td class="mono dim">off</td><td class="mono dim">off</td>
+          <td>A full scenario that still posts to the Journal, but a single-sided line with no counter-account
+            is allowed to sit there unbalanced.</td>
+          <td><a href="/entries">Journal</a></td>
+          <td>Rare on purpose. A loose, quick planning line ("Groceries 6,000 in March," nothing on the other
+            side) when you don't want to invent a counter-account just to satisfy the balance check. If what
+            you actually want is a plain income/expense budget, the row below is very likely the better fit —
+            this one won't give you a matching balance sheet the way the row above does, since a single-sided
+            line never touches an asset or liability account.</td>
+        </tr>
+        <tr>
+          <td class="mono dim">on</td><td class="mono dim">on</td>
+          <td rowspan="2">No journal entries, full stop — the database blocks every attempt regardless of which
+            checkbox <em>looks</em> set here. Numbers live one-per-(account, month) instead, with nothing to
+            balance by construction.</td>
+          <td rowspan="2"><a href="/budget">Budget grid</a></td>
+          <td rowspan="2">A plain income/expense budget: "what do I plan to spend on Groceries this year."
+            No date beyond the month, no counter-account, freely editable in place (not append-only like a
+            posted entry) — it's a working assumption, not a transaction. This is what <span class="mono">
+            BUD2026</span> is.</td>
+        </tr>
+        <tr>
+          <td class="mono dim">on</td><td class="mono dim">off</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="dim small">The last two rows are identical on purpose — the <span class="mono">enforce_balance</span>
+      column always ends up holding some real value (the checkbox is hidden once income statement only is
+      checked, not removed, so whatever state it was last in still gets saved), but nothing ever reads it for a
+      scenario that doesn't post journal entries in the first place, so which value it happens to hold doesn't
+      change anything observable.</p>
+
     <h2 id="accounts">Accounts &amp; levels</h2>
     <p>Summary accounts structure the chart; only postable leaves ever take a journal line. A child always
       inherits its parent's type (an Expense account can't have an Asset child) — the database enforces that,
