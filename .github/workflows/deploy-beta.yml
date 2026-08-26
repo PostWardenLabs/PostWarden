@@ -31,6 +31,14 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # A fresh runner has no ~/.ssh at all. gcloud compute ssh needs it to
+      # already exist to generate/store its managed keypair in — without
+      # this it fails non-interactively with "The private SSH key file for
+      # gcloud does not exist", since it can't create the directory *and*
+      # the key in one shot outside a real terminal.
+      - name: Ensure ~/.ssh exists
+        run: mkdir -p -m 700 ~/.ssh
+
       - name: Redeploy beta over IAP
         run: |
           gcloud compute ssh postwarden-public \

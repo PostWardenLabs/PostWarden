@@ -260,6 +260,12 @@ restricted to specific emails.
   postwarden-public --metadata enable-oslogin=TRUE`) — without it,
   `gcloud compute ssh` needs metadata *write* access to push an ephemeral
   key, which is broader than the three roles above grant on purpose.
+  And in the workflow itself, `mkdir -p ~/.ssh` has to run before the
+  `gcloud compute ssh` step — a fresh Actions runner has no `~/.ssh` at
+  all, and `gcloud compute ssh` can't create that directory *and*
+  generate its managed keypair in one non-interactive shot; without it,
+  the failure is exactly "The private SSH key file for gcloud does not
+  exist," which reads like a missing-credential problem but isn't one.
 - **demo** deploys from the latest git *tag*, not master — a deliberate
   "this commit is stable enough to show a stranger" decision, cut with
   `git tag vX.Y.Z && git push --tags` and rolled out by hand with
