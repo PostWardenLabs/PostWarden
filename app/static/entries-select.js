@@ -36,7 +36,7 @@
 
   function setSelectMode(on) {
     form.classList.toggle("select-mode", on);
-    toggle.textContent = on ? "Cancel selecting" : "Select entries";
+    toggle.textContent = on ? "Deselect" : "Select";
     if (!on) {
       checks.forEach((c) => { c.checked = false; });
       if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
