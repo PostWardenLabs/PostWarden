@@ -805,14 +805,25 @@ label.field { display: flex; flex-direction: column; gap: 0.2rem;
 label.field[hidden] { display: none; }
 /* Every text field, select, and the comboboxes/date inputs skinned on
    top of one (combobox.js and datepicker.js both leave font-family
-   alone, so they've always inherited this) shares one font: --mono,
-   the same "columnar ledger paper" face input[type=number]/input.amount
-   and .date-input already used on their own. Plain fields used to fall
-   back to font: inherit's ambient --sans instead, so a text box next to
-   a date field or a combobox looked like a different control family —
-   one font for everything you type into now. */
+   alone, so they've always inherited this) shares one font: --sans —
+   the same face body text, combobox text, and every plain field's
+   actual content (a description, a reference, an account/payee name)
+   already reads in everywhere else. --mono is reserved for what's
+   genuinely tabular/numeric data instead: the ledger grid, the
+   Dashboard's stat numbers, input[type=number]/input.amount below
+   (still explicitly mono — this is the one place typing *is* entering
+   ledger data), and every button/checkbox label, none of which this
+   rule touches. Went through a phase where this whole rule was --mono
+   ("one font for everything you type into"), on the theory that a
+   plain text box next to a date field or a combobox looked like a
+   different control family — but a combobox shows actual data (an
+   account name, a payee), and that data needs to read the way it does
+   everywhere else it appears, not disagree with it just because it's
+   sitting inside a form control. --sans is the one font both a
+   plain-typed field and a combobox-skinned field can share without
+   fighting that. */
 input, select, textarea {
-  font: inherit; font-family: var(--mono); color: var(--ink);
+  font: inherit; font-family: var(--sans); color: var(--ink);
   background: var(--surface); border: 1px solid var(--rule-strong);
   padding: 0.35rem 0.5rem; border-radius: 2px;
 }
@@ -1025,13 +1036,21 @@ a.amount-link:hover { text-decoration: underline; }
    payee, a scenario), and that data needs to read the same way it does
    everywhere else it appears — a ledger row's account name is plain
    --sans, so the account picker showing that same name has to match it,
-   not disagree with it. Briefly went uppercase/mono along with every
-   other control; reverted once that made the account picker (code +
-   name combined in one field) visibly a different font from the same
-   account name one column over in a posted entry's own line table. */
+   not disagree with it. Font-family now just comes from the shared
+   input/select/textarea rule (both are --sans) rather than needing its
+   own override here for .combobox-input — it's a real <input>, so it
+   already gets --sans for free from the shared rule, and doesn't
+   disagree with a plain typed field next to it anymore either, which
+   is exactly what used to make a combobox look like a different
+   control family from the field beside it. .combobox-option/-empty
+   below still set it explicitly: those are plain <div>s (see
+   combobox.js), not real form controls, so they never matched the
+   input/select/textarea rule to begin with — only inheriting --sans
+   from all the way up at body kept them in sync before, which held by
+   accident more than by design. */
 .combobox { position: relative; width: 100%; }
 .combobox-native { display: none; }
-.combobox-input { width: 100%; cursor: pointer; font-family: var(--sans); }
+.combobox-input { width: 100%; cursor: pointer; }
 .combobox-input:focus { cursor: text; }
 .combobox-panel {
   position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; right: 0;
@@ -1118,7 +1137,7 @@ a.amount-link:hover { text-decoration: underline; }
 
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
-.date-input { width: 100%; padding-right: 1.9rem; } /* mono comes from the shared input rule now */
+.date-input { width: 100%; padding-right: 1.9rem; } /* sans comes from the shared input rule now */
 .date-trigger {
   position: absolute; top: 50%; right: 0.3rem; transform: translateY(-50%);
   width: 1.3rem; height: 1.3rem;
