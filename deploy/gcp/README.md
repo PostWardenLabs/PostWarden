@@ -273,6 +273,25 @@ restricted to specific emails.
   mechanism your own manual access already uses via `setup.sh`'s deploy
   key, just done automatically per-run instead of once.
 
+  That flow needs one more grant `instanceAdmin.v1` alone doesn't cover:
+  `roles/iam.serviceAccountUser` on **the VM's own attached service
+  account** (its default Compute Engine SA, `<project-number>-compute@
+  developer.gserviceaccount.com` — `gcloud iam service-accounts list`
+  to find yours), not on `postwarden-ci-deploy` itself:
+  ```bash
+  gcloud iam service-accounts add-iam-policy-binding \
+    <project-number>-compute@developer.gserviceaccount.com \
+    --member="serviceAccount:postwarden-ci-deploy@$PROJECT_ID.iam.gserviceaccount.com" \
+    --role="roles/iam.serviceAccountUser"
+  ```
+  Without it: "The user does not have access to service account
+  '...-compute@developer.gserviceaccount.com'... Ask a project owner to
+  grant you the iam.serviceAccountUser role on the service account" —
+  GCP's own metadata-write path treats attaching an SSH key to a VM as
+  partially "acting as" whatever service account that VM runs as, so
+  the caller needs standing on *that* identity too, not just permission
+  on the instance.
+
   Also, in the workflow itself, `mkdir -p ~/.ssh` has to run before the
   `gcloud compute ssh` step — a fresh Actions runner has no `~/.ssh` at
   all, and `gcloud compute ssh` can't create that directory *and*
