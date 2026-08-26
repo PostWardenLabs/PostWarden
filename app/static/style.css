@@ -1109,14 +1109,20 @@ details.entry-new summary {
 .badge.tag:hover { background: var(--paper-deep); }
 
 /* -- tag chip input (see tags.js) ----------------------------------------- */
+/* Same padding as a plain input/select/textarea, and no fixed min-height
+   forcing it taller — the wrapper used to hard-set 2.2rem regardless of
+   what its own padding would produce (0.3rem 0.4rem, tighter than the
+   0.35rem 0.5rem every other field uses), so a tag box with zero or one
+   chip sat visibly taller than the Search box right next to it. It still
+   grows normally once tags wrap to a second line — flex-wrap plus the
+   inner text input's own natural sizing handles that without help. */
 .tag-input {
   position: relative; display: flex; flex-wrap: wrap; gap: 0.3rem;
   align-items: center; border: 1px solid var(--rule-strong);
-  background: var(--surface); border-radius: 2px; padding: 0.3rem 0.4rem;
-  min-height: 2.2rem;
+  background: var(--surface); border-radius: 2px; padding: 0.35rem 0.5rem;
 }
 .tag-input input[type="text"] {
-  flex: 1; min-width: 6rem; border: none; padding: 0.1rem 0; background: transparent;
+  flex: 1; min-width: 6rem; border: none; padding: 0; background: transparent;
 }
 .tag-input input[type="text"]:focus { outline: none; }
 .tag-chip {
