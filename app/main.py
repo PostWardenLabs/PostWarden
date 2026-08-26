@@ -1700,49 +1700,89 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
     return csv_response(buf, "postwarden-journal.csv")
 
 
+def _reverse_one_entry(entry_id: int, user_id: int) -> int:
+    """Posts the reversing entry for one already-posted entry — the actual
+    work behind both the single-entry route and the bulk one below, so
+    there's exactly one place that knows what a reversal looks like.
+    Raises ValueError for anything that isn't a straightforward reversal
+    (not found, already reversed); a locked scenario or similar still
+    surfaces as psycopg.Error from the database itself. Returns the new
+    entry's id."""
+    orig = q1("""SELECT e.*, s.code AS scenario_code FROM journal_entries e
+                 JOIN scenarios s ON s.id = e.scenario_id
+                 WHERE e.id = %s""", (entry_id,))
+    if not orig:
+        raise ValueError(f"Entry #{entry_id} not found")
+    already = q1("SELECT id FROM journal_entries WHERE reverses_entry_id = %s",
+                 (entry_id,))
+    if already:
+        raise ValueError(f"Entry #{entry_id} was already reversed by #{already['id']}")
+    with tx() as cur:
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, reference,
+                    reverses_entry_id, payee_id, created_by_user_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+            (orig["scenario_id"], date.today(),
+             f"Reversal of #{entry_id} — {orig['description']}",
+             orig["reference"], entry_id, orig["payee_id"], user_id))
+        new_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_lines
+                   (entry_id, line_no, account_id, amount, memo)
+               SELECT %s, line_no, account_id, -amount, memo
+                 FROM journal_lines WHERE entry_id = %s""",
+            (new_id, entry_id))
+        # Carry the original's tags over — a reversal is still "about"
+        # whatever it was tagged for.
+        cur.execute(
+            """INSERT INTO journal_entry_tags (entry_id, tag_id)
+               SELECT %s, tag_id FROM journal_entry_tags WHERE entry_id = %s""",
+            (new_id, entry_id))
+    return new_id
+
+
 @app.post("/entries/{entry_id}/reverse")
 def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
     try:
         require_csrf(request, csrf_token)
-        orig = q1("""SELECT e.*, s.code AS scenario_code FROM journal_entries e
-                     JOIN scenarios s ON s.id = e.scenario_id
-                     WHERE e.id = %s""", (entry_id,))
-        if not orig:
-            return flash_redirect("/entries", err=f"Entry #{entry_id} not found")
-        already = q1("SELECT id FROM journal_entries WHERE reverses_entry_id = %s",
-                     (entry_id,))
-        if already:
-            return flash_redirect(
-                "/entries",
-                err=f"Entry #{entry_id} was already reversed by #{already['id']}")
-        with tx() as cur:
-            cur.execute(
-                """INSERT INTO journal_entries
-                       (scenario_id, entry_date, description, reference,
-                        reverses_entry_id, payee_id, created_by_user_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                (orig["scenario_id"], date.today(),
-                 f"Reversal of #{entry_id} — {orig['description']}",
-                 orig["reference"], entry_id, orig["payee_id"],
-                 auth.current_user(request)["user_id"]))
-            new_id = cur.fetchone()["id"]
-            cur.execute(
-                """INSERT INTO journal_lines
-                       (entry_id, line_no, account_id, amount, memo)
-                   SELECT %s, line_no, account_id, -amount, memo
-                     FROM journal_lines WHERE entry_id = %s""",
-                (new_id, entry_id))
-            # Carry the original's tags over — a reversal is still "about"
-            # whatever it was tagged for.
-            cur.execute(
-                """INSERT INTO journal_entry_tags (entry_id, tag_id)
-                   SELECT %s, tag_id FROM journal_entry_tags WHERE entry_id = %s""",
-                (new_id, entry_id))
+        new_id = _reverse_one_entry(entry_id, auth.current_user(request)["user_id"])
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/entries", err=msg)
     return flash_redirect("/entries",
                           ok=f"Entry #{entry_id} reversed by #{new_id}")
+
+
+@app.post("/entries/reverse")
+async def reverse_entries_bulk(request: Request):
+    """Bulk sibling of /entries/{id}/reverse, for the Journal's own
+    'select entries' mode — same shape as Staging's bulk Approve/Reject:
+    loop _reverse_one_entry over whatever's checked, collect successes
+    and errors separately so one already-reversed or locked-scenario
+    entry in the batch doesn't stop the rest from going through."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+    except ValueError as e:
+        return flash_redirect("/entries", err=str(e))
+
+    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    if not entry_ids:
+        return flash_redirect("/entries", err="Select at least one entry to reverse")
+
+    user_id = auth.current_user(request)["user_id"]
+    reversed_ids, errors = [], []
+    for eid in entry_ids:
+        try:
+            reversed_ids.append(_reverse_one_entry(eid, user_id))
+        except (ValueError, psycopg.Error) as e:
+            errors.append(_pg_msg(e) if isinstance(e, psycopg.Error) else str(e))
+
+    ok_msg = (f"Reversed {len(reversed_ids)} entr{'y' if len(reversed_ids) == 1 else 'ies'}"
+             if reversed_ids else None)
+    err_msg = "; ".join(errors) or None
+    return flash_redirect("/entries", ok=ok_msg, err=err_msg)
 
 
 # ---------------------------------------------------------------------------

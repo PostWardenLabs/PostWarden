@@ -871,6 +871,18 @@ button.quiet:disabled {
              font-family: var(--mono); text-transform: uppercase;
              letter-spacing: 0.04em; font-size: 0.7rem; color: var(--ink-soft); }
 
+/* -- "select entries" mode (Journal — see entries-select.js) --------------
+   Hidden until toggled on: reading the Journal is the common case,
+   selecting entries for a bulk action is the deliberate exception, unlike
+   Staging where every row is a candidate for Approve/Reject by default.
+   Per-element display values, not a bare `display: none` override —
+   .checkline and button already set their own (flex, inline-block), and
+   a generic reset would have to guess which one applies to a given
+   .select-only element. */
+.select-only { display: none; }
+#entries-select-form.select-mode label.checkline.select-only { display: flex; }
+#entries-select-form.select-mode button.select-only { display: inline-block; }
+
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which
    reads as an OS control dropped into a page styled nothing like the

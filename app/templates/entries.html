@@ -169,53 +169,66 @@
   </div>
 </details>
 
-{% for e in entries %}
-<details class="entry">
-  <summary>
-    <span class="mono dim">{{ e.entry_date }}</span>
-    <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
-    <span>{{ e.description }}
-      {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
-      {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
-      {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
-      {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
-      {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
-      {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
-    </span>
-    <span class="num mono">{{ e.total_debits | money }}</span>
-    <span></span>
-  </summary>
-  <div class="lines">
-    <table class="ledger">
-      <thead><tr>
-        <th>Account</th>
-        <th class="num money money-first">Debit</th>
-        <th class="num money">Credit</th>
-        <th>Memo</th>
-      </tr></thead>
-      <tbody>
-        {% for l in lines_by_entry.get(e.id, []) %}
-        <tr>
-          <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
-          <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
-          <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
-          <td class="dim">{{ l.memo or '' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if not e.reversed_by and not e.scenario_locked %}
-    <form method="post" action="/entries/{{ e.id }}/reverse" style="margin-top: 0.6rem;"
-          data-confirm="Post a reversing entry for #{{ e.id }}?">
-      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-      <button type="submit" class="quiet">Reverse this entry</button>
-    </form>
-    {% endif %}
-  </div>
-</details>
-{% else %}
-<p class="dim">No entries match. Post one from <a href="/entries?new=1">+ New entry</a> above.</p>
-{% endfor %}
+{#
+  "Select entries" reveals a checkbox per entry (same style/mechanism
+  as Staging's own bulk actions) and the bar below — Reverse posts a
+  reversal for everything checked, same as the old per-entry "Reverse
+  this entry" button used to (removed; one mechanism instead of two,
+  same reasoning as Staging's Reject consolidation). Hidden by default
+  via .select-only (see entries-select.js and its CSS) — reading the
+  Journal is the common case, selecting is the deliberate exception.
+#}
+<form method="post" action="/entries/reverse" id="entries-select-form">
+  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+  <p class="bar" style="align-items: center;">
+    <button type="button" class="quiet" id="select-toggle">Select entries</button>
+    <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
+    <button type="submit" id="reverse-btn" class="select-only" disabled>Reverse (Alt+R)</button>
+  </p>
+  {% for e in entries %}
+  <details class="entry">
+    <summary>
+      <label class="checkline select-only" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
+        <input type="checkbox" name="entry_id" value="{{ e.id }}" class="entry-check">
+      </label>
+      <span class="mono dim">{{ e.entry_date }}</span>
+      <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
+      <span>{{ e.description }}
+        {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+        {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
+        {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
+        {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
+        {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
+        {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
+      </span>
+      <span class="num mono">{{ e.total_debits | money }}</span>
+      <span></span>
+    </summary>
+    <div class="lines">
+      <table class="ledger">
+        <thead><tr>
+          <th>Account</th>
+          <th class="num money money-first">Debit</th>
+          <th class="num money">Credit</th>
+          <th>Memo</th>
+        </tr></thead>
+        <tbody>
+          {% for l in lines_by_entry.get(e.id, []) %}
+          <tr>
+            <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
+            <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
+            <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
+            <td class="dim">{{ l.memo or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% else %}
+  <p class="dim">No entries match. Post one from <a href="/entries?new=1">+ New entry</a> above.</p>
+  {% endfor %}
+</form>
 
 {% if has_prev or has_next %}
 <div class="pager">
@@ -230,4 +243,5 @@
 <script src="{{ asset('tags.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>
 <script src="{{ asset('entry_templates.js') }}"></script>
+<script src="{{ asset('entries-select.js') }}"></script>
 {% endblock %}

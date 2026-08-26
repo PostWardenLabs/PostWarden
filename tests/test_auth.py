@@ -1531,6 +1531,104 @@ def test_entries_page_hide_reversed_excludes_both_sides_of_the_pair(conn):
         assert "Untouched entry" in r_csv.text
 
 
+def test_entries_page_offers_select_entries_with_reverse_disabled_until_checked(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid = mk_entry(cur, scen["id"], "Reversible entry")
+        mk_line(cur, eid, acct["id"], 40)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/entries?scenario={scen['code']}")
+        assert 'id="select-toggle"' in r.text
+        assert 'id="reverse-btn" class="select-only" disabled' in r.text
+        assert f'value="{eid}"' in r.text
+        # The old per-entry button is gone — bulk Reverse (checked +
+        # the top button) is the only mechanism now.
+        assert "Reverse this entry" not in r.text
+
+
+def test_entries_bulk_reverse_posts_a_reversal_for_every_checked_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid1 = mk_entry(cur, scen["id"], "First entry")
+        mk_line(cur, eid1, acct["id"], 40)
+        eid2 = mk_entry(cur, scen["id"], "Second entry")
+        mk_line(cur, eid2, acct["id"], 25)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/entries/reverse", data={
+            "entry_id": [str(eid1), str(eid2)], "csrf_token": csrf_token,
+        })
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE reverses_entry_id = %s", (eid1,))
+        assert cur.fetchone()["n"] == 1
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE reverses_entry_id = %s", (eid2,))
+        assert cur.fetchone()["n"] == 1
+
+
+def test_entries_bulk_reverse_requires_at_least_one_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/entries/reverse", data={"csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+
+
+def test_entries_bulk_reverse_skips_an_already_reversed_entry_but_still_reverses_the_rest(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        already = mk_entry(cur, scen["id"], "Already reversed")
+        mk_line(cur, already, acct["id"], 10)
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, reverses_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Its own reversal', %s) RETURNING id""",
+            (scen["id"], already))
+        mk_line(cur, cur.fetchone()["id"], acct["id"], -10)
+        fresh = mk_entry(cur, scen["id"], "Not yet reversed")
+        mk_line(cur, fresh, acct["id"], 15)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/entries/reverse", data={
+            "entry_id": [str(already), str(fresh)], "csrf_token": csrf_token,
+        })
+        assert "ok=" in r.headers["location"]
+        assert "err=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE reverses_entry_id = %s", (fresh,))
+        assert cur.fetchone()["n"] == 1
+        # Still just the one reversal already_reversed had going in.
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE reverses_entry_id = %s", (already,))
+        assert cur.fetchone()["n"] == 1
+
+
 def test_entries_page_filters_by_amount(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
