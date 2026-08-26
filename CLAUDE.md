@@ -118,4 +118,11 @@ considering the task finished.
 - **`VERSION`** (repo root, plain text, shown in the footer) bumps with
   any user-visible change — patch for a fix/polish pass, minor for a new
   feature, same pre-1.0 rules either way since this is still v0.x. Bump
-  it in the same commit as the change, not a separate one.
+  it in the same commit as the change, not a separate one. **Local dev
+  note**: the hot-reload override only bind-mounts `./app`, so a bumped
+  `VERSION` won't show up in the running dev container's footer until a
+  real `docker compose up -d --build` — a plain page refresh or `restart
+  app` won't do it, and that's expected, not a bug (see
+  `docker-compose.override.yml`'s own comment for the full explanation).
+  Worth knowing before spending time debugging a footer that "won't
+  update."

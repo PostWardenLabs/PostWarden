@@ -22,6 +22,19 @@
 # an earlier image layer, not part of ./app, and still needs a real
 # `docker compose build`.
 #
+# Same story for anything main.py reads from *outside* ./app at startup —
+# VERSION (repo root, read once into templates.env.globals so the footer
+# doesn't re-read it per request) is the one that actually bit a session:
+# bumping it and refreshing the page kept showing the old number, because
+# only ./app is bind-mounted — VERSION sat frozen at whatever was baked
+# into the image at the last real build, and a plain `docker compose
+# restart app` doesn't rebuild the image, so it didn't help either. Not a
+# bug, just this file's bind-mount scope working exactly as documented
+# above — but easy to mistake for one mid-session if you don't already
+# know VERSION lives outside ./app. `docker compose up -d --build` (the
+# real-shape check two paragraphs up) is what actually picks up a VERSION
+# bump; nothing short of that will while iterating.
+#
 # This applies to every local `docker compose` command for as long as the
 # file exists — including a plain `--build`. There's no local way to
 # accidentally test the *real*, non-reloading production shape unless you
