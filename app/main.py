@@ -79,6 +79,21 @@ def money(v) -> Markup:
     return Markup(f'<span class="money-fmt" data-value="{v:.2f}">{v:,.2f}</span>')
 
 
+def dateformat(v) -> Markup:
+    """Same pattern as money() above: renders as plain ISO text
+    ("2026-08-26") so the page is correct with JS disabled, wrapped in a
+    span carrying that same ISO value — date-format.js rewrites every
+    .date-fmt's displayed text using whatever format is saved in
+    Settings (client-side only; the date stored in Postgres never
+    changes, and every date in this app is a plain DATE, no time
+    component, so there's no timezone conversion to get wrong here —
+    just which order y/m/d print in)."""
+    if v is None:
+        return Markup("")
+    iso = v.isoformat() if hasattr(v, "isoformat") else str(v)
+    return Markup(f'<span class="date-fmt" data-value="{iso}">{iso}</span>')
+
+
 def asset(filename: str) -> str:
     """Cache-busting URL for a static file: /static/x?v=<mtime>. Without a
     version query param, browsers can silently keep serving an old cached
@@ -103,6 +118,7 @@ def tojson(value) -> Markup:
 
 
 templates.env.filters["money"] = money
+templates.env.filters["dateformat"] = dateformat
 templates.env.filters["tojson"] = tojson
 templates.env.globals["asset"] = asset
 # Read once at startup, not per-request — the footer's version number

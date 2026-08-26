@@ -83,7 +83,7 @@ the sidebar nav, the flash-message banner, and three blocks a page fills
 in: `title`, `content`, and `scripts` (page-specific `<script src>` tags
 — a page needs this block only for something `base.html` doesn't already
 load unconditionally: `combobox.js`, `datepicker.js`, `sidebar.js`,
-`theme.js`, `cents-entry.js`, `money-format.js`, `auto-refresh.js`,
+`theme.js`, `cents-entry.js`, `money-format.js`, `date-format.js`, `auto-refresh.js`,
 `confirm.js`.
 `tags.js` is the one common enhancement that *isn't* always-on — only
 pages with an actual tag input (`entries.html`, `scheduled.html`, ...)
@@ -113,6 +113,7 @@ through the template context explicitly.
 | `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
+| `date-format.js` | Same pattern, one filter over: rewrites every `{{ x | dateformat }}` span (Dashboard's Recent activity, Journal, Staging, Scheduled's Next date) using the format saved in Settings — ISO/US/EU/long. Parses the ISO string by hand rather than `new Date(...)`, which would parse as UTC and can shift the displayed day in a timezone behind UTC; every date here is a plain DATE column, so this only ever reorders y/m/d. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
 | `staging.js` | The Staging page — "select all" toggles every entry checkbox; Approve and the bulk Reject button both stay disabled until at least one is checked, and both confirm via `confirm.js`'s `ask()` (count-aware message, so it can't be a static `data-confirm` — the check for that attribute on `e.submitter` is what tells this listener apart from a hypothetical future button that confirms itself the ordinary way). Alt+A clicks Approve, Alt+R clicks Reject. |
 | `staging_edit.js` | Staging's Edit screen — loads the entry's existing lines into app.js's grid on page load, the same way `entry_templates.js` loads a saved template in, just automatic instead of picked from a dropdown. |

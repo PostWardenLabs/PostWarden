@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi.testclient import TestClient
 
-from app.main import app, templates
+from app.main import app, dateformat, templates
 from conftest import (mk_account, mk_budget_line, mk_entry, mk_line, mk_payee,
                      mk_scenario, mk_user)
 
@@ -1519,6 +1519,33 @@ def test_entries_page_never_shows_staging_entries(conn):
 
         r_csv = c.get("/entries/export.csv")
         assert "Staged, should never show" not in r_csv.text
+
+
+def test_dateformat_filter_wraps_iso_text_in_a_date_fmt_span(conn):
+    # No-JS fallback text is plain ISO, same shape money() falls back to
+    # American-default text — date-format.js rewrites the *displayed*
+    # text client-side from data-value, never what's here.
+    assert str(dateformat(date(2026, 8, 26))) == \
+        '<span class="date-fmt" data-value="2026-08-26">2026-08-26</span>'
+    assert str(dateformat(None)) == ""
+
+
+def test_entries_page_and_settings_page_offer_date_format(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        mk_line(cur, mk_entry(cur, scen["id"], "Dated entry"), mk_account(cur)["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get("/entries")
+        assert f'class="date-fmt" data-value="{date.today().isoformat()}"' in r.text
+
+        r_settings = c.get("/settings")
+        assert '<select id="date-format-select">' in r_settings.text
+        for opt in ('value="iso"', 'value="us"', 'value="eu"', 'value="long"'):
+            assert opt in r_settings.text
 
 
 def test_entries_page_hide_reversed_excludes_both_sides_of_the_pair(conn):

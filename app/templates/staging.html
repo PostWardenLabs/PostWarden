@@ -94,7 +94,7 @@
       <label class="checkline" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
         <input type="checkbox" name="entry_id" value="{{ e.id }}" class="staging-check">
       </label>
-      <span class="mono dim">{{ e.entry_date }}</span>
+      <span class="mono dim">{{ e.entry_date | dateformat }}</span>
       <span>{{ e.description }}
         {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
         <span class="badge">→ {{ e.target_scenario_code or 'ACTUAL' }}</span>

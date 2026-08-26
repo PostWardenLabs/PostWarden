@@ -40,7 +40,7 @@
   <tbody>
     {% for e in recent %}
     <tr>
-      <td class="mono dim">{{ e.entry_date }}</td>
+      <td class="mono dim">{{ e.entry_date | dateformat }}</td>
       <td class="activity-desc-cell">
         <span class="activity-desc">
           {{ e.description }}{% if e.payee_name %} <span class="dim small">· {{ e.payee_name }}</span>{% endif %}

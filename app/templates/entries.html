@@ -228,7 +228,7 @@
     <label class="checkline select-only" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
       <input type="checkbox" name="entry_id" value="{{ e.id }}" class="entry-check" form="entries-select-form">
     </label>
-    <span class="mono dim">{{ e.entry_date }}</span>
+    <span class="mono dim">{{ e.entry_date | dateformat }}</span>
     <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
     <span>{{ e.description }}
       {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}

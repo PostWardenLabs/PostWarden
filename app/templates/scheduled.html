@@ -30,7 +30,7 @@
       <td class="dim">{{ s.payee_name or '—' }}</td>
       <td class="mono dim">{{ s.scenario_code }}</td>
       <td>every {{ s.interval_count }} {{ s.interval_unit }}{{ 's' if s.interval_count != 1 }}</td>
-      <td class="mono">{{ s.next_date }}</td>
+      <td class="mono">{{ s.next_date | dateformat }}</td>
       <td>{{ 'active' if s.is_active else 'paused' }}</td>
       <td>
         <form method="post" action="/scheduled/{{ s.id }}/toggle-active">
