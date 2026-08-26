@@ -83,7 +83,8 @@ the sidebar nav, the flash-message banner, and three blocks a page fills
 in: `title`, `content`, and `scripts` (page-specific `<script src>` tags
 — a page needs this block only for something `base.html` doesn't already
 load unconditionally: `combobox.js`, `datepicker.js`, `sidebar.js`,
-`theme.js`, `cents-entry.js`, `money-format.js`, `auto-refresh.js`.
+`theme.js`, `cents-entry.js`, `money-format.js`, `auto-refresh.js`,
+`confirm.js`.
 `tags.js` is the one common enhancement that *isn't* always-on — only
 pages with an actual tag input (`entries.html`, `scheduled.html`, ...)
 load it themselves).
@@ -97,10 +98,11 @@ through the template context explicitly.
 
 | File | Enhances |
 |---|---|
-| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, Entry templates, and Staging's Edit screen — keyboard flow (Tab, and Enter/Shift+Enter through the same account → debit → credit → memo → next row order, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). |
-| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
+| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, Entry templates, and Staging's Edit screen — keyboard flow (Tab moves account → debit → credit → memo → next row; Enter/Shift+Enter move vertically instead, same column, next/previous row, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). Global shortcuts via `e.code` rather than `e.key` (Option+letter types an accented character on a Mac, so `e.key` never matches there): Alt+N adds a line, Alt+D triggers Distribute, Alt+E opens New entry's `<details>` and focuses the first line (Journal page only). |
+| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>`, date/month field, checkbox, or the tag picker's hidden value field changes (tags.js dispatches `change` on it exactly once per add/remove, not per keystroke) — so a report or the Journal's filters refresh without a separate button. Free-typed text (Search, Amount) stays out of this on purpose; Search has its own submit icon, Amount just needs Enter. |
 | `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
+| `confirm.js` | Replaces the browser's own `confirm()` with a styled modal matching the app (`window.PostWardenConfirm.ask(message, opts) → Promise<boolean>`). Also wires up `<form data-confirm="...">` / `<button data-confirm="...">` generically: intercepts the submit, awaits the modal, and — only if confirmed — resubmits via `form.requestSubmit(submitter)` (preserves a button's own `formaction`/`formmethod` override, e.g. Staging's Reject). A message computed at click time (Staging's "Approve N entries") calls `ask()` directly instead of using the attribute — see `staging.js`. `opts.danger` renders OK in red, reserved for something that actually deletes data (Delete template/level, Reject); Reverse and Approve stay the default color. |
 | `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`) — arrow keys/Home/End/PageUp/PageDown move around the open grid via a roving tabindex (one day is ever a real Tab stop; the rest are reachable by arrow key but not by Tab), closes on Escape or on focus actually leaving the whole widget (checked a tick after focusout, not from its relatedTarget — re-rendering the grid on every move destroys the old focused button first, which fires focusout with no relatedTarget yet). |
 | `number-stepper.js` | Every `<input type="number">` (Account levels' Depth, Scheduled's "Repeats every") — hides the browser's native spinner and adds the site's own chevron up/down buttons; typing and the keyboard's own arrow keys still work, input stays `type="number"` throughout. |
 | `tags.js` | The tag chip input (select-or-create, comma-separated hidden value underneath). |
@@ -111,7 +113,7 @@ through the template context explicitly.
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
-| `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked. |
+| `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked; Approve itself confirms via `confirm.js`'s `ask()` (count-aware message, so it can't be a static `data-confirm`) before actually submitting. |
 | `staging_edit.js` | Staging's Edit screen — loads the entry's existing lines into app.js's grid on page load, the same way `entry_templates.js` loads a saved template in, just automatic instead of picked from a dropdown. |
 | `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
 

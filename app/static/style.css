@@ -1178,6 +1178,38 @@ details.entry-new summary {
 }
 .tag-chip-remove:hover { color: var(--red); }
 
+/* -- confirm dialog (see confirm.js) ---------------------------------------
+   Replaces the browser's own confirm() skin — unstyleable, looked
+   nothing like the rest of the app — with the same card/border/shadow
+   language the date picker and combobox panels already use, just
+   centered over a dimmed backdrop instead of anchored to a field. */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem;
+}
+.confirm-overlay[hidden] { display: none; }
+.confirm-modal {
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  border-radius: 2px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  padding: 1.2rem; max-width: 26rem; width: 100%;
+}
+.confirm-message { margin: 0 0 1.1rem; color: var(--ink); font-size: 0.92rem; line-height: 1.45; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+/* Same red the rest of the app already uses for "this is destructive/
+   wrong" (imbalance, .flash-err, the reversal badge) — a solid fill
+   version of it, the one place in the app a button is ever red, because
+   this is the one place a plain accent-colored OK wouldn't say enough:
+   Delete/Reject actually remove data. Reverse and Approve stay the
+   default color — normal, intended actions, not something to flag as
+   dangerous just because they ask first. */
+.confirm-ok.danger { background: var(--red); border-color: var(--red); color: var(--paper); }
+.confirm-ok.danger:hover {
+  background: color-mix(in srgb, var(--red) 85%, black);
+  border-color: color-mix(in srgb, var(--red) 85%, black);
+}
+
 /* -- two-column layout: sticky side nav + main content --------------------
    Originally just the Accounts page's level browser; generic enough
    (and useful enough — see Help's own section nav) that it's named for

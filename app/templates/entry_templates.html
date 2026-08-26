@@ -25,7 +25,7 @@
       <td class="dim">{{ t.lines | length }}</td>
       <td>
         <form method="post" action="/templates/{{ t.id }}/delete"
-              onsubmit="return confirm('Delete template {{ t.name }}?');">
+              data-confirm="Delete template {{ t.name }}?" data-confirm-danger="1">
           <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
           <button type="submit" class="quiet">Delete</button>
         </form>

@@ -23,7 +23,7 @@
       <td class="num mono">{{ lv.scenario_count }}</td>
       <td colspan="2">
         <form method="post" action="/account-levels/{{ lv.id }}/delete" style="display:inline"
-              onsubmit="return confirm('Delete level {{ lv.name }}?');">
+              data-confirm="Delete level {{ lv.name }}?" data-confirm-danger="1">
           <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
           <button type="submit" class="quiet">Delete</button>
         </form>

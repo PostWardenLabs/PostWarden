@@ -206,7 +206,7 @@
     </table>
     {% if not e.reversed_by and not e.scenario_locked %}
     <form method="post" action="/entries/{{ e.id }}/reverse" style="margin-top: 0.6rem;"
-          onsubmit="return confirm('Post a reversing entry for #{{ e.id }}?');">
+          data-confirm="Post a reversing entry for #{{ e.id }}?">
       <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
       <button type="submit" class="quiet">Reverse this entry</button>
     </form>

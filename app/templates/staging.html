@@ -57,7 +57,8 @@
         <a class="quiet-link" href="/staging/{{ e.id }}/edit">Edit</a>
         <button type="submit" class="quiet" style="margin-left: 0.6rem;"
                 formaction="/staging/{{ e.id }}/reject" formmethod="post"
-                onclick="return confirm('Reject and permanently delete entry #{{ e.id }} — {{ e.description }}? This cannot be undone.');">
+                data-confirm="Reject and permanently delete entry #{{ e.id }} — {{ e.description }}? This cannot be undone."
+                data-confirm-danger="1">
           Reject
         </button>
       </p>
