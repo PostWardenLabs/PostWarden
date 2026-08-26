@@ -298,6 +298,15 @@ restricted to specific emails.
   generate its managed keypair in one non-interactive shot; without it,
   the failure is exactly "The private SSH key file for gcloud does not
   exist," which reads like a missing-credential problem but isn't one.
+
+  Last one: the *first* time a brand-new identity/keypair talks to this
+  VM, the guest agent provisioning that new Linux user + its
+  `authorized_keys` can take a little longer than gcloud's own ~40s
+  retry budget — gcloud's own error even says "Try running this command
+  again." Both `deploy-beta.sh` and the workflow ping the VM in a short
+  retry loop before the real (docker-build-including, much more
+  expensive to fail) deploy command, rather than let a one-off timing
+  fluke fail the whole thing.
 - **demo** deploys from the latest git *tag*, not master — a deliberate
   "this commit is stable enough to show a stranger" decision, cut with
   `git tag vX.Y.Z && git push --tags` and rolled out by hand with

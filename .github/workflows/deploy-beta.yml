@@ -39,6 +39,27 @@ jobs:
       - name: Ensure ~/.ssh exists
         run: mkdir -p -m 700 ~/.ssh
 
+      # A brand-new runner means a brand-new SSH key gcloud has never used
+      # against this VM before, which means a brand-new Linux user on the
+      # VM's end too — the guest agent provisioning that user + its
+      # authorized_keys sometimes takes a little longer than gcloud's own
+      # ~40s retry budget, especially the very first time. gcloud's own
+      # error message says as much ("Try running this command again") —
+      # a cheap ping loop up front absorbs that instead of failing the
+      # whole (much more expensive, docker-build-including) deploy step
+      # on a timing fluke.
+      - name: Wait for the SSH key to propagate
+        run: |
+          for i in $(seq 1 6); do
+            gcloud compute ssh postwarden-public \
+              --zone us-central1-a --project libro-506506 \
+              --tunnel-through-iap --command "true" && exit 0
+            echo "not ready yet, retrying in 15s ($i/6)"
+            sleep 15
+          done
+          echo "SSH key never propagated" >&2
+          exit 1
+
       - name: Redeploy beta over IAP
         run: |
           gcloud compute ssh postwarden-public \
