@@ -4,8 +4,11 @@ Each test hits Postgres directly (see conftest.py) so there is no code
 path — app, psql, or otherwise — that can route around what's asserted
 here.
 """
-from conftest import (expect_error, mk_account, mk_budget_line, mk_entry,
-                     mk_line, mk_scenario)
+import psycopg
+import pytest
+
+from conftest import (BI_URL, expect_error, mk_account, mk_budget_line,
+                     mk_entry, mk_line, mk_scenario)
 
 
 # ---------------------------------------------------------------------------
@@ -585,3 +588,44 @@ def test_double_reversal_rejected(conn, actual_scenario_id):
         cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE reverses_entry_id = %s",
                     (eid,))
         assert cur.fetchone()["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# libro_bi — the read-only BI role (db/migrations/001_add_bi_role.sql,
+# SPEC.md decision 14). Connects as its own login, BI_URL, rather than
+# through the `conn` fixture (the superuser-ish `libro`) — the point is to
+# exercise the grants Postgres actually enforces for this role, not just
+# what the app happens to query.
+# ---------------------------------------------------------------------------
+def test_bi_role_can_select_reporting_objects():
+    with psycopg.connect(BI_URL) as bi_conn:
+        with bi_conn.cursor() as cur:
+            for stmt in [
+                "SELECT * FROM v_dim_account LIMIT 1",
+                "SELECT * FROM v_fact_lines LIMIT 1",
+                "SELECT * FROM v_dim_date LIMIT 1",
+                "SELECT * FROM v_monthly_activity LIMIT 1",
+                "SELECT * FROM fn_trial_balance('ACTUAL', CURRENT_DATE)",
+            ]:
+                cur.execute(stmt)  # must not raise
+
+
+def test_bi_role_cannot_write_a_journal_entry(actual_scenario_id):
+    with psycopg.connect(BI_URL) as bi_conn:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with bi_conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO journal_entries (scenario_id, entry_date, description) "
+                    "VALUES (%s, CURRENT_DATE, 'libro_bi should not be able to do this')",
+                    (actual_scenario_id,))
+
+
+def test_bi_role_cannot_read_base_tables():
+    """Not just journal_lines — v_fact_lines joins through `users` for
+    posted_by, so the base table (password_hash included) is one careless
+    `information_schema` query away if the grant were on the schema instead
+    of the four reporting views specifically."""
+    with psycopg.connect(BI_URL) as bi_conn:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with bi_conn.cursor() as cur:
+                cur.execute("SELECT password_hash FROM users")

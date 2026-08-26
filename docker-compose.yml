@@ -49,6 +49,11 @@ services:
       # normal self-hoster's own login should never appear on their own
       # login page. See app/main.py's demo_banner comment.
       LIBRO_DEMO_MODE: ${LIBRO_DEMO_MODE:-}
+      # Purely informational — lets Settings > Connect Power BI / Excel show
+      # the right port to connect to. Not a real connection: the app never
+      # talks to Postgres over this, it just mirrors whatever DB_PORT the
+      # "db" service below is actually bound to.
+      LIBRO_BI_PORT: ${DB_PORT:-5432}
     ports:
       # Same story as DB_PORT above — only relevant when two instances of
       # this compose file share one host.

@@ -14,6 +14,7 @@ import random
 import string
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 import pytest
@@ -27,6 +28,15 @@ ADMIN_URL = os.environ.get(
 TEST_URL = os.environ.get(
     "LIBRO_TEST_URL", f"postgresql://libro:libro@db:5432/{TEST_DB}"
 )
+# Same host/port/database as TEST_URL, but as libro_bi — the read-only role
+# from db/migrations/001_add_bi_role.sql (SPEC.md decision 14) — instead of
+# the superuser-ish libro. Derived rather than a separate env var: it's
+# always the same Postgres cluster/database as TEST_URL, just a different
+# login, so there's nothing a second override would actually let you vary.
+BI_URL = urlunsplit(urlsplit(TEST_URL)._replace(netloc=(
+    f"libro_bi:libro_bi@{urlsplit(TEST_URL).hostname}"
+    f":{urlsplit(TEST_URL).port}"
+)))
 
 # app/db.py opens its connection pool at import time, so DATABASE_URL has to
 # point at the disposable test database *before* anything imports app.main

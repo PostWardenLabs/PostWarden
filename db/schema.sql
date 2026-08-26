@@ -46,7 +46,7 @@ CREATE TYPE scenario_type AS ENUM ('actual', 'budget', 'forecast', 'what_if');
 CREATE TABLE schema_version (
     version INTEGER NOT NULL
 );
-INSERT INTO schema_version (version) VALUES (0);
+INSERT INTO schema_version (version) VALUES (1);
 
 -- ---------------------------------------------------------------------------
 -- Users and sessions — application-level authentication.
@@ -988,5 +988,24 @@ LANGUAGE sql STABLE AS $$
      GROUP BY da.id, da.code, da.name, da.account_type, da.path, da.sort_path
      ORDER BY da.sort_path;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Read-only role for BI tools (Power BI, Excel, psql) connecting straight to
+-- the database instead of through the app — SPEC.md decision 14. Folded in
+-- from db/migrations/001_add_bi_role.sql; the two must move together, see
+-- that file's header and db/migrations/README.md.
+-- ---------------------------------------------------------------------------
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'libro_bi') THEN
+        CREATE ROLE libro_bi LOGIN PASSWORD 'libro_bi';
+    END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE libro TO libro_bi;
+GRANT USAGE ON SCHEMA public TO libro_bi;
+GRANT SELECT ON v_dim_account, v_fact_lines, v_dim_date, v_monthly_activity TO libro_bi;
+GRANT EXECUTE ON FUNCTION fn_trial_balance(TEXT, DATE, DATE) TO libro_bi;
 
 COMMIT;

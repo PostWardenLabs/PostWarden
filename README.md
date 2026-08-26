@@ -50,6 +50,10 @@ for your own instance.
   a real workflow.
 - **CSV export everywhere**, a chart-of-accounts manager, payees, tags,
   and ten-odd hand-built visual themes if the default doesn't suit you.
+- **A Power BI / Excel connection page** (Settings) — host, port, and a
+  dedicated read-only login filled in for this instance, plus a `.pbids`
+  download, so connecting a BI tool is a page in the app, not a README to
+  go find.
 
 ## Why it exists
 
@@ -230,9 +234,10 @@ explicit 30-day lifetime matching the session behind it.
 
 `docker-compose.yml` still binds Postgres to `127.0.0.1` (Power BI/Excel/psql
 on the same machine connect fine; the network can't) — change the
-`libro`/`libro` database credentials before exposing this beyond a machine
-you trust, login or not; the app's login only protects the app, not a
-direct Postgres connection.
+`libro`/`libro` *and* `libro_bi`/`libro_bi` database credentials (see
+"Connect Power BI / Excel" below) before exposing this beyond a machine you
+trust, login or not; the app's login only protects the app, not a direct
+Postgres connection.
 
 ## Deploy to Google Cloud
 
@@ -245,7 +250,12 @@ GCP's always-free tier for a personal, low-traffic ledger.
 
 ## Connect Power BI / Excel
 
-Connect to PostgreSQL (`localhost`, database `libro`) and load:
+Live connection details (host/port already filled in for this instance) are
+in the app itself — **Settings → Connect Power BI / Excel** — including a
+`.pbids` download for Power BI Desktop. The short version: connect to
+PostgreSQL (`localhost:5432`, database `libro`) as `libro_bi`/`libro_bi` — a
+dedicated read-only role (SPEC.md decision 14) that can only `SELECT` the
+reporting views/function below, not the base ledger tables — and load:
 
 | Object                | Role                                                    |
 |-----------------------|---------------------------------------------------------|

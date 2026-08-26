@@ -300,6 +300,58 @@ def account_page(request: Request, ok: str = None, err: str = None):
     })
 
 
+# libro_bi (db/migrations/001_add_bi_role.sql, SPEC.md decision 14) is a
+# fixed, hardcoded-password role by design — same tradeoff docker-compose.yml
+# already makes for the app's own libro/libro login: a real per-instance
+# secret would need a place to be generated and stored, and this project has
+# exactly one of those (Postgres itself). Host/port are the only things that
+# actually vary per install, so those are the only two read from the
+# environment; LIBRO_BI_PORT is purely informational, see its
+# docker-compose.yml comment.
+BI_DB = "libro"
+BI_USER = "libro_bi"
+BI_OBJECTS = [
+    ("v_dim_account", "Account dimension — hierarchy path, depth, normal side"),
+    ("v_fact_lines", "Fact table — one row per journal line, fully denormalized"),
+    ("v_dim_date", "Date dimension, 2020–2035"),
+    ("v_monthly_activity", "v_fact_lines pre-aggregated to account × month × scenario"),
+    ("fn_trial_balance('ACTUAL', '2026-08-31')", "Trial balance at any date, any scenario"),
+]
+
+
+@app.get("/settings/connect-bi")
+def connect_bi_page(request: Request):
+    return templates.TemplateResponse(request, "connect_bi.html", {
+        "nav": "settings",
+        "bi_host": request.url.hostname,
+        "bi_port": os.environ.get("LIBRO_BI_PORT", "5432"),
+        "bi_db": BI_DB,
+        "bi_user": BI_USER,
+        "bi_objects": BI_OBJECTS,
+    })
+
+
+@app.get("/settings/connect-bi/download.pbids")
+def connect_bi_pbids(request: Request):
+    """A Power BI Data Source file — double-clicking it in Power BI Desktop
+    opens straight to a PostgreSQL connection dialog pre-filled with this
+    instance's host/port/database, nothing to type by hand. No credentials
+    in it: Power BI still prompts for the libro_bi password itself, the same
+    as it would connecting manually. See https://learn.microsoft.com/power-bi/connect-data/desktop-data-sources#pbids-files"""
+    pbids = {
+        "version": "0.1",
+        "connections": [{
+            "details": {"protocol": "postgresql", "address": {
+                "server": f'{request.url.hostname}:{os.environ.get("LIBRO_BI_PORT", "5432")}',
+                "database": BI_DB,
+            }},
+            "mode": "Import",
+        }],
+    }
+    return Response(json.dumps(pbids, indent=2), media_type="application/json", headers={
+        "Content-Disposition": 'attachment; filename="PostWarden.pbids"'})
+
+
 @app.post("/settings/username")
 def change_username(request: Request, username: str = Form(...),
                     csrf_token: str = Form(...)):

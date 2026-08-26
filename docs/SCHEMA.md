@@ -301,6 +301,15 @@ every one is callable identically from the app, `psql`, or a BI tool.
 | `fn_account_balances(scenario, as_of, from)` | function | Every *active* account's own direct balance, unconditionally — no postable/has-activity filtering. The base the app's Python-side account-tree rollup (Trial Balance, Balance Sheet, the Budget grid's Actual column) builds subtotals from; a summary account needs a row here even at $0 so it can be positioned in the tree. |
 | `fn_rollup_balance(scenario, depth, as_of)` | function | Balances rolled up to a common `account_levels` depth — lets a scenario posted straight to "Bank" line up against one that split Checking/Savings. Backs the Variance page. |
 
+**`libro_bi`** is a dedicated Postgres role (`db/migrations/001_add_bi_role.sql`,
+SPEC.md decision 14) for BI tools connecting straight to Postgres instead of
+through the app: `SELECT` on `v_dim_account`/`v_fact_lines`/`v_dim_date`/
+`v_monthly_activity` and `EXECUTE` on `fn_trial_balance`, nothing else — no
+base table, so it can't write a journal line or read `users.password_hash`.
+Fixed default password (`libro_bi`), same tradeoff as the app's own
+`libro`/`libro` login; the app's Settings → Connect Power BI / Excel page
+surfaces it for a self-hoster rather than making them find it in `psql`.
+
 ## Table-by-table reference
 
 Grouped the way `db/schema.sql` groups them.
