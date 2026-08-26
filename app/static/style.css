@@ -824,8 +824,17 @@ button, a.button-link {
   display: inline-block; text-decoration: none;
 }
 button:hover, a.button-link:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-button:disabled { background: var(--rule); border-color: var(--rule);
-                  color: var(--ink-soft); cursor: not-allowed; }
+button:disabled, .button-link.disabled {
+  background: var(--rule); border-color: var(--rule);
+  color: var(--ink-soft); cursor: not-allowed;
+}
+/* .button-link has no real disabled state (:disabled only applies to
+   actual form controls) — .disabled is the same look by hand, for
+   Clear filters when there's nothing to clear. Rendered as an <a> with
+   no href (see entries.html) rather than a real link, which already
+   makes it unfocusable and unclickable on its own — pointer-events here
+   is just belt-and-suspenders for the cursor. */
+.button-link.disabled { pointer-events: none; }
 button.quiet {
   background: transparent; color: var(--ink); border-color: var(--rule-strong);
 }

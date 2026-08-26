@@ -76,9 +76,9 @@
   <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed entries and their reversals</label>
   <button type="submit">Filter</button>
   {% if has_filters %}
-  <a class="quiet-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
+  <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
   {% else %}
-  <span class="dim small" aria-disabled="true">Clear filters</span>
+  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
   {% endif %}
   <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
 </form>

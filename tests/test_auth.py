@@ -1524,8 +1524,11 @@ def test_entries_page_clear_filters_link_only_shows_when_a_filter_is_active(conn
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
 
+        # No filters: rendered, but disabled — no href, so it's not a real
+        # link (unfocusable, unclickable) rather than absent outright.
         r = c.get("/entries")
-        assert "Clear filters</a>" not in r.text
+        assert 'class="button-link disabled"' in r.text
+        assert 'href="/entries">Clear filters</a>' not in r.text
 
         r = c.get("/entries?qtext=rent")
         assert 'href="/entries">Clear filters</a>' in r.text
