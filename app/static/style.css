@@ -800,23 +800,24 @@ input[type="file"]:hover::-webkit-file-upload-button {
    content inside interactive content) and double-stops on Tab, so this
    is the real fix rather than reaching for that. */
 /* font-size set explicitly here rather than left at font: inherit's
-   ambient 1rem — a button sitting in body text (Post entry, Approve
+   ambient size — a button sitting in body text (Post entry, Approve
    entries, Refresh, every plain <button type="submit">) inherited full
    paragraph-sized text while button.quiet right next to it (Add line,
-   Distribute, Log out, Lock/Unlock, ...) was set to 0.82rem, so the two
+   Distribute, Log out, Lock/Unlock, ...) was set smaller, so the two
    kinds looked like they belonged to different design systems the
-   moment they shared a toolbar. 0.88rem matches this app's own most
-   common UI-chrome size (table.ledger's 0.9rem) rather than either
-   button variant's old number — both share it now. That pass left
-   button.quiet with its own smaller padding (0.3rem 0.75rem vs. 0.4rem
-   0.9rem), on the theory that a size difference on top of fill-vs-outline
-   would read as "primary" vs. "secondary." In practice a 0.1rem padding
-   gap is too small to read as a size *system* — it just reads as one
-   button being slightly, unexplainably taller than its neighbor
-   (Post entry next to Add line/Distribute is the clearest case: same
-   font, same line-height, still visibly mismatched). Padding is equal
-   now too; fill vs. outline alone carries "primary" vs. "secondary,"
-   which is plenty on its own. */
+   moment they shared a toolbar. Went through 0.88rem (matching
+   table.ledger's own 0.9rem) for a while, both sharing that — but next
+   to an actual input/select in the same filter bar (which gets its
+   font-size from label.field's 0.78rem via font: inherit), a button at
+   0.88rem with 0.4rem padding is visibly taller than the boxes it's
+   sitting next to, Clear filters against Trial balance's "As of" field
+   being the clearest case. 0.78rem + 0.35rem padding now — same
+   font-size and vertical padding an input actually uses, so a button's
+   height matches its neighbors' instead of just its own kind. Padding
+   stays symmetric (not copying input's own asymmetric side padding,
+   which exists to leave room for a combobox chevron/date icon a button
+   never has) — fill vs. outline alone still carries "primary" vs.
+   "secondary." */
 /* mono + uppercase: same treatment as .checkline, table.ledger's
    headers, and the date picker — a control reads as "a control," not
    as a sentence. Free-typed text fields are the deliberate exception
@@ -824,10 +825,10 @@ input[type="file"]:hover::-webkit-file-upload-button {
    type into stays whatever case you typed, everything you just pick or
    click doesn't. */
 button, a.button-link {
-  font: inherit; font-family: var(--mono); font-size: 0.88rem; cursor: pointer;
+  font: inherit; font-family: var(--mono); font-size: 0.78rem; cursor: pointer;
   text-transform: uppercase; letter-spacing: 0.03em;
   background: var(--accent); color: var(--accent-text);
-  border: 1px solid var(--accent); padding: 0.4rem 0.9rem; border-radius: 2px;
+  border: 1px solid var(--accent); padding: 0.35rem 0.9rem; border-radius: 2px;
   display: inline-block; text-decoration: none;
 }
 button:hover, a.button-link:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
