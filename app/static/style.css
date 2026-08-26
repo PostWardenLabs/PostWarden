@@ -842,18 +842,14 @@ button.quiet {
   padding: 0.3rem 0.75rem;
 }
 button.quiet:hover { background: var(--paper-deep); }
+/* Every checkbox label in the app uses this one style — Staging's
+   "select all" used to get its own uppercase/mono treatment (.list-toggle,
+   removed) to read as "a control over the list" rather than "a setting,"
+   but in practice that just meant two checkboxes looked like they
+   belonged to different design systems depending on what they happened
+   to control. One consistent look for every checkbox label, full stop. */
 .checkline { display: flex; align-items: center; gap: 0.4rem;
              font-size: 0.85rem; color: var(--ink); font-family: var(--sans); }
-/* A bulk-action toggle sitting over a list (Staging's "select all") is
-   a different kind of thing from a --data-field checkbox like "require
-   balanced entries" — it's a control over the list below it, not one
-   more setting, so it borrows that list's own mono/uppercase (the same
-   treatment table.ledger's headers and the Journal's dates already use)
-   instead of reading as just another sentence-case form field. */
-.list-toggle {
-  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
-  font-size: 0.78rem; color: var(--ink-soft);
-}
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which
