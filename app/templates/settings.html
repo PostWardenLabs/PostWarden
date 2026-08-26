@@ -20,9 +20,9 @@
   <h2>Appearance</h2>
   <label class="field" style="max-width: 16rem;">Theme
     <select id="theme-select">
+      <option value="slate">Slate</option>
       <option value="ledger">Ledger</option>
       <option value="midnight">Midnight</option>
-      <option value="slate">Slate</option>
       <option value="graphite">Graphite</option>
       <option value="mono">Mono</option>
       <option value="linen">Linen</option>
@@ -61,7 +61,7 @@
 </div>
 
 <div class="panel">
-  <h2>Number format</h2>
+  <h2>Number &amp; date format</h2>
   <div class="bar">
     <label class="field" style="max-width: 8rem;">Symbol
       <input type="text" id="money-symbol" placeholder="e.g. $" maxlength="6">
@@ -86,11 +86,19 @@
         <option value="">None (1000)</option>
       </select>
     </label>
+    <label class="field" style="max-width: 11rem;">Date format
+      <select id="date-format-select">
+        <option value="iso">2026-08-26</option>
+        <option value="us">08/26/2026</option>
+        <option value="eu">26/08/2026</option>
+        <option value="long">Aug 26, 2026</option>
+      </select>
+    </label>
   </div>
   <p class="dim small" style="margin-top: 0.6rem; margin-bottom: 0;">
-    Changes how amounts are displayed everywhere — Trial balance, Journal, Scheduled entries.
-    Leave Symbol blank for plain numbers. This never changes what's stored; it's purely
-    how it's shown to you, in this browser.
+    Changes how amounts and dates are displayed everywhere — Dashboard, Journal, Staging,
+    Scheduled entries. Leave Symbol blank for plain numbers. This never changes what's
+    stored; it's purely how it's shown to you, in this browser.
   </p>
 </div>
 {% endblock %}

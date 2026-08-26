@@ -6,8 +6,30 @@
    under balanced totals.
    ========================================================================== */
 :root {
-  /* Ledger — pale green ledger stock. The default; also the palette
-     every other theme is a deliberate departure from. */
+  /* Slate — cool, contemporary, least "paper" of the neutral light themes.
+     The default (no data-theme attribute set); every other theme,
+     including Ledger below, is a deliberate departure from this one. */
+  --paper:        #f4f6f8;
+  --paper-deep:   #e9edf1;
+  --surface:      #ffffff;
+  --ink:          #1b2430;
+  --ink-soft:     #5b6b7c;
+  --rule:         #d6dde3;
+  --rule-strong:  #aebbc7;
+  --red:          #b3392c;
+  --ok:           #1f7a52;
+  --focus:        #2f6fb0;
+  --accent:       var(--ink);
+  --accent-hover: #2c3a4c;
+  --accent-text:  var(--paper);
+  --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+}
+
+/* Ledger — pale green ledger stock, grounded in the columnar paper this
+   software replaces. The original default; kept as an opt-in theme. */
+:root[data-theme="ledger"] {
   --paper:        #f7faf4;
   --paper-deep:   #eff5ea;   /* tinted money columns */
   --surface:      #ffffff;   /* cards, inputs — the "clean sheet" on top of paper */
@@ -21,9 +43,6 @@
   --accent:       var(--ink);
   --accent-hover: #2c4034;
   --accent-text:  var(--paper);
-  --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
 }
 
 /* Midnight — a night ledger: dark stock, brass-stamp accent. */
@@ -41,23 +60,6 @@
   --accent:       #c9a227;
   --accent-hover: #ddb939;
   --accent-text:  #14180f;
-}
-
-/* Slate — cool, contemporary, least "paper" of the neutral light themes. */
-:root[data-theme="slate"] {
-  --paper:        #f4f6f8;
-  --paper-deep:   #e9edf1;
-  --surface:      #ffffff;
-  --ink:          #1b2430;
-  --ink-soft:     #5b6b7c;
-  --rule:         #d6dde3;
-  --rule-strong:  #aebbc7;
-  --red:          #b3392c;
-  --ok:           #1f7a52;
-  --focus:        #2f6fb0;
-  --accent:       var(--ink);
-  --accent-hover: #2c3a4c;
-  --accent-text:  var(--paper);
 }
 
 /* Graphite — a second dark theme, cool where Midnight is warm: slate-black

@@ -6,7 +6,7 @@
    gets — nothing theme-specific to do for that part. */
 (function () {
   var KEY = "postwarden-theme";
-  var DEFAULT = "ledger";
+  var DEFAULT = "slate";
   var select = document.getElementById("theme-select");
   if (!select) return;
 
