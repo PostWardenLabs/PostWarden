@@ -305,6 +305,14 @@ every one is callable identically from the app, `psql`, or a BI tool.
 
 Grouped the way `db/schema.sql` groups them.
 
+### Infrastructure
+- **`schema_version`** — one row, one integer. Tracks which
+  `db/migrations/NNN_*.sql` files an *existing* database has applied
+  (`app/migrate.py`, run once at every app startup — see SPEC decision
+  13). Irrelevant to a fresh install: `schema.sql` seeds it to the
+  latest migration number directly, so nothing gets replayed on top of
+  a brand-new database.
+
 ### Auth
 - **`users`** — `username` (lowercase, unique), `password_hash` (bcrypt,
   the only form a password ever takes in SQL), `is_active`.

@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, templates
 from conftest import (mk_account, mk_budget_line, mk_entry, mk_line, mk_payee,
                      mk_scenario, mk_user)
 
@@ -1646,3 +1646,44 @@ def test_entry_grids_offer_a_distribute_button(conn):
             r = c.get(url)
             assert r.status_code == 200
             assert 'id="distribute-row"' in r.text, url
+
+
+def test_demo_banner_off_by_default(conn):
+    """The default state every self-hoster gets: no banner, empty fields —
+    LIBRO_DEMO_MODE unset means demo_user/demo_password never even reach
+    the page, regardless of whether LIBRO_ADMIN_USER/PASSWORD are set."""
+    with TestClient(app, **client_kwargs) as c:
+        r = c.get("/login")
+        assert r.status_code == 200
+        assert "public demo" not in r.text
+        assert 'name="username" value="" required' in r.text
+        assert 'name="password" value="" required' in r.text
+
+
+def test_demo_banner_shows_and_prefills_credentials_when_enabled():
+    """LIBRO_DEMO_MODE is a second, explicit flag on top of
+    LIBRO_ADMIN_USER/PASSWORD, not implied by them being set — this is
+    what actually keeps a normal self-hoster's own password off their own
+    login page. Patches the Jinja globals directly (they're read once at
+    import time from the environment, like VERSION) rather than the
+    environment itself, since the app is already imported by the time any
+    test runs."""
+    originals = {k: templates.env.globals.get(k)
+                for k in ("demo_banner", "demo_user", "demo_password")}
+    templates.env.globals["demo_banner"] = True
+    templates.env.globals["demo_user"] = "demo"
+    templates.env.globals["demo_password"] = "s3cret"
+    try:
+        with TestClient(app, **client_kwargs) as c:
+            r = c.get("/login")
+            assert r.status_code == 200
+            assert "public demo" in r.text
+            # The literal password appears as *readable text* in the banner,
+            # not just silently dropped into the masked field — a visitor
+            # who wants to reuse or share it later can actually read it.
+            assert "s3cret" in r.text
+            assert 'name="username" value="demo" required' in r.text
+            assert 'name="password" value="s3cret" required' in r.text
+    finally:
+        for k, v in originals.items():
+            templates.env.globals[k] = v

@@ -81,8 +81,22 @@ considering the task finished.
     *first*, applied either via a plain re-init (`docker compose down
     -v` — acceptable for the maintainer's own instance, which holds
     only dummy/test data, confirmed by the user; demo gets this
-    automatically every night anyway) or a hand-applied `CREATE OR
-    REPLACE FUNCTION`/`ALTER TABLE` for a narrow, additive change.
+    automatically every night anyway) or, for an existing database
+    that has to keep its data (beta, and eventually the maintainer's
+    own real instance), by adding a numbered file to
+    `db/migrations/` — see that directory's `README.md` and
+    `app/migrate.py`'s docstring. `app/migrate.py` runs automatically
+    from FastAPI's `lifespan` on every startup and applies whatever's
+    pending, in order, each in its own transaction, so a normal
+    `git pull && docker compose up -d --build` (see the README's
+    "Updating" section) is enough for beta and any future
+    keep-the-data deploy — no separate migration step to remember, no
+    manual `psql` unless a change is unusually large or risky and
+    you want to watch it run. The migration file *also* gets folded
+    into `db/schema.sql` directly (with `schema_version`'s seed
+    bumped to match) so a fresh install still gets the full current
+    state in one shot rather than replaying history — the two have to
+    move together, `db/migrations/README.md` says so too.
     Verify after every deploy: check `docker compose logs app` for
     startup errors, hit a few unauthenticated routes to confirm `303`
     (not `500`), and directly exercise any new SQL function/trigger

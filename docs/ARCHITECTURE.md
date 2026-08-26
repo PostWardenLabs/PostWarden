@@ -22,10 +22,12 @@ bar on New entry) that have no meaningful no-JS equivalent anyway.
 db/schema.sql        tables, triggers, views, functions — the single source of truth
 db/seed.sql          starter chart of accounts + ACTUAL/STAGING/BUD2026 scenarios
 db/seed_demo.sql     optional sample entries (skippable)
+db/migrations/       NNN_*.sql — applied to an *existing* database only, see app/migrate.py
 
 app/main.py          every route, in one file (see the map below)
 app/auth.py          sessions, password hashing, CSRF, login rate-limiting
 app/db.py            the psycopg3 connection pool — q()/q1()/tx() helpers main.py calls
+app/migrate.py       run_migrations() — called once from main.py's lifespan, before the app serves traffic
 app/cli.py           create-user / reset-password (see scripts/create_user.sh)
 app/templates/*.html one file per screen, all extending base.html
 app/static/*.js      one small file per progressive enhancement (catalog below)
@@ -33,6 +35,7 @@ app/static/style.css theme variables + every component's styling, hand-written, 
 
 tests/test_invariants.py  hits Postgres directly — the schema's own rules, bypassing the app entirely
 tests/test_auth.py        drives the actual FastAPI app (TestClient) — routes, sessions, CSRF, rendering
+tests/test_migrations.py  app/migrate.py's own mechanism — real files, real Postgres, no mocking
 deploy/gcp/               Google Cloud deployment (Compute Engine + IAP tunnel) — see its own README
 ```
 
@@ -51,7 +54,7 @@ reading order:
 
 | Section | Routes | Notes |
 |---|---|---|
-| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days |
+| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days. `LIBRO_DEMO_MODE=true` (off by default, only set on the public demo) shows a banner on `login.html` and pre-fills the username/password fields with `LIBRO_ADMIN_USER`/`PASSWORD` — server-rendered `value=` attributes, no JavaScript, so the credentials are genuinely visible in the page rather than silently injected. Deliberately a *second* flag rather than triggering off `LIBRO_ADMIN_USER`/`PASSWORD` being set alone — those two are also the normal self-hoster first-boot convenience, and this keeps a self-hoster's own real password from ever appearing on their own login page |
 | Settings | `/settings`, `/settings/account` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
 | Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |

@@ -1,5 +1,5 @@
 -- ============================================================================
--- LIBRO — seed.sql
+-- POSTWARDEN — seed.sql
 -- Starter chart of accounts + baseline scenarios. Edit freely: this is a
 -- starting point, not a prescription. Codes follow the classic convention:
 -- 1xxx assets · 2xxx liabilities · 3xxx equity · 4xxx income · 5xxx expenses

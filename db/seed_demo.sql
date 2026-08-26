@@ -1,5 +1,5 @@
 -- ============================================================================
--- LIBRO — seed_demo.sql (OPTIONAL)
+-- POSTWARDEN — seed_demo.sql (OPTIONAL)
 -- A few sample entries so the first screens aren't empty. Skip this file
 -- for a clean start, or delete the database and re-init without it.
 -- ============================================================================

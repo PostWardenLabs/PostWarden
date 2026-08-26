@@ -174,6 +174,22 @@ docker compose exec app python -m app.cli reset-password <username>  # forgot it
 ```
 (Password is always typed interactively, never as a command-line argument.)
 
+## Updating
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+That's the whole thing, schema changes included: any pending
+`db/migrations/*.sql` files run automatically at startup, in order, before
+the app accepts traffic (see `app/migrate.py`) — no separate migration
+step to remember, no `docker compose down -v` that would wipe your real
+data. A failed migration fails the app's startup loudly rather than
+serving traffic against a half-migrated schema; back up first if you want
+a safety net (`pg_dump`, see `deploy/gcp/README.md`'s Backups section even
+if you're not on GCP — the command itself is the same anywhere).
+
 ## Documentation
 
 Start with this README for orientation, then:
@@ -303,8 +319,8 @@ login, session and CSRF checks, logout. Each run gets a disposable
 With `docker compose up -d db` already running:
 
 ```bash
-docker run --rm --network libro_default -v "$PWD":/srv/libro -w /srv/libro \
-  python:3.12-slim bash -c "pip install -q -r requirements-dev.txt && pytest tests -v"
+docker run --rm --network postwarden_default -v "$PWD":/srv/libro -w /srv/libro \
+  python:3.12-slim bash -c "pip install -q -r requirements-dev.txt && python -m pytest tests -v"
 ```
 
 Or locally, with `psycopg[binary]` and `pytest` installed and `LIBRO_TEST_ADMIN_URL`

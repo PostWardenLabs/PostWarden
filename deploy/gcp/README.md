@@ -330,7 +330,15 @@ restricted to specific emails.
   instance needs a reset regardless of how often the code under it
   changes. `LIBRO_ADMIN_USER`/`LIBRO_ADMIN_PASSWORD` **must** be set in
   demo's `.env` (see `reset-demo.sh`'s own comment) or a reset locks
-  everyone out, not just visitors.
+  everyone out, not just visitors. `LIBRO_DEMO_MODE=true` should be set
+  there too — it's what puts the credentials banner on `login.html` in
+  the first place (see `app/main.py`'s `demo_banner` comment and
+  `docs/ARCHITECTURE.md`'s Auth route entry); a fresh install without it
+  is a perfectly normal self-hosted instance with no banner at all, and
+  since `reset-demo.sh` re-creates the container from a fresh volume
+  every night, an `.env` missing this flag means the banner silently
+  disappears at the next reset even though the login itself still works
+  fine with the same credentials.
 
 **Org policies you may hit provisioning any of this from scratch**,
 both encountered setting this up and both sensible defaults, not bugs:

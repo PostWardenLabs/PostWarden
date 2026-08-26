@@ -1,5 +1,5 @@
 -- ============================================================================
--- LIBRO — a personal general ledger with scenarios
+-- POSTWARDEN — a personal general ledger with scenarios
 -- schema.sql — source of truth for the data model
 --
 -- Design principles:
@@ -31,6 +31,22 @@ BEGIN;
 -- ---------------------------------------------------------------------------
 CREATE TYPE account_type AS ENUM ('asset', 'liability', 'equity', 'income', 'expense');
 CREATE TYPE scenario_type AS ENUM ('actual', 'budget', 'forecast', 'what_if');
+
+-- ---------------------------------------------------------------------------
+-- schema_version — tracks which db/migrations/NNN_*.sql files an existing
+-- database has already applied (app/migrate.py, run once at app startup).
+-- Irrelevant to a *fresh* install: this file already represents the current
+-- state, so the row below is seeded to the highest migration number that
+-- existed when this schema.sql was last regenerated — nothing in
+-- db/migrations/ gets replayed on top of a brand-new database. It only
+-- matters for an *existing* database catching up after a `git pull`.
+-- One row, one column, on purpose — there's exactly one database per
+-- instance, never a fleet to track independently.
+-- ---------------------------------------------------------------------------
+CREATE TABLE schema_version (
+    version INTEGER NOT NULL
+);
+INSERT INTO schema_version (version) VALUES (0);
 
 -- ---------------------------------------------------------------------------
 -- Users and sessions — application-level authentication.

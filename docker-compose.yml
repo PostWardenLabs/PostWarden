@@ -44,6 +44,11 @@ services:
       # deployments — both encrypt at the tunnel layer instead). See
       # app/auth.py's COOKIE_SECURE comment.
       LIBRO_COOKIE_SECURE: ${LIBRO_COOKIE_SECURE:-}
+      # Shows a banner on the login page and pre-fills it with
+      # LIBRO_ADMIN_USER/PASSWORD above — off by default on purpose, a
+      # normal self-hoster's own login should never appear on their own
+      # login page. See app/main.py's demo_banner comment.
+      LIBRO_DEMO_MODE: ${LIBRO_DEMO_MODE:-}
     ports:
       # Same story as DB_PORT above — only relevant when two instances of
       # this compose file share one host.

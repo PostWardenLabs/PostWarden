@@ -233,6 +233,44 @@ another device" requirement, and keeping this out of Postgres means the
 schema stays exactly as large as the accounting actually requires — a
 theme name has no business being join-adjacent to a journal line.
 
+### 13. Migrations are numbered SQL files, not an ORM framework
+
+`schema.sql` was the only version of the schema that ever existed for a
+long time, applied once by Postgres on a fresh volume — fine while the
+only database anyone ran this against was the maintainer's own, freely
+wiped with `docker compose down -v`. That stopped being fine the moment
+self-hosting other people's real financial data became the point: a
+self-hoster who pulls a schema change has no way to apply it to their
+*existing* database at all, and "wipe it and start over" is not a
+sentence anyone should read about their own ledger.
+
+Rejected: an ORM-based migration framework (Alembic and equivalents).
+That's the standard answer, but it's the wrong one here specifically —
+decision 7 already rejected an ORM for the query layer on the grounds
+that `db/schema.sql` should stay something you can read, run in `psql`,
+or hand to Power BI directly; pulling one in just for migrations,
+generating Python-side revision graphs over a schema that's supposed to
+be plain SQL, undoes exactly what decision 7 was for.
+
+Also rejected: timestamp-prefixed migration filenames (Rails/Django's
+convention, e.g. `20260826120000_add_thing.sql`). That convention exists
+to avoid collisions when multiple branches add migrations concurrently
+and merge later — a real concern for a team repo, not for one that's
+effectively single-branch, single-maintainer-authored so far. Sequential
+integers (`001_`, `002_`, ...) are more readable and sort in the order
+they were actually meant to run, with no collision risk worth paying for
+here.
+
+What actually shipped: `db/migrations/NNN_description.sql`, forward-only
+(matching decision 4's own append-only ethos — a bad migration gets
+fixed by a new one, never edited or rolled back), applied by
+`app/migrate.py` once at every app startup, tracked by a one-row
+`schema_version` table. `schema.sql` stays exactly what it's always
+been — the full current state for a fresh install — with the discipline
+that every migration also gets folded into it by hand, `schema_version`'s
+seed bumped to match, so a new clone never replays migration history to
+arrive at the same place.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

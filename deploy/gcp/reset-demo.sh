@@ -11,6 +11,13 @@
 # demo login every time this wipes the database. Without it, demo locks
 # everyone out (including you) at the next reset, seed data or not.
 #
+# LIBRO_DEMO_MODE=true should be set there too — it's what puts the
+# credentials banner on the login page (see app/main.py's demo_banner
+# comment). It doesn't affect the reset itself, but since this script
+# recreates the container from a fresh volume every night, leaving it
+# unset means the banner silently disappears at the next reset even
+# though LIBRO_ADMIN_USER/PASSWORD still log you in fine.
+#
 # This runs ON THE VM ITSELF via cron, not from your own machine like the
 # other scripts in this directory. Installed once by hand:
 #   sudo crontab -e

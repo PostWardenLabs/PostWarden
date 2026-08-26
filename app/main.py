@@ -6,6 +6,7 @@ import calendar
 import csv
 import io
 import json
+import os
 import re
 import secrets
 from contextlib import asynccontextmanager
@@ -22,10 +23,12 @@ from markupsafe import Markup
 
 from . import auth
 from .db import q, q1, tx
+from .migrate import run_migrations
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    run_migrations()
     auth.bootstrap_admin_from_env()
     yield
 
@@ -108,6 +111,17 @@ templates.env.globals["asset"] = asset
 # whatever commit it's marking, same as any other doc that ships with
 # the feature it describes.
 templates.env.globals["version"] = (BASE.parent / "VERSION").read_text().strip()
+# Opt-in, off by default, and deliberately a *second* flag rather than just
+# checking whether LIBRO_ADMIN_USER/PASSWORD are set: those two are meant
+# for a normal self-hoster's own private first-boot convenience (see
+# auth.bootstrap_admin_from_env), and plenty of READMEs recommend setting
+# them. If showing the banner just meant "those two are set," every such
+# self-hoster's own real password would get echoed onto their own login
+# page. LIBRO_DEMO_MODE has to be set on top of them, only ever true on
+# the actual public demo, for the banner to appear at all.
+templates.env.globals["demo_banner"] = os.environ.get("LIBRO_DEMO_MODE", "").lower() in ("1", "true", "yes")
+templates.env.globals["demo_user"] = os.environ.get("LIBRO_ADMIN_USER", "")
+templates.env.globals["demo_password"] = os.environ.get("LIBRO_ADMIN_PASSWORD", "")
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
 TYPE_LABELS = {
