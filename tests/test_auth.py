@@ -2332,7 +2332,7 @@ def test_demo_banner_off_by_default(conn):
     with TestClient(app, **client_kwargs) as c:
         r = c.get("/login")
         assert r.status_code == 200
-        assert "public demo" not in r.text
+        assert "credentials prefilled in" not in r.text
         assert 'name="username" value="" required' in r.text
         assert 'name="password" value="" required' in r.text
 
@@ -2354,8 +2354,8 @@ def test_demo_banner_shows_and_prefills_credentials_when_enabled():
         with TestClient(app, **client_kwargs) as c:
             r = c.get("/login")
             assert r.status_code == 200
-            assert "public demo" in r.text
-            # The literal password appears as *readable text* in the banner,
+            assert "credentials prefilled in" in r.text
+            # The literal password appears as *readable text* in the callout,
             # not just silently dropped into the masked field — a visitor
             # who wants to reuse or share it later can actually read it.
             assert "s3cret" in r.text
