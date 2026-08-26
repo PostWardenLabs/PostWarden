@@ -70,4 +70,15 @@ INSERT INTO accounts (code, name, account_type, parent_id) VALUES
     ('5400', 'Health & Fitness','expense',(SELECT id FROM accounts WHERE code = '5000')),
     ('5500', 'Entertainment',  'expense', (SELECT id FROM accounts WHERE code = '5000'));
 
+-- 6000 is a second, sibling top-level expense category — same shape as
+-- 1000/2000/3000/4000/5000 (no parent_id), postable directly rather than
+-- broken into children like 5000's own subaccounts. The classic
+-- COGS/SG&A split a company's books would make: 5000 is the itemized,
+-- routine cost breakdown (Housing, Food, Transport, ...); 6000 is the
+-- catch-all for whatever doesn't fit one of those categories, so a
+-- one-off or hard-to-classify expense always has somewhere to post
+-- without forcing a new 5xxx subaccount for something that happens once.
+INSERT INTO accounts (code, name, account_type) VALUES
+    ('6000', 'Other', 'expense');
+
 COMMIT;
