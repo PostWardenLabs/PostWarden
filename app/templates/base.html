@@ -59,17 +59,19 @@
 {% endif %}
 {% block chrome %}
 <header class="topbar">
-  <div class="topbar-left">
-    <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · PostWarden</span></a>
-  </div>
-  <div class="topbar-right">
-    {% if request.state.user %}
-    <a href="/settings" class="username-link dim small {{ 'active' if nav == 'settings' }}">{{ request.state.user.username }}</a>
-    <form method="post" action="/logout" class="logout-form">
-      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-      <button type="submit" class="quiet">Log out</button>
-    </form>
-    {% endif %}
+  <div class="topbar-inner">
+    <div class="topbar-left">
+      <a class="wordmark" href="/">{{ self.title() }}<span class="wordmark-brand"> · PostWarden</span></a>
+    </div>
+    <div class="topbar-right">
+      {% if request.state.user %}
+      <a href="/settings" class="username-link dim small {{ 'active' if nav == 'settings' }}">{{ request.state.user.username }}</a>
+      <form method="post" action="/logout" class="logout-form">
+        <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+        <button type="submit" class="quiet">Log out</button>
+      </form>
+      {% endif %}
+    </div>
   </div>
 </header>
 <main>

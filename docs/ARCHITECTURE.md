@@ -199,16 +199,34 @@ needs a top-right "?" help icon keeps a `.page-head` div for it
 (`justify-content: flex-end` now that it has nothing to space against);
 a page with neither just starts straight into its content.
 
-`.topbar-left`'s `padding-left` isn't a flat number — it's `max(2.3rem,
-calc((100vw - 1080px) / 2 - 0.25rem))`, deliberately tracking `main`'s
-own box model (a centered `max-width: 1080px` column with 1.25rem of
-padding) so the title lines up with the page content beneath it at
-*any* window width, not just the one width someone happened to test at.
-2.3rem is the floor: what actually clears the fixed hamburger button
-(`.sidebar-toggle`) once `main` goes flush on a narrow window and its
-own inset would otherwise undercut that. Touch this formula, not just
-the number, if `main`'s max-width, padding, or the hamburger's size/
-position ever change — they're the three inputs it's derived from.
+`.topbar` itself is pure chrome (full-bleed background/border, no
+horizontal padding) — the title lines up with the page content beneath
+it because `.topbar-inner`, wrapping `.topbar-left`/`.topbar-right`,
+uses the exact same `max-width: 1080px; margin: 0 auto; padding: 0
+1.25rem` box model as `main` itself, including the same
+`html.sidebar-pinned` override (`margin-left: 14rem`, `main`'s own
+`margin-right` stays `auto` so it sits flush after the sidebar rather
+than re-centering in what's left — `.topbar-inner` copies that exact
+behavior too). An earlier version tried to *approximate* main's
+centering with a `calc()` on `.topbar-left` instead of literally sharing
+main's own properties, and got it wrong two ways at once worth
+remembering next time something needs to track another element's layout
+this closely: `100vw` includes the scrollbar where a real containing-
+block percentage (which is what `margin: auto` and `%`-based `padding`
+resolve against) doesn't, and — the one that actually mattered in
+practice — the formula had no idea `html.sidebar-pinned` existed, so
+once a viewer pinned the sidebar open, main stopped centering
+(flush-after-sidebar, not re-centered) while the calc() kept computing
+as if it hadn't, drifting further off the wider the window got. Sharing
+the actual box model instead of reverse-engineering an equivalent
+sidesteps both failure modes at once — there's no formula to keep in
+sync with main's if it ever changes.
+
+`.topbar-left`'s own `padding-left` (2.55rem by default, zeroed out via
+media query once `.topbar-inner`'s own margin — centering or pinned —
+already clears it) exists purely to keep the title clear of the fixed
+hamburger button (`.sidebar-toggle`); see the CSS's own comment for the
+exact breakpoints, one for each of unpinned/pinned.
 
 ### Toggle switch vs checkbox
 

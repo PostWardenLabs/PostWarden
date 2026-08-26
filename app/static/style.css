@@ -482,28 +482,43 @@ body {
 :where(a:hover, a:visited:hover) { color: var(--accent-hover); }
 
 /* -- top bar ------------------------------------------------------------- */
+/* .topbar itself is pure chrome now — full-bleed background/border,
+   nothing that positions content — because content alignment turned out
+   to need main's *actual* box model, not a formula that approximates it.
+   A previous version of this gave .topbar-left a calc() meant to mirror
+   main's margin: auto centering using 100vw math; it was wrong two ways
+   at once: 100vw includes the scrollbar where a real containing-block
+   percentage doesn't (a many-pixel drift depending on OS/browser), and
+   it had no idea a pinned sidebar exists at all — html.sidebar-pinned
+   main stops centering entirely (margin-left pins to 14rem, margin-right
+   stays auto), so the calc()'s output only grew further from main's
+   real position the wider the window got. .topbar-inner below is the
+   actual fix: same max-width/margin/padding as `main`, plus the same
+   pinned override, so it *is* main's box model instead of a guess at it. */
 .topbar {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 1.5rem; flex-wrap: wrap;
-  padding: 0.9rem 1.5rem 0.7rem;
+  padding: 0.9rem 0 0.7rem;
   border-bottom: 1px solid var(--rule-strong);
   background: var(--paper);
 }
-/* Lines the title up with main's own left edge (main is a centered
-   max-width: 1080px column with 1.25rem of its own padding — see
-   `main` below) at whatever width the window actually is, instead of
-   a flat offset that only happened to match main at one width and
-   drifted everywhere else: right of main's content on a narrower
-   window (main goes flush, .topbar-left didn't), left of it on a
-   wider one (main's centering margin grows, .topbar-left didn't).
-   2.3rem is the floor — it's what actually clears the fixed hamburger
-   button (see .sidebar-toggle) — and wins only below ~1160px wide,
-   where main's own inset would otherwise undercut it. The calc()
-   mirrors main's margin: auto math directly: (viewport − 1080px) ÷ 2
-   is main's centering margin, and the − 0.25rem accounts for
-   .topbar's own 1.5rem of left padding already covering part of
-   main's 1.25rem content padding (1.5rem − 1.25rem = 0.25rem). */
-.topbar-left { padding-left: max(2.3rem, calc((100vw - 1080px) / 2 - 0.25rem)); }
+.topbar-inner {
+  max-width: 1080px; margin: 0 auto; padding: 0 1.25rem;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1.5rem; flex-wrap: wrap;
+}
+/* Clears the fixed hamburger button (.sidebar-toggle, permanently at
+   1.1rem–2.8rem from the viewport edge) for whichever states leave
+   .topbar-inner flush against it: unpinned below ~1160px wide (where
+   main's own centering margin hasn't grown past this yet either) and
+   pinned-but-reset-to-unpinned-layout at the ≤720px breakpoint below.
+   Zeroed out everywhere else, where .topbar-inner's own box model
+   already provides more room than the button needs on its own. */
+.topbar-left { padding-left: 2.55rem; }
+@media (min-width: 1161px) {
+  html:not(.sidebar-pinned) .topbar-left { padding-left: 0; }
+}
+@media (min-width: 721px) {
+  html.sidebar-pinned .topbar-left { padding-left: 0; }
+}
 .wordmark {
   font-family: var(--serif);
   font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
@@ -565,8 +580,15 @@ html.sidebar-pinned .sidebar { box-shadow: none; }
 
 /* Pinned: push the page content over instead of the sidebar overlaying it.
    Only the fixed-width centered blocks need it — the sidebar itself and
-   the hamburger button are already fixed to the viewport. */
-html.sidebar-pinned .topbar,
+   the hamburger button are already fixed to the viewport. .topbar-inner
+   here, not .topbar itself — .topbar's own background stays full-bleed
+   at the viewport edge always; the pinned sidebar (position: fixed, its
+   own opaque --surface background, higher z-index) already covers that
+   region whether .topbar's box extends under it or not, so there's
+   nothing to gain by shifting the outer bar too, and shifting only the
+   inner content is what lets .topbar-inner's box model match main's
+   exactly (see the "top bar" section above). */
+html.sidebar-pinned .topbar-inner,
 html.sidebar-pinned main,
 html.sidebar-pinned .footer { margin-left: 14rem; }
 
@@ -1238,11 +1260,11 @@ tr.add-gap .add-gap-type { max-width: 11rem; }
 
 @media (max-width: 720px) {
   details.entry summary { grid-template-columns: 1fr auto; }
-  .topbar { gap: 0.6rem; }
+  .topbar-inner { gap: 0.6rem; }
   /* Too narrow to push content over without squeezing it unusably —
      pinned still overlays here, same as an unpinned hover-preview. */
   .sidebar { width: 82vw; box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15); }
-  html.sidebar-pinned .topbar,
+  html.sidebar-pinned .topbar-inner,
   html.sidebar-pinned main,
   html.sidebar-pinned .footer { margin-left: 0; }
 }
