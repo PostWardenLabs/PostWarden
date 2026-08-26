@@ -1030,7 +1030,10 @@ async def save_budget_cell(request: Request):
         code = (form.get("account") or "").strip()
         period_month = form.get("period_month") or ""
         amount_raw = (form.get("amount") or "").strip()
-        amount = round(float(amount_raw), 2) if amount_raw else 0.0
+        try:
+            amount = round(float(amount_raw), 2) if amount_raw else 0.0
+        except ValueError:
+            raise ValueError(f"{amount_raw!r} isn't a number")
         acct = q1("SELECT id FROM accounts WHERE code = %s", (code,))
         if not acct:
             raise ValueError(f"Unknown account code: {code}")
@@ -1360,8 +1363,11 @@ def _parse_lines(form) -> list[dict]:
             continue  # blank row
         if not code:
             raise ValueError(f"Line {i + 1}: missing account")
-        dv = float(d) if d else 0.0
-        cv = float(c) if c else 0.0
+        try:
+            dv = float(d) if d else 0.0
+            cv = float(c) if c else 0.0
+        except ValueError:
+            raise ValueError(f"Line {i + 1}: debit and credit must be numbers")
         if dv < 0 or cv < 0:
             raise ValueError(f"Line {i + 1}: amounts must be positive")
         if (dv > 0) == (cv > 0):

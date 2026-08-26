@@ -638,6 +638,37 @@ def test_scenario_base_level_relaxes_posting_through_the_real_routes(conn):
         assert cur.fetchone() is not None
 
 
+def test_entries_rejects_a_non_numeric_debit_with_a_friendly_message(conn):
+    # A stray non-numeric string in Debit/Credit used to reach float()
+    # unguarded, surfacing Python's own "could not convert string to
+    # float: '...'" straight to the user. _parse_lines now catches that
+    # and raises its own message instead.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        acct = mk_account(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT csrf_token FROM sessions WHERE token = %s",
+                (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r = c.post("/entries", data={
+            "csrf_token": csrf_token, "entry_date": "2026-01-01",
+            "scenario_id": str(actual_id), "description": "Bad amount",
+            "account": [acct["code"]], "debit": ["abc"], "credit": [""],
+            "memo": [""],
+        })
+        assert "err=" in r.headers["location"]
+        assert "could+not+convert" not in r.headers["location"]
+        assert "debit+and+credit+must+be+numbers" in r.headers["location"]
+
+
 def test_entries_new_redirects_to_journal_with_panel_open(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
