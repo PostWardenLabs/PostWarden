@@ -1,0 +1,44 @@
+name: Deploy beta
+
+# beta.postwarden.org tracks master exactly — every push redeploys it.
+# demo.postwarden.org is deliberately NOT wired to CI at all: it deploys
+# from a tag, by hand, on its own "every few weeks" cadence — see
+# deploy/gcp/deploy-demo.sh.
+#
+# Auth is Workload Identity Federation, not a downloaded service-account
+# key: GCP's org policy here disables SA key creation (a good default,
+# not a workaround), so this workflow's GitHub-issued OIDC token is
+# exchanged for short-lived GCP credentials instead. Nothing long-lived
+# to leak if a workflow run is ever compromised.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write   # required to mint the OIDC token WIF exchanges
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/205690298805/locations/global/workloadIdentityPools/postwarden-github/providers/postwarden-beta-deploy
+          service_account: postwarden-ci-deploy@libro-506506.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Redeploy beta over IAP
+        run: |
+          gcloud compute ssh postwarden-public \
+            --zone us-central1-a --project libro-506506 \
+            --tunnel-through-iap -- '
+              cd /opt/postwarden-beta &&
+              sudo git fetch origin &&
+              sudo git reset --hard origin/master &&
+              sudo docker compose up -d --build &&
+              echo "beta redeployed: $(sudo git rev-parse --short HEAD)"
+            '

@@ -181,6 +181,40 @@ IAP tunneling itself is free. If Postgres+app feel memory-constrained on
 1GB RAM, `--machine-type=e2-small` is the next step up (no longer free,
 ~$12/month).
 
+## demo.postwarden.org and beta.postwarden.org
+
+The two public instances aren't this VM — they're a second, dedicated
+`e2-small` VM (`postwarden-public`, same project and VPC), sized up from
+`e2-micro` because it runs *two* full stacks at once and 1GB isn't
+comfortable headroom for that. Deliberately a separate machine from
+whatever you're using as your own personal instance: a public demo is
+the one thing on this project that gets abused or hammered, and it
+shouldn't be able to take anything you actually rely on down with it.
+
+Two independent checkouts, `/opt/postwarden-demo` and
+`/opt/postwarden-beta`, each just this same `docker-compose.yml`
+unmodified — `.env` in each sets `APP_PORT`/`DB_PORT` so they don't
+collide on one host (demo: 8000/5432, beta: 8001/5433). Both reach the
+internet through the same Cloudflare Tunnel as above, as two more Public
+Hostnames pointed at their own local port — demo world-readable, beta
+behind a Cloudflare Access policy (see "Public domain via Cloudflare
+Tunnel" above) restricted to specific emails.
+
+- **beta** tracks `master` exactly. `.github/workflows/deploy-beta.yml`
+  redeploys it on every push, authenticated via Workload Identity
+  Federation rather than a downloaded service-account key (this
+  project's org policy disables key creation — WIF is the
+  no-long-lived-secret alternative, not a workaround). Data persists
+  between deploys; nothing here ever resets it.
+- **demo** deploys from the latest git *tag*, not master — a deliberate
+  "this commit is stable enough to show a stranger" decision, cut with
+  `git tag vX.Y.Z && git push --tags` and rolled out by hand with
+  `deploy-demo.sh` (not on every push; see the script for why).
+  Independent of that, `reset-demo.sh` runs nightly via cron **on the
+  VM itself** and wipes demo back to seed data — a public, anonymous
+  instance needs a reset regardless of how often the code under it
+  changes.
+
 ## Tearing it down
 
 ```bash

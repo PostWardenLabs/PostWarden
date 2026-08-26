@@ -7,7 +7,7 @@
 # exact same docker-compose.yml used locally, unmodified.
 set -euo pipefail
 
-REPO_URL="git@github.com:mirelesde/libro.git"
+REPO_URL="git@github.com:PostWardenLabs/PostWarden.git"
 APP_DIR="/opt/libro"
 DEPLOY_KEY="/root/.ssh/libro_deploy_key"
 
