@@ -301,6 +301,43 @@
       (diff > 0 ? creditField : debitField).focus();
     });
   }
+  // Clear — resets every field on the form back to how it looked on page
+  // load: description/reference/tags empty, payee unset, date/scenario
+  // back to their original defaults, grid back to two blank rows. Same
+  // shape as entry_templates.js's "Load template" (it's loading the blank
+  // template, in effect), just no keyboard shortcut — the button is
+  // placed and styled precisely so this only ever happens on purpose.
+  const clearBtn = document.getElementById("clear-entry-btn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      const desc = form.querySelector('input[name="description"]');
+      if (desc) desc.value = "";
+      const ref = form.querySelector('input[name="reference"]');
+      if (ref) ref.value = "";
+      const dateField = form.querySelector('input[name="entry_date"]');
+      if (dateField) dateField.value = dateField.defaultValue;
+      if (scenarioSel) {
+        scenarioSel.selectedIndex = 0;
+        if (window.PostWardenCombobox) window.PostWardenCombobox.resync(scenarioSel);
+        refreshAccountsForScenario();
+      }
+      const payeeSel = form.querySelector('select[name="payee_id"]');
+      if (payeeSel) {
+        payeeSel.value = "";
+        payeeSel.dispatchEvent(new Event("change", { bubbles: true }));
+        if (window.PostWardenCombobox) window.PostWardenCombobox.resync(payeeSel);
+      }
+      const tagsRoot = form.querySelector(".tag-input");
+      if (tagsRoot && tagsRoot.__postwardenTags) tagsRoot.__postwardenTags.setValue("");
+      body.innerHTML = "";
+      makeRow();
+      makeRow();
+      recalc();
+      errBox.hidden = true;
+      if (desc) desc.focus();
+    });
+  }
+
   // e.code, not e.key: on macOS, Option+letter often produces an accented
   // character or a dead key instead of the plain letter (Option+N starts
   // a combining-tilde sequence, Option+D types "∂") — e.key reflects
