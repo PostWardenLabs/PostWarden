@@ -1245,6 +1245,48 @@ def test_entries_page_filters_by_account(conn):
         assert acct_b["code"] not in r_csv.text
 
 
+def test_entries_page_hide_reversed_excludes_both_sides_of_the_pair(conn):
+    # "Hide reversed entries and their reversals" has to drop both halves
+    # of a reversal — the original (reverses_entry_id IS NULL but it's
+    # someone else's target) and the reversal itself (reverses_entry_id
+    # set) — not just one side.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        original = mk_entry(cur, scen["id"], "Original entry")
+        mk_line(cur, original, acct1["id"], 40)
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, reverses_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Reversal entry', %s) RETURNING id""",
+            (scen["id"], original))
+        reversal = cur.fetchone()["id"]
+        mk_line(cur, reversal, acct1["id"], -40)
+        untouched = mk_entry(cur, scen["id"], "Untouched entry")
+        mk_line(cur, untouched, acct2["id"], 15)
+    conn.commit()
+
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get(f"/entries?scenario={scen['code']}")
+        assert "Original entry" in r.text
+        assert "Reversal entry" in r.text
+        assert "Untouched entry" in r.text
+
+        r = c.get(f"/entries?scenario={scen['code']}&hide_reversed=1")
+        assert "Original entry" not in r.text
+        assert "Reversal entry" not in r.text
+        assert "Untouched entry" in r.text
+
+        r_csv = c.get(f"/entries/export.csv?scenario={scen['code']}&hide_reversed=1")
+        assert "Original entry" not in r_csv.text
+        assert "Reversal entry" not in r_csv.text
+        assert "Untouched entry" in r_csv.text
+
+
 def test_entries_page_filters_by_amount(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

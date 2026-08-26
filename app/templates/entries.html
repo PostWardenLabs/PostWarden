@@ -68,6 +68,7 @@
     <input type="text" name="amount_value" class="amount" inputmode="decimal"
            value="{{ amount_value }}" placeholder="0.00" style="width: 7rem;">
   </label>
+  <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed entries and their reversals</label>
   <button type="submit">Filter</button>
   <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
 </form>

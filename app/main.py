@@ -1449,7 +1449,8 @@ AMOUNT_OPS = {
 
 def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
                     tags: str, account: str = "", payee: str = "",
-                    amount_op: str = "", amount_value: str = "") -> tuple[list[str], list, list[str]]:
+                    amount_op: str = "", amount_value: str = "",
+                    hide_reversed: int = 0) -> tuple[list[str], list, list[str]]:
     """Shared by the paged HTML view and the CSV export — same filters,
     same WHERE clause, so what you see is exactly what you export."""
     try:
@@ -1505,6 +1506,15 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
             where.append(f"""(SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                                WHERE l.entry_id = e.id) {op} %s""")
             params.append(round(amount_num, 2))
+    if hide_reversed:
+        # Excludes both halves of a reversal pair: the reversal itself
+        # (reverses_entry_id set) and whatever it reversed (some other
+        # entry's reverses_entry_id points back at this one) — someone
+        # hiding "stuff I created by accident" wants neither the mistake
+        # nor its own cleanup cluttering the view.
+        where.append("""e.reverses_entry_id IS NULL
+                         AND NOT EXISTS (SELECT 1 FROM journal_entries r
+                                          WHERE r.reverses_entry_id = e.id)""")
     return where, params, tag_list
 
 
@@ -1512,7 +1522,7 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
                  payee: str = "", amount_op: str = "", amount_value: str = "",
-                 back: str = "", page: int = 1,
+                 hide_reversed: int = 0, back: str = "", page: int = 1,
                  ok: str = None, err: str = None):
     page = max(page, 1)
     # Only ever a same-origin relative path — a bare "/x", never "//x"
@@ -1520,7 +1530,8 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     if not back.startswith("/") or back.startswith("//"):
         back = ""
     where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags,
-                                              account, payee, amount_op, amount_value)
+                                              account, payee, amount_op, amount_value,
+                                              hide_reversed)
     account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
     payee_row = q1("SELECT name FROM payees WHERE name = %s", (payee,)) if payee else None
 
@@ -1570,7 +1581,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     common_qs = {
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
         "qtext": qtext, "tags": tags, "amount_op": amount_op, "amount_value": amount_value,
-        "back": back,
+        "hide_reversed": hide_reversed, "back": back,
     }
     export_qs = urlencode({**common_qs, "account": account, "payee": payee})
     clear_account_qs = urlencode({**common_qs, "payee": payee})
@@ -1603,6 +1614,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,
         "amount_op": amount_op, "amount_value": amount_value, "amount_ops": AMOUNT_OPS,
+        "hide_reversed": hide_reversed,
         "filter_accounts": filter_accounts, "filter_payee_names": filter_payee_names,
         "back": back,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
@@ -1617,12 +1629,13 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 @app.get("/entries/export.csv")
 def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
                        qtext: str = "", tags: str = "", account: str = "", payee: str = "",
-                       amount_op: str = "", amount_value: str = ""):
+                       amount_op: str = "", amount_value: str = "", hide_reversed: int = 0):
     """Every entry matching the current filters (not just the current
     page) — one row per journal line, so it opens straight into a
     spreadsheet without the entry/line grouping the HTML view has."""
     where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
-                                       account, payee, amount_op, amount_value)
+                                       account, payee, amount_op, amount_value,
+                                       hide_reversed)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,
