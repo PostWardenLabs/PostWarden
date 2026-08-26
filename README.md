@@ -13,6 +13,13 @@ FastAPI app sits on top and gives you something pleasant to actually
 use day to day. Power BI and Excel can connect straight to the database
 through purpose-built reporting views, no export step required.
 
+**[postwarden.org](https://postwarden.org)** · **[Try the demo →](https://demo.postwarden.org)**
+(resets nightly, login shown on the page) · **[docs.postwarden.org](https://docs.postwarden.org)**
+for the schema/architecture reference. `beta.postwarden.org` tracks
+every commit on `master` but isn't public — see "Public domain via
+Cloudflare Tunnel" in `deploy/gcp/README.md` if you want the same setup
+for your own instance.
+
 ## What you get
 
 - **A keyboard-first journal** — Tab through account → debit/credit →
@@ -265,11 +272,14 @@ tests/test_auth.py        the app layer — routes, sessions, CSRF, rendering
 
 scripts/init_db.sh        local database bootstrap
 scripts/create_user.sh    create or reset a login
-deploy/gcp/               Google Cloud deployment (Compute Engine + IAP tunnel)
+deploy/gcp/               Google Cloud deployment — the VM setup, and demo/beta's own
+.github/workflows/        deploy-beta.yml — redeploys beta.postwarden.org on every push
 
 SPEC.md                   design decisions and rationale
 docs/                     schema reference + ERD, app architecture — see docs/README.md
+mkdocs.yml                builds docs/ into docs.postwarden.org (Cloudflare Pages)
 CLAUDE.md                 instructions for an AI coding agent working in this repo
+LICENSE                   AGPL-3.0 — see "License" below
 ```
 
 ## API

@@ -2,7 +2,11 @@
 
 One Compute Engine VM runs `docker-compose.yml` almost exactly as it runs
 locally — app and Postgres together, same images, same schema/seed
-bootstrap. No app code changes, no Cloud SQL, no load balancer.
+bootstrap. No app code changes, no Cloud SQL, no load balancer. This is
+the setup for **your own instance**; `demo.postwarden.org` and
+`beta.postwarden.org` are a second, separate VM with the same shape —
+see "demo.postwarden.org and beta.postwarden.org" below once you've
+read the rest of this as the base case.
 
 **Access is restricted to you alone**, and not by an IP allowlist (your
 home IP can change) — the VM has **no firewall rule opening anything to the
@@ -127,6 +131,16 @@ Tunnels):
    **Self-hosted** → your domain → add a policy allowing only your own
    email (or a specific Google/GitHub account).
 
+**If the login page shows no login option at all**: email-code login
+(One-Time PIN) isn't necessarily on by default — search the Zero Trust
+dashboard for "login methods" (its exact location has moved around
+Cloudflare's own UI more than once; the dashboard's own search is more
+reliable than any menu path written down here) and add **One-Time
+PIN** — no external OAuth app needed, just adding it to the account's
+enabled login methods. Confirm it's also selected on the Application
+itself if there's a per-application login-methods field, not just
+enabled account-wide.
+
 **Wiring it to the VM:**
 
 - Fresh VM: `setup.sh` prompts for the token (paste it, or leave blank to
@@ -194,18 +208,58 @@ shouldn't be able to take anything you actually rely on down with it.
 Two independent checkouts, `/opt/postwarden-demo` and
 `/opt/postwarden-beta`, each just this same `docker-compose.yml`
 unmodified — `.env` in each sets `APP_PORT`/`DB_PORT` so they don't
-collide on one host (demo: 8000/5432, beta: 8001/5433). Both reach the
-internet through the same Cloudflare Tunnel as above, as two more Public
-Hostnames pointed at their own local port — demo world-readable, beta
-behind a Cloudflare Access policy (see "Public domain via Cloudflare
-Tunnel" above) restricted to specific emails.
+collide on one host (demo: 8000/5432, beta: 8001/5433).
+
+This VM has **its own Cloudflare Tunnel**, separate from whatever
+tunnel fronts your personal instance — a new one, created the same way
+as "Public domain via Cloudflare Tunnel" above, with two Public
+Hostnames (`demo.postwarden.org` → `http://localhost:8000`,
+`beta.postwarden.org` → `http://localhost:8001`) instead of one. Its
+`cloudflared` connector is **not** the docker-compose-managed profile
+service either of the two app stacks ship with — a container in either
+compose project's own network can't reach the other's `localhost`
+ports, and rather than fight that, `cloudflared` runs standalone,
+outside both stacks entirely, with `--network host` so it can just hit
+`localhost:8000`/`:8001` directly (both already published there by
+`APP_PORT`/`DB_PORT` above):
+
+```bash
+sudo docker run -d --name cloudflared --network host --restart unless-stopped \
+  cloudflare/cloudflared:latest tunnel run --token <paste the new tunnel's token>
+```
+
+demo is world-readable; beta sits behind a Cloudflare Access policy
+(same mechanism as "Public domain via Cloudflare Tunnel" above)
+restricted to specific emails.
 
 - **beta** tracks `master` exactly. `.github/workflows/deploy-beta.yml`
   redeploys it on every push, authenticated via Workload Identity
   Federation rather than a downloaded service-account key (this
   project's org policy disables key creation — WIF is the
   no-long-lived-secret alternative, not a workaround). Data persists
-  between deploys; nothing here ever resets it.
+  between deploys; nothing here ever resets it. To reproduce the WIF
+  setup for your own fork (one-time, from your own machine):
+  ```bash
+  gcloud iam service-accounts create postwarden-ci-deploy --project "$PROJECT_ID"
+  for ROLE in roles/iap.tunnelResourceAccessor roles/compute.osAdminLogin roles/compute.viewer; do
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+      --member="serviceAccount:postwarden-ci-deploy@$PROJECT_ID.iam.gserviceaccount.com" \
+      --role="$ROLE" --condition=None
+  done
+  gcloud iam workload-identity-pools create postwarden-github --project "$PROJECT_ID" --location global
+  gcloud iam workload-identity-pools providers create-oidc postwarden-beta-deploy \
+    --project "$PROJECT_ID" --location global --workload-identity-pool postwarden-github \
+    --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+    --attribute-condition "assertion.repository=='<your-org>/<your-repo>'" \
+    --issuer-uri "https://token.actions.githubusercontent.com"
+  # Then bind roles/iam.workloadIdentityUser on the service account to the
+  # resulting principalSet://.../attribute.repository/<your-org>/<your-repo> —
+  # see `gcloud iam service-accounts add-iam-policy-binding --help`.
+  ```
+  Also enable OS Login on the VM (`gcloud compute instances add-metadata
+  postwarden-public --metadata enable-oslogin=TRUE`) — without it,
+  `gcloud compute ssh` needs metadata *write* access to push an ephemeral
+  key, which is broader than the three roles above grant on purpose.
 - **demo** deploys from the latest git *tag*, not master — a deliberate
   "this commit is stable enough to show a stranger" decision, cut with
   `git tag vX.Y.Z && git push --tags` and rolled out by hand with
@@ -213,7 +267,19 @@ Tunnel" above) restricted to specific emails.
   Independent of that, `reset-demo.sh` runs nightly via cron **on the
   VM itself** and wipes demo back to seed data — a public, anonymous
   instance needs a reset regardless of how often the code under it
-  changes.
+  changes. `LIBRO_ADMIN_USER`/`LIBRO_ADMIN_PASSWORD` **must** be set in
+  demo's `.env` (see `reset-demo.sh`'s own comment) or a reset locks
+  everyone out, not just visitors.
+
+**Org policies you may hit provisioning any of this from scratch**,
+both encountered setting this up and both sensible defaults, not bugs:
+*deploy keys* can be disabled org-wide (Organization settings →
+security) — if so, either re-enable them or, better, just make the repo
+public and clone over plain HTTPS instead, which is what this project
+ended up doing; *service-account key creation* can be blocked by an org
+policy (`constraints/iam.disableServiceAccountKeyCreation`) — that's
+what pushed `deploy-beta.yml` toward Workload Identity Federation
+instead of a downloaded key, which is the better practice anyway.
 
 ## Tearing it down
 
@@ -224,4 +290,7 @@ gcloud compute networks delete libro-vpc --project=your-project-id
 ```
 
 This deletes the boot disk (and the database with it) unless you took a
-backup first — see step 4.
+backup first — see step 4. `postwarden-public` (demo/beta) is a
+separate instance in the same VPC — `gcloud compute instances delete
+postwarden-public ...` on its own; leave the VPC/firewall rules alone
+if your personal instance is still using them.

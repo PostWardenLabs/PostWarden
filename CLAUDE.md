@@ -62,15 +62,36 @@ considering the task finished.
   pytest — before considering a UI change done, especially anything
   involving hover states, live client-side recompute, or drag/collapse
   interaction.
-- **Production deploys**: `deploy/gcp/redeploy.sh` pulls and rebuilds.
-  Any schema change gets a `pg_dump` backup on the VM *first*, applied
-  either via a plain re-init (`docker compose down -v` — acceptable
-  here; production holds only dummy/test data, confirmed by the user)
-  or a hand-applied `CREATE OR REPLACE FUNCTION`/`ALTER TABLE` for a
-  narrow, additive change. Verify after every deploy: check `docker
-  compose logs app` for startup errors, hit a few unauthenticated routes
-  to confirm `303` (not `500`), and directly exercise any new SQL
-  function/trigger against real data via `psql` before calling it done.
+- **Deploys — three targets, three cadences**, all documented in
+  `deploy/gcp/README.md`, not just this bullet:
+  - The maintainer's own instance: `deploy/gcp/redeploy.sh`, run by
+    hand, pulls and rebuilds `master`.
+  - `beta.postwarden.org`: `deploy/gcp/deploy-beta.sh`, run
+    automatically by `.github/workflows/deploy-beta.yml` on every push
+    to `master` — if a change breaks something, beta breaks with it,
+    same day. Auth is Workload Identity Federation (no service-account
+    key — this GCP org disables key creation).
+  - `demo.postwarden.org`: deliberately *not* wired to every push.
+    `deploy/gcp/deploy-demo.sh` deploys the latest git **tag**, by hand,
+    only when a commit is judged demo-worthy (`git tag vX.Y.Z && git
+    push --tags` first). `reset-demo.sh` runs nightly via cron **on
+    that VM**, independent of deploys, wiping demo back to seed data —
+    it's the one public, anonymous, unauthenticated instance.
+  - Any schema change gets a `pg_dump` backup on the relevant VM
+    *first*, applied either via a plain re-init (`docker compose down
+    -v` — acceptable for the maintainer's own instance, which holds
+    only dummy/test data, confirmed by the user; demo gets this
+    automatically every night anyway) or a hand-applied `CREATE OR
+    REPLACE FUNCTION`/`ALTER TABLE` for a narrow, additive change.
+    Verify after every deploy: check `docker compose logs app` for
+    startup errors, hit a few unauthenticated routes to confirm `303`
+    (not `500`), and directly exercise any new SQL function/trigger
+    against real data via `psql` before calling it done.
+- **`docs.postwarden.org`** builds from `docs/` via `mkdocs.yml`
+  (Cloudflare Pages, redeploys on push — no separate workflow needed).
+  `docs/SPEC.md` is a **symlink** to the real `../SPEC.md`, not a copy —
+  never replace it with an actual file, that's exactly the doc-drift
+  this whole convention exists to prevent.
 - **Commit messages** in this repo explain the *why*, at some length —
   see `git log` for the standard to match. They're also this project's
   de facto changelog; `SPEC.md`'s "Extension roadmap" section has
