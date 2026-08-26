@@ -777,8 +777,25 @@ tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: 
   display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap;
   margin-bottom: 1.1rem;
 }
+/* flex: 1 1 10rem — a field grows to fill whatever room is left on its
+   row rather than sitting at its own bare intrinsic width (an <input>
+   or <select>'s browser-default size, which has nothing to do with how
+   much space its .bar row actually has), but stops at max-width so an
+   otherwise-empty row doesn't stretch one field absurdly wide. This is
+   what actually fixes filter/field rows rendering a different width
+   per row at different window sizes — every field used to keep its own
+   intrinsic width regardless of how flex-wrap happened to break the
+   row, so two rows with a different number of fields (or fields with
+   different natural content widths) ended up visibly misaligned.
+   A field with its own inline flex/width/max-width (Tags' flex: 1, the
+   Amount value's width: 7rem, Settings' narrower Symbol/Position, ...)
+   still wins over this default — inline style always beats a class
+   rule for the same property, so nothing above this is a regression,
+   just a sane fallback for every field that never opted into its own
+   sizing to begin with. */
 label.field { display: flex; flex-direction: column; gap: 0.2rem;
-              font-size: 0.78rem; color: var(--ink-soft); }
+              font-size: 0.78rem; color: var(--ink-soft);
+              flex: 1 1 10rem; max-width: 18rem; }
 /* label.field's own `display: flex` (author stylesheet) otherwise beats
    the browser's built-in `[hidden] { display: none }` rule (user-agent
    stylesheet — author always wins regardless of selector specificity),
