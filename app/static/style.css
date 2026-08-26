@@ -592,39 +592,6 @@ html.sidebar-pinned .topbar-inner,
 html.sidebar-pinned main,
 html.sidebar-pinned .footer { margin-left: 14rem; }
 
-/* Theme swatch grid (Settings > Appearance) — replaced a plain <select>
-   (enhanced into a searchable combobox by combobox.js) once the theme
-   count grew past what picking a name out of a text list can show you:
-   a theme is a *palette*, and a combobox can only tell you what one is
-   called, not what it looks like. Each .theme-swatch carries its own
-   theme's actual --paper/--ink/--accent as inline styles in the markup
-   (settings.html) rather than relying on the cascade, since only one
-   data-theme applies document-wide at a time — a swatch has to show its
-   colors regardless of which theme is currently active. */
-.theme-group-label {
-  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
-  color: var(--ink-soft); margin: 1.1rem 0 0.5rem;
-}
-.theme-group-label:first-child { margin-top: 0; }
-.theme-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-  gap: 0.6rem;
-}
-.theme-swatch {
-  display: flex; align-items: center; gap: 0.55rem;
-  padding: 0.5rem 0.7rem; border-radius: 3px; border: 1px solid;
-  font: inherit; font-size: 0.82rem; text-align: left; cursor: pointer;
-  /* Colors come from this button's own inline style (per-theme), not the
-     page's current theme — see the file comment above. */
-}
-.theme-swatch:hover { filter: brightness(1.06); }
-.theme-swatch.active {
-  outline: 2px solid var(--focus); outline-offset: 2px;
-}
-.theme-swatch-dot {
-  width: 0.85rem; height: 0.85rem; border-radius: 50%; flex: none;
-  border: 1px solid rgba(0, 0, 0, 0.15);
-}
 .logout-form { display: flex; align-items: center; gap: 0.5rem; }
 .username-link { text-decoration: none; border-bottom: 2px solid transparent; padding-bottom: 0.15rem; }
 .username-link:hover { color: var(--ink); }

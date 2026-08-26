@@ -112,7 +112,7 @@ through the template context explicitly.
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
 | `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked. |
-| `theme.js` | The theme swatch grid in Settings — click handling and which swatch shows `.active`; the pre-paint switch itself lives inline in `base.html`. |
+| `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
 
 ## Patterns used more than once
 
@@ -245,32 +245,26 @@ this record" or "which rows do I mean"; a checkbox says that. A switch
 reads as "which mode is the app in right now," which only Settings
 actually holds today.
 
-### The theme swatch grid
+### The theme picker is a searchable `<select>`, same as everywhere else
 
-Settings > Appearance replaced a `<select>` (previously enhanced into a
-searchable dropdown by `combobox.js`, same as every other `<select>` on
-the page) with a grid of `.theme-swatch` buttons once the theme count
-grew past what a text list can usefully show — a theme is a palette, and
-a name alone doesn't tell you what one looks like the way a swatch does.
+Settings > Appearance is a plain `<select id="theme-select">` — no
+different from the payee/account/tag pickers elsewhere in the app —
+enhanced into a searchable dropdown by `combobox.js`, which every
+`<select>` on the page already gets automatically. Typing filters the
+22 options by name; the underlying `<select>` still holds the real
+value, so `theme.js`'s `change` listener (same `localStorage` key, same
+`data-theme` attribute, same pre-paint switch in `base.html`'s `<head>`)
+needed no changes to keep working.
 
-- Each theme is still just a `:root[data-theme="..."]` block in
-  `style.css` setting the same handful of custom properties (`--paper`,
-  `--ink`, `--accent`, ...) — the swatch grid changed how one gets
-  *picked*, not how theming itself works. `theme.js` and the pre-paint
-  switch in `base.html`'s `<head>` are unchanged from before this: same
-  `localStorage` key, same `data-theme` attribute.
-- A swatch has to show its own theme's colors regardless of which theme
-  is currently *active* (only one `data-theme` applies document-wide at
-  a time), so `settings.html` carries each theme's `--paper`/`--ink`/
-  `--accent`/`--rule-strong` a second time, as inline styles on that
-  theme's `<button>` — a `{% set theme_groups = [...] %}` Jinja list, not
-  hand-repeated markup per swatch. This is the one place those values
-  are duplicated outside `style.css` itself; keep the two in sync by
-  hand if a theme's palette ever changes (a comment at the top of that
-  block in `settings.html` says the same).
-- Grouped into the three sections themes actually fall into (original,
-  VS Code–inspired, Monkeytype-inspired) via `.theme-group-label`,
-  styled the same as the sidebar's own section labels.
+This briefly wasn't a `<select>` — a 2026-08-26 pass replaced it with a
+grid of color swatch buttons, on the theory that a theme is a palette
+and a name alone can't show you what one looks like. Reverted the same
+day: search-to-filter turned out to matter more in practice than seeing
+swatches up front, and a `<select>` keeps the theme picker consistent
+with every other "pick one of many named things" control in the app
+instead of being the one field styled differently. Each theme is just a
+`:root[data-theme="..."]` block in `style.css` either way — the picker
+UI has never been how theming itself works, only how one gets chosen.
 
 **Considered, rejected: one CSS file per theme** (2026-08-26, prompted by
 noticing monkeytype.com does this). Worth being precise about what
@@ -294,11 +288,6 @@ merits:
   meaningfully more moving parts than this app's "no build step, hand-
   written CSS" stance (see this doc's own Stack table) asks for, to
   save a few KB no self-hosted single-user install will ever notice.
-- It wouldn't actually reduce the maintenance surface the swatch grid
-  already created: each theme's colors are duplicated in `settings.html`
-  regardless of how many files `style.css` itself is split into, so
-  "one file is easier to update" doesn't hold once that second copy
-  exists either way.
 - Every other kind of styling in this app — components, layout, the
   other patterns on this page — stays in the one `style.css` file by
   deliberate choice; giving only themes a different file-per-item
