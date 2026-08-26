@@ -846,6 +846,17 @@ button.quiet {
   background: transparent; color: var(--ink); border-color: var(--rule-strong);
 }
 button.quiet:hover { background: var(--paper-deep); }
+/* button:disabled and button.quiet tie on specificity (element + one
+   class/pseudo-class each) — button.quiet, coming later in the file,
+   was winning outright and keeping its transparent background even
+   while disabled, so a disabled quiet button (Staging's Reject, right
+   next to Approve) never actually looked muted the way a disabled
+   plain button does. Re-asserted here with higher specificity so
+   disabled always wins, regardless of source order. */
+button.quiet:disabled {
+  background: var(--rule); border-color: var(--rule);
+  color: var(--ink-soft); cursor: not-allowed;
+}
 /* Every checkbox label in the app uses this one style: mono/uppercase,
    the same treatment table.ledger's headers and the Journal's dates
    already use. This used to be sentence-case (plain .sans), with only
