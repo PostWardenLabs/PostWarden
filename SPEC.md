@@ -356,6 +356,37 @@ approved) is entirely unaffected; the trigger functions
 this condition first and fall through to the original, unchanged
 behavior for everything else.
 
+### 16. Tags are mutable on any entry — append-only never applied to them
+
+Decision 4's append-only rule is about *what happened*: an amount, an
+account, a date, once posted, can't quietly become a different amount,
+account, or date without a paper trail (Reverse) showing the change.
+A tag was never part of that claim. It's metadata about how an entry is
+organized, not a fact about the transaction — adding "groceries" to a
+five-year-old entry doesn't change what got bought or what it cost, it
+just makes that entry findable under a category that didn't exist yet
+when it posted. Treating tags as append-only right alongside amounts
+and accounts would mean a tagging scheme could only ever apply to
+entries created after the scheme was thought up — every entry that
+predates a new tag stays permanently unorganized under it, for no
+integrity reason at all.
+
+`journal_entry_tags` (see `docs/SCHEMA.md`) has never carried an
+immutability trigger, on any entry, posted or pending — this decision
+just writes down why that's correct rather than an oversight. The
+Journal's bulk **Edit tags** (`/entries/tags` — see
+`docs/ARCHITECTURE.md`) adds to or removes from this junction table on
+entries in any scenario, including ACTUAL, freely. What stays exactly
+as immutable as before: `journal_entries`' own columns (amount lives on
+`journal_lines`, never touched here) and every line — an entry's tags
+can change; what it actually posted cannot, and this decision doesn't
+touch that boundary at all. `journal_entries.description` is the one
+column-level exception, covered already by decision 4's original
+carve-out (reference and description), extended by the Journal's own
+inline edit — a typo fix, same reasoning as a tag: organizational, not
+a fact about the transaction, and equally worth being able to fix on
+something already posted.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

@@ -1629,6 +1629,92 @@ def test_entries_bulk_reverse_skips_an_already_reversed_entry_but_still_reverses
         assert cur.fetchone()["n"] == 1
 
 
+def test_entries_tags_add_applies_to_every_selected_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid1 = mk_entry(cur, scen["id"], "First entry")
+        mk_line(cur, eid1, acct["id"], 10)
+        eid2 = mk_entry(cur, scen["id"], "Second entry")
+        mk_line(cur, eid2, acct["id"], 20)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/entries/tags", data={
+            "entry_id": [str(eid1), str(eid2)], "tag": "groceries", "action": "add",
+            "csrf_token": csrf_token,
+        })
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+    with conn.cursor() as cur:
+        cur.execute("""SELECT COUNT(*) AS n FROM journal_entry_tags jet
+                         JOIN tags tg ON tg.id = jet.tag_id
+                        WHERE tg.name = 'groceries' AND jet.entry_id = ANY(%s)""",
+                   ([eid1, eid2],))
+        assert cur.fetchone()["n"] == 2
+
+
+def test_entries_tags_remove_only_touches_entries_that_have_it(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        tagged = mk_entry(cur, scen["id"], "Already tagged")
+        mk_line(cur, tagged, acct["id"], 10)
+        untagged = mk_entry(cur, scen["id"], "Never tagged")
+        mk_line(cur, untagged, acct["id"], 5)
+        cur.execute("INSERT INTO tags (name) VALUES ('urgent') RETURNING id")
+        tag_id = cur.fetchone()["id"]
+        cur.execute("INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)",
+                   (tagged, tag_id))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        # Both checked, only one actually has the tag — removing it should
+        # be a harmless no-op for the entry that never had it.
+        r = c.post("/entries/tags", data={
+            "entry_id": [str(tagged), str(untagged)], "tag": "urgent", "action": "remove",
+            "csrf_token": csrf_token,
+        })
+        assert r.status_code == 200
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entry_tags WHERE entry_id = %s", (tagged,))
+        assert cur.fetchone()["n"] == 0
+
+
+def test_entries_tags_requires_entries_selected_and_a_known_action(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+
+        r = c.post("/entries/tags", data={"tag": "groceries", "action": "add", "csrf_token": csrf_token})
+        assert r.status_code == 400
+        assert r.json()["ok"] is False
+
+        r = c.post("/entries/tags", data={
+            "entry_id": "1", "tag": "groceries", "action": "delete", "csrf_token": csrf_token,
+        })
+        assert r.status_code == 400
+        assert r.json()["ok"] is False
+
+
 def test_entries_page_filters_by_amount(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

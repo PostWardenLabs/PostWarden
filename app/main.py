@@ -1339,6 +1339,44 @@ def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
     _sync_tags(cur, "journal_entry_tags", "entry_id", entry_id, tag_names)
 
 
+def _add_tag_to_entries(entry_ids: list[int], tag_name: str) -> None:
+    """Adds one tag to every given entry that doesn't already have it —
+    the Journal's bulk 'Edit tags' popup (see entries-select.js), one
+    call per chip added. Deliberately additive, not _sync_entry_tags'
+    full replace: different selected entries can have different
+    existing tags, and this should only ever touch the one tag actually
+    being added, leaving everything else on every entry alone.
+    journal_entry_tags carries no immutability trigger — organizing a
+    posted entry isn't the append-only rule tags editing would actually
+    violate (see SPEC.md's tag-editing decision), so this works the
+    same on a posted entry as a pending one."""
+    with tx() as cur:
+        cur.execute(
+            """INSERT INTO tags (name) VALUES (%s)
+               ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+               RETURNING id""",
+            (tag_name,))
+        tag_id = cur.fetchone()["id"]
+        for entry_id in entry_ids:
+            cur.execute(
+                """INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)
+                   ON CONFLICT DO NOTHING""",
+                (entry_id, tag_id))
+
+
+def _remove_tag_from_entries(entry_ids: list[int], tag_name: str) -> None:
+    """The other half of the bulk tag popup — one call per chip removed,
+    dropping that one tag from whichever of the given entries actually
+    have it. A tag nobody uses anymore is just left in `tags`, same as
+    everywhere else in the app that removes a tag from something."""
+    with tx() as cur:
+        cur.execute(
+            """DELETE FROM journal_entry_tags
+                WHERE entry_id = ANY(%s)
+                  AND tag_id = (SELECT id FROM tags WHERE name = %s)""",
+            (entry_ids, tag_name))
+
+
 def _parse_lines(form) -> list[dict]:
     """Turn parallel account[]/debit[]/credit[]/memo[] arrays into line dicts.
 
@@ -1783,6 +1821,37 @@ async def reverse_entries_bulk(request: Request):
              if reversed_ids else None)
     err_msg = "; ".join(errors) or None
     return flash_redirect("/entries", ok=ok_msg, err=err_msg)
+
+
+@app.post("/entries/tags")
+async def edit_entries_tags(request: Request):
+    """Add or remove one tag across whatever's checked in the Journal's
+    'select entries' mode — the 'Edit tags' popup (see entries-select.js)
+    fires one of these per chip added/removed, live, since the popup has
+    no Save button of its own to batch a set of changes behind. JSON in
+    and out (fetch-driven, not a real page navigation) rather than the
+    flash-redirect every other bulk action here uses."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+        if not entry_ids:
+            raise ValueError("No entries selected")
+        action = form.get("action")
+        tag_names = _parse_tags(form.get("tag", ""))
+        if len(tag_names) != 1:
+            raise ValueError("Expected exactly one tag")
+        tag_name = tag_names[0]
+        if action == "add":
+            _add_tag_to_entries(entry_ids, tag_name)
+        elif action == "remove":
+            _remove_tag_from_entries(entry_ids, tag_name)
+        else:
+            raise ValueError(f"Unknown action {action!r}")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "tag": tag_name, "action": action})
 
 
 # ---------------------------------------------------------------------------

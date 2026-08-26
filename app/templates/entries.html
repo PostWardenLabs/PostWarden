@@ -10,6 +10,7 @@
 <script type="application/json" id="accounts-data">{{ new_entry_accounts | tojson }}</script>
 <script type="application/json" id="accounts-by-scenario-data">{{ accounts_by_scenario | tojson }}</script>
 <script type="application/json" id="templates-data">{{ tpls | tojson }}</script>
+<script type="application/json" id="entry-tags-data">{{ tags_by_entry | tojson }}</script>
 
 {% if account_row %}
 <p class="page-sub">Showing only postings to <span class="mono">{{ account_row.code }}</span> {{ account_row.name }} —
@@ -184,6 +185,7 @@
     <button type="button" class="quiet" id="select-toggle">Select entries</button>
     <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
     <button type="submit" id="reverse-btn" class="select-only" disabled>Reverse (Alt+R)</button>
+    <button type="button" class="quiet select-only" id="edit-tags-btn" disabled>Edit tags</button>
   </p>
   {% for e in entries %}
   <details class="entry">
