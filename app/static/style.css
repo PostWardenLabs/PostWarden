@@ -1261,6 +1261,13 @@ tr.add-gap .add-gap-type { max-width: 11rem; }
 @media (max-width: 720px) {
   details.entry summary { grid-template-columns: 1fr auto; }
   .topbar-inner { gap: 0.6rem; }
+  /* "Dashboard · PostWarden" wraps onto two lines once the title plus
+     brand no longer fit one row next to topbar-right (username/logout)
+     — the brand half is the one that can go; the page's own name alone
+     is still meaningful and was the whole point of .wordmark-brand
+     trailing after it, de-emphasized, in the first place (see "The page
+     title lives in the topbar" in docs/ARCHITECTURE.md). */
+  .wordmark-brand { display: none; }
   /* Too narrow to push content over without squeezing it unusably —
      pinned still overlays here, same as an unpinned hover-preview. */
   .sidebar { width: 82vw; box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15); }
