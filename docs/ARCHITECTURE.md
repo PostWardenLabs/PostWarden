@@ -272,6 +272,42 @@ a name alone doesn't tell you what one looks like the way a swatch does.
   VS Code–inspired, Monkeytype-inspired) via `.theme-group-label`,
   styled the same as the sidebar's own section labels.
 
+**Considered, rejected: one CSS file per theme** (2026-08-26, prompted by
+noticing monkeytype.com does this). Worth being precise about what
+monkeytype actually does first, since it's not quite "one file per
+theme": the real palettes (bg/main/sub/text/error/...) live in one
+central `themes.ts` object; `frontend/static/themes/*.css` is a much
+smaller, optional set of *extra* per-theme files (`hasCss: true`) for
+things a plain palette can't express — Matrix's scanline animation,
+Shadow's color-cycling keyframes — not the color definitions themselves.
+So the actual prior art here is "one manifest, plus opt-in extras," not
+"one file per palette." Splitting this app's `:root[data-theme="..."]`
+blocks into 22 separate files was rejected anyway, on this app's own
+merits:
+
+- The pre-paint script (`base.html`'s `<head>`, before the stylesheet
+  even loads) is what avoids a flash of the wrong theme on load — it
+  works today because every theme's CSS is already sitting in the one
+  stylesheet the page always loads. Splitting into 22 files only pays
+  off (skip loading the 21 themes not in use) if the pre-paint script
+  also picks which `<link>` to inject before first paint — real, but
+  meaningfully more moving parts than this app's "no build step, hand-
+  written CSS" stance (see this doc's own Stack table) asks for, to
+  save a few KB no self-hosted single-user install will ever notice.
+- It wouldn't actually reduce the maintenance surface the swatch grid
+  already created: each theme's colors are duplicated in `settings.html`
+  regardless of how many files `style.css` itself is split into, so
+  "one file is easier to update" doesn't hold once that second copy
+  exists either way.
+- Every other kind of styling in this app — components, layout, the
+  other patterns on this page — stays in the one `style.css` file by
+  deliberate choice; giving only themes a different file-per-item
+  convention would be the inconsistent choice, not the tidy one.
+
+If the theme roster keeps growing well past this, the cheaper next step
+is splitting `style.css` in two (component CSS / theme palettes) rather
+than one-file-per-theme — still one extra request, not twenty-two.
+
 ### Opting out of the standard chrome
 
 Every page gets `base.html`'s topbar/main/footer for free — except
