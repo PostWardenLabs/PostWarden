@@ -47,9 +47,11 @@ instance.
 - **Scheduled/recurring entries and CSV import**, both landing in a
   Staging scenario for review — a due occurrence or an imported row
   shows up for you to approve on one shared page, never posts to your
-  real books unsupervised. Import round-trips the same column layout
-  Export CSV produces, so export → edit in a spreadsheet → re-import is
-  a real workflow.
+  real books unsupervised. Edit a pending entry right there (fix an
+  amount, change an account, add a line) or reject it outright before
+  it ever becomes a real posting — a draft, not yet history. Import
+  round-trips the same column layout Export CSV produces, so export →
+  edit in a spreadsheet → re-import is a real workflow.
 - **CSV export everywhere**, a chart-of-accounts manager, payees, tags,
   and twenty-two hand-built visual themes if the default doesn't suit
   you — ten original, plus VS Code– and [monkeytype.com](https://monkeytype.com)-inspired

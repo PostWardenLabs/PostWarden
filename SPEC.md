@@ -313,6 +313,49 @@ resulting host/port/database/login live, plus a downloadable `.pbids` so
 Power BI Desktop opens pre-pointed at the right server without anyone
 retyping it.
 
+### 15. A pending Staging entry is exempt from append-only, until it's approved
+
+Decision 4 made history append-only — posted lines take no UPDATE/DELETE,
+entry headers only description/reference — on the grounds that an audit
+trail worth having is one you can't rewrite. That argument is about
+*history*: something a real books-keeping decision has already relied
+on. An entry still sitting in Staging, proposed by a schedule or an
+import and not yet approved, isn't that yet — nothing has relied on it,
+and "reject" or "edit before approving" are exactly what a review queue
+is supposed to let you do with a draft. Treating a Staging entry as
+immutable from the moment it's created answered a question nobody was
+asking, and left rejecting a mistake with no better option than leaving
+it sitting in the list forever (there was no delete route for it at
+all) or approving it anyway and reversing the result — reversal is for
+undoing a real posting, not for declining a proposal that never should
+have posted in the first place.
+
+The exception, scoped as tightly as the condition that already
+distinguishes "still pending" from "resolved" (`journal_entries.
+promoted_entry_id IS NULL`) plus `scenarios.is_staging`:
+
+- A pending Staging entry's lines may be DELETEd (never UPDATEd in
+  place — editing a line is delete-then-reinsert through the app's own
+  Staging edit screen, one rule instead of a matrix of which columns
+  are safe to touch mid-flight). Lines can be added freely either way —
+  INSERT was never restricted by entry maturity to begin with.
+- The entry itself may be DELETEd outright (Staging's "reject" — gone
+  for good, correctly not modeled as a reversal, since it was never a
+  real posting), and its date/description/reference/payee may be
+  UPDATEd. Its scenario and provenance
+  (`scheduled_entry_id`/`import_batch_id`/`reverses_entry_id`) may not
+  change under any circumstances — those aren't drafting details, they're
+  what the entry *is* and where it's headed.
+
+The instant `promoted_entry_id` gets set (Staging's own Approve action),
+both exceptions vanish — from that point on a Staging entry is exactly
+as immutable as anything posted directly, no different treatment at all.
+Every other kind of entry (ACTUAL, a forecast, anything already
+approved) is entirely unaffected; the trigger functions
+(`fn_lines_immutable`, `fn_entries_guard` — see `docs/SCHEMA.md`) check
+this condition first and fall through to the original, unchanged
+behavior for everything else.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

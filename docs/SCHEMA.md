@@ -215,12 +215,18 @@ those three are not ordinary user-created scenarios:
   `target_scenario_id` or the import batch's `target_scenario_id`,
   whichever is set (an entry only ever has one), falling back to ACTUAL
   if somehow neither is — and sets the original's `promoted_entry_id` to
-  link them; the staged copy is never edited or deleted, just marked.
-  Re-approving an already-promoted entry is rejected in the app layer
-  (`promoted_entry_id IS NOT NULL` check); nothing currently doing that
-  at the trigger level, since editing/deleting a `journal_entries` row is
-  already generally forbidden (integrity trigger 3) regardless of
-  scenario.
+  link them; from that point on the staged copy is never edited or
+  deleted again, just left as the record of what got approved and when.
+  Before that point — still pending, `promoted_entry_id IS NULL` — it's
+  a different story: **Edit** (`/staging/{id}/edit`) and **Reject**
+  (`/staging/{id}/reject`, deletes it outright) both work precisely
+  because integrity trigger 3 relaxes for exactly this state (SPEC.md
+  decision 15); Approve itself relies on the same relaxation to make the
+  one write it needs (setting `promoted_entry_id`). Re-approving an
+  already-promoted entry is rejected in the app layer (`promoted_entry_id
+  IS NOT NULL` check) and, independently, at the trigger level too —
+  once promoted, the relaxation no longer applies and the entry is fully
+  immutable again, same as anything posted directly.
 
   A CSV import (`/import`) round-trips `/entries/export.csv`'s own column
   layout — `Entry #` groups rows back into one entry (the value itself
@@ -265,9 +271,15 @@ trigger N" comments — this is that list, in one place:
    has a `base_level_id` and the account sits exactly at that depth, and
    the account must be active.
 3. **`fn_lines_immutable`** (`journal_lines`, BEFORE UPDATE OR DELETE) —
-   always raises. **`fn_entries_guard`** (`journal_entries`, BEFORE UPDATE
-   OR DELETE) — DELETE always raises; UPDATE raises unless only
-   `description`/`reference` changed.
+   UPDATE always raises; DELETE raises unless the line's entry is a
+   still-pending Staging entry (`scenarios.is_staging` and `journal_
+   entries.promoted_entry_id IS NULL` — see SPEC.md decision 15).
+   **`fn_entries_guard`** (`journal_entries`, BEFORE UPDATE OR DELETE) —
+   DELETE raises under the same condition `fn_lines_immutable` checks;
+   UPDATE raises unless only `description`/`reference` changed, or —
+   same pending-Staging condition again — `entry_date`/`description`/
+   `reference`/`payee_id` changed and nothing else (scenario and
+   provenance stay locked even then).
 4. **`fn_scenario_lock_guard`** (`journal_entries`, BEFORE INSERT) — no
    new entries once `scenarios.is_locked`.
 5. **`fn_income_statement_only_guard`** (`journal_entries`, BEFORE INSERT)

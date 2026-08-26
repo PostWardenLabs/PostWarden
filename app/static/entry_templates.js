@@ -24,6 +24,13 @@
     if (payeeSel) {
       payeeSel.value = tpl.payee_id != null ? String(tpl.payee_id) : "";
       payeeSel.dispatchEvent(new Event("change", { bubbles: true }));
+      // combobox.js only syncs its *visible* text from a select's value
+      // on the paths it drives itself (typing, picking an option) — an
+      // externally dispatched "change" on the underlying <select>, like
+      // the one above, doesn't reach it. Without this the Payee field
+      // reads as blank after loading a template even though the real
+      // value (and what actually submits) is set correctly.
+      if (window.PostWardenCombobox) window.PostWardenCombobox.resync(payeeSel);
     }
 
     const tagsRoot = root.querySelector(".tag-input");
@@ -44,6 +51,7 @@
       const acct = tr.querySelector('select[name="account"]');
       acct.value = ln.code;
       acct.dispatchEvent(new Event("change", { bubbles: true }));
+      if (window.PostWardenCombobox) window.PostWardenCombobox.resync(acct);
       if (ln.debit) {
         const debit = tr.querySelector('input[name="debit"]');
         debit.value = ln.debit;

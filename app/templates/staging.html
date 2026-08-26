@@ -45,6 +45,22 @@
           {% endfor %}
         </tbody>
       </table>
+      {#
+        Both actions below submit *this* form (the one wrapping every
+        entry, for bulk Approve) rather than a form of their own —
+        <form> can't nest, and this entry's block already lives inside
+        the outer one. formaction/formmethod on the button itself
+        redirects just that one submit to a different route, same CSRF
+        field and all, without needing a second <form>.
+      #}
+      <p style="margin-top: 0.6rem;">
+        <a class="quiet-link" href="/staging/{{ e.id }}/edit">Edit</a>
+        <button type="submit" class="quiet" style="margin-left: 0.6rem;"
+                formaction="/staging/{{ e.id }}/reject" formmethod="post"
+                onclick="return confirm('Reject and permanently delete entry #{{ e.id }} — {{ e.description }}? This cannot be undone.');">
+          Reject
+        </button>
+      </p>
     </div>
   </details>
   {% endfor %}

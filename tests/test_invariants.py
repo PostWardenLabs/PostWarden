@@ -216,6 +216,157 @@ def test_staging_scenario_cannot_be_income_statement_only(conn):
             mk_scenario(cur, is_staging=True, income_statement_only=True)
 
 
+def _mk_pending_staging_entry(cur, description="Pending entry"):
+    """A balanced, still-unapproved Staging entry — scheduled_entry_id
+    set (same shape materialize_due_schedules() itself produces) so
+    fn_staging_manual_entry_guard allows it, two lines so the deferred
+    balance trigger is happy at commit."""
+    cur.execute("SELECT id FROM scenarios WHERE is_staging")
+    staging_id = cur.fetchone()["id"]
+    target = mk_scenario(cur)
+    acct1 = mk_account(cur)
+    acct2 = mk_account(cur)
+    cur.execute(
+        """INSERT INTO scheduled_entries
+               (description, target_scenario_id, interval_unit, next_date)
+           VALUES ('Test schedule', %s, 'month', CURRENT_DATE) RETURNING id""",
+        (target["id"],))
+    sched_id = cur.fetchone()["id"]
+    cur.execute(
+        """INSERT INTO journal_entries (scenario_id, entry_date, description, scheduled_entry_id)
+           VALUES (%s, CURRENT_DATE, %s, %s) RETURNING id""",
+        (staging_id, description, sched_id))
+    eid = cur.fetchone()["id"]
+    mk_line(cur, eid, acct1["id"], 30, line_no=1)
+    mk_line(cur, eid, acct2["id"], -30, line_no=2)
+    return eid, target["id"]
+
+
+def test_pending_staging_line_can_be_deleted(conn):
+    # Delete-then-reinsert with a different amount — the shape the app's
+    # own Staging edit route uses — rather than deleting down to zero
+    # lines: that would (correctly) trip the separate "an entry needs at
+    # least one line" invariant, which is unrelated to immutability and
+    # isn't relaxed by any of this.
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+        cur.execute(
+            "SELECT account_id FROM journal_lines WHERE entry_id = %s AND line_no = 1",
+            (eid,))
+        acct1_id = cur.fetchone()["account_id"]
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT account_id FROM journal_lines WHERE entry_id = %s AND line_no = 2",
+            (eid,))
+        acct2_id = cur.fetchone()["account_id"]
+        cur.execute("DELETE FROM journal_lines WHERE entry_id = %s", (eid,))
+        mk_line(cur, eid, acct1_id, 45, line_no=1)   # replaces the deleted 30/-30 pair
+        mk_line(cur, eid, acct2_id, -45, line_no=2)
+    conn.commit()  # must not raise
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT amount FROM journal_lines WHERE entry_id = %s AND line_no = 1", (eid,))
+        assert cur.fetchone()["amount"] == 45
+
+
+def test_pending_staging_line_still_cannot_be_updated_in_place(conn):
+    # The exception is delete-only — editing a line is delete-then-
+    # reinsert (see app/main.py's staging edit route), never an in-place
+    # UPDATE, even while still pending.
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+    conn.commit()
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE journal_lines SET amount = 99 WHERE entry_id = %s AND line_no = 1",
+                (eid,))
+
+
+def test_pending_staging_entry_header_is_editable(conn):
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE journal_entries
+                   SET description = 'Edited', entry_date = CURRENT_DATE - 1
+                 WHERE id = %s""",
+            (eid,))
+    conn.commit()  # must not raise
+    with conn.cursor() as cur:
+        cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["description"] == "Edited"
+
+
+def test_pending_staging_entry_scenario_change_still_rejected(conn):
+    # Editable, but not into a different scenario — that's what the
+    # schedule/import's own target_scenario_id at approval time is for.
+    with conn.cursor() as cur:
+        eid, other_scenario_id = _mk_pending_staging_entry(cur)
+    conn.commit()
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE journal_entries SET scenario_id = %s WHERE id = %s",
+                (other_scenario_id, eid))
+
+
+def test_pending_staging_entry_can_be_deleted(conn):
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM journal_lines WHERE entry_id = %s", (eid,))
+        cur.execute("DELETE FROM journal_entries WHERE id = %s", (eid,))
+    conn.commit()  # must not raise
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["n"] == 0
+
+
+def test_approving_a_staging_entry_sets_promoted_entry_id(conn, actual_scenario_id):
+    # The one write the approve flow itself needs (see app/main.py) —
+    # confirms the mutability exception doesn't accidentally block the
+    # very transition it exists to allow.
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+        real_id = mk_entry(cur, actual_scenario_id, "Approved copy")
+        real_acct1, real_acct2 = mk_account(cur), mk_account(cur)
+        # ACTUAL always enforces balance — two lines, not one.
+        mk_line(cur, real_id, real_acct1["id"], 30, line_no=1)
+        mk_line(cur, real_id, real_acct2["id"], -30, line_no=2)
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE journal_entries SET promoted_entry_id = %s WHERE id = %s",
+            (real_id, eid))
+    conn.commit()  # must not raise
+
+
+def test_promoted_staging_entry_is_immutable_again(conn, actual_scenario_id):
+    with conn.cursor() as cur:
+        eid, _ = _mk_pending_staging_entry(cur)
+        real_id = mk_entry(cur, actual_scenario_id, "Approved copy")
+        real_acct1, real_acct2 = mk_account(cur), mk_account(cur)
+        # ACTUAL always enforces balance — two lines, not one.
+        mk_line(cur, real_id, real_acct1["id"], 30, line_no=1)
+        mk_line(cur, real_id, real_acct2["id"], -30, line_no=2)
+        cur.execute(
+            "UPDATE journal_entries SET promoted_entry_id = %s WHERE id = %s",
+            (real_id, eid))
+    conn.commit()
+
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM journal_lines WHERE entry_id = %s AND line_no = 1", (eid,))
+
+    with expect_error(conn):
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM journal_entries WHERE id = %s", (eid,))
+
+
 # ---------------------------------------------------------------------------
 # Postable / active account guard
 # ---------------------------------------------------------------------------

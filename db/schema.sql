@@ -563,13 +563,45 @@ BEFORE INSERT ON journal_lines
 FOR EACH ROW EXECUTE FUNCTION fn_line_account_guard();
 
 -- ---------------------------------------------------------------------------
--- Integrity trigger 3 — immutability. History is append-only.
--- Fix mistakes with a reversing entry (the app has a one-click Reverse).
--- Entry headers allow editing only description/reference.
+-- Integrity trigger 3 — immutability, with one deliberate exception.
+--
+-- History is append-only: fix a posted mistake with a reversing entry (the
+-- app has a one-click Reverse), never by editing it. Posted entry headers
+-- allow editing only description/reference.
+--
+-- The exception: an entry still sitting in Staging, awaiting approval
+-- (scenarios.is_staging, journal_entries.promoted_entry_id IS NULL) isn't
+-- history yet — it's a draft a schedule or an import proposed, nobody has
+-- approved it into real books, and "you can't rewrite it" doesn't actually
+-- protect anything for a row nothing has relied on yet (see SPEC.md
+-- decision 15). So:
+--   - A still-pending Staging line may be DELETEd (never UPDATEd in place —
+--     "editing" a line is delete-then-reinsert via the app's Staging edit
+--     screen, one rule instead of a matrix of which columns are safe to
+--     change).
+--   - A still-pending Staging entry may itself be DELETEd (Staging's
+--     "reject" action — gone for good, not a reversal, since it never was
+--     a real posting to reverse), and its date/description/reference/payee
+--     may be UPDATEd — never its scenario, provenance
+--     (scheduled_entry_id/import_batch_id), reverses_entry_id, or
+--     promoted_entry_id.
+-- The instant an entry is approved (promoted_entry_id gets set), both
+-- exceptions vanish — it's real history from that point on, exactly like
+-- anything posted directly.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_lines_immutable() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_deletable BOOLEAN;
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        SELECT s.is_staging AND e.promoted_entry_id IS NULL INTO v_deletable
+          FROM journal_entries e JOIN scenarios s ON s.id = e.scenario_id
+         WHERE e.id = OLD.entry_id;
+        IF v_deletable THEN
+            RETURN OLD;
+        END IF;
+    END IF;
     RAISE EXCEPTION
         'Journal lines are immutable. Post a reversing entry instead (entry %)',
         COALESCE(NEW.entry_id, OLD.entry_id);
@@ -581,12 +613,39 @@ FOR EACH ROW EXECUTE FUNCTION fn_lines_immutable();
 
 CREATE OR REPLACE FUNCTION fn_entries_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_pending BOOLEAN;  -- still in Staging, not yet approved
 BEGIN
+    SELECT s.is_staging AND OLD.promoted_entry_id IS NULL INTO v_pending
+      FROM scenarios s WHERE s.id = OLD.scenario_id;
+
     IF TG_OP = 'DELETE' THEN
+        IF v_pending THEN
+            RETURN OLD;
+        END IF;
         RAISE EXCEPTION
             'Journal entries cannot be deleted. Post a reversing entry instead (entry %)',
             OLD.id;
     END IF;
+
+    IF v_pending THEN
+        -- promoted_entry_id is deliberately not in this list: v_pending
+        -- being true already means OLD.promoted_entry_id IS NULL, so the
+        -- only way NEW can differ here is the approve action setting it
+        -- for the first time (Staging's own "Approve entries" — see
+        -- app/main.py) — the transition this whole exception exists to
+        -- still allow, not one more thing to block.
+        IF NEW.scenario_id <> OLD.scenario_id
+           OR NEW.reverses_entry_id IS DISTINCT FROM OLD.reverses_entry_id
+           OR NEW.scheduled_entry_id IS DISTINCT FROM OLD.scheduled_entry_id
+           OR NEW.import_batch_id IS DISTINCT FROM OLD.import_batch_id THEN
+            RAISE EXCEPTION
+                'Cannot change scenario or provenance of a staged entry (entry %)',
+                OLD.id;
+        END IF;
+        RETURN NEW;
+    END IF;
+
     IF NEW.scenario_id <> OLD.scenario_id
        OR NEW.entry_date <> OLD.entry_date
        OR NEW.reverses_entry_id IS DISTINCT FROM OLD.reverses_entry_id THEN

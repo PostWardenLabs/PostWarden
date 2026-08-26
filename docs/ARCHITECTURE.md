@@ -69,7 +69,7 @@ reading order:
 | Account levels | `/account-levels` | |
 | Payees | `/payees`, `/payees/quick-create` | quick-create is called via `fetch()` from the New entry payee combobox |
 | Scheduled entries | `/scheduled` | `materialize_due_schedules()` runs lazily on request (no cron in this deployment), posting each due occurrence into Staging |
-| Staging | `/staging`, `/staging/approve` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses |
+| Staging | `/staging`, `/staging/approve`, `/staging/{id}/edit`, `/staging/{id}/reject` | review/approve page for whatever's sitting in the one `is_staging` scenario — checkboxes + "Approve entries" copies each into its real target scenario and sets `promoted_entry_id`; `pending_staging_entries()` is the shared query the Dashboard's banner count also uses. Per-entry **Edit** (a trimmed-down New-entry grid — one fixed target scenario instead of a picker, everything else the same `app.js`/`combobox.js`/`datepicker.js` machinery, see the `app.js` row below) and **Reject** (permanent delete) both only work on a still-pending entry — see SPEC.md decision 15 for why that's even possible given decision 4's append-only rule |
 | Import | `/import` | uploads a CSV in `/entries/export.csv`'s own column layout; `_parse_csv_import()` groups rows by `Entry #` and fully validates every group in Python before anything touches the database, then stages the valid ones in Staging under a new `import_batches` row |
 | Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
 | Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, in a two-column layout (`.two-col`/`.side-nav`, [see below](#sticky-side-nav-layout)) with its own jump-to nav; every other page links back with a small "?" icon in its own top-right corner (`.page-head`/`.help-icon`) rather than a sentence of caption text |
@@ -97,7 +97,7 @@ through the template context explicitly.
 
 | File | Enhances |
 |---|---|
-| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, and Entry templates — keyboard flow (Tab, and Enter/Shift+Enter through the same account → debit → credit → memo → next row order, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). |
+| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, Entry templates, and Staging's Edit screen — keyboard flow (Tab, and Enter/Shift+Enter through the same account → debit → credit → memo → next row order, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). |
 | `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
 | `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
@@ -112,6 +112,7 @@ through the template context explicitly.
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
 | `staging.js` | The Staging page — "select all" toggles every entry checkbox; both Approve buttons stay disabled until at least one is checked. |
+| `staging_edit.js` | Staging's Edit screen — loads the entry's existing lines into app.js's grid on page load, the same way `entry_templates.js` loads a saved template in, just automatic instead of picked from a dropdown. |
 | `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
 
 ## Patterns used more than once

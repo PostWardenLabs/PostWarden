@@ -344,6 +344,174 @@ def test_staging_page_lists_pending_entries_and_approves_them(conn):
         assert cur.fetchone()["scenario_id"] == actual_id
 
 
+def _mk_staged_entry(cur, description="Staged via test"):
+    """A pending Staging entry, same shape test_staging_page_lists_
+    pending_entries_and_approves_them builds by hand — factored out
+    since both the edit and reject tests below need one too."""
+    cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+    actual_id = cur.fetchone()["id"]
+    cur.execute("SELECT id FROM scenarios WHERE is_staging")
+    staging_id = cur.fetchone()["id"]
+    acct1 = mk_account(cur)
+    acct2 = mk_account(cur)
+    cur.execute(
+        """INSERT INTO scheduled_entries
+               (description, target_scenario_id, interval_unit, next_date)
+           VALUES (%s, %s, 'month', CURRENT_DATE) RETURNING id""",
+        (description, actual_id))
+    sched_id = cur.fetchone()["id"]
+    cur.execute(
+        """INSERT INTO journal_entries
+               (scenario_id, entry_date, description, scheduled_entry_id)
+           VALUES (%s, CURRENT_DATE, %s, %s) RETURNING id""",
+        (staging_id, description, sched_id))
+    eid = cur.fetchone()["id"]
+    mk_line(cur, eid, acct1["id"], 40, line_no=1)
+    mk_line(cur, eid, acct2["id"], -40, line_no=2)
+    return eid, acct1, acct2
+
+
+def test_staging_edit_page_prefills_the_grid(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, acct1, acct2 = _mk_staged_entry(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/staging/{eid}/edit")
+        assert r.status_code == 200
+        assert "Staged via test" in r.text
+        assert acct1["code"] in r.text
+        assert acct2["code"] in r.text
+        assert "40" in r.text
+
+
+def test_staging_edit_replaces_the_lines_and_updates_the_header(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, acct1, acct2 = _mk_staged_entry(cur)
+        acct3 = mk_account(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post(f"/staging/{eid}/edit", data={
+            "csrf_token": csrf_token, "entry_date": "2026-01-02",
+            "description": "Edited description", "reference": "REF1",
+            "account": [acct1["code"], acct3["code"]],
+            "debit": ["55", ""], "credit": ["", "55"], "memo": ["fixed", ""],
+        })
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT description, reference, entry_date FROM journal_entries WHERE id = %s",
+            (eid,))
+        row = cur.fetchone()
+        assert row["description"] == "Edited description"
+        assert row["reference"] == "REF1"
+        assert str(row["entry_date"]) == "2026-01-02"
+
+        cur.execute(
+            """SELECT a.code, l.debit, l.credit, l.memo FROM journal_lines l
+                JOIN accounts a ON a.id = l.account_id
+               WHERE l.entry_id = %s ORDER BY l.line_no""",
+            (eid,))
+        lines = cur.fetchall()
+        assert [ln["code"] for ln in lines] == [acct1["code"], acct3["code"]]
+        assert str(lines[0]["debit"]) == "55.00"
+        assert lines[0]["memo"] == "fixed"
+        # acct2 from the original pair is gone — a real replace, not a merge.
+        assert acct2["code"] not in [ln["code"] for ln in lines]
+
+
+def test_staging_edit_rejects_an_already_approved_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, _, _ = _mk_staged_entry(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        real_id = mk_entry(cur, actual_id, "Already approved")
+        real_acct1, real_acct2 = mk_account(cur), mk_account(cur)
+        mk_line(cur, real_id, real_acct1["id"], 10, line_no=1)
+        mk_line(cur, real_id, real_acct2["id"], -10, line_no=2)
+        cur.execute(
+            "UPDATE journal_entries SET promoted_entry_id = %s WHERE id = %s",
+            (real_id, eid))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.get(f"/staging/{eid}/edit")
+        assert "err=" in r.headers["location"]
+
+        r2 = c.post(f"/staging/{eid}/edit", data={
+            "csrf_token": csrf_token, "entry_date": "2026-01-02",
+            "description": "Should not apply",
+            "account": [], "debit": [], "credit": [], "memo": [],
+        })
+        assert "err=" in r2.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["description"] != "Should not apply"
+
+
+def test_staging_reject_deletes_the_entry_and_its_lines(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, _, _ = _mk_staged_entry(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post(f"/staging/{eid}/reject", data={"csrf_token": csrf_token})
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT COUNT(*) AS n FROM journal_lines WHERE entry_id = %s", (eid,))
+        assert cur.fetchone()["n"] == 0
+
+
+def test_staging_reject_refuses_an_already_approved_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, _, _ = _mk_staged_entry(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        real_id = mk_entry(cur, actual_id, "Already approved")
+        real_acct1, real_acct2 = mk_account(cur), mk_account(cur)
+        mk_line(cur, real_id, real_acct1["id"], 10, line_no=1)
+        mk_line(cur, real_id, real_acct2["id"], -10, line_no=2)
+        cur.execute(
+            "UPDATE journal_entries SET promoted_entry_id = %s WHERE id = %s",
+            (real_id, eid))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post(f"/staging/{eid}/reject", data={"csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["n"] == 1  # still there — reject was refused
+
+
 def test_dashboard_links_to_staging_when_entries_pending(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

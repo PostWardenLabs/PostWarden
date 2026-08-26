@@ -2195,6 +2195,156 @@ async def approve_staging_entries(request: Request):
     return flash_redirect("/staging", ok=ok_msg, err=err_msg)
 
 
+def _pending_staging_entry(entry_id: int):
+    """The one entry /staging/{id}/edit and /staging/{id}/reject both act
+    on — raises ValueError (same as any other bad input in these routes)
+    unless it's actually eligible: a real Staging entry, not yet approved.
+    Mirrors the same is_staging/promoted_entry_id check approve_staging_
+    entries() does per row, and (see db/schema.sql's fn_lines_immutable/
+    fn_entries_guard) the same condition the database itself relaxes
+    immutability for — this is a friendlier error in front of that, not
+    a substitute for it."""
+    staged = q1("""SELECT e.*, s.is_staging,
+                          COALESCE(se.target_scenario_id, ib.target_scenario_id)
+                              AS target_scenario_id
+                     FROM journal_entries e
+                     JOIN scenarios s ON s.id = e.scenario_id
+                     LEFT JOIN scheduled_entries se ON se.id = e.scheduled_entry_id
+                     LEFT JOIN import_batches ib ON ib.id = e.import_batch_id
+                    WHERE e.id = %s""", (entry_id,))
+    if not staged or not staged["is_staging"]:
+        raise ValueError(f"#{entry_id}: not a pending staging entry")
+    if staged["promoted_entry_id"] is not None:
+        raise ValueError(f"#{entry_id}: already approved")
+    target_scenario_id = staged["target_scenario_id"]
+    if target_scenario_id is None:
+        actual = q1("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        target_scenario_id = actual["id"] if actual else None
+    if target_scenario_id is None:
+        raise ValueError(f"#{entry_id}: no target scenario")
+    staged["target_scenario_id"] = target_scenario_id
+    return staged
+
+
+@app.get("/staging/{entry_id}/edit")
+def staging_edit_page(entry_id: int, request: Request, err: str = None):
+    try:
+        staged = _pending_staging_entry(entry_id)
+    except ValueError as e:
+        return flash_redirect("/staging", err=str(e))
+
+    target_scenario = q1("SELECT id, code, name, enforce_balance FROM scenarios WHERE id = %s",
+                         (staged["target_scenario_id"],))
+    # debit/credit come back as Decimal — not JSON-serializable as-is (see
+    # templates_full()'s identical str()-or-None conversion for the same
+    # reason) — turned into plain strings/None here, before the tojson
+    # blob staging_edit.js reads to build the grid.
+    lines = [{
+        "code": ln["code"],
+        "debit": str(ln["debit"]) if ln["debit"] else None,
+        "credit": str(ln["credit"]) if ln["credit"] else None,
+        "memo": ln["memo"],
+    } for ln in q("""SELECT l.line_no, l.debit, l.credit, l.memo, a.code
+                       FROM journal_lines l JOIN accounts a ON a.id = l.account_id
+                      WHERE l.entry_id = %s ORDER BY l.line_no""", (entry_id,))]
+    tag_names = [r["name"] for r in q(
+        """SELECT tg.name FROM journal_entry_tags jet
+            JOIN tags tg ON tg.id = jet.tag_id
+           WHERE jet.entry_id = %s ORDER BY tg.name""", (entry_id,))]
+    by_scenario = postable_accounts_by_scenario()
+    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
+
+    return templates.TemplateResponse(request, "staging_edit.html", {
+        "nav": "staging", "entry": staged, "lines": lines, "tags": tag_names,
+        "target_scenario": target_scenario,
+        "accounts": by_scenario.get(staged["target_scenario_id"], []),
+        "payees": active_payees, "all_tags": all_tags(),
+        "today": date.today().isoformat(), "err": err,
+    })
+
+
+@app.post("/staging/{entry_id}/edit")
+async def staging_edit_save(entry_id: int, request: Request):
+    form = await request.form()
+    # Same reason as create_entry (app.js's grid submits every page it's
+    # on the same way, via fetch requesting JSON) — a rejected edit needs
+    # to report back without reloading the page and losing whatever the
+    # person had just changed.
+    wants_json = "application/json" in request.headers.get("accept", "")
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        _pending_staging_entry(entry_id)
+        lines = _parse_lines(form)
+        entry_date = form.get("entry_date") or date.today().isoformat()
+        description = (form.get("description") or "").strip()
+        reference = (form.get("reference") or "").strip() or None
+        payee_id = int(form.get("payee_id")) if form.get("payee_id") else None
+        tag_names = _parse_tags(form.get("tags", ""))
+        if not description:
+            raise ValueError("Description is required")
+
+        codes = {ln["code"] for ln in lines}
+        found = {r["code"] for r in q(
+            "SELECT code FROM accounts WHERE code = ANY(%s)", (list(codes),))}
+        missing = codes - found
+        if missing:
+            raise ValueError(f"Unknown account code: {', '.join(sorted(missing))}")
+
+        with tx() as cur:
+            cur.execute(
+                """UPDATE journal_entries
+                       SET entry_date = %s, description = %s, reference = %s, payee_id = %s
+                     WHERE id = %s""",
+                (entry_date, description, reference, payee_id, entry_id))
+            # Delete-then-reinsert rather than trying to patch individual
+            # lines in place — journal_lines stays UPDATE-blocked even for
+            # a pending Staging entry (see db/schema.sql), only DELETE is
+            # relaxed, so this is the only shape an edit can take. Both
+            # happen in the same transaction as the header UPDATE above,
+            # so the deferred balance/has-lines checks only ever see the
+            # final, complete set at commit — never the momentarily-empty
+            # state in between.
+            cur.execute("DELETE FROM journal_lines WHERE entry_id = %s", (entry_id,))
+            for n, ln in enumerate(lines, start=1):
+                cur.execute(
+                    """INSERT INTO journal_lines
+                           (entry_id, line_no, account_id, amount, memo)
+                       VALUES (%s, %s,
+                               (SELECT id FROM accounts WHERE code = %s),
+                               %s, %s)""",
+                    (entry_id, n, ln["code"], ln["amount"], ln["memo"]))
+            _sync_entry_tags(cur, entry_id, tag_names)
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        if wants_json:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        return flash_redirect(f"/staging/{entry_id}/edit", err=msg)
+    ok_msg = f"#{entry_id} updated"
+    if wants_json:
+        return JSONResponse({"ok": True, "redirect": flash_url("/staging", ok=ok_msg)})
+    return flash_redirect("/staging", ok=ok_msg)
+
+
+@app.post("/staging/{entry_id}/reject")
+def staging_reject(entry_id: int, request: Request, csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        _pending_staging_entry(entry_id)
+        with tx() as cur:
+            # journal_lines does have ON DELETE CASCADE on entry_id, so
+            # deleting just the entry would clean these up too — spelled
+            # out as its own statement anyway so a failure here (the
+            # trigger refusing it, on some future entry this helper's
+            # check didn't catch) reports "couldn't delete the lines"
+            # rather than a less obvious cascade-related error.
+            cur.execute("DELETE FROM journal_lines WHERE entry_id = %s", (entry_id,))
+            cur.execute("DELETE FROM journal_entries WHERE id = %s", (entry_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/staging", err=msg)
+    return flash_redirect("/staging", ok=f"#{entry_id} rejected and deleted")
+
+
 # ---------------------------------------------------------------------------
 # CSV import — the other producer Staging accepts entries from, alongside
 # Scheduled entries. Deliberately round-trips /entries/export.csv's own
