@@ -70,12 +70,17 @@ considering the task finished.
   infrastructure that's actually running. `demo.postwarden.org` and
   `beta.postwarden.org` are real and running, but everything about
   deploying *them* specifically — `deploy-beta.sh`/`deploy-beta.yml`
-  (beta, `workflow_dispatch` for now — see that repo's README for why
-  it's not push-triggered yet), `deploy-demo.sh`/`reset-demo.sh` (demo,
-  tag-based + nightly reset) — lives in a separate repo,
+  (beta, auto-redeployed on every push here via
+  `.github/workflows/notify-postwarden-public.yml`'s `repository_dispatch`
+  — see that workflow's own comments for the PAT it depends on),
+  `deploy-demo.sh`/`reset-demo.sh` (demo, tag-based + nightly reset) —
+  lives in a separate repo,
   [PostWardenPublic](https://github.com/PostWardenLabs/PostWardenPublic),
   not here. If a task involves changing how beta/demo actually deploy,
-  that's a change in that repo, not this one.
+  that's a change in that repo, not this one. This repo's own
+  `notify-postwarden-public.yml` is the one piece of that story that
+  *does* live here — touch it if the dispatch event name/shape ever
+  needs to change on this side.
 - **Numbered migrations are on the shelf for now — do not add files
   to `db/migrations/`.** The mechanism (`app/migrate.py`,
   `schema_version`, `db/migrations/README.md`'s own instructions)

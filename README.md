@@ -16,7 +16,7 @@ through purpose-built reporting views, no export step required.
 **[postwarden.org](https://postwarden.org)** · **[Try the demo →](https://demo.postwarden.org)**
 (resets nightly, login shown on the page) · **[docs.postwarden.org](https://docs.postwarden.org)**
 for the schema/architecture reference. `beta.postwarden.org` tracks
-`master` (redeployed by hand for now — see
+`master`, auto-redeployed on every push (see
 [PostWardenPublic](https://github.com/PostWardenLabs/PostWardenPublic))
 but isn't public — see "Public domain via Cloudflare Tunnel" in
 `deploy/gcp/README.md` if you want a similar tunnel setup for your own

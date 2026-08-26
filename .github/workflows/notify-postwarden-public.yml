@@ -1,0 +1,36 @@
+name: Notify PostWardenPublic
+
+# beta.postwarden.org's own deploy workflow lives in a separate repo
+# (PostWardenLabs/PostWardenPublic) and can't react to a push landing
+# here directly. This is the other half of that split: fires a
+# repository_dispatch at PostWardenPublic on every push to master, which
+# its deploy-beta.yml listens for via `on: repository_dispatch`. See
+# PostWardenPublic's own README for the full reasoning.
+#
+# Plain curl against the REST API rather than a marketplace action —
+# this is a single POST request, not worth a third-party dependency for.
+#
+# POSTWARDENPUBLIC_DISPATCH_TOKEN is a fine-grained PAT scoped to just
+# PostWardenPublic, Contents: Read and write only — nothing else, and no
+# access to this repo or any other. If it's ever missing or expired, this
+# workflow just fails loudly (see the `-f` below); it does not silently
+# stop beta from working, it only stops beta's *automatic* redeploy —
+# `deploy-beta.sh`/workflow_dispatch in PostWardenPublic still work by
+# hand regardless.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}   # manual trigger, for testing this without a real push
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to PostWardenPublic
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.POSTWARDENPUBLIC_DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/PostWardenLabs/PostWardenPublic/dispatches \
+            -d '{"event_type":"postwarden-pushed"}'
