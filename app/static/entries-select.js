@@ -145,6 +145,10 @@
       changed = false;
 
       modalBody.innerHTML = "";
+      const heading = document.createElement("h3");
+      heading.textContent = "Edit Tags";
+      modalBody.appendChild(heading);
+
       const wrap = document.createElement("div");
       wrap.className = "tag-input";
       wrap.dataset.placeholder = "Add a tag…";
@@ -164,6 +168,21 @@
         previousTags = current;
         changed = true;
       });
+
+      // Same .confirm-actions row the message-and-buttons dialog uses
+      // (already flex-start, so this sits at the lower-left of the
+      // modal) — just a single Done button here, since every change
+      // already applies live as soon as a chip is added or removed.
+      const actions = document.createElement("div");
+      actions.className = "confirm-actions";
+      actions.style.marginTop = "1.1rem";
+      const doneBtn = document.createElement("button");
+      doneBtn.type = "button";
+      doneBtn.className = "confirm-ok";
+      doneBtn.textContent = "Done";
+      doneBtn.addEventListener("click", closePopup);
+      actions.appendChild(doneBtn);
+      modalBody.appendChild(actions);
 
       overlay.hidden = false;
       const input = wrap.querySelector('input[type="text"]');

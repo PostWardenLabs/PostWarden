@@ -1273,6 +1273,10 @@ details.entry-new summary {
   padding: 1.2rem; max-width: 26rem; width: 100%;
 }
 .confirm-message { margin: 0 0 1.1rem; color: var(--ink); font-size: 0.92rem; line-height: 1.45; }
+/* Header for a modal that shows a control rather than a message/actions
+   pair (see entries-select.js's Edit tags popup) — same family/weight as
+   a panel's own h2, one size down since the modal itself is smaller. */
+.confirm-modal h3 { margin: 0 0 0.9rem; font-family: var(--serif); font-size: 1.05rem; font-weight: 600; color: var(--ink); }
 .confirm-actions { display: flex; justify-content: flex-start; gap: 0.5rem; }
 /* Same red the rest of the app already uses for "this is destructive/
    wrong" (imbalance, .flash-err, the reversal badge) — a solid fill
