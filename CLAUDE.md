@@ -62,45 +62,44 @@ considering the task finished.
   pytest — before considering a UI change done, especially anything
   involving hover states, live client-side recompute, or drag/collapse
   interaction.
-- **Deploys — three targets, three cadences**, all documented in
-  `deploy/gcp/README.md`, not just this bullet:
-  - The maintainer's own instance: `deploy/gcp/redeploy.sh`, run by
-    hand, pulls and rebuilds `master`.
-  - `beta.postwarden.org`: `deploy/gcp/deploy-beta.sh`, run
-    automatically by `.github/workflows/deploy-beta.yml` on every push
-    to `master` — if a change breaks something, beta breaks with it,
-    same day. Auth is Workload Identity Federation (no service-account
-    key — this GCP org disables key creation).
-  - `demo.postwarden.org`: deliberately *not* wired to every push.
-    `deploy/gcp/deploy-demo.sh` deploys the latest git **tag**, by hand,
-    only when a commit is judged demo-worthy (`git tag vX.Y.Z && git
-    push --tags` first). `reset-demo.sh` runs nightly via cron **on
-    that VM**, independent of deploys, wiping demo back to seed data —
-    it's the one public, anonymous, unauthenticated instance.
-  - **Numbered migrations are on the shelf for now — do not add files
-    to `db/migrations/`.** The mechanism (`app/migrate.py`,
-    `schema_version`, `db/migrations/README.md`'s own instructions)
-    stays in the repo and stays correct, because it's real
-    infrastructure worth having once it's needed — it's just unused at
-    the moment. Every instance that exists right now (the maintainer's
-    own, `beta.postwarden.org`, `demo.postwarden.org`) holds only
-    dummy/test data, confirmed by the user, and nobody outside this
-    project depends on any of it surviving a redeploy. That makes a
-    migration's entire reason to exist — applying a schema change to
-    an existing database *without* losing what's in it — a cost with
-    no matching benefit right now, so schema changes ship the simple
-    way everywhere: fold the change into `db/schema.sql` directly, `git
-    pull`, `docker compose down -v` (a `pg_dump` backup first if you'd
-    rather not retype anything), `docker compose up -d --build`. This
-    is a deliberate, revisitable choice, not a permanent one — the
-    moment any instance holds data worth preserving across a schema
-    change (the maintainer's own real ledger, most likely first),
-    switch back: resume adding `db/migrations/NNN_*.sql` files per that
-    directory's own README, and update this bullet to say so.
-    Verify after every deploy: check `docker compose logs app` for
-    startup errors, hit a few unauthenticated routes to confirm `303`
-    (not `500`), and directly exercise any new SQL function/trigger
-    against real data via `psql` before calling it done.
+- **Deploys.** There is currently no maintainer personal instance —
+  `libro-vm` (the dev-era VM the project lived on before it had a real
+  deploy story) has been decommissioned. `deploy/gcp/` in *this* repo is
+  now a generic, fully-worked example of running PostWarden on GCP —
+  useful to anyone who wants that specific setup, not a description of
+  infrastructure that's actually running. `demo.postwarden.org` and
+  `beta.postwarden.org` are real and running, but everything about
+  deploying *them* specifically — `deploy-beta.sh`/`deploy-beta.yml`
+  (beta, `workflow_dispatch` for now — see that repo's README for why
+  it's not push-triggered yet), `deploy-demo.sh`/`reset-demo.sh` (demo,
+  tag-based + nightly reset) — lives in a separate repo,
+  [PostWardenPublic](https://github.com/PostWardenLabs/PostWardenPublic),
+  not here. If a task involves changing how beta/demo actually deploy,
+  that's a change in that repo, not this one.
+- **Numbered migrations are on the shelf for now — do not add files
+  to `db/migrations/`.** The mechanism (`app/migrate.py`,
+  `schema_version`, `db/migrations/README.md`'s own instructions)
+  stays in the repo and stays correct, because it's real
+  infrastructure worth having once it's needed — it's just unused at
+  the moment. Every instance that exists right now (`beta.postwarden.org`,
+  `demo.postwarden.org`) holds only dummy/test data, confirmed by the
+  user, and nobody outside this project depends on any of it surviving
+  a redeploy. That makes a migration's entire reason to exist —
+  applying a schema change to an existing database *without* losing
+  what's in it — a cost with no matching benefit right now, so schema
+  changes ship the simple way everywhere: fold the change into
+  `db/schema.sql` directly, `git pull`, `docker compose down -v` (a
+  `pg_dump` backup first if you'd rather not retype anything),
+  `docker compose up -d --build`. This is a deliberate, revisitable
+  choice, not a permanent one — the moment any instance holds data
+  worth preserving across a schema change (a real maintainer instance,
+  most likely first), switch back: resume adding
+  `db/migrations/NNN_*.sql` files per that directory's own README, and
+  update this bullet to say so.
+  Verify after every deploy: check `docker compose logs app` for
+  startup errors, hit a few unauthenticated routes to confirm `303`
+  (not `500`), and directly exercise any new SQL function/trigger
+  against real data via `psql` before calling it done.
 - **`docs.postwarden.org`** builds from `docs/` via `mkdocs.yml`
   (Cloudflare Pages, redeploys on push — no separate workflow needed).
   `docs/SPEC.md` is a **symlink** to the real `../SPEC.md`, not a copy —

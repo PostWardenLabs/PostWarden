@@ -16,9 +16,11 @@ through purpose-built reporting views, no export step required.
 **[postwarden.org](https://postwarden.org)** · **[Try the demo →](https://demo.postwarden.org)**
 (resets nightly, login shown on the page) · **[docs.postwarden.org](https://docs.postwarden.org)**
 for the schema/architecture reference. `beta.postwarden.org` tracks
-every commit on `master` but isn't public — see "Public domain via
-Cloudflare Tunnel" in `deploy/gcp/README.md` if you want the same setup
-for your own instance.
+`master` (redeployed by hand for now — see
+[PostWardenPublic](https://github.com/PostWardenLabs/PostWardenPublic))
+but isn't public — see "Public domain via Cloudflare Tunnel" in
+`deploy/gcp/README.md` if you want a similar tunnel setup for your own
+instance.
 
 ## What you get
 
@@ -298,8 +300,9 @@ tests/test_auth.py        the app layer — routes, sessions, CSRF, rendering
 
 scripts/init_db.sh        local database bootstrap
 scripts/create_user.sh    create or reset a login
-deploy/gcp/               Google Cloud deployment — the VM setup, and demo/beta's own
-.github/workflows/        deploy-beta.yml — redeploys beta.postwarden.org on every push
+deploy/gcp/               a fully-worked example of running this on Google Cloud — not
+                          how demo.postwarden.org/beta.postwarden.org are actually run,
+                          see deploy/gcp/README.md and PostWardenPublic for that
 
 SPEC.md                   design decisions and rationale
 docs/                     schema reference + ERD, app architecture — see docs/README.md
