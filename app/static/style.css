@@ -1196,7 +1196,7 @@ details.entry-new summary {
   padding: 1.2rem; max-width: 26rem; width: 100%;
 }
 .confirm-message { margin: 0 0 1.1rem; color: var(--ink); font-size: 0.92rem; line-height: 1.45; }
-.confirm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.confirm-actions { display: flex; justify-content: flex-start; gap: 0.5rem; }
 /* Same red the rest of the app already uses for "this is destructive/
    wrong" (imbalance, .flash-err, the reversal badge) — a solid fill
    version of it, the one place in the app a button is ever red, because
