@@ -304,6 +304,9 @@
       e.preventDefault();
       newEntryPanel.open = true;
       focusAccountField(rows()[0] || makeRow());
+    } else if (e.code === "KeyS" && postBtn) {
+      e.preventDefault();
+      postBtn.click(); // no-op while disabled (unbalanced/invalid), same as clicking it by hand
     }
   });
 
