@@ -817,8 +817,15 @@ input[type="file"]:hover::-webkit-file-upload-button {
    font, same line-height, still visibly mismatched). Padding is equal
    now too; fill vs. outline alone carries "primary" vs. "secondary,"
    which is plenty on its own. */
+/* mono + uppercase: same treatment as .checkline, table.ledger's
+   headers, and the date picker — a control reads as "a control," not
+   as a sentence. Free-typed text fields are the deliberate exception
+   (see the shared input/select/textarea rule) — anything you actually
+   type into stays whatever case you typed, everything you just pick or
+   click doesn't. */
 button, a.button-link {
-  font: inherit; font-size: 0.88rem; cursor: pointer;
+  font: inherit; font-family: var(--mono); font-size: 0.88rem; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.03em;
   background: var(--accent); color: var(--accent-text);
   border: 1px solid var(--accent); padding: 0.4rem 0.9rem; border-radius: 2px;
   display: inline-block; text-decoration: none;
@@ -936,10 +943,14 @@ a.amount-link:hover { text-decoration: underline; }
 .pager a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule-strong); }
 .pager a:hover { border-bottom-color: var(--ink); }
 
-/* -- combobox (searchable <select>, see combobox.js) ---------------------- */
+/* -- combobox (searchable <select>, see combobox.js) ----------------------
+   Uppercase, like every other control that's picked/clicked rather than
+   freely typed (a combobox reads more like a <select> than a text box,
+   even though it happens to be an <input> under the hood) — the panel's
+   own rows match it, so the open and closed states don't disagree. */
 .combobox { position: relative; width: 100%; }
 .combobox-native { display: none; }
-.combobox-input { width: 100%; cursor: pointer; }
+.combobox-input { width: 100%; cursor: pointer; text-transform: uppercase; letter-spacing: 0.02em; }
 .combobox-input:focus { cursor: text; }
 .combobox-panel {
   position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; right: 0;
@@ -947,7 +958,10 @@ a.amount-link:hover { text-decoration: underline; }
   background: var(--surface); border: 1px solid var(--rule-strong);
   border-radius: 2px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
 }
-.combobox-option { padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.9rem; }
+.combobox-option {
+  padding: 0.35rem 0.6rem; cursor: pointer; font-size: 0.9rem;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
 /* Strong accent, not the subtle paper-deep tint used elsewhere for hover —
    this is the one thing arrow-key navigation shows you, so it needs to be
    unmistakable at a glance, not just barely-different from the panel. */
@@ -959,7 +973,10 @@ a.amount-link:hover { text-decoration: underline; }
 .combobox-option.combobox-create.active, .combobox-option.combobox-create:hover {
   font-style: italic; color: var(--accent-text);
 }
-.combobox-empty { padding: 0.35rem 0.6rem; color: var(--ink-soft); font-size: 0.85rem; }
+.combobox-empty {
+  padding: 0.35rem 0.6rem; color: var(--ink-soft); font-size: 0.85rem;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
 .combobox-empty.combobox-error { color: var(--red); }
 
 /* -- chevron (shared by the date picker, tree collapse/expand, and the
@@ -1041,6 +1058,7 @@ a.amount-link:hover { text-decoration: underline; }
 .date-panel-head {
   display: flex; align-items: center; justify-content: space-between;
   font-weight: 600; font-size: 0.85rem; margin-bottom: 0.4rem;
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.02em;
 }
 .date-nav {
   background: transparent; border: 1px solid var(--rule-strong); color: var(--ink);
@@ -1050,6 +1068,7 @@ a.amount-link:hover { text-decoration: underline; }
 .date-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .date-dow {
   font-size: 0.68rem; text-align: center; color: var(--ink-soft); padding-bottom: 0.2rem;
+  text-transform: uppercase; letter-spacing: 0.02em;
 }
 .date-day {
   background: transparent; border: none; padding: 0.3rem 0; text-align: center;
