@@ -19,7 +19,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 from . import auth
 from .db import q, q1, tx
@@ -447,12 +447,19 @@ def dashboard(request: Request):
                         WHERE l.entry_id = ANY(%s)""", (recent_ids,)):
             bucket = debit_names if ln["debit"] > 0 else credit_names
             bucket.setdefault(ln["entry_id"], set()).add(ln["account_name"])
+    def flow_side(names):
+        # "multiple" is a stand-in label, not an account name, so it gets
+        # italicized to read as a placeholder rather than a real account —
+        # everything else is a real (user-controlled) account name and
+        # goes through escape() rather than straight into the Markup.
+        if len(names) != 1:
+            return Markup("<em>multiple</em>")
+        return escape(next(iter(names)))
+
     for r in recent:
         debits = debit_names.get(r["id"], set())
         credits = credit_names.get(r["id"], set())
-        debit_label = next(iter(debits)) if len(debits) == 1 else "multiple"
-        credit_label = next(iter(credits)) if len(credits) == 1 else "multiple"
-        r["flow"] = f"{credit_label} → {debit_label}"
+        r["flow"] = Markup("{} → {}").format(flow_side(credits), flow_side(debits))
 
     pending, _ = pending_staging_entries()
 
