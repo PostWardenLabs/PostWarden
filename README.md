@@ -51,7 +51,10 @@ instance.
   Export CSV produces, so export → edit in a spreadsheet → re-import is
   a real workflow.
 - **CSV export everywhere**, a chart-of-accounts manager, payees, tags,
-  and ten-odd hand-built visual themes if the default doesn't suit you.
+  and twenty-two hand-built visual themes if the default doesn't suit
+  you — ten original, plus VS Code– and [monkeytype.com](https://monkeytype.com)-inspired
+  palettes (Catppuccin, Nord, Tokyo Night, Monokai Pro, and more), picked
+  from a swatch grid in Settings rather than a plain dropdown.
 - **A Power BI / Excel connection page** (Settings) — host, port, and a
   dedicated read-only login filled in for this instance, plus a `.pbids`
   download, so connecting a BI tool is a page in the app, not a README to

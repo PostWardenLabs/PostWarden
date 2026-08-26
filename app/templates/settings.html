@@ -16,27 +16,59 @@
   <a href="/settings/connect-bi" class="button-link">Connection details</a>
 </div>
 
+{#
+  Each entry is (value, label, paper, ink, accent, rule-strong) — the same
+  four colors that theme block sets in style.css, copied here because a
+  swatch has to show its own theme's colors regardless of which theme is
+  currently active (see style.css's "Theme swatch grid" comment for why
+  this can't just come from the cascade). Keep these in sync with the
+  matching :root[data-theme="..."] block by hand if a theme's palette
+  ever changes.
+#}
+{% set theme_groups = [
+  ("Original", [
+    ("ledger", "Ledger", "#f7faf4", "#1d2b22", "#1d2b22", "#8fae8b"),
+    ("midnight", "Midnight", "#10140f", "#ecefe8", "#c9a227", "#435041"),
+    ("slate", "Slate", "#f4f6f8", "#1b2430", "#1b2430", "#aebbc7"),
+    ("graphite", "Graphite", "#14181c", "#e6ecef", "#46a8c9", "#3c4a52"),
+    ("mono", "Mono", "#fafafa", "#1a1a1a", "#1a1a1a", "#b0b0b0"),
+    ("linen", "Linen", "#faf8f5", "#2b2620", "#2b2620", "#cabfae"),
+    ("budget", "Budget", "#f7f8fb", "#242530", "#5442f5", "#c7cbdc"),
+    ("forest", "Forest", "#0f1811", "#e3ede6", "#4f9863", "#3d5445"),
+    ("cobalt", "Cobalt", "#f4f8fc", "#142033", "#1c6fd6", "#9fc0e0"),
+    ("contrast", "Contrast", "#ffffff", "#000000", "#000000", "#000000"),
+  ]),
+  ("VS Code inspired", [
+    ("monokai-pro", "Monokai Pro", "#2d2a2e", "#fcfcfa", "#ab9df2", "#5b565d"),
+    ("monokai-pro-light", "Monokai Pro Light", "#faf4f2", "#29242a", "#7058be", "#cbb3aa"),
+    ("one-dark", "One Dark", "#282c34", "#abb2bf", "#61afef", "#4b5263"),
+    ("one-light", "One Light", "#fafafa", "#383a42", "#4078f2", "#c7c7c9"),
+    ("monaspace", "Monaspace", "#0d1117", "#c9d1d9", "#58a6ff", "#30363d"),
+    ("catppuccin", "Catppuccin", "#1e1e2e", "#cdd6f4", "#cba6f7", "#45475a"),
+    ("tokyo-night", "Tokyo Night", "#1a1b26", "#c0caf5", "#7aa2f7", "#414868"),
+    ("ayu", "Ayu", "#10141c", "#bfbdb6", "#e6b450", "#2a3242"),
+  ]),
+  ("Monkeytype inspired", [
+    ("paper", "Paper", "#eeeeee", "#444444", "#444444", "#b2b2b2"),
+    ("matrix", "Matrix", "#000000", "#d1ffcd", "#15ff00", "#1c4012"),
+    ("nord", "Nord", "#2e3440", "#eceff4", "#88c0d0", "#4c566a"),
+    ("shadow", "Shadow", "#000000", "#eeeeee", "#eeeeee", "#3a3a3a"),
+  ]),
+] %}
 <div class="panel">
   <h2>Appearance</h2>
-  <label class="field" style="max-width: 14rem;">Theme
-    <select id="theme-select">
-      <option value="ledger">Ledger</option>
-      <option value="midnight">Midnight</option>
-      <option value="parchment">Parchment</option>
-      <option value="slate">Slate</option>
-      <option value="ink">Ink</option>
-      <option value="terracotta">Terracotta</option>
-      <option value="graphite">Graphite</option>
-      <option value="rose">Rose</option>
-      <option value="mono">Mono</option>
-      <option value="linen">Linen</option>
-      <option value="budget">Budget</option>
-      <option value="forest">Forest</option>
-      <option value="plum">Plum</option>
-      <option value="cobalt">Cobalt</option>
-      <option value="contrast">Contrast</option>
-    </select>
-  </label>
+  <p class="dim small" style="margin-top: 0;">Theme — applies instantly, saved in this browser.</p>
+  {% for group_name, themes in theme_groups %}
+  <div class="theme-group-label">{{ group_name }}</div>
+  <div class="theme-grid">
+    {% for value, label, paper, ink, accent, rule_strong in themes %}
+    <button type="button" class="theme-swatch" data-theme="{{ value }}"
+            style="background: {{ paper }}; color: {{ ink }}; border-color: {{ rule_strong }};">
+      <span class="theme-swatch-dot" style="background: {{ accent }};"></span>{{ label }}
+    </button>
+    {% endfor %}
+  </div>
+  {% endfor %}
 </div>
 
 <div class="panel">
