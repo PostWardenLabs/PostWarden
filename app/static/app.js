@@ -22,6 +22,11 @@
   const scenarioSel = document.getElementById("scenario");
   const form = document.getElementById("entry-form");
   const errBox = document.getElementById("entry-error");
+  // Only entries.html wraps the grid in a collapsible <details> — Alt+E
+  // opens it from anywhere on the Journal page; on every other page this
+  // file runs (Scheduled, Templates, Staging's edit screen) the form is
+  // already the whole page, so there's nothing to open.
+  const newEntryPanel = document.getElementById("new-entry-panel");
   if (!body) return;
 
   let ACCOUNTS = JSON.parse(document.getElementById("accounts-data").textContent || "[]");
@@ -281,15 +286,24 @@
       (diff > 0 ? creditField : debitField).focus();
     });
   }
+  // e.code, not e.key: on macOS, Option+letter often produces an accented
+  // character or a dead key instead of the plain letter (Option+N starts
+  // a combining-tilde sequence, Option+D types "∂") — e.key reflects
+  // *that* character, so a check against "n"/"d" silently never matched
+  // on a Mac. e.code is the physical key ("KeyN"/"KeyD"), unaffected by
+  // what Option remaps it to on any given layout.
   document.addEventListener("keydown", (e) => {
     if (!e.altKey) return;
-    const key = e.key.toLowerCase();
-    if (key === "n") {
+    if (e.code === "KeyN") {
       e.preventDefault();
       focusAccountField(makeRow());
-    } else if (key === "d" && distributeBtn) {
+    } else if (e.code === "KeyD" && distributeBtn) {
       e.preventDefault();
       distributeBtn.click();
+    } else if (e.code === "KeyE" && newEntryPanel) {
+      e.preventDefault();
+      newEntryPanel.open = true;
+      focusAccountField(rows()[0] || makeRow());
     }
   });
 
