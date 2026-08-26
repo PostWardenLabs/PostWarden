@@ -1566,7 +1566,12 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
         tag_list = _parse_tags(tags) if tags else []
     except ValueError:
         tag_list = []  # a hand-edited URL with a malformed tag; just ignore it
-    where, params = ["TRUE"], []
+    # Unconditional, not just "no scenario filter selected" — the Journal
+    # is exclusively for posted, non-staging scenarios (Staging is its own
+    # page with its own filter bar). A scenario filter value narrows
+    # further within that; it never widens back into Staging, and this
+    # holds even against a hand-edited query string.
+    where, params = ["NOT s.is_staging"], []
     if scenario:
         where.append("s.code = %s")
         params.append(scenario)
@@ -1685,7 +1690,11 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     return templates.TemplateResponse(request, "entries.html", {
         "nav": "entries", "entries": entries, "lines_by_entry": lines_by_entry,
         "tags_by_entry": tags_by_entry, "tags": tags, "all_tags": all_tags(),
-        "scenarios": scenarios_all(), "scenario": scenario,
+        # The Journal never shows Staging entries (see _entries_filter's
+        # unconditional NOT s.is_staging), so its own Scenario filter
+        # shouldn't offer Staging as an option either — nothing it could
+        # ever actually filter to.
+        "scenarios": [s for s in scenarios_all() if not s["is_staging"]], "scenario": scenario,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,

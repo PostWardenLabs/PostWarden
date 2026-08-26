@@ -21,13 +21,20 @@
   <a class="quiet-link" href="/entries?{{ clear_payee_qs }}">clear</a></p>
 {% endif %}
 
-<form class="bar" method="get" action="/entries">
+<form method="get" action="/entries">
   <input type="hidden" name="back" value="{{ back }}">
+  <div class="bar">
   <label class="field">Scenario
+    {# No "All" option: the Journal never shows Staging (see
+       _entries_filter's unconditional NOT s.is_staging), and an
+       all-inclusive choice next to specific scenario names read as
+       confusing rather than useful. `scenarios` here is already
+       Staging-filtered (see entries_page) and ACTUAL sorts first
+       (scenario_type enum order), so it's what shows selected on an
+       unfiltered page load. #}
     <select name="scenario">
-      <option value="">All</option>
       {% for s in scenarios %}
-      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }}</option>
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario or (not scenario and loop.first) }}>{{ s.code }}</option>
       {% endfor %}
     </select>
   </label>

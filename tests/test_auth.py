@@ -1489,6 +1489,38 @@ def test_entries_page_filters_by_account(conn):
         assert acct_b["code"] not in r_csv.text
 
 
+def test_entries_page_never_shows_staging_entries(conn):
+    # The Journal is exclusively for posted, non-staging scenarios — a
+    # pending Staging entry must never appear here, regardless of the
+    # scenario filter (unfiltered, explicitly filtered to something else,
+    # or a hand-edited scenario=STAGING query string), and Staging must
+    # not be offered as a choice in the Scenario dropdown at all.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid, _, _ = _mk_staged_entry(cur, description="Staged, should never show")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get("/entries")
+        assert r.status_code == 200
+        assert "Staged, should never show" not in r.text
+        assert "STAGING" not in r.text
+        # Scenario is the one filter dropdown with no "All" option (Account
+        # and Payee keep theirs) — isolate its <select> before checking.
+        m = re.search(r'<select name="scenario">.*?</select>', r.text, re.DOTALL)
+        assert m, "scenario select not found"
+        assert ">All</option>" not in m.group(0)
+
+        # Even a hand-edited query string asking for the Staging scenario
+        # by code doesn't leak it in.
+        r_forced = c.get("/entries?scenario=STAGING")
+        assert "Staged, should never show" not in r_forced.text
+
+        r_csv = c.get("/entries/export.csv")
+        assert "Staged, should never show" not in r_csv.text
+
+
 def test_entries_page_hide_reversed_excludes_both_sides_of_the_pair(conn):
     # "Hide reversed entries and their reversals" has to drop both halves
     # of a reversal — the original (reverses_entry_id IS NULL but it's
