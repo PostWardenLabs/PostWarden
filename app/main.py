@@ -1532,6 +1532,15 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                               account, payee, amount_op, amount_value,
                                               hide_reversed)
+    # Whether *any* filter is actually narrowing the list right now — not
+    # "back"/"page" (navigation state, not a filter). Powers the "Clear
+    # filters" link below: no point showing it over a plain, unfiltered
+    # Journal. account/payee count too, even though each already has its
+    # own scoped "clear" link right above the bar — this is the "reset
+    # everything" version of the same idea.
+    has_filters = bool(scenario or date_from or date_to or qtext or tag_list
+                       or account or payee or amount_op or hide_reversed)
+    clear_filters_qs = urlencode({"back": back}) if back else ""
     account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
     payee_row = q1("SELECT name FROM payees WHERE name = %s", (payee,)) if payee else None
 
@@ -1615,6 +1624,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,
         "amount_op": amount_op, "amount_value": amount_value, "amount_ops": AMOUNT_OPS,
         "hide_reversed": hide_reversed,
+        "has_filters": has_filters, "clear_filters_qs": clear_filters_qs,
         "filter_accounts": filter_accounts, "filter_payee_names": filter_payee_names,
         "back": back,
         "page": page, "page_size": ENTRIES_PAGE_SIZE,
