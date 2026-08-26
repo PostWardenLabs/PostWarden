@@ -86,13 +86,26 @@
     <input type="text" name="amount_value2" class="amount" inputmode="decimal"
            value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
   </label>
-  <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
-  {% if has_filters %}
-  <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
-  {% else %}
-  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
-  {% endif %}
-  <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
+  </div>
+  {# A second row, not more of the field bar above: "hide reversed" and
+     "Clear filters" both narrow/reset *this* view, so they stay
+     grouped together on the left; Export CSV is a different kind of
+     action (getting data out, not changing what's shown) and sits set
+     apart on the right via space-between — same three controls, same
+     individual styles, just no longer crammed inline against the filter
+     fields where they read as one more field instead of the row's own
+     distinct actions. #}
+  <p class="bar" style="justify-content: space-between; align-items: center;">
+    <span class="bar" style="align-items: center; margin-bottom: 0;">
+      <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
+      {% if has_filters %}
+      <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
+      {% else %}
+      <a class="button-link disabled" aria-disabled="true">Clear filters</a>
+      {% endif %}
+    </span>
+    <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
+  </p>
 </form>
 
 <details class="entry entry-new" id="new-entry-panel" {{ 'open' if request.query_params.get('new') }}>
