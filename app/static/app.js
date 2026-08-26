@@ -261,12 +261,23 @@
   // than making you do the subtraction yourself. Always overwrites the
   // target line's own amount rather than adding to it, so clicking twice
   // is idempotent instead of compounding.
+  //
+  // The first line is a special case: it's almost always the one line
+  // that already has a real amount on it (everything else still blank),
+  // so "distribute into whichever row you're in" would target *itself* —
+  // summing every other row (all still blank) nets to zero, which wipes
+  // out the very amount you just typed instead of doing anything useful.
+  // A fresh line instead, mirroring the first line's amount, is what
+  // "distribute the entry" actually means from there — the same outcome
+  // you'd get by tabbing to the trailing blank row and distributing from
+  // there, just without leaving the first line to do it.
   const distributeBtn = document.getElementById("distribute-row");
   if (distributeBtn) {
     distributeBtn.addEventListener("click", () => {
       const rs = rows();
-      const tr = (lastFocusedRow && body.contains(lastFocusedRow)) ? lastFocusedRow : rs[rs.length - 1];
+      let tr = (lastFocusedRow && body.contains(lastFocusedRow)) ? lastFocusedRow : rs[rs.length - 1];
       if (!tr) return;
+      if (tr === rs[0]) tr = makeRow();
       let deb = 0, cre = 0;
       rs.forEach((r) => {
         if (r === tr) return;
