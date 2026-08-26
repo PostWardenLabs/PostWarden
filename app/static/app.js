@@ -187,32 +187,34 @@
   body.addEventListener("input", onRowChange);
   body.addEventListener("change", onRowChange);
 
-  // Enter / Shift+Enter move through the grid the same order Tab already
-  // does (account -> debit -> credit -> memo -> next row's account, and
-  // back) instead of doing what a text input inside a <form> does by
+  // Enter / Shift+Enter move *vertically* — same column, next/previous
+  // row — rather than doing what a text input inside a <form> does by
   // default: submit it. Without this, hitting Enter after typing a memo
   // (or an account with the combobox's own dropdown already closed) fell
   // through to the form's submit handler — an entry could post itself
   // one keystroke earlier than the person typing intended.
-  function focusableFields() {
-    const fields = [];
+  //
+  // This used to move in Tab order instead (account -> debit -> credit
+  // -> memo -> next row's account), on the theory that Enter should do
+  // whatever Tab does. Feedback was that Enter reads as "next line" in
+  // basically every spreadsheet-like grid, not "next cell" — Tab already
+  // covers horizontal movement, so Enter/Shift+Enter now cover vertical:
+  // straight down/up within whichever column you're already in.
+  function columns() {
+    const cols = { account: [], debit: [], credit: [], memo: [] };
     rows().forEach((tr) => {
-      const acct = tr.querySelector(".combobox-input") || tr.querySelector('[name="account"]');
-      if (acct) fields.push(acct);
-      ["debit", "credit", "memo"].forEach((name) => {
-        const el = tr.querySelector(`[name="${name}"]`);
-        if (el) fields.push(el);
-      });
+      cols.account.push(tr.querySelector(".combobox-input") || tr.querySelector('[name="account"]'));
+      ["debit", "credit", "memo"].forEach((name) => cols[name].push(tr.querySelector(`[name="${name}"]`)));
     });
-    return fields;
+    return cols;
   }
   body.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.altKey || e.ctrlKey || e.metaKey) return;
-    const fields = focusableFields();
-    const i = fields.indexOf(e.target);
-    if (i === -1) return;
-    const next = fields[i + (e.shiftKey ? -1 : 1)];
-    if (!next) return; // first/last field — nothing further to move to
+    const cols = columns();
+    const col = Object.values(cols).find((fields) => fields.includes(e.target));
+    if (!col) return;
+    const next = col[col.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
+    if (!next) return; // top/bottom row for this column — nothing further to move to
     e.preventDefault();
     next.focus();
   });
