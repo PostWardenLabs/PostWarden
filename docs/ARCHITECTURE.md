@@ -101,7 +101,7 @@ through the template context explicitly.
 | `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>` or date/month field changes, so a report or the Journal's filters refresh without a separate Refresh/Filter click. |
 | `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
-| `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`). |
+| `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`) — arrow keys/Home/End/PageUp/PageDown move around the open grid via a roving tabindex (one day is ever a real Tab stop; the rest are reachable by arrow key but not by Tab), closes on Escape or on focus actually leaving the whole widget (checked a tick after focusout, not from its relatedTarget — re-rendering the grid on every move destroys the old focused button first, which fires focusout with no relatedTarget yet). |
 | `number-stepper.js` | Every `<input type="number">` (Account levels' Depth, Scheduled's "Repeats every") — hides the browser's native spinner and adds the site's own chevron up/down buttons; typing and the keyboard's own arrow keys still work, input stays `type="number"` throughout. |
 | `tags.js` | The tag chip input (select-or-create, comma-separated hidden value underneath). |
 | `entry_templates.js` | "Load template" on New entry — fills the grid client-side from a page-embedded JSON blob. |

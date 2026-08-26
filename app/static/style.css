@@ -993,6 +993,14 @@ a.amount-link:hover { text-decoration: underline; }
 .date-day:hover { background: var(--paper-deep); }
 .date-day.today { border: 1px solid var(--rule-strong); }
 .date-day.selected { background: var(--accent); color: var(--accent-text); }
+/* Plain :focus, not the button:focus-visible rule every other button
+   gets — arrow-key navigation moves this via .focus() calls that follow
+   a mouse click on the trigger (open the calendar, then arrow around),
+   which most browsers' :focus-visible heuristics don't treat as
+   keyboard-modality and so wouldn't outline at all. A calendar grid's
+   focused cell is "where you are," not just "what's interactive" —
+   worth showing regardless of how you got there. */
+.date-day:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
 .date-panel-foot { margin-top: 0.4rem; text-align: right; }
 
 /* -- number stepper (see number-stepper.js) -------------------------------- */
