@@ -747,6 +747,13 @@ tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: 
 }
 label.field { display: flex; flex-direction: column; gap: 0.2rem;
               font-size: 0.78rem; color: var(--ink-soft); }
+/* label.field's own `display: flex` (author stylesheet) otherwise beats
+   the browser's built-in `[hidden] { display: none }` rule (user-agent
+   stylesheet — author always wins regardless of selector specificity),
+   so a plain `hidden` attribute on a .field label — the Amount filter's
+   second bound, shown only for "between" — would sit there rendered
+   anyway. This is what actually makes `hidden` hide it. */
+label.field[hidden] { display: none; }
 input, select, textarea {
   font: inherit; color: var(--ink);
   background: var(--surface); border: 1px solid var(--rule-strong);

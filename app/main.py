@@ -1449,7 +1449,7 @@ AMOUNT_OPS = {
 
 def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
                     tags: str, account: str = "", payee: str = "",
-                    amount_op: str = "", amount_value: str = "",
+                    amount_op: str = "", amount_value: str = "", amount_value2: str = "",
                     hide_reversed: int = 0) -> tuple[list[str], list, list[str]]:
     """Shared by the paged HTML view and the CSV export — same filters,
     same WHERE clause, so what you see is exactly what you export."""
@@ -1490,7 +1490,20 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
         # this can reference p.name directly rather than a subquery.
         where.append("p.name = %s")
         params.append(payee)
-    if amount_op in AMOUNT_OPS and amount_value:
+    if amount_op == "between" and amount_value and amount_value2:
+        try:
+            lo, hi = float(amount_value), float(amount_value2)
+        except ValueError:
+            lo = hi = None  # a hand-edited URL with garbage; just ignore it
+        if lo is not None:
+            # Bounds get sorted rather than trusted in whichever order
+            # the two fields happen to hold — "between 500 and 100" reads
+            # the same as "between 100 and 500" to anyone typing it.
+            lo, hi = sorted((round(lo, 2), round(hi, 2)))
+            where.append("""(SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                               WHERE l.entry_id = e.id) BETWEEN %s AND %s""")
+            params.extend([lo, hi])
+    elif amount_op in AMOUNT_OPS and amount_value:
         try:
             amount_num = float(amount_value)
         except ValueError:
@@ -1522,7 +1535,7 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
                  payee: str = "", amount_op: str = "", amount_value: str = "",
-                 hide_reversed: int = 0, back: str = "", page: int = 1,
+                 amount_value2: str = "", hide_reversed: int = 0, back: str = "", page: int = 1,
                  ok: str = None, err: str = None):
     page = max(page, 1)
     # Only ever a same-origin relative path — a bare "/x", never "//x"
@@ -1531,7 +1544,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         back = ""
     where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                               account, payee, amount_op, amount_value,
-                                              hide_reversed)
+                                              amount_value2, hide_reversed)
     # Whether *any* filter is actually narrowing the list right now — not
     # "back"/"page" (navigation state, not a filter). Powers the "Clear
     # filters" link below: no point showing it over a plain, unfiltered
@@ -1590,6 +1603,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     common_qs = {
         "scenario": scenario, "date_from": date_from, "date_to": date_to,
         "qtext": qtext, "tags": tags, "amount_op": amount_op, "amount_value": amount_value,
+        "amount_value2": amount_value2,
         "hide_reversed": hide_reversed, "back": back,
     }
     export_qs = urlencode({**common_qs, "account": account, "payee": payee})
@@ -1622,8 +1636,8 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,
-        "amount_op": amount_op, "amount_value": amount_value, "amount_ops": AMOUNT_OPS,
-        "hide_reversed": hide_reversed,
+        "amount_op": amount_op, "amount_value": amount_value, "amount_value2": amount_value2,
+        "amount_ops": AMOUNT_OPS, "hide_reversed": hide_reversed,
         "has_filters": has_filters, "clear_filters_qs": clear_filters_qs,
         "filter_accounts": filter_accounts, "filter_payee_names": filter_payee_names,
         "back": back,
@@ -1639,13 +1653,14 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 @app.get("/entries/export.csv")
 def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
                        qtext: str = "", tags: str = "", account: str = "", payee: str = "",
-                       amount_op: str = "", amount_value: str = "", hide_reversed: int = 0):
+                       amount_op: str = "", amount_value: str = "", amount_value2: str = "",
+                       hide_reversed: int = 0):
     """Every entry matching the current filters (not just the current
     page) — one row per journal line, so it opens straight into a
     spreadsheet without the entry/line grouping the HTML view has."""
     where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                        account, payee, amount_op, amount_value,
-                                       hide_reversed)
+                                       amount_value2, hide_reversed)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,

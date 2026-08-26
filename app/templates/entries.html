@@ -55,18 +55,23 @@
     </select>
   </label>
   <label class="field">Amount
-    <select name="amount_op">
+    <select name="amount_op" id="amount-op">
       <option value="">Any</option>
       <option value="gte" {{ 'selected' if amount_op == 'gte' }}>&ge; at least</option>
       <option value="lte" {{ 'selected' if amount_op == 'lte' }}>&le; at most</option>
       <option value="gt" {{ 'selected' if amount_op == 'gt' }}>&gt; more than</option>
       <option value="lt" {{ 'selected' if amount_op == 'lt' }}>&lt; less than</option>
       <option value="eq" {{ 'selected' if amount_op == 'eq' }}>= exactly</option>
+      <option value="between" {{ 'selected' if amount_op == 'between' }}>between</option>
     </select>
   </label>
   <label class="field">&nbsp;
     <input type="text" name="amount_value" class="amount" inputmode="decimal"
            value="{{ amount_value }}" placeholder="0.00" style="width: 7rem;">
+  </label>
+  <label class="field" id="amount-value2-field" {{ '' if amount_op == 'between' else 'hidden' }}>and
+    <input type="text" name="amount_value2" class="amount" inputmode="decimal"
+           value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
   </label>
   <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed entries and their reversals</label>
   <button type="submit">Filter</button>

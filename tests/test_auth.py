@@ -1489,6 +1489,48 @@ def test_entries_page_filters_by_amount(conn):
         assert "Small one" not in r_csv.text
 
 
+def test_entries_page_filters_by_amount_between(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        mk_line(cur, mk_entry(cur, scen["id"], "Too small"), acct["id"], 5)
+        mk_line(cur, mk_entry(cur, scen["id"], "Just right"), acct["id"], 15)
+        mk_line(cur, mk_entry(cur, scen["id"], "Too big"), acct["id"], 25)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=between&amount_value=10&amount_value2=20")
+        assert r.status_code == 200
+        assert "Just right" in r.text
+        assert "Too small" not in r.text and "Too big" not in r.text
+
+        # Bounds given the other way round still work — sorted server-side.
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=between&amount_value=20&amount_value2=10")
+        assert "Just right" in r.text
+        assert "Too small" not in r.text and "Too big" not in r.text
+
+        # Only one bound given — "between" needs both, so this is a no-op
+        # filter (same as "Any"), not a crash and not treated as one-sided.
+        r = c.get(f"/entries?scenario={scen['code']}&amount_op=between&amount_value=10")
+        assert "Too small" in r.text and "Just right" in r.text and "Too big" in r.text
+
+
+def test_entries_page_clear_filters_link_only_shows_when_a_filter_is_active(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get("/entries")
+        assert "Clear filters</a>" not in r.text
+
+        r = c.get("/entries?qtext=rent")
+        assert 'href="/entries">Clear filters</a>' in r.text
+
+
 def test_entries_page_filter_form_offers_account_and_payee_dropdowns(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
