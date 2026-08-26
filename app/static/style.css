@@ -754,8 +754,16 @@ label.field { display: flex; flex-direction: column; gap: 0.2rem;
    second bound, shown only for "between" — would sit there rendered
    anyway. This is what actually makes `hidden` hide it. */
 label.field[hidden] { display: none; }
+/* Every text field, select, and the comboboxes/date inputs skinned on
+   top of one (combobox.js and datepicker.js both leave font-family
+   alone, so they've always inherited this) shares one font: --mono,
+   the same "columnar ledger paper" face input[type=number]/input.amount
+   and .date-input already used on their own. Plain fields used to fall
+   back to font: inherit's ambient --sans instead, so a text box next to
+   a date field or a combobox looked like a different control family —
+   one font for everything you type into now. */
 input, select, textarea {
-  font: inherit; color: var(--ink);
+  font: inherit; font-family: var(--mono); color: var(--ink);
   background: var(--surface); border: 1px solid var(--rule-strong);
   padding: 0.35rem 0.5rem; border-radius: 2px;
 }
@@ -975,7 +983,7 @@ a.amount-link:hover { text-decoration: underline; }
 
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
-.date-input { width: 100%; padding-right: 1.9rem; font-family: var(--mono); }
+.date-input { width: 100%; padding-right: 1.9rem; } /* mono comes from the shared input rule now */
 .date-trigger {
   position: absolute; top: 50%; right: 0.3rem; transform: translateY(-50%);
   width: 1.3rem; height: 1.3rem;
