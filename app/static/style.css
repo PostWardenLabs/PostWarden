@@ -990,6 +990,38 @@ a.amount-link:hover { text-decoration: underline; }
 .chevron-up   { transform: rotate(-45deg); }
 .chevron-left { transform: rotate(225deg); }
 
+/* -- search box (Journal's Search filter) ----------------------------------
+   The Journal used to have one shared "Filter" button for every field in
+   the bar. Dropdowns/dates/checkboxes already auto-refresh on change
+   (auto-refresh.js) without it; free-typed text (Search, Amount) never
+   did, on purpose — refreshing on every keystroke would be noise. Rather
+   than a button sitting off at the end of the whole bar for that one
+   case, Search gets its own submit affordance right where you're
+   already typing: a magnifying glass, same footprint/positioning as the
+   date picker's trigger chevron. Pressing Enter in *any* text field
+   still submits the form same as before (this is still the form's one
+   submit control) — the icon is just a visible, clickable way to do the
+   same thing without reaching for the keyboard. */
+.search-field { position: relative; width: 100%; }
+.search-input { width: 100%; padding-right: 1.9rem; }
+.search-submit {
+  position: absolute; top: 50%; right: 0.3rem; transform: translateY(-50%);
+  width: 1.3rem; height: 1.3rem;
+  background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
+  padding: 0; border-radius: 2px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.search-submit:hover { background: var(--paper-deep); }
+.search-icon {
+  position: relative; width: 0.6rem; height: 0.6rem;
+  border: 1.5px solid currentColor; border-radius: 50%;
+}
+.search-icon::after {
+  content: ""; position: absolute; width: 1.5px; height: 0.45rem;
+  background: currentColor; top: 95%; left: 95%;
+  transform: rotate(-45deg); transform-origin: top left;
+}
+
 /* -- date picker (calendar popup, see datepicker.js) ----------------------- */
 .datepicker { position: relative; width: 100%; }
 .date-input { width: 100%; padding-right: 1.9rem; } /* mono comes from the shared input rule now */

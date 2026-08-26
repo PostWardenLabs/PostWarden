@@ -32,7 +32,12 @@
   </label>
   <label class="field">From <input type="date" name="date_from" value="{{ date_from }}"></label>
   <label class="field">To <input type="date" name="date_to" value="{{ date_to }}"></label>
-  <label class="field">Search <input type="text" name="qtext" value="{{ qtext }}" placeholder="description or reference"></label>
+  <label class="field">Search
+    <span class="search-field">
+      <input type="text" class="search-input" name="qtext" value="{{ qtext }}" placeholder="description or reference">
+      <button type="submit" class="search-submit" aria-label="Search"><span class="search-icon"></span></button>
+    </span>
+  </label>
   <label class="field" style="flex:1; min-width: 14rem;">Tags
     <div class="tag-input" data-placeholder="Filter by tag…" data-creatable="0">
       <input type="hidden" name="tags" value="{{ tags }}">
@@ -74,7 +79,6 @@
            value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
   </label>
   <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed entries and their reversals</label>
-  <button type="submit">Filter</button>
   {% if has_filters %}
   <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
   {% else %}
