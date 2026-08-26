@@ -1,8 +1,11 @@
 /* PostWarden — Staging approval page. "select all" toggles every entry
    checkbox at once; Approve and the top-of-page bulk Reject both stay
    disabled until at least one entry is checked, so there's no accidental
-   empty submit. Alt+A approves whatever's checked (no-op while disabled,
-   same as clicking it by hand). */
+   empty submit. Alt+A approves whatever's checked, Alt+R rejects it —
+   both no-op while disabled, same as clicking by hand. Reject used to
+   also have a per-entry button inside each expanded row; removed in
+   favor of this one mechanism for both a single entry (check just that
+   one) and many. */
 (function () {
   const form = document.getElementById("staging-form");
   if (!form) return;
@@ -31,9 +34,13 @@
   sync();
 
   document.addEventListener("keydown", (e) => {
-    if (e.altKey && e.code === "KeyA" && approveBtn) {
+    if (!e.altKey) return;
+    if (e.code === "KeyA" && approveBtn) {
       e.preventDefault();
       approveBtn.click();
+    } else if (e.code === "KeyR" && rejectBtn) {
+      e.preventDefault();
+      rejectBtn.click();
     }
   });
 

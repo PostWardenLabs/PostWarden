@@ -86,7 +86,7 @@
     <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
     <button type="submit" id="approve-btn" disabled>Approve entries (Alt+A)</button>
     <button type="submit" class="quiet" id="reject-btn" disabled
-            formaction="/staging/reject" formmethod="post">Reject</button>
+            formaction="/staging/reject" formmethod="post">Reject (Alt+R)</button>
   </p>
   {% for e in pending %}
   <details class="entry">
@@ -122,21 +122,12 @@
         </tbody>
       </table>
       {#
-        Both actions below submit *this* form (the one wrapping every
-        entry, for bulk Approve/Reject) rather than a form of their own —
-        <form> can't nest, and this entry's block already lives inside
-        the outer one. formaction/formmethod on the button itself
-        redirects just that one submit to a different route, same CSRF
-        field and all, without needing a second <form>.
+        Rejecting one entry is the top-of-page bulk Reject with just this
+        one checked, same as it is for many — no per-entry Reject here
+        anymore, one mechanism instead of two.
       #}
       <p style="margin-top: 0.6rem;">
         <a class="quiet-link" href="/staging/{{ e.id }}/edit">Edit</a>
-        <button type="submit" class="quiet" style="margin-left: 0.6rem;"
-                formaction="/staging/{{ e.id }}/reject" formmethod="post"
-                data-confirm="Reject and permanently delete entry #{{ e.id }} — {{ e.description }}? This cannot be undone."
-                data-confirm-danger="1">
-          Reject
-        </button>
       </p>
     </div>
   </details>
