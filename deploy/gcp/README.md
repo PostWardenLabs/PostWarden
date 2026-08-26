@@ -299,14 +299,28 @@ restricted to specific emails.
   the failure is exactly "The private SSH key file for gcloud does not
   exist," which reads like a missing-credential problem but isn't one.
 
-  Last one: the *first* time a brand-new identity/keypair talks to this
-  VM, the guest agent provisioning that new Linux user + its
-  `authorized_keys` can take a little longer than gcloud's own ~40s
-  retry budget — gcloud's own error even says "Try running this command
-  again." Both `deploy-beta.sh` and the workflow ping the VM in a short
-  retry loop before the real (docker-build-including, much more
-  expensive to fail) deploy command, rather than let a one-off timing
-  fluke fail the whole thing.
+  `deploy-beta.sh` and the workflow both ping the VM in a short retry
+  loop before the real (docker-build-including, much more expensive to
+  fail) deploy command — cheap insurance against gcloud's own
+  documented "SSH key not propagated yet, try again" case for a
+  brand-new identity. It was *not*, in the end, what actually caused
+  this to fail repeatedly while setting it up, though — that turned out
+  to be a real bug, found by checking the VM directly rather than
+  trusting a plausible-sounding gcloud error message a second time:
+  `/home/runner`'s home directory (and its default dotfiles) ended up
+  owned by a stale, no-longer-existent UID/GID from an earlier
+  half-finished provisioning attempt, while `.ssh/authorized_keys`
+  itself — created fresh — had the *correct* current ownership. sshd's
+  `StrictModes` (on by default) silently refuses to use an
+  `authorized_keys` file if *any* ancestor directory has the wrong
+  owner, so the key being present and correctly formatted didn't
+  matter. Fixed with `sudo chown -R runner:runner /home/runner`; if
+  `deploy-beta.sh` or the workflow ever fails again with "Permission
+  denied (publickey)" that the retry loop doesn't resolve, check
+  ownership on the VM before assuming it's a propagation delay again —
+  `sudo stat -c "%U:%G %n" /home/runner /home/runner/.ssh
+  /home/runner/.ssh/authorized_keys` should show the same owner on all
+  three.
 - **demo** deploys from the latest git *tag*, not master — a deliberate
   "this commit is stable enough to show a stranger" decision, cut with
   `git tag vX.Y.Z && git push --tags` and rolled out by hand with
