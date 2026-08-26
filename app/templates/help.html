@@ -49,16 +49,21 @@
     <h2 id="staging">Staging</h2>
     <p>A holding pen, not a scenario you ever post to directly — every entry here arrived from a schedule or a
       CSV import, never typed in by hand (the database enforces that, too). Check the ones you want, hit
-      <strong>Approve entries</strong>, and each one becomes a real, independent posting in its target scenario.
-      Once approved, the staged copy itself is never deleted or edited again, just marked approved, so nothing can
-      be approved twice.</p>
+      <strong>Approve entries</strong> (or Alt+A), and each one becomes a real, independent posting in its target
+      scenario. Once approved, the staged copy itself is never deleted or edited again, just marked approved, so
+      nothing can be approved twice.</p>
     <p>Before you approve one, though, it's still a draft — a schedule or an import proposed it, nobody's
       committed to it yet. <strong>Edit</strong> opens the same kind of grid <a href="/entries?new=1">New entry</a>
       uses, prefilled with whatever's there: fix an amount, change which account a line hit, add a line, drop one,
       correct a typo in the memo, all before it ever becomes a real posting. <strong>Reject</strong> deletes the
       entry outright — for something that shouldn't have been proposed at all, not something to Approve and then
-      immediately Reverse. Both stop being available the moment an entry is approved: from then on it's a real
-      posting, and posted entries are never edited or deleted, only reversed.
+      immediately Reverse — either one at a time from inside an entry, or in bulk from the button next to Approve
+      entries, same checkboxes either way. Both Approve and Reject stop being available the moment an entry is
+      approved: from then on it's a real posting, and posted entries are never edited or deleted, only reversed.</p>
+    <p>The filter bar above the list is the same fields the <a href="/entries">Journal</a>'s own filter bar has —
+      Scenario here means where each entry is <em>headed</em> once approved, since every row already shares the
+      one real scenario, Staging itself. Useful for working through a big CSV import a scenario or a date range
+      at a time instead of one long undifferentiated list.
 
     <h2 id="import">Import</h2>
     <p>Brings entries in from a CSV — the same column layout <a href="/entries/export.csv">Export CSV</a>

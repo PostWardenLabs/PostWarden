@@ -1447,20 +1447,17 @@ AMOUNT_OPS = {
 }
 
 
-def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
-                    tags: str, account: str = "", payee: str = "",
-                    amount_op: str = "", amount_value: str = "", amount_value2: str = "",
-                    hide_reversed: int = 0) -> tuple[list[str], list, list[str]]:
-    """Shared by the paged HTML view and the CSV export — same filters,
-    same WHERE clause, so what you see is exactly what you export."""
-    try:
-        tag_list = _parse_tags(tags) if tags else []
-    except ValueError:
-        tag_list = []  # a hand-edited URL with a malformed tag; just ignore it
-    where, params = ["TRUE"], []
-    if scenario:
-        where.append("s.code = %s")
-        params.append(scenario)
+def _shared_journal_filters(where: list[str], params: list, date_from: str, date_to: str,
+                            qtext: str, tag_list: list[str], account: str, payee: str,
+                            amount_op: str, amount_value: str, amount_value2: str) -> None:
+    """WHERE-clause fragments the Journal and Staging's filter bars share —
+    date range, free-text search, tags, account, payee, and the amount
+    operator (including 'between') — appended in place to where/params.
+    Split out so Staging's own filters (added alongside its own bulk
+    Reject/filter bar — see pending_staging_entries()) reuse the exact
+    same logic instead of a second, easy-to-drift copy of it; only what's
+    genuinely different per caller (the Journal's own scenario/
+    hide_reversed, Staging's target-scenario) stays out of here."""
     if date_from:
         where.append("e.entry_date >= %s")
         params.append(date_from)
@@ -1519,6 +1516,24 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
             where.append(f"""(SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                                WHERE l.entry_id = e.id) {op} %s""")
             params.append(round(amount_num, 2))
+
+
+def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
+                    tags: str, account: str = "", payee: str = "",
+                    amount_op: str = "", amount_value: str = "", amount_value2: str = "",
+                    hide_reversed: int = 0) -> tuple[list[str], list, list[str]]:
+    """Shared by the paged HTML view and the CSV export — same filters,
+    same WHERE clause, so what you see is exactly what you export."""
+    try:
+        tag_list = _parse_tags(tags) if tags else []
+    except ValueError:
+        tag_list = []  # a hand-edited URL with a malformed tag; just ignore it
+    where, params = ["TRUE"], []
+    if scenario:
+        where.append("s.code = %s")
+        params.append(scenario)
+    _shared_journal_filters(where, params, date_from, date_to, qtext, tag_list,
+                            account, payee, amount_op, amount_value, amount_value2)
     if hide_reversed:
         # Excludes both halves of a reversal pair: the reversal itself
         # (reverses_entry_id set) and whatever it reversed (some other
@@ -1961,15 +1976,48 @@ def scheduled_all():
          ORDER BY se.next_date, se.id""")
 
 
-def pending_staging_entries():
+def _staging_filter(date_from: str = "", date_to: str = "", qtext: str = "", tags: str = "",
+                    account: str = "", payee: str = "", amount_op: str = "",
+                    amount_value: str = "", amount_value2: str = "",
+                    target_scenario: str = "") -> tuple[list[str], list, list[str]]:
+    """Same filter fields as the Journal's own bar (see
+    _shared_journal_filters), reusing that exact logic — the one thing
+    genuinely different here is 'Scenario': every row in Staging already
+    shares one real scenario (STAGING itself), so filtering on *that*
+    would be meaningless. What actually varies row to row is where each
+    entry is headed once approved, so that's what this filters on
+    instead — the ts/ib_ts aliases _entries_filter has no equivalent for,
+    which is why this isn't just a call into that one."""
+    try:
+        tag_list = _parse_tags(tags) if tags else []
+    except ValueError:
+        tag_list = []
+    where, params = ["e.promoted_entry_id IS NULL"], []
+    if target_scenario:
+        where.append("COALESCE(ts.code, ib_ts.code) = %s")
+        params.append(target_scenario)
+    _shared_journal_filters(where, params, date_from, date_to, qtext, tag_list,
+                            account, payee, amount_op, amount_value, amount_value2)
+    return where, params, tag_list
+
+
+def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str = "",
+                            tags: str = "", account: str = "", payee: str = "",
+                            amount_op: str = "", amount_value: str = "", amount_value2: str = "",
+                            target_scenario: str = ""):
     """Everything sitting in the Staging scenario, not yet approved — the
-    Staging page's whole reason to exist. Not limited to schedule-sourced
-    rows: this is *everything* Staging is holding regardless of which of
-    the two producers put it there (a materialized schedule or a CSV
-    import), so both joins are LEFT — for the "where's this headed, and
-    where did it come from" display detail, not a filter — and each
-    entry has at most one of the two set, never both."""
-    entries = q("""
+    Staging page's whole reason to exist (called with no arguments, i.e.
+    unfiltered, by the Dashboard's banner count and Scheduled's own
+    pending count). Not limited to schedule-sourced rows: this is
+    *everything* Staging is holding regardless of which of the two
+    producers put it there (a materialized schedule or a CSV import), so
+    both joins are LEFT — for the "where's this headed, and where did it
+    come from" display detail (and, now, the Scenario filter), not a
+    filter on their own — and each entry has at most one of the two set,
+    never both."""
+    where, params, _ = _staging_filter(date_from, date_to, qtext, tags, account, payee,
+                                       amount_op, amount_value, amount_value2, target_scenario)
+    entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
                p.name AS payee_name,
                COALESCE(ts.code, ib_ts.code) AS target_scenario_code,
@@ -1984,8 +2032,8 @@ def pending_staging_entries():
           LEFT JOIN import_batches ib ON ib.id = e.import_batch_id
           LEFT JOIN scenarios ib_ts ON ib_ts.id = ib.target_scenario_id
           LEFT JOIN payees p ON p.id = e.payee_id
-         WHERE e.promoted_entry_id IS NULL
-         ORDER BY e.entry_date, e.id""")
+         WHERE {' AND '.join(where)}
+         ORDER BY e.entry_date, e.id""", params)
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
     if ids:
@@ -2141,10 +2189,31 @@ def toggle_schedule(scheduled_id: int, request: Request, csrf_token: str = Form(
 
 
 @app.get("/staging")
-def staging_page(request: Request, ok: str = None, err: str = None):
-    pending, pending_lines = pending_staging_entries()
+def staging_page(request: Request, date_from: str = "", date_to: str = "", qtext: str = "",
+                 tags: str = "", account: str = "", payee: str = "", amount_op: str = "",
+                 amount_value: str = "", amount_value2: str = "", target_scenario: str = "",
+                 ok: str = None, err: str = None):
+    pending, pending_lines = pending_staging_entries(
+        date_from, date_to, qtext, tags, account, payee,
+        amount_op, amount_value, amount_value2, target_scenario)
+    # Same idea as the Journal's own has_filters — no point showing
+    # "Clear filters" over an unfiltered list. No "back" to preserve here
+    # (nothing links into Staging with one), so the clear link is just
+    # a plain "/staging".
+    has_filters = bool(date_from or date_to or qtext or tags or account or payee
+                       or amount_op or target_scenario)
     return templates.TemplateResponse(request, "staging.html", {
         "nav": "staging", "pending": pending, "pending_lines": pending_lines,
+        "date_from": date_from, "date_to": date_to, "qtext": qtext,
+        "tags": tags, "all_tags": all_tags(),
+        "account": account, "payee": payee,
+        "amount_op": amount_op, "amount_value": amount_value, "amount_value2": amount_value2,
+        "amount_ops": AMOUNT_OPS,
+        "target_scenario": target_scenario,
+        "target_scenarios": [s for s in scenarios_all() if not s["is_staging"]],
+        "filter_accounts": postable_accounts_for_pickers(),
+        "filter_payee_names": [r["name"] for r in q("SELECT name FROM payees ORDER BY name")],
+        "has_filters": has_filters,
         "ok": ok, "err": err,
     })
 
@@ -2368,6 +2437,40 @@ def staging_reject(entry_id: int, request: Request, csrf_token: str = Form(...))
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/staging", err=msg)
     return flash_redirect("/staging", ok=f"#{entry_id} rejected and deleted")
+
+
+@app.post("/staging/reject")
+async def reject_staging_entries(request: Request):
+    """Bulk sibling of /staging/{id}/reject, for the top-of-page Reject
+    button next to Approve entries — same per-id validation
+    (_pending_staging_entry) and the same permanent delete, just looped
+    over a checked set the way Approve already is. Shares Approve's own
+    checkboxes (name="entry_id") since both buttons submit the same
+    outer <form> — see staging.html."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+    except ValueError as e:
+        return flash_redirect("/staging", err=str(e))
+
+    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    if not entry_ids:
+        return flash_redirect("/staging", err="Select at least one entry to reject")
+
+    rejected, errors = [], []
+    for eid in entry_ids:
+        try:
+            _pending_staging_entry(eid)
+            with tx() as cur:
+                cur.execute("DELETE FROM journal_lines WHERE entry_id = %s", (eid,))
+                cur.execute("DELETE FROM journal_entries WHERE id = %s", (eid,))
+            rejected.append(eid)
+        except (ValueError, psycopg.Error) as e:
+            errors.append(_pg_msg(e) if isinstance(e, psycopg.Error) else str(e))
+
+    ok_msg = f"Rejected {len(rejected)} entr{'y' if len(rejected) == 1 else 'ies'}" if rejected else None
+    err_msg = "; ".join(errors) or None
+    return flash_redirect("/staging", ok=ok_msg, err=err_msg)
 
 
 # ---------------------------------------------------------------------------

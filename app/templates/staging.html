@@ -5,12 +5,88 @@
   <a href="/help#staging" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
 
+<script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+
+{#
+  Same filter fields as the Journal's own bar, same shared query logic
+  behind them (_shared_journal_filters) — Scenario here means the
+  entry's *target* scenario (where it lands once approved), since every
+  row already shares the one real scenario, STAGING itself. No Export
+  CSV (nothing here is a posting yet, so there's nothing to export) and
+  no "hide reversed" (a still-pending entry can't be a reversal).
+#}
+<form class="bar" method="get" action="/staging">
+  <label class="field">Scenario
+    <select name="target_scenario">
+      <option value="">All</option>
+      {% for s in target_scenarios %}
+      <option value="{{ s.code }}" {{ 'selected' if s.code == target_scenario }}>{{ s.code }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">From <input type="date" name="date_from" value="{{ date_from }}"></label>
+  <label class="field">To <input type="date" name="date_to" value="{{ date_to }}"></label>
+  <label class="field">Search
+    <span class="search-field">
+      <input type="text" class="search-input" name="qtext" value="{{ qtext }}" placeholder="description, reference">
+      <button type="submit" class="search-submit" aria-label="Search"><span class="search-icon"></span></button>
+    </span>
+  </label>
+  <label class="field" style="flex:1; min-width: 14rem;">Tags
+    <div class="tag-input" data-placeholder="Filter by tag…" data-creatable="0">
+      <input type="hidden" name="tags" value="{{ tags }}">
+    </div>
+  </label>
+  <label class="field" style="min-width: 12rem;">Account
+    <select name="account">
+      <option value="">All</option>
+      {% for a in filter_accounts %}
+      <option value="{{ a.code }}" {{ 'selected' if a.code == account }}>{{ a.code }} · {{ a.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field" style="min-width: 10rem;">Payee
+    <select name="payee">
+      <option value="">All</option>
+      {% for name in filter_payee_names %}
+      <option value="{{ name }}" {{ 'selected' if name == payee }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">Amount
+    <select name="amount_op" id="amount-op">
+      <option value="">Any</option>
+      <option value="gte" {{ 'selected' if amount_op == 'gte' }}>&ge; at least</option>
+      <option value="lte" {{ 'selected' if amount_op == 'lte' }}>&le; at most</option>
+      <option value="gt" {{ 'selected' if amount_op == 'gt' }}>&gt; more than</option>
+      <option value="lt" {{ 'selected' if amount_op == 'lt' }}>&lt; less than</option>
+      <option value="eq" {{ 'selected' if amount_op == 'eq' }}>= exactly</option>
+      <option value="between" {{ 'selected' if amount_op == 'between' }}>between</option>
+    </select>
+  </label>
+  <label class="field">&nbsp;
+    <input type="text" name="amount_value" class="amount" inputmode="decimal"
+           value="{{ amount_value }}" placeholder="0.00" style="width: 7rem;">
+  </label>
+  <label class="field" id="amount-value2-field" {{ '' if amount_op == 'between' else 'hidden' }}>and
+    <input type="text" name="amount_value2" class="amount" inputmode="decimal"
+           value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
+  </label>
+  {% if has_filters %}
+  <a class="button-link" href="/staging">Clear filters</a>
+  {% else %}
+  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
+  {% endif %}
+</form>
+
 {% if pending %}
 <form method="post" action="/staging/approve" id="staging-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
-    <button type="submit" id="approve-btn" disabled>Approve entries</button>
+    <button type="submit" id="approve-btn" disabled>Approve entries (Alt+A)</button>
+    <button type="submit" class="quiet" id="reject-btn" disabled
+            formaction="/staging/reject" formmethod="post">Reject</button>
   </p>
   {% for e in pending %}
   <details class="entry">
@@ -47,7 +123,7 @@
       </table>
       {#
         Both actions below submit *this* form (the one wrapping every
-        entry, for bulk Approve) rather than a form of their own —
+        entry, for bulk Approve/Reject) rather than a form of their own —
         <form> can't nest, and this entry's block already lives inside
         the outer one. formaction/formmethod on the button itself
         redirects just that one submit to a different route, same CSRF
@@ -65,10 +141,10 @@
     </div>
   </details>
   {% endfor %}
-  <p style="margin-top: 1rem;">
-    <button type="submit" id="approve-btn-bottom" disabled>Approve entries</button>
-  </p>
 </form>
+{% elif has_filters %}
+<p class="dim">No staged entries match these filters. <a class="quiet-link" href="/staging">Clear filters</a>
+  to see everything pending.</p>
 {% else %}
 <p class="dim">No staged entries right now. Once a scheduled entry comes due or a CSV import lands, they'll show
   up here waiting for you to review and approve.</p>
@@ -76,5 +152,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ asset('tags.js') }}"></script>
 <script src="{{ asset('staging.js') }}"></script>
 {% endblock %}

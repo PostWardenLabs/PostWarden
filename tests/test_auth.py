@@ -344,12 +344,15 @@ def test_staging_page_lists_pending_entries_and_approves_them(conn):
         assert cur.fetchone()["scenario_id"] == actual_id
 
 
-def _mk_staged_entry(cur, description="Staged via test"):
+def _mk_staged_entry(cur, description="Staged via test", target_scenario_id=None, amount=40):
     """A pending Staging entry, same shape test_staging_page_lists_
     pending_entries_and_approves_them builds by hand — factored out
-    since both the edit and reject tests below need one too."""
-    cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
-    actual_id = cur.fetchone()["id"]
+    since both the edit and reject tests below need one too. Defaults to
+    targeting ACTUAL and a 40/-40 line pair; the filter tests override
+    target_scenario_id/amount to get entries that actually differ."""
+    if target_scenario_id is None:
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        target_scenario_id = cur.fetchone()["id"]
     cur.execute("SELECT id FROM scenarios WHERE is_staging")
     staging_id = cur.fetchone()["id"]
     acct1 = mk_account(cur)
@@ -358,7 +361,7 @@ def _mk_staged_entry(cur, description="Staged via test"):
         """INSERT INTO scheduled_entries
                (description, target_scenario_id, interval_unit, next_date)
            VALUES (%s, %s, 'month', CURRENT_DATE) RETURNING id""",
-        (description, actual_id))
+        (description, target_scenario_id))
     sched_id = cur.fetchone()["id"]
     cur.execute(
         """INSERT INTO journal_entries
@@ -366,8 +369,8 @@ def _mk_staged_entry(cur, description="Staged via test"):
            VALUES (%s, CURRENT_DATE, %s, %s) RETURNING id""",
         (staging_id, description, sched_id))
     eid = cur.fetchone()["id"]
-    mk_line(cur, eid, acct1["id"], 40, line_no=1)
-    mk_line(cur, eid, acct2["id"], -40, line_no=2)
+    mk_line(cur, eid, acct1["id"], amount, line_no=1)
+    mk_line(cur, eid, acct2["id"], -amount, line_no=2)
     return eid, acct1, acct2
 
 
@@ -510,6 +513,79 @@ def test_staging_reject_refuses_an_already_approved_entry(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) AS n FROM journal_entries WHERE id = %s", (eid,))
         assert cur.fetchone()["n"] == 1  # still there — reject was refused
+
+
+def test_staging_bulk_reject_deletes_every_checked_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        eid1, _, _ = _mk_staged_entry(cur, description="Bulk reject me 1")
+        eid2, _, _ = _mk_staged_entry(cur, description="Bulk reject me 2")
+        eid3, _, _ = _mk_staged_entry(cur, description="Leave me alone")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/staging")
+        # The top-of-page bulk Reject sits next to Approve, both disabled
+        # until something's checked, and the old second "Approve entries"
+        # button at the bottom of the list is gone.
+        assert 'id="approve-btn" disabled' in r.text
+        assert 'id="reject-btn" disabled' in r.text
+        assert "approve-btn-bottom" not in r.text
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r2 = c.post("/staging/reject", data={
+            "entry_id": [str(eid1), str(eid2)], "csrf_token": csrf_token,
+        })
+        assert r2.status_code == 303
+        assert "ok=" in r2.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM journal_entries WHERE id = ANY(%s)", ([eid1, eid2],))
+        assert cur.fetchall() == []
+        cur.execute("SELECT id FROM journal_entries WHERE id = %s", (eid3,))
+        assert cur.fetchone()["id"] == eid3  # untouched
+
+
+def test_staging_bulk_reject_requires_at_least_one_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        _mk_staged_entry(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post("/staging/reject", data={"csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+
+
+def test_staging_page_filters_by_target_scenario_and_amount(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        other = mk_scenario(cur, scenario_type="forecast")
+        eid_actual, _, _ = _mk_staged_entry(cur, description="Headed for ACTUAL", amount=10)
+        eid_other, _, _ = _mk_staged_entry(
+            cur, description="Headed elsewhere", target_scenario_id=other["id"], amount=999)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+
+        r = c.get(f"/staging?target_scenario={other['code']}")
+        assert "Headed elsewhere" in r.text
+        assert "Headed for ACTUAL" not in r.text
+
+        r = c.get("/staging?amount_op=gte&amount_value=500")
+        assert "Headed elsewhere" in r.text
+        assert "Headed for ACTUAL" not in r.text
+
+        # Both still show with nothing filtered.
+        r = c.get("/staging")
+        assert "Headed elsewhere" in r.text and "Headed for ACTUAL" in r.text
 
 
 def test_dashboard_links_to_staging_when_entries_pending(conn):
