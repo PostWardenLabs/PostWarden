@@ -41,7 +41,12 @@
     {% for e in recent %}
     <tr>
       <td class="mono dim">{{ e.entry_date }}</td>
-      <td>{{ e.description }}{% if e.payee_name %} <span class="dim small">· {{ e.payee_name }}</span>{% endif %}</td>
+      <td class="activity-desc-cell">
+        <span class="activity-desc">
+          {{ e.description }}{% if e.payee_name %} <span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+        </span>
+        {% if e.flow %}<span class="activity-flow dim small">{{ e.flow }}</span>{% endif %}
+      </td>
       <td class="num money money-first">{{ e.total_debits | money }}</td>
     </tr>
     {% else %}

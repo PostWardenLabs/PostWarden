@@ -431,6 +431,29 @@ def dashboard(request: Request):
          WHERE s.code = 'ACTUAL'
          ORDER BY e.entry_date DESC, e.id DESC
          LIMIT 8""")
+
+    # The widget's "Salary Income → Cash" label — which account(s) the
+    # money came from and which it landed in. Batched by entry id (same
+    # shape as the Journal page's own lines_by_entry) rather than one
+    # query per row. Collapses to "multiple" on either side rather than
+    # listing every account, since this is a compact recent-activity row,
+    # not the full entry — see Journal's own expand-to-see-lines for that.
+    recent_ids = [r["id"] for r in recent]
+    debit_names, credit_names = {}, {}
+    if recent_ids:
+        for ln in q("""SELECT l.entry_id, a.name AS account_name, l.debit, l.credit
+                         FROM journal_lines l
+                         JOIN accounts a ON a.id = l.account_id
+                        WHERE l.entry_id = ANY(%s)""", (recent_ids,)):
+            bucket = debit_names if ln["debit"] > 0 else credit_names
+            bucket.setdefault(ln["entry_id"], set()).add(ln["account_name"])
+    for r in recent:
+        debits = debit_names.get(r["id"], set())
+        credits = credit_names.get(r["id"], set())
+        debit_label = next(iter(debits)) if len(debits) == 1 else "multiple"
+        credit_label = next(iter(credits)) if len(credits) == 1 else "multiple"
+        r["flow"] = f"{credit_label} → {debit_label}"
+
     pending, _ = pending_staging_entries()
 
     return templates.TemplateResponse(request, "dashboard.html", {

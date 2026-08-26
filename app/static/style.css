@@ -309,7 +309,21 @@ body {
   border-bottom: 1px solid var(--rule-strong);
   background: var(--paper);
 }
-.topbar-left { padding-left: 2.3rem; } /* clears the fixed hamburger button */
+/* Lines the title up with main's own left edge (main is a centered
+   max-width: 1080px column with 1.25rem of its own padding — see
+   `main` below) at whatever width the window actually is, instead of
+   a flat offset that only happened to match main at one width and
+   drifted everywhere else: right of main's content on a narrower
+   window (main goes flush, .topbar-left didn't), left of it on a
+   wider one (main's centering margin grows, .topbar-left didn't).
+   2.3rem is the floor — it's what actually clears the fixed hamburger
+   button (see .sidebar-toggle) — and wins only below ~1160px wide,
+   where main's own inset would otherwise undercut it. The calc()
+   mirrors main's margin: auto math directly: (viewport − 1080px) ÷ 2
+   is main's centering margin, and the − 0.25rem accounts for
+   .topbar's own 1.5rem of left padding already covering part of
+   main's 1.25rem content padding (1.5rem − 1.25rem = 0.25rem). */
+.topbar-left { padding-left: max(2.3rem, calc((100vw - 1080px) / 2 - 0.25rem)); }
 .wordmark {
   font-family: var(--serif);
   font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
@@ -490,6 +504,21 @@ table.ledger .num, table.ledger th.num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Dashboard's Recent activity widget: the debit/credit account label
+   ("Salary Income → Cash") sticks to the right of the description
+   cell — clear of the Amount column, which keeps its own tinted
+   money-column treatment below — muted so it reads as secondary to
+   the description itself. min-width: 0 on the description lets it
+   truncate (rather than push the flow label off past Amount) if a
+   long description and a long account label can't both fit; wraps
+   instead of overlapping if there's no room to truncate further. */
+.activity-desc-cell {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 0.8rem; flex-wrap: wrap;
+}
+.activity-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-flow { flex: none; white-space: nowrap; }
+
 /* tinted money columns with the red rule on their left — ledger paper's
    signature detail */
 table.ledger td.money, table.ledger th.money { background: var(--paper-deep); }
@@ -621,6 +650,38 @@ input[type="radio"]:checked::after {
   width: 4px; height: 4px; border-radius: 50%;
   background: var(--accent-text);
 }
+
+/* Toggle switch — same underlying <input type="checkbox">, restyled as
+   a track/thumb instead of a check mark. Reserved for a genuine Settings
+   preference (a persistent on/off mode, like Amount entry's fill
+   direction) — not for a data field an entity actually has (Accounts'
+   "leaf"), a filter over a report/list (Trial balance's "show zero
+   balances"), or a bulk-selection control (Staging's row checks, "Remember
+   me"). Those read as answering "what is this record" or "which rows do
+   I mean" and a checkbox says that; a switch reads as "which mode is the
+   app in right now", which is what Settings actually holds.
+   Selectors stay chained to input[type="checkbox"] throughout (not just
+   .switch alone) to out-specificity the plain checkbox rules above —
+   a bare class loses to [type="checkbox"] on width/height/border-radius
+   otherwise. */
+input[type="checkbox"].switch {
+  width: 2rem; height: 1.15rem; border-radius: 999px; flex: none;
+}
+input[type="checkbox"].switch::before {
+  content: ""; position: absolute; top: 1px; left: 1px;
+  width: 0.95rem; height: 0.95rem; border-radius: 50%;
+  background: var(--ink-soft);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+input[type="checkbox"].switch:checked::before {
+  transform: translateX(0.85rem);
+  background: var(--accent-text);
+}
+/* Cancels the plain checkbox's diagonal check-mark ::after — same
+   specificity budget as that rule (both add one attr + one pseudo-class
+   selector on top of the element), so :checked is added explicitly
+   rather than relying on source order to break the tie. */
+input[type="checkbox"].switch:checked::after { content: none; }
 
 /* A same-row link styled to sit quietly next to a button — "Export CSV"
    beside "Filter"/"Refresh", not competing for primary-action weight. */

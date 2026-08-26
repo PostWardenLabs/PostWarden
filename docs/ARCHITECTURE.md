@@ -199,6 +199,34 @@ needs a top-right "?" help icon keeps a `.page-head` div for it
 (`justify-content: flex-end` now that it has nothing to space against);
 a page with neither just starts straight into its content.
 
+`.topbar-left`'s `padding-left` isn't a flat number — it's `max(2.3rem,
+calc((100vw - 1080px) / 2 - 0.25rem))`, deliberately tracking `main`'s
+own box model (a centered `max-width: 1080px` column with 1.25rem of
+padding) so the title lines up with the page content beneath it at
+*any* window width, not just the one width someone happened to test at.
+2.3rem is the floor: what actually clears the fixed hamburger button
+(`.sidebar-toggle`) once `main` goes flush on a narrow window and its
+own inset would otherwise undercut that. Touch this formula, not just
+the number, if `main`'s max-width, padding, or the hamburger's size/
+position ever change — they're the three inputs it's derived from.
+
+### Toggle switch vs checkbox
+
+Settings has both `input[type="checkbox"]` (a hand-drawn square check,
+see `style.css`'s "Custom checkbox/radio" comment) and `input[type=
+"checkbox"].switch` (a track/thumb pill, same underlying element and
+JS — `.switch` is purely `appearance`, no behavior change). Which one a
+given boolean gets is a judgment call, not a toggle-switches-everywhere
+rule: `.switch` is for a genuine Settings preference, a persistent mode
+the *app* is in (Amount entry's fill-direction toggle is the one so
+far) — not a data field an entity actually has (Accounts' "leaf"), a
+filter over a report/list (Trial Balance's "show zero balances"), a
+bulk-selection control (Staging's row checks), or a plain form checkbox
+with its own strong convention ("Remember me"). Those answer "what is
+this record" or "which rows do I mean"; a checkbox says that. A switch
+reads as "which mode is the app in right now," which only Settings
+actually holds today.
+
 ### Opting out of the standard chrome
 
 Every page gets `base.html`'s topbar/main/footer for free — except
