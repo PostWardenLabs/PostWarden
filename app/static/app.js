@@ -187,6 +187,36 @@
   body.addEventListener("input", onRowChange);
   body.addEventListener("change", onRowChange);
 
+  // Enter / Shift+Enter move through the grid the same order Tab already
+  // does (account -> debit -> credit -> memo -> next row's account, and
+  // back) instead of doing what a text input inside a <form> does by
+  // default: submit it. Without this, hitting Enter after typing a memo
+  // (or an account with the combobox's own dropdown already closed) fell
+  // through to the form's submit handler — an entry could post itself
+  // one keystroke earlier than the person typing intended.
+  function focusableFields() {
+    const fields = [];
+    rows().forEach((tr) => {
+      const acct = tr.querySelector(".combobox-input") || tr.querySelector('[name="account"]');
+      if (acct) fields.push(acct);
+      ["debit", "credit", "memo"].forEach((name) => {
+        const el = tr.querySelector(`[name="${name}"]`);
+        if (el) fields.push(el);
+      });
+    });
+    return fields;
+  }
+  body.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.altKey || e.ctrlKey || e.metaKey) return;
+    const fields = focusableFields();
+    const i = fields.indexOf(e.target);
+    if (i === -1) return;
+    const next = fields[i + (e.shiftKey ? -1 : 1)];
+    if (!next) return; // first/last field — nothing further to move to
+    e.preventDefault();
+    next.focus();
+  });
+
   // Re-filters every row's account picker to whatever the newly-selected
   // scenario can actually post to (see fn_line_account_guard) — a line
   // already pointed at an account that's no longer valid for the new
