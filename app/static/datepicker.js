@@ -42,6 +42,7 @@
     trigger.type = "button";
     trigger.className = "date-trigger";
     trigger.setAttribute("aria-label", "Open calendar");
+    trigger.tabIndex = 0; // see the .date-today comment in render() below
     if (input.disabled) trigger.disabled = true;
     trigger.innerHTML = '<span class="chevron chevron-down"></span>';
     wrap.appendChild(trigger);
@@ -86,11 +87,13 @@
       head.className = "date-panel-head";
       const prev = document.createElement("button");
       prev.type = "button"; prev.className = "date-nav"; prev.dataset.dir = "-1";
+      prev.tabIndex = 0;
       prev.textContent = "‹"; prev.setAttribute("aria-label", "Previous month");
       const label = document.createElement("span");
       label.textContent = `${MONTHS[month]} ${year}`;
       const next = document.createElement("button");
       next.type = "button"; next.className = "date-nav"; next.dataset.dir = "1";
+      next.tabIndex = 0;
       next.textContent = "›"; next.setAttribute("aria-label", "Next month");
       head.append(prev, label, next);
       panel.appendChild(head);
@@ -134,6 +137,19 @@
       foot.className = "date-panel-foot";
       const todayBtn = document.createElement("button");
       todayBtn.type = "button"; todayBtn.className = "quiet date-today";
+      // Explicit tabIndex, not just relying on a <button>'s default
+      // focusability: macOS Safari (and old-style Firefox) only include
+      // *text* fields in Tab order by default, skipping native buttons
+      // entirely unless "Full Keyboard Access" is turned on system-wide —
+      // except for any element carrying an explicit tabindex attribute,
+      // which stays included either way. Setting .tabIndex here (it
+      // reflects to the actual attribute, unlike most IDL properties) is
+      // what makes Today reachable under that default setting without
+      // asking anyone to change a system preference just to use this
+      // widget. The grid's own roving day button already gets this for
+      // the same reason (see rovingDate above); prev/next month nav get
+      // it too, just above.
+      todayBtn.tabIndex = 0;
       todayBtn.textContent = "Today";
       foot.appendChild(todayBtn);
       panel.appendChild(foot);
