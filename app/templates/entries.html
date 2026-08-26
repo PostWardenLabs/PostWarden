@@ -78,7 +78,7 @@
     <input type="text" name="amount_value2" class="amount" inputmode="decimal"
            value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
   </label>
-  <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed entries and their reversals</label>
+  <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
   {% if has_filters %}
   <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
   {% else %}
