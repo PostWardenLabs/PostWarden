@@ -817,10 +817,21 @@ input[type="file"]:hover::-webkit-file-upload-button {
    action — a <button> nested inside an <a> is invalid HTML (interactive
    content inside interactive content) and double-stops on Tab, so this
    is the real fix rather than reaching for that. */
+/* font-size set explicitly here rather than left at font: inherit's
+   ambient 1rem — a button sitting in body text (Post entry, Approve
+   entries, Refresh, every plain <button type="submit">) inherited full
+   paragraph-sized text while button.quiet right next to it (Add line,
+   Distribute, Log out, Lock/Unlock, ...) was set to 0.82rem, so the two
+   kinds looked like they belonged to different design systems the
+   moment they shared a toolbar. 0.88rem matches this app's own most
+   common UI-chrome size (table.ledger's 0.9rem) rather than either
+   button variant's old number — both share it now, and the fill vs.
+   outline (plus a size difference in padding, not font) is what's left
+   to read as "primary" vs. "secondary," which is plenty. */
 button, a.button-link {
-  font: inherit; cursor: pointer;
+  font: inherit; font-size: 0.88rem; cursor: pointer;
   background: var(--accent); color: var(--accent-text);
-  border: 1px solid var(--accent); padding: 0.42rem 1rem; border-radius: 2px;
+  border: 1px solid var(--accent); padding: 0.4rem 0.9rem; border-radius: 2px;
   display: inline-block; text-decoration: none;
 }
 button:hover, a.button-link:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -828,7 +839,7 @@ button:disabled { background: var(--rule); border-color: var(--rule);
                   color: var(--ink-soft); cursor: not-allowed; }
 button.quiet {
   background: transparent; color: var(--ink); border-color: var(--rule-strong);
-  padding: 0.25rem 0.7rem; font-size: 0.82rem;
+  padding: 0.3rem 0.75rem;
 }
 button.quiet:hover { background: var(--paper-deep); }
 .checkline { display: flex; align-items: center; gap: 0.4rem;
