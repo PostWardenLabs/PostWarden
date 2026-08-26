@@ -632,6 +632,31 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 .auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start; padding: 2rem 2rem 2rem 3rem; }
 .auth-form-wrap { width: 100%; max-width: 20rem; }
 .auth-form-wrap h2:first-child { margin-top: 0; }
+
+/* -- demo callout: a guide-style bubble that floats over the brand pane
+   and points across the seam at the form, rather than a flash message
+   sitting on top of the credential fields themselves. .auth-brand is
+   already `position: relative` (for .auth-version), so this just
+   anchors off that. */
+.demo-callout {
+  position: absolute; top: 50%; right: 1.75rem; width: 13.5rem;
+  transform: translateY(-50%);
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  border-radius: 10px; padding: 0.8rem 1rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  font-size: 0.85rem; line-height: 1.45; color: var(--ink);
+}
+.demo-callout p { margin: 0 0 0.3rem; }
+.demo-callout p:last-child { margin-bottom: 0; color: var(--ink-soft); }
+.demo-callout code { font-size: 0.82rem; }
+.demo-callout::before,
+.demo-callout::after {
+  content: ""; position: absolute; top: 50%; left: 100%;
+  transform: translateY(-50%); border: 9px solid transparent;
+}
+.demo-callout::before { border-left-color: var(--rule-strong); }
+.demo-callout::after  { left: calc(100% - 1px); border-left-color: var(--surface); }
+
 @media (max-width: 720px) {
   .auth-split { flex-direction: column; }
   .auth-brand {
@@ -641,6 +666,11 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
   .auth-wordmark { font-size: 3rem; }
   .auth-version { bottom: 0.7rem; }
   .auth-panel { flex: none; padding: 2.5rem 2rem; }
+  .demo-callout {
+    position: static; transform: none; width: auto; max-width: 16rem;
+    margin: 0.9rem auto 0; box-shadow: none;
+  }
+  .demo-callout::before, .demo-callout::after { display: none; }
 }
 
 h1 { font-family: var(--serif); font-size: 1.55rem; font-weight: 600;

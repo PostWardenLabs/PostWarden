@@ -5,18 +5,17 @@
   <div class="auth-brand">
     <span class="auth-wordmark">PostWarden</span>
     <span class="auth-version">v{{ version }}</span>
+    {% if demo_banner %}
+    <div class="demo-callout">
+      <p>User: <code class="mono">{{ demo_user }}</code></p>
+      <p>Password: <code class="mono">{{ demo_password }}</code></p>
+      <p>credentials prefilled in</p>
+    </div>
+    {% endif %}
   </div>
   <div class="auth-panel">
     <div class="auth-form-wrap">
       <h2>Log in</h2>
-      {% if demo_banner %}
-      <div class="flash flash-ok">
-        This is the public demo — a shared account, reset every night.
-        Username <code class="mono">{{ demo_user }}</code>, password
-        <code class="mono">{{ demo_password }}</code> — already filled in
-        below, just hit Log in.
-      </div>
-      {% endif %}
       {% if request.query_params.get('ok') %}
       <div class="flash flash-ok">{{ request.query_params.get('ok') }}</div>
       {% endif %}
