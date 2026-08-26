@@ -99,6 +99,20 @@
 
   function rows() { return Array.from(body.querySelectorAll("tr")); }
 
+  // Distribute (below) needs "whichever row the user was last in" — but by
+  // the time its click handler runs, document.activeElement is already the
+  // Distribute button itself: focus moves to a clicked button before its
+  // click event fires, so reading activeElement there always missed the
+  // real target and silently fell back to the trailing row instead. This
+  // tracks focus continuously as it moves through the grid so the button
+  // handler has the right answer regardless of what stole focus to get
+  // there.
+  let lastFocusedRow = null;
+  body.addEventListener("focusin", (e) => {
+    const tr = e.target.closest("tr");
+    if (tr) lastFocusedRow = tr;
+  });
+
   function rowUsed(tr) {
     const acct = tr.querySelector('select[name="account"]');
     if (acct && acct.value !== "") return true;
@@ -213,10 +227,8 @@
   const distributeBtn = document.getElementById("distribute-row");
   if (distributeBtn) {
     distributeBtn.addEventListener("click", () => {
-      const active = document.activeElement;
-      const focusedRow = active && body.contains(active) ? active.closest("tr") : null;
       const rs = rows();
-      const tr = focusedRow || rs[rs.length - 1];
+      const tr = (lastFocusedRow && body.contains(lastFocusedRow)) ? lastFocusedRow : rs[rs.length - 1];
       if (!tr) return;
       let deb = 0, cre = 0;
       rs.forEach((r) => {
