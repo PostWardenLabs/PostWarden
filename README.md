@@ -147,6 +147,20 @@ completely clean start).
 Postgres is exposed on `localhost:5432` (user/db/password: `postwarden`) so
 Power BI, Excel, or `psql` can connect directly alongside the app.
 
+**Editing the app while it runs**: `docker-compose.override.yml` (merged
+in automatically, no flag needed) bind-mounts `app/` into the container
+and runs `uvicorn` with `--reload` — edit a template or static JS/CSS and
+refresh the browser to see it (no restart needed, `Jinja2Templates`/
+`StaticFiles` always read straight from disk), edit Python and `uvicorn`
+auto-restarts in about a second. Doesn't apply to a new
+`requirements.txt` entry — that still needs `docker compose build`. It
+applies to *every* local `docker compose` command while the file exists,
+so before calling something done, verify once against the real,
+non-reloading shape beta/demo/production actually run:
+`docker compose -f docker-compose.yml up -d --build` (naming only the
+base file skips the auto-merge). Delete the override file entirely to
+make that the default again.
+
 ## Run it (local, no Docker)
 
 Requires PostgreSQL 14+ and Python 3.11+.
