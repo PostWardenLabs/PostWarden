@@ -27,7 +27,7 @@
         <input type="text" name="description" value="{{ entry.description }}" required autofocus>
       </label>
       <label class="field">Reference
-        <input type="text" name="reference" value="{{ entry.reference or '' }}" placeholder="optional">
+        <input type="text" name="reference" value="{{ entry.reference or '' }}" placeholder="Optional">
       </label>
       <label class="field">Payee
         <select name="payee_id" id="payee-select" data-create-url="/payees/quick-create">

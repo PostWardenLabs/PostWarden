@@ -34,7 +34,7 @@
   <label class="field">To <input type="date" name="date_to" value="{{ date_to }}"></label>
   <label class="field">Search
     <span class="search-field">
-      <input type="text" class="search-input" name="qtext" value="{{ qtext }}" placeholder="description, reference">
+      <input type="text" class="search-input" name="qtext" value="{{ qtext }}" placeholder="Description, ref.">
       <button type="submit" class="search-submit" aria-label="Search"><span class="search-icon"></span></button>
     </span>
   </label>
@@ -124,7 +124,7 @@
           <input type="text" name="description" required placeholder="e.g. August rent" autofocus>
         </label>
         <label class="field">Reference
-          <input type="text" name="reference" placeholder="optional">
+          <input type="text" name="reference" placeholder="Optional">
         </label>
         <label class="field">Payee
           <select name="payee_id" data-create-url="/payees/quick-create">
