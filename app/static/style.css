@@ -833,7 +833,7 @@ button.quiet:hover { background: var(--paper-deep); }
    second class to distinguish now that every checkbox looks like this. */
 .checkline { display: flex; align-items: center; gap: 0.4rem;
              font-family: var(--mono); text-transform: uppercase;
-             letter-spacing: 0.05em; font-size: 0.78rem; color: var(--ink-soft); }
+             letter-spacing: 0.04em; font-size: 0.7rem; color: var(--ink-soft); }
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which
