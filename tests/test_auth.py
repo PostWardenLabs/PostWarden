@@ -1715,6 +1715,78 @@ def test_entries_tags_requires_entries_selected_and_a_known_action(conn):
         assert r.json()["ok"] is False
 
 
+def test_entries_edit_description_updates_a_posted_entry(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid = mk_entry(cur, scen["id"], "Grocreies (typo)")
+        mk_line(cur, eid, acct["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post(f"/entries/{eid}/edit-description",
+                   data={"description": "Original, fixed", "csrf_token": csrf_token})
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["description"] == "Original, fixed"
+
+
+def test_entries_edit_description_rejects_an_empty_description(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid = mk_entry(cur, scen["id"], "Keep me")
+        mk_line(cur, eid, acct["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        with conn.cursor() as cur:
+            cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                       (c.cookies["postwarden_session"],))
+            csrf_token = cur.fetchone()["csrf_token"]
+        r = c.post(f"/entries/{eid}/edit-description",
+                   data={"description": "   ", "csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["description"] == "Keep me"
+
+
+def test_entries_page_description_edit_form_is_not_nested_inside_the_select_form(conn):
+    # A <form> can't nest inside another <form> — the browser's parser
+    # silently drops a nested one, leaving its inputs/button as loose
+    # children with no form at all, so the "Save" button would do
+    # nothing. The Journal's outer #entries-select-form (Reverse/Edit
+    # tags) wraps only the toolbar, not the entries below it, precisely
+    # to avoid that — each entry's own checkbox joins that form via
+    # form="entries-select-form" instead of DOM nesting. Checked here as
+    # a literal string match on the real opening <form ...> tag, not
+    # just its inner fields, since that's exactly what a silently-
+    # dropped nested form would still contain.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        acct = mk_account(cur)
+        eid = mk_entry(cur, scen["id"], "Nesting check")
+        mk_line(cur, eid, acct["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/entries?scenario={scen['code']}")
+        assert f'<form method="post" action="/entries/{eid}/edit-description"' in r.text
+        assert f'value="{eid}" class="entry-check" form="entries-select-form"' in r.text
+
+
 def test_entries_page_filters_by_amount(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

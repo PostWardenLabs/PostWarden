@@ -178,6 +178,13 @@
   same reasoning as Staging's Reject consolidation). Hidden by default
   via .select-only (see entries-select.js and its CSS) — reading the
   Journal is the common case, selecting is the deliberate exception.
+
+  This form wraps only the toolbar, not the entries below it — each
+  entry gets its own "Edit description" <form>, and a <form> can't
+  nest inside another one. Every checkbox is still part of *this* form
+  though, via the form="" attribute rather than DOM nesting — the
+  standard way to associate a form control with a form it doesn't live
+  inside, which is exactly the situation here.
 #}
 <form method="post" action="/entries/reverse" id="entries-select-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
@@ -187,50 +194,62 @@
     <button type="submit" id="reverse-btn" class="select-only" disabled>Reverse (Alt+R)</button>
     <button type="button" class="quiet select-only" id="edit-tags-btn" disabled>Edit tags</button>
   </p>
-  {% for e in entries %}
-  <details class="entry">
-    <summary>
-      <label class="checkline select-only" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
-        <input type="checkbox" name="entry_id" value="{{ e.id }}" class="entry-check">
-      </label>
-      <span class="mono dim">{{ e.entry_date }}</span>
-      <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
-      <span>{{ e.description }}
-        {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
-        {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
-        {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
-        {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
-        {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
-        {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
-      </span>
-      <span class="num mono">{{ e.total_debits | money }}</span>
-      <span></span>
-    </summary>
-    <div class="lines">
-      <table class="ledger">
-        <thead><tr>
-          <th>Account</th>
-          <th class="num money money-first">Debit</th>
-          <th class="num money">Credit</th>
-          <th>Memo</th>
-        </tr></thead>
-        <tbody>
-          {% for l in lines_by_entry.get(e.id, []) %}
-          <tr>
-            <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
-            <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
-            <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
-            <td class="dim">{{ l.memo or '' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-  {% else %}
-  <p class="dim">No entries match. Post one from <a href="/entries?new=1">+ New entry</a> above.</p>
-  {% endfor %}
 </form>
+{% for e in entries %}
+<details class="entry">
+  <summary>
+    <label class="checkline select-only" style="margin-right: 0.4rem;" onclick="event.stopPropagation();">
+      <input type="checkbox" name="entry_id" value="{{ e.id }}" class="entry-check" form="entries-select-form">
+    </label>
+    <span class="mono dim">{{ e.entry_date }}</span>
+    <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
+    <span>{{ e.description }}
+      {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+      {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
+      {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
+      {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
+      {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
+      {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
+    </span>
+    <span class="num mono">{{ e.total_debits | money }}</span>
+    <span></span>
+  </summary>
+  <div class="lines">
+    <table class="ledger">
+      <thead><tr>
+        <th>Account</th>
+        <th class="num money money-first">Debit</th>
+        <th class="num money">Credit</th>
+        <th>Memo</th>
+      </tr></thead>
+      <tbody>
+        {% for l in lines_by_entry.get(e.id, []) %}
+        <tr>
+          <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
+          <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
+          <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
+          <td class="dim">{{ l.memo or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {#
+      Description is the one thing about an already-posted entry
+      that's actually editable — see SPEC.md decision 16.
+    #}
+    <form method="post" action="/entries/{{ e.id }}/edit-description" class="bar"
+          style="margin-top: 0.6rem; align-items: center;">
+      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+      <label class="field" style="flex: 1; min-width: 16rem;">Description
+        <input type="text" name="description" value="{{ e.description }}" required>
+      </label>
+      <button type="submit" class="quiet">Save</button>
+    </form>
+  </div>
+</details>
+{% else %}
+<p class="dim">No entries match. Post one from <a href="/entries?new=1">+ New entry</a> above.</p>
+{% endfor %}
 
 {% if has_prev or has_next %}
 <div class="pager">

@@ -1854,6 +1854,35 @@ async def edit_entries_tags(request: Request):
     return JSONResponse({"ok": True, "tag": tag_name, "action": action})
 
 
+@app.post("/entries/{entry_id}/edit-description")
+def edit_entry_description(entry_id: int, request: Request,
+                           description: str = Form(...), csrf_token: str = Form(...)):
+    """A typo in a posted entry's description is exactly the kind of
+    mistake decision 4's append-only rule was never meant to trap
+    someone with — same reasoning as tags (SPEC.md decision 16):
+    organizational, not a fact about the transaction, so it's fair game
+    to fix on something already posted. fn_entries_guard already allowed
+    changing description/reference on a posted entry from the day it was
+    written (only scenario/date/reverses_entry_id are actually blocked);
+    this is the first route that exercises that door. Amounts, accounts,
+    and every journal_lines row stay exactly as immutable as ever — this
+    touches journal_entries.description and nothing else."""
+    description = description.strip()
+    try:
+        require_csrf(request, csrf_token)
+        if not description:
+            raise ValueError("Description can't be empty")
+        with tx() as cur:
+            cur.execute("UPDATE journal_entries SET description = %s WHERE id = %s",
+                       (description, entry_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Entry #{entry_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/entries", err=msg)
+    return flash_redirect("/entries", ok=f"Entry #{entry_id} updated")
+
+
 # ---------------------------------------------------------------------------
 # Scenarios
 # ---------------------------------------------------------------------------

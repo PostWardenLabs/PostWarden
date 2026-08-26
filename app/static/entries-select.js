@@ -16,7 +16,13 @@
   const selectAll = document.getElementById("select-all");
   const reverseBtn = document.getElementById("reverse-btn");
   const editTagsBtn = document.getElementById("edit-tags-btn");
-  const checks = Array.from(form.querySelectorAll(".entry-check"));
+  // document-wide, not form.querySelectorAll: each checkbox is
+  // associated with the form via its own form="entries-select-form"
+  // attribute rather than DOM nesting (the form wraps only the
+  // toolbar — see entries.html's own comment on why), so it isn't a
+  // descendant of `form` and querySelectorAll scoped to `form` would
+  // never find it.
+  const checks = Array.from(document.querySelectorAll(".entry-check"));
 
   function sync() {
     const checkedCount = checks.filter((c) => c.checked).length;
