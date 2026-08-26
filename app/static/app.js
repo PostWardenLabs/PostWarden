@@ -267,17 +267,21 @@
   // so "distribute into whichever row you're in" would target *itself* —
   // summing every other row (all still blank) nets to zero, which wipes
   // out the very amount you just typed instead of doing anything useful.
-  // A fresh line instead, mirroring the first line's amount, is what
-  // "distribute the entry" actually means from there — the same outcome
-  // you'd get by tabbing to the trailing blank row and distributing from
-  // there, just without leaving the first line to do it.
+  // The line right below is what "distribute the entry" actually means
+  // from there — that's rs[1] in the ordinary case (a fresh entry starts
+  // with exactly two rows, the one you're in and its blank trailing
+  // pair), so this targets the *existing* next row rather than always
+  // appending a brand new one after it — appending unconditionally put
+  // the amount two rows down instead of one, past the blank row already
+  // sitting right there. Only actually creates a row if there truly
+  // isn't a next one yet.
   const distributeBtn = document.getElementById("distribute-row");
   if (distributeBtn) {
     distributeBtn.addEventListener("click", () => {
       const rs = rows();
       let tr = (lastFocusedRow && body.contains(lastFocusedRow)) ? lastFocusedRow : rs[rs.length - 1];
       if (!tr) return;
-      if (tr === rs[0]) tr = makeRow();
+      if (tr === rs[0]) tr = rs[1] || makeRow();
       let deb = 0, cre = 0;
       rs.forEach((r) => {
         if (r === tr) return;
