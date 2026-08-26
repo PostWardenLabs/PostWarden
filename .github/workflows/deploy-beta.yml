@@ -1,9 +1,18 @@
 name: Deploy beta
 
-# beta.postwarden.org tracks master exactly — every push redeploys it.
+# beta.postwarden.org is meant to track PostWarden's master exactly, but
+# this workflow lives in PostWardenPublic — a separate repo from the one
+# that's actually pushed to — so it can't react to that push directly the
+# way it could when both lived together. workflow_dispatch (manual, from
+# this repo's Actions tab, or `deploy-beta.sh` run by hand) is the trigger
+# for now. The natural fix is a small notify-only step in PostWarden's own
+# CI that fires a `repository_dispatch` at this repo on every push to
+# master — see this repo's README for why that's not wired up yet (needs a
+# one-time PAT/secret added to the *product* repo, real GitHub
+# configuration, not something either repo's code alone can set up).
 # demo.postwarden.org is deliberately NOT wired to CI at all: it deploys
 # from a tag, by hand, on its own "every few weeks" cadence — see
-# deploy/gcp/deploy-demo.sh.
+# deploy-demo.sh.
 #
 # Auth is Workload Identity Federation, not a downloaded service-account
 # key: GCP's org policy here disables SA key creation (a good default,
@@ -11,8 +20,6 @@ name: Deploy beta
 # exchanged for short-lived GCP credentials instead. Nothing long-lived
 # to leak if a workflow run is ever compromised.
 on:
-  push:
-    branches: [master]
   workflow_dispatch: {}
 
 permissions:

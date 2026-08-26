@@ -40,7 +40,7 @@ This is idempotent-ish and does, in order:
    (gitignored — never committed) and pauses for you to add the public key
    as a GitHub deploy key, read-only
 2. Enables the Compute Engine and IAP APIs
-3. Creates a **dedicated VPC** (`libro-vpc`) — a network you create yourself
+3. Creates a **dedicated VPC** (`postwarden-vpc`) — a network you create yourself
    starts with zero firewall rules (unlike the project's default network,
    which usually ships a permissive `default-allow-ssh` open to
    `0.0.0.0/0`). Nothing is reachable here until a rule says otherwise.
@@ -61,14 +61,14 @@ First boot takes a couple of minutes (Docker install + image build). Check
 progress with:
 
 ```bash
-gcloud compute instances get-serial-port-output libro-vm \
+gcloud compute instances get-serial-port-output postwarden-vm \
   --zone=us-central1-a --project=your-project-id | grep -A5 startup-script
 ```
 
 ## 2. Open the app
 
 ```bash
-gcloud compute start-iap-tunnel libro-vm 8000 \
+gcloud compute start-iap-tunnel postwarden-vm 8000 \
   --local-host-port=localhost:8000 --zone=us-central1-a --project=your-project-id
 ```
 
@@ -87,7 +87,7 @@ SSH port-forward runs its listener on the VM itself, so it can reach
 `127.0.0.1:5432` there the same way a process on the VM would:
 
 ```bash
-gcloud compute ssh libro-vm --zone=us-central1-a --project=your-project-id \
+gcloud compute ssh postwarden-vm --zone=us-central1-a --project=your-project-id \
   --tunnel-through-iap -- -N -L 5432:localhost:5432
 ```
 
@@ -109,7 +109,7 @@ same effect, since `startup-script.sh` re-runs on every boot.
 
 ## Public domain via Cloudflare Tunnel (optional)
 
-If you'd rather visit `https://libro.yourdomain.com` than run a `gcloud`
+If you'd rather visit `https://postwarden.yourdomain.com` than run a `gcloud`
 tunnel command, and your domain's DNS is on Cloudflare, a Cloudflare
 Tunnel gets you a real domain with **zero GCP firewall changes** — the
 tunnel is an outbound-only connection from the VM, so the IAP-only setup
@@ -148,14 +148,14 @@ enabled account-wide.
   deploy key.
 - Existing VM: add it after the fact —
   ```bash
-  gcloud compute instances add-metadata libro-vm \
+  gcloud compute instances add-metadata postwarden-vm \
     --zone=us-central1-a --project=your-project-id \
     --metadata-from-file=cloudflare-tunnel-token=/path/to/token-file
-  gcloud compute ssh libro-vm --zone=us-central1-a --project=your-project-id \
+  gcloud compute ssh postwarden-vm --zone=us-central1-a --project=your-project-id \
     --tunnel-through-iap -- 'sudo google_metadata_script_runner startup'
   ```
   (re-runs `startup-script.sh`, which now finds the token, writes it into
-  `/opt/libro/.env` alongside `COMPOSE_PROFILES=cloudflared`, and starts
+  `/opt/postwarden/.env` alongside `COMPOSE_PROFILES=cloudflared`, and starts
   the `cloudflared` service — nothing else about the deployment changes.)
 
 `docker-compose.yml`'s `cloudflared` service is behind a compose
@@ -170,20 +170,20 @@ survives reboots and redeploys, but not a deleted/recreated VM. To back up
 to Cloud Storage:
 
 ```bash
-gsutil mb -l us-central1 gs://your-libro-backups   # once
-gcloud compute scp backup.sh libro-vm:/opt/libro/backup.sh \
+gsutil mb -l us-central1 gs://your-postwarden-backups   # once
+gcloud compute scp backup.sh postwarden-vm:/opt/postwarden/backup.sh \
   --zone=us-central1-a --project=your-project-id --tunnel-through-iap
 ```
 
-Then, on the VM (`gcloud compute ssh libro-vm --tunnel-through-iap`),
+Then, on the VM (`gcloud compute ssh postwarden-vm --tunnel-through-iap`),
 install the Cloud SDK if it isn't already there and schedule
 `backup.sh` daily, e.g. as a cron entry:
 
 ```
-0 6 * * * LIBRO_BACKUP_BUCKET=gs://your-libro-backups /opt/libro/backup.sh
+0 6 * * * POSTWARDEN_BACKUP_BUCKET=gs://your-postwarden-backups /opt/postwarden/backup.sh
 ```
 
-To restore: `gsutil cp gs://your-libro-backups/libro-<stamp>.sql.gz - | gunzip | docker compose exec -T db psql -U libro -d libro`.
+To restore: `gsutil cp gs://your-postwarden-backups/postwarden-<stamp>.sql.gz - | gunzip | docker compose exec -T db psql -U postwarden -d postwarden`.
 
 ## Cost
 
@@ -197,165 +197,22 @@ IAP tunneling itself is free. If Postgres+app feel memory-constrained on
 
 ## demo.postwarden.org and beta.postwarden.org
 
-The two public instances aren't this VM — they're a second, dedicated
-`e2-small` VM (`postwarden-public`, same project and VPC), sized up from
-`e2-micro` because it runs *two* full stacks at once and 1GB isn't
-comfortable headroom for that. Deliberately a separate machine from
-whatever you're using as your own personal instance: a public demo is
-the one thing on this project that gets abused or hammered, and it
-shouldn't be able to take anything you actually rely on down with it.
-
-Two independent checkouts, `/opt/postwarden-demo` and
-`/opt/postwarden-beta`, each just this same `docker-compose.yml`
-unmodified — `.env` in each sets `APP_PORT`/`DB_PORT` so they don't
-collide on one host (demo: 8000/5432, beta: 8001/5433).
-
-This VM has **its own Cloudflare Tunnel**, separate from whatever
-tunnel fronts your personal instance — a new one, created the same way
-as "Public domain via Cloudflare Tunnel" above, with two Public
-Hostnames (`demo.postwarden.org` → `http://localhost:8000`,
-`beta.postwarden.org` → `http://localhost:8001`) instead of one. Its
-`cloudflared` connector is **not** the docker-compose-managed profile
-service either of the two app stacks ship with — a container in either
-compose project's own network can't reach the other's `localhost`
-ports, and rather than fight that, `cloudflared` runs standalone,
-outside both stacks entirely, with `--network host` so it can just hit
-`localhost:8000`/`:8001` directly (both already published there by
-`APP_PORT`/`DB_PORT` above):
-
-```bash
-sudo docker run -d --name cloudflared --network host --restart unless-stopped \
-  cloudflare/cloudflared:latest tunnel run --token <paste the new tunnel's token>
-```
-
-demo is world-readable; beta sits behind a Cloudflare Access policy
-(same mechanism as "Public domain via Cloudflare Tunnel" above)
-restricted to specific emails.
-
-- **beta** tracks `master` exactly. `.github/workflows/deploy-beta.yml`
-  redeploys it on every push, authenticated via Workload Identity
-  Federation rather than a downloaded service-account key (this
-  project's org policy disables key creation — WIF is the
-  no-long-lived-secret alternative, not a workaround). Data persists
-  between deploys; nothing here ever resets it. To reproduce the WIF
-  setup for your own fork (one-time, from your own machine):
-  ```bash
-  gcloud iam service-accounts create postwarden-ci-deploy --project "$PROJECT_ID"
-  for ROLE in roles/iap.tunnelResourceAccessor roles/compute.instanceAdmin.v1; do
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-      --member="serviceAccount:postwarden-ci-deploy@$PROJECT_ID.iam.gserviceaccount.com" \
-      --role="$ROLE" --condition=None
-  done
-  gcloud iam workload-identity-pools create postwarden-github --project "$PROJECT_ID" --location global
-  gcloud iam workload-identity-pools providers create-oidc postwarden-beta-deploy \
-    --project "$PROJECT_ID" --location global --workload-identity-pool postwarden-github \
-    --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-    --attribute-condition "assertion.repository=='<your-org>/<your-repo>'" \
-    --issuer-uri "https://token.actions.githubusercontent.com"
-  # Then bind roles/iam.workloadIdentityUser on the service account to the
-  # resulting principalSet://.../attribute.repository/<your-org>/<your-repo> —
-  # see `gcloud iam service-accounts add-iam-policy-binding --help`.
-  ```
-  **Do not enable OS Login on this VM** (leave `enable-oslogin` unset, or
-  explicitly `FALSE`) — this was tried first, with `roles/compute.osAdminLogin`
-  scoped tighter than `instanceAdmin.v1`, and it doesn't work for a
-  *service account* identity on a project that belongs to a Cloud
-  Identity/Workspace organization (which most real GCP accounts do):
-  `google_authorized_keys` on the VM rejects it with "OS Login user ...
-  does not have login permission — Could not grant access to
-  organization user," regardless of IAM role, seemingly an org-policy
-  interaction with service-account OS Login specifically that a plain
-  project-level role grant can't satisfy. `roles/compute.instanceAdmin.v1`
-  (broader than the OS Login roles, but the one that actually works)
-  falls back to the older metadata-based flow instead: `gcloud compute
-  ssh` pushes an ephemeral key straight into the instance's metadata,
-  which needs `compute.instances.setMetadata` — this is the same
-  mechanism your own manual access already uses via `setup.sh`'s deploy
-  key, just done automatically per-run instead of once.
-
-  That flow needs one more grant `instanceAdmin.v1` alone doesn't cover:
-  `roles/iam.serviceAccountUser` on **the VM's own attached service
-  account** (its default Compute Engine SA, `<project-number>-compute@
-  developer.gserviceaccount.com` — `gcloud iam service-accounts list`
-  to find yours), not on `postwarden-ci-deploy` itself:
-  ```bash
-  gcloud iam service-accounts add-iam-policy-binding \
-    <project-number>-compute@developer.gserviceaccount.com \
-    --member="serviceAccount:postwarden-ci-deploy@$PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/iam.serviceAccountUser"
-  ```
-  Without it: "The user does not have access to service account
-  '...-compute@developer.gserviceaccount.com'... Ask a project owner to
-  grant you the iam.serviceAccountUser role on the service account" —
-  GCP's own metadata-write path treats attaching an SSH key to a VM as
-  partially "acting as" whatever service account that VM runs as, so
-  the caller needs standing on *that* identity too, not just permission
-  on the instance.
-
-  Also, in the workflow itself, `mkdir -p ~/.ssh` has to run before the
-  `gcloud compute ssh` step — a fresh Actions runner has no `~/.ssh` at
-  all, and `gcloud compute ssh` can't create that directory *and*
-  generate its managed keypair in one non-interactive shot; without it,
-  the failure is exactly "The private SSH key file for gcloud does not
-  exist," which reads like a missing-credential problem but isn't one.
-
-  `deploy-beta.sh` and the workflow both ping the VM in a short retry
-  loop before the real (docker-build-including, much more expensive to
-  fail) deploy command — cheap insurance against gcloud's own
-  documented "SSH key not propagated yet, try again" case for a
-  brand-new identity. It was *not*, in the end, what actually caused
-  this to fail repeatedly while setting it up, though — that turned out
-  to be a real bug, found by checking the VM directly rather than
-  trusting a plausible-sounding gcloud error message a second time:
-  `/home/runner`'s home directory (and its default dotfiles) ended up
-  owned by a stale, no-longer-existent UID/GID from an earlier
-  half-finished provisioning attempt, while `.ssh/authorized_keys`
-  itself — created fresh — had the *correct* current ownership. sshd's
-  `StrictModes` (on by default) silently refuses to use an
-  `authorized_keys` file if *any* ancestor directory has the wrong
-  owner, so the key being present and correctly formatted didn't
-  matter. Fixed with `sudo chown -R runner:runner /home/runner`; if
-  `deploy-beta.sh` or the workflow ever fails again with "Permission
-  denied (publickey)" that the retry loop doesn't resolve, check
-  ownership on the VM before assuming it's a propagation delay again —
-  `sudo stat -c "%U:%G %n" /home/runner /home/runner/.ssh
-  /home/runner/.ssh/authorized_keys` should show the same owner on all
-  three.
-- **demo** deploys from the latest git *tag*, not master — a deliberate
-  "this commit is stable enough to show a stranger" decision, cut with
-  `git tag vX.Y.Z && git push --tags` and rolled out by hand with
-  `deploy-demo.sh` (not on every push; see the script for why).
-  Independent of that, `reset-demo.sh` runs nightly via cron **on the
-  VM itself** and wipes demo back to seed data — a public, anonymous
-  instance needs a reset regardless of how often the code under it
-  changes. `LIBRO_ADMIN_USER`/`LIBRO_ADMIN_PASSWORD` **must** be set in
-  demo's `.env` (see `reset-demo.sh`'s own comment) or a reset locks
-  everyone out, not just visitors. `LIBRO_DEMO_MODE=true` should be set
-  there too — it's what puts the credentials banner on `login.html` in
-  the first place (see `app/main.py`'s `demo_banner` comment and
-  `docs/ARCHITECTURE.md`'s Auth route entry); a fresh install without it
-  is a perfectly normal self-hosted instance with no banner at all, and
-  since `reset-demo.sh` re-creates the container from a fresh volume
-  every night, an `.env` missing this flag means the banner silently
-  disappears at the next reset even though the login itself still works
-  fine with the same credentials.
-
-**Org policies you may hit provisioning any of this from scratch**,
-both encountered setting this up and both sensible defaults, not bugs:
-*deploy keys* can be disabled org-wide (Organization settings →
-security) — if so, either re-enable them or, better, just make the repo
-public and clone over plain HTTPS instead, which is what this project
-ended up doing; *service-account key creation* can be blocked by an org
-policy (`constraints/iam.disableServiceAccountKeyCreation`) — that's
-what pushed `deploy-beta.yml` toward Workload Identity Federation
-instead of a downloaded key, which is the better practice anyway.
+Not this VM, and not this repo. The two public instances run on a second,
+dedicated VM (`postwarden-public`) that PostWardenLabs operates, and
+everything about running *those* specifically — the shared Cloudflare
+Tunnel, beta's CI deploy, demo's nightly reset — lives in
+[PostWardenPublic](https://github.com/PostWardenLabs/PostWardenPublic), a
+separate repo. Nothing here depends on it, and self-hosting your own
+instance never requires looking at it — it's PostWardenLabs' own
+operational setup, documented in the open the same way this file is, not
+a second thing you need to understand to run PostWarden yourself.
 
 ## Tearing it down
 
 ```bash
-gcloud compute instances delete libro-vm --zone=us-central1-a --project=your-project-id
-gcloud compute firewall-rules delete libro-vpc-allow-iap-ssh libro-vpc-allow-iap-app --project=your-project-id
-gcloud compute networks delete libro-vpc --project=your-project-id
+gcloud compute instances delete postwarden-vm --zone=us-central1-a --project=your-project-id
+gcloud compute firewall-rules delete postwarden-vpc-allow-iap-ssh postwarden-vpc-allow-iap-app --project=your-project-id
+gcloud compute networks delete postwarden-vpc --project=your-project-id
 ```
 
 This deletes the boot disk (and the database with it) unless you took a
