@@ -280,9 +280,14 @@
     });
   }
   document.addEventListener("keydown", (e) => {
-    if (e.altKey && e.key.toLowerCase() === "n") {
+    if (!e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "n") {
       e.preventDefault();
       focusAccountField(makeRow());
+    } else if (key === "d" && distributeBtn) {
+      e.preventDefault();
+      distributeBtn.click();
     }
   });
 
