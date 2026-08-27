@@ -2238,6 +2238,7 @@ def test_budget_page_shows_budgeted_actual_and_variance(conn):
         assert m and m.group(1) == "600.00"
         assert _account_row_value(r.text, expense["code"]) == "450.00"  # Actual column
         assert "-150.00" in r.text  # Variance = actual - budgeted = 450 - 600
+        assert "-25.0%" in r.text   # % variance = (450 - 600) / |600| * 100
 
 
 def test_budget_page_rolls_up_a_subdivided_summary_account(conn):

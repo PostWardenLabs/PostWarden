@@ -18,13 +18,33 @@
     ? window.PostWardenMoney.format(n)
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Same formula as _pct_variance() in main.py (actual vs. budgeted, as
+  // a % of budgeted) — null (rendered as "—", not a misleading 0%) when
+  // there's nothing budgeted to divide by, same reason that helper
+  // returns None there.
+  function pctVariance(actual, budgeted) {
+    if (!budgeted) return null;
+    return Math.round(((actual - budgeted) / Math.abs(budgeted)) * 1000) / 10;
+  }
+
   function setVariance(tr, budgeted) {
     const actual = parseFloat(tr.dataset.actual || "0");
     const cell = tr.querySelector(".variance-cell");
-    if (!cell) return;
-    const v = actual - budgeted;
-    cell.textContent = fmt(v);
-    cell.classList.toggle("neg", v < 0);
+    if (cell) {
+      const v = actual - budgeted;
+      cell.textContent = fmt(v);
+      cell.classList.toggle("neg", v < 0);
+    }
+    const pctCell = tr.querySelector(".pct-variance-cell");
+    if (pctCell) {
+      const pct = pctVariance(actual, budgeted);
+      // Same two shapes budget.html's own var() macro renders server-side
+      // — a dim em dash with nothing to divide by, otherwise the percent
+      // itself, colored only when negative.
+      pctCell.innerHTML = pct === null
+        ? '<span class="dim">—</span>'
+        : '<span' + (pct < 0 ? ' class="neg"' : "") + ">" + pct.toFixed(1) + "%</span>";
+    }
   }
 
   function recompute() {

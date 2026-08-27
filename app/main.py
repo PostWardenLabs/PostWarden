@@ -1033,6 +1033,7 @@ def _budget_rows(scenario: str, month: str) -> dict:
             out.append({
                 **n, "budgeted": budgeted, "actual": actual,
                 "variance": actual - budgeted,
+                "pct_variance": _pct_variance(actual, budgeted),
                 "children": merge(n["children"]),
             })
         return out
@@ -1048,11 +1049,13 @@ def _budget_rows(scenario: str, month: str) -> dict:
     grouped_by_type = {}
     for t in ("income", "expense"):
         type_roots = [n for n in merged_roots if n["account_type"] == t]
+        sub_budgeted = sum(n["budgeted"] for n in type_roots)
+        sub_actual = sum(n["actual"] for n in type_roots)
         grouped_by_type[t] = {
             "type": t, "label": TYPE_LABELS[t], "rows": flatten(type_roots),
-            "sub_budgeted": sum(n["budgeted"] for n in type_roots),
-            "sub_actual": sum(n["actual"] for n in type_roots),
-            "sub_variance": sum(n["variance"] for n in type_roots),
+            "sub_budgeted": sub_budgeted, "sub_actual": sub_actual,
+            "sub_variance": sub_actual - sub_budgeted,
+            "sub_pct_variance": _pct_variance(sub_actual, sub_budgeted),
         }
     grouped = [grouped_by_type["income"], grouped_by_type["expense"]]
     net_budgeted = grouped_by_type["income"]["sub_budgeted"] - grouped_by_type["expense"]["sub_budgeted"]
@@ -1063,6 +1066,7 @@ def _budget_rows(scenario: str, month: str) -> dict:
         "month_end": month_end.isoformat(),
         "net_budgeted": net_budgeted, "net_actual": net_actual,
         "net_variance": net_actual - net_budgeted,
+        "net_pct_variance": _pct_variance(net_actual, net_budgeted),
     }
 
 
@@ -1079,7 +1083,7 @@ def budget_page(request: Request, scenario: str = "", month: str = "",
 
     data = (_budget_rows(scenario, month) if scen else
            {"grouped": [], "net_budgeted": 0, "net_actual": 0, "net_variance": 0,
-            "month_start": month, "month_end": month})
+            "net_pct_variance": None, "month_start": month, "month_end": month})
     return templates.TemplateResponse(request, "budget.html", {
         "nav": "budget", "scenarios": scens, "scenario": scenario, "scen": scen,
         "month": month, "prev_month": _shift_month(month, -1),
