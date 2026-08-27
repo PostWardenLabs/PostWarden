@@ -76,6 +76,18 @@ def money(v) -> Markup:
     as the theme picker; the number stored in Postgres never changes)."""
     if v is None:
         return Markup("")
+    # A flipped-sign zero (income rows negate their stored net — see
+    # _income_statement_groups' own `sign` — so a zero-balance income
+    # account's base_net is -1 * 0) is still a genuine Decimal/float
+    # negative zero, which %.2f-style formatting renders as the visually
+    # confusing "-0.00" rather than "0.00" — same magnitude, no reason to
+    # show a sign on it. money-format.js's own client-side rewrite
+    # already normalizes this away for display, but the plain data-value
+    # attribute underneath (and anything reading the raw figure directly,
+    # like a CSV export) doesn't get that rescue, so fix it at the source
+    # instead of leaning on the client-side one being present.
+    if v == 0:
+        v = abs(v)
     return Markup(f'<span class="money-fmt" data-value="{v:.2f}">{v:,.2f}</span>')
 
 
@@ -802,19 +814,29 @@ def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool,
     comment — is this scenario's own net (base_net/base_subtotal), not
     the compare scenario's."""
     sign = -1 if flip else 1
+
+    # sign * x, but a zero-balance row never comes out as a *negative*
+    # zero (-1 * 0) — same value, but %.2f-style formatting renders that
+    # as a confusing "-0.00", and unlike the HTML template's money()
+    # filter (which guards against this itself), a raw CSV export writes
+    # whatever numeric value it's handed with no such rescue.
+    def signed(x):
+        v = sign * x
+        return abs(v) if v == 0 else v
+
     out = []
     for root in sorted((r for r in roots if r["account_type"] == t), key=lambda r: r["account_code"]):
         if not zeros and root["subtotal"] == 0 and root["compare_subtotal"] == 0:
             continue
         rows = _flatten_tree([root], zeros)
         for r in rows:
-            r["base_net"] = sign * r["subtotal"]
-            r["compare_net"] = sign * r["compare_subtotal"]
+            r["base_net"] = signed(r["subtotal"])
+            r["compare_net"] = signed(r["compare_subtotal"])
             r["variance"] = _variance_amount(r["base_net"], r["compare_net"], pct_of_base)
             r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"], pct_of_base)
         out.append({
             "name": root["account_name"], "rows": rows,
-            "base_subtotal": sign * root["subtotal"], "compare_subtotal": sign * root["compare_subtotal"],
+            "base_subtotal": signed(root["subtotal"]), "compare_subtotal": signed(root["compare_subtotal"]),
         })
     for g in out:
         g["variance"] = _variance_amount(g["base_subtotal"], g["compare_subtotal"], pct_of_base)
@@ -910,61 +932,246 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
     }
 
 
+def _split_periods(date_from: str, date_to: str, split: str) -> list[dict]:
+    """Breaks [date_from, date_to] into calendar-aligned sub-periods for
+    Income Statement's Split view (see income_statement_page's own
+    `split` param) — real calendar months/quarters/years, not even
+    day-slicing. Each period is clipped to the requested range at both
+    ends rather than expanded outward to a whole calendar period, so a
+    custom range like Aug 15-Oct 3 split quarterly never totals days
+    outside what date_from/date_to actually asked for; `partial` flags a
+    clipped edge so the template can show the real covered span next to
+    the calendar-period label instead of silently implying a full
+    quarter. An unrecognized/empty `split` (or an inverted range) returns
+    [] — the caller's own signal to fall back to the single-range report,
+    same as `compare=""` already means "no comparison" elsewhere. Capped
+    at 60 periods (5 years monthly) as a plain sanity limit — nothing
+    about the feature needs it, it's just guarding against an accidental
+    date range turning into thousands of one-day SQL round trips. Also
+    returns [] for an empty date_from/date_to — unlike
+    income_statement_page (which always defaults both before calling
+    this), income_statement_export_csv still allows either blank,
+    meaning "unbounded" to _income_statement_rows; there's no calendar
+    period to align an open-ended range to, so Split silently falls back
+    to the single-range export rather than raising on an empty string."""
+    if not date_from or not date_to:
+        return []
+    start, end = date.fromisoformat(date_from), date.fromisoformat(date_to)
+    if start > end:
+        return []
+    if split == "monthly":
+        step, label, first = 1, (lambda d: d.strftime("%Y-%m")), (lambda d: date(d.year, d.month, 1))
+    elif split == "quarterly":
+        step = 3
+        label = lambda d: f"{d.year}-Q{(d.month - 1) // 3 + 1}"
+        first = lambda d: date(d.year, (d.month - 1) // 3 * 3 + 1, 1)
+    elif split == "yearly":
+        step, label, first = 12, (lambda d: str(d.year)), (lambda d: date(d.year, 1, 1))
+    else:
+        return []
+
+    out = []
+    cur = first(start)
+    while cur <= end and len(out) < 60:
+        total = cur.month - 1 + step
+        nxt = date(cur.year + total // 12, total % 12 + 1, 1)
+        period_end = nxt - timedelta(days=1)
+        period_from, period_to = max(cur, start), min(period_end, end)
+        out.append({
+            "label": label(cur), "date_from": period_from.isoformat(), "date_to": period_to.isoformat(),
+            "partial": period_from != cur or period_to != period_end,
+        })
+        cur = nxt
+    return out
+
+
+def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = "",
+                             zeros: int = 0, pct_of_base: bool = False) -> dict:
+    """Split-view counterpart to _income_statement_rows() above — one
+    column group per Split period instead of one range. A thin wrapper
+    around that same single-period function rather than a parallel
+    calculation: every period gets its own full _income_statement_rows()
+    call with `zeros` forced on, which guarantees every account row/group
+    exists in every period, aligned by account id — a plain lookup merge
+    from there, with no risk of August ending up with a different set of
+    rows than September because one had a zero-balance account the other
+    didn't.
+
+    A separate "combined activity" tree (the same _build_account_tree/
+    _income_statement_groups machinery the single-period report already
+    uses) decides which rows/groups actually render under the *real*
+    `zeros` flag — fed the sum of |base_net| and |compare_net| across
+    every period, so a row shows if it had activity in *any* period and
+    hides only if it was zero everywhere, the same meaning "show zero
+    balances" already has today, just extended across the whole matrix
+    instead of one range. The scaffold tree's own base_net/compare_net
+    figures are otherwise meaningless (a sum of absolute values, not a
+    real total) — every row/group below gets its *real* per-period
+    numbers overlaid from `per_period` right after, keyed by account id
+    either way (a group's own id is its root account's — rows[0])."""
+    accounts = q("""SELECT * FROM v_dim_account
+                     WHERE is_active AND account_type IN ('income', 'expense')
+                     ORDER BY sort_path""")
+    per_period = [
+        _income_statement_rows(scenario, p["date_from"], p["date_to"], compare, zeros=1, pct_of_base=pct_of_base)
+        for p in periods
+    ]
+
+    combined_base, combined_compare, period_rows_by_id = {}, {}, []
+    for p in per_period:
+        rows_by_id = {}
+        for g in p["income_groups"] + p["expense_groups"]:
+            for r in g["rows"]:
+                rows_by_id[r["id"]] = r
+                combined_base[r["id"]] = combined_base.get(r["id"], 0) + abs(r["base_net"])
+                combined_compare[r["id"]] = combined_compare.get(r["id"], 0) + abs(r["compare_net"])
+        period_rows_by_id.append(rows_by_id)
+
+    roots = _build_account_tree(accounts, combined_base, combined_compare)
+    income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros, pct_of_base=pct_of_base)
+    expense_groups = _income_statement_groups(roots, "expense", flip=False, zeros=zeros, pct_of_base=pct_of_base)
+
+    # Matched by the group's own root-account id (its rows[0], same as any
+    # other row) within its own income/expense list specifically — not by
+    # name, and not a combined search across both lists: two top-level
+    # accounts sharing a name (nothing stops a user naming both an income
+    # and an expense root "Adjustments") would otherwise risk a group
+    # matching the wrong one.
+    for scaffold_groups, key in ((income_groups, "income_groups"), (expense_groups, "expense_groups")):
+        for g in scaffold_groups:
+            root_id = g["rows"][0]["id"]
+            for r in g["rows"]:
+                r["periods"] = [rows_by_id.get(r["id"], {}) for rows_by_id in period_rows_by_id]
+            g["periods"] = [next(pg for pg in p[key] if pg["rows"][0]["id"] == root_id) for p in per_period]
+
+    return {
+        "income_groups": income_groups, "expense_groups": expense_groups,
+        # Each entry is a *whole* single-period _income_statement_rows()
+        # result (total_base_income, net_income, ... — every top-level
+        # figure the unsplit template reads straight off the result dict),
+        # kept as-is rather than reshaped, so the split template's
+        # "Total income"/final "Net income" rows read periods_totals[i].x
+        # the same way the unsplit one reads x directly.
+        "periods_totals": per_period,
+        "has_compare": bool(compare),
+    }
+
+
 @app.get("/income-statement")
 def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: str = "",
                           date_from: str = "", date_to: str = "", zeros: int = 0,
-                          pct_of_base: int = 0):
+                          pct_of_base: int = 0, split: str = ""):
     today = date.today()
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
-    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
+    periods = _split_periods(date_from, date_to, split)
+    if periods:
+        result = _income_statement_matrix(scenario, periods, compare, zeros, bool(pct_of_base))
+    else:
+        result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
+    result["periods"] = periods
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
         "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
-        "zeros": zeros, "pct_of_base": pct_of_base, "today": today.isoformat(), **result,
+        "zeros": zeros, "pct_of_base": pct_of_base, "split": split, "today": today.isoformat(), **result,
     })
 
 
 @app.get("/export/income-statement.csv")
 def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
                                 date_from: str = "", date_to: str = "", zeros: int = 0,
-                                pct_of_base: int = 0):
-    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
+                                pct_of_base: int = 0, split: str = ""):
+    periods = _split_periods(date_from, date_to, split)
     buf = io.StringIO()
     w = csv.writer(buf)
-    header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
-    if compare:
-        header += ["Variance", "% variance", compare]
+
+    if not periods:
+        result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
+        header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
+        if compare:
+            header += ["Variance", "% variance", compare]
+        w.writerow(header)
+
+        def row(section, code, name, path, base, comp=None, variance=None, pct=None):
+            line = [section, code, name, path, base]
+            if compare:
+                line += [variance if variance is not None else "",
+                         pct if pct is not None else "",
+                         comp if comp is not None else ""]
+            w.writerow(line)
+
+        for g in result["income_groups"]:
+            for r in g["rows"]:
+                row(g["name"], r["account_code"], r["account_name"], r["path"],
+                    r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
+        row("Income", "", "Total income", "", result["total_base_income"],
+            result["total_compare_income"], result["income_variance_amount"], result["income_variance"])
+        for i, g in enumerate(result["expense_groups"]):
+            w.writerow([])
+            for r in g["rows"]:
+                row(g["name"], r["account_code"], r["account_name"], r["path"],
+                    r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
+            row(g["name"], "", f"Total {g['name']}", "", g["base_subtotal"],
+                g["compare_subtotal"], g["variance"], g["pct_variance"])
+            is_last = i == len(result["expense_groups"]) - 1
+            label = "Net income" if is_last else f"Net income after {g['name']}"
+            row(g["name"], "", label, "", g["base_running_after"],
+                g["compare_running_after"], g["running_variance"], g["running_pct_variance"])
+        if not result["expense_groups"]:
+            row("Income", "", "Net income", "", result["net_income"],
+                result["compare_net_income"], result["net_income_variance_amount"], result["net_income_variance"])
+        return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
+
+    # Split view: one wide row per account, one group of columns per
+    # period instead of one. Each period's own column group is prefixed
+    # with that period's label so the header stays legible in a plain
+    # spreadsheet with no merged/two-row header the way the HTML table
+    # gets one — "2026-08 ACTUAL" reads fine as a single Excel column
+    # header, "ACTUAL" repeated 3x with a separate period row above it
+    # wouldn't survive a CSV round trip at all.
+    result = _income_statement_matrix(scenario, periods, compare, zeros, bool(pct_of_base))
+    header = ["Section", "Code", "Account", "Path"]
+    for p in periods:
+        header.append(f"{p['label']} {scenario}")
+        if compare:
+            header += [f"{p['label']} Variance", f"{p['label']} % variance", f"{p['label']} {compare}"]
     w.writerow(header)
 
-    def row(section, code, name, path, base, comp=None, variance=None, pct=None):
-        line = [section, code, name, path, base]
-        if compare:
-            line += [variance if variance is not None else "",
-                     pct if pct is not None else "",
-                     comp if comp is not None else ""]
+    def row(section, code, name, path, period_values):
+        line = [section, code, name, path]
+        for v in period_values:
+            line.append(v.get("base", ""))
+            if compare:
+                line += [v.get("variance", ""), v.get("pct", ""), v.get("comp", "")]
         w.writerow(line)
 
     for g in result["income_groups"]:
         for r in g["rows"]:
             row(g["name"], r["account_code"], r["account_name"], r["path"],
-                r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
-    row("Income", "", "Total income", "", result["total_base_income"],
-        result["total_compare_income"], result["income_variance_amount"], result["income_variance"])
+                [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
+                  "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in r["periods"]])
+    row("Income", "", "Total income", "",
+        [{"base": pt["total_base_income"], "comp": pt["total_compare_income"],
+          "variance": pt["income_variance_amount"], "pct": pt["income_variance"]} for pt in result["periods_totals"]])
     for i, g in enumerate(result["expense_groups"]):
         w.writerow([])
         for r in g["rows"]:
             row(g["name"], r["account_code"], r["account_name"], r["path"],
-                r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
-        row(g["name"], "", f"Total {g['name']}", "", g["base_subtotal"],
-            g["compare_subtotal"], g["variance"], g["pct_variance"])
+                [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
+                  "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in r["periods"]])
+        row(g["name"], "", f"Total {g['name']}", "",
+            [{"base": gp["base_subtotal"], "comp": gp["compare_subtotal"],
+              "variance": gp["variance"], "pct": gp["pct_variance"]} for gp in g["periods"]])
         is_last = i == len(result["expense_groups"]) - 1
         label = "Net income" if is_last else f"Net income after {g['name']}"
-        row(g["name"], "", label, "", g["base_running_after"],
-            g["compare_running_after"], g["running_variance"], g["running_pct_variance"])
+        row(g["name"], "", label, "",
+            [{"base": gp["base_running_after"], "comp": gp["compare_running_after"],
+              "variance": gp["running_variance"], "pct": gp["running_pct_variance"]} for gp in g["periods"]])
     if not result["expense_groups"]:
-        row("Income", "", "Net income", "", result["net_income"],
-            result["compare_net_income"], result["net_income_variance_amount"], result["net_income_variance"])
+        row("Income", "", "Net income", "",
+            [{"base": pt["net_income"], "comp": pt["compare_net_income"],
+              "variance": pt["net_income_variance_amount"], "pct": pt["net_income_variance"]}
+             for pt in result["periods_totals"]])
     return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
 
 

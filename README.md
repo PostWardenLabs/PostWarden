@@ -34,7 +34,9 @@ instance.
   amount is a link straight through to the exact journal postings
   behind it. Every report (and the Journal's own filters) refreshes the
   moment you change a scenario, date, or any other dropdown — no
-  separate Refresh click.
+  separate Refresh click. Income Statement's **Split** turns a single
+  date range into a month/quarter/year-by-period matrix — see this year
+  broken into 12 columns instead of running the report 12 times.
 - **A Budget grid** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No

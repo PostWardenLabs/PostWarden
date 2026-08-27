@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi.testclient import TestClient
 
-from app.main import app, dateformat, templates
+from app.main import _split_periods, app, dateformat, templates
 from conftest import (mk_account, mk_budget_line, mk_entry, mk_line, mk_payee,
                      mk_scenario, mk_tag, mk_user)
 
@@ -1437,6 +1437,148 @@ def test_income_statement_no_compare_has_no_variance_column(conn):
         r = c.get(f"/income-statement?scenario={scen['code']}&date_from={today}&date_to={today}")
         assert r.status_code == 200
         assert "% variance" not in r.text
+
+
+def test_split_periods_monthly_within_a_quarter():
+    periods = _split_periods("2026-07-01", "2026-09-30", "monthly")
+    assert [p["label"] for p in periods] == ["2026-07", "2026-08", "2026-09"]
+    assert all(not p["partial"] for p in periods)
+    assert periods[0]["date_from"] == "2026-07-01" and periods[0]["date_to"] == "2026-07-31"
+    assert periods[2]["date_from"] == "2026-09-01" and periods[2]["date_to"] == "2026-09-30"
+
+
+def test_split_periods_clips_partial_edges_to_the_requested_range():
+    # A custom range that doesn't align to calendar quarters: Aug 15 -
+    # Oct 3. Quarterly split produces Q3 (clipped to Aug 15-Sep 30) and
+    # Q4 (clipped to Oct 1-3) — never expanding outward to the full
+    # calendar quarter on either edge, per the "clip to requested range"
+    # design decision (see SPEC.md).
+    periods = _split_periods("2026-08-15", "2026-10-03", "quarterly")
+    assert [p["label"] for p in periods] == ["2026-Q3", "2026-Q4"]
+    assert periods[0]["date_from"] == "2026-08-15"
+    assert periods[0]["date_to"] == "2026-09-30"
+    assert periods[0]["partial"] is True
+    assert periods[1]["date_from"] == "2026-10-01"
+    assert periods[1]["date_to"] == "2026-10-03"
+    assert periods[1]["partial"] is True
+
+
+def test_split_periods_yearly_clips_to_the_requested_range():
+    periods = _split_periods("2025-06-01", "2026-03-31", "yearly")
+    assert [p["label"] for p in periods] == ["2025", "2026"]
+    assert periods[0]["partial"] is True  # clipped to Jun 1, not Jan 1
+    assert periods[1]["partial"] is True  # clipped to Mar 31, not Dec 31
+
+
+def test_split_periods_falls_back_to_empty_for_no_split_or_bad_input():
+    assert _split_periods("2026-08-01", "2026-08-31", "") == []
+    assert _split_periods("2026-08-01", "2026-08-31", "bogus") == []
+    assert _split_periods("2026-08-31", "2026-08-01", "monthly") == []  # inverted range
+    assert _split_periods("", "2026-08-31", "monthly") == []  # open-ended, CSV export allows this
+
+
+def test_income_statement_page_offers_split_dropdown(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/income-statement")
+        assert r.status_code == 200
+        assert 'name="split"' in r.text
+        assert '<option value="monthly"' in r.text
+        assert '<option value="quarterly"' in r.text
+        assert '<option value="yearly"' in r.text
+
+
+def test_income_statement_split_monthly_shows_one_column_group_per_period(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-07-15", "July income"), income["id"], -100)
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-08-15", "August income"), income["id"], -300)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        assert "2026-07" in r.text and "2026-08" in r.text
+        # _account_row_value grabs the first data-value after the code
+        # cell — July's column, since it comes first in the matrix.
+        assert _account_row_value(r.text, income["code"]) == "100.00"
+        assert "300.00" in r.text  # August's own figure, elsewhere in that row
+
+
+def test_income_statement_split_with_compare_shows_variance_columns_per_period(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        budget = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-08-15", "Aug actual"), income["id"], -400)
+        mk_line(cur, _mk_backdated_entry(cur, budget["id"], "2026-08-15", "Aug budget"), income["id"], -600)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
+                 f"&date_from=2026-08-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        # August: actual 400 vs budget 600 -> variance = 200, % variance
+        # (of budget, the default) = (600-400)/600 = 33.3% — same formula
+        # test_income_statement_compares_two_scenarios_with_variance_and_
+        # pct_of_income already checks for the unsplit report.
+        assert "400.00" in r.text
+        assert "200.00" in r.text
+        assert "33.3%" in r.text
+        assert "600.00" in r.text
+        # Two-row header: a period's label spans 4 columns (Scenario,
+        # Variance, % variance, Compare) when comparing.
+        assert 'colspan="4"' in r.text
+
+
+def test_income_statement_split_shows_a_row_active_in_any_period_hides_if_zero_everywhere(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        active_acct = mk_account(cur, account_type="expense")
+        never_used = mk_account(cur, account_type="expense")
+        # Only July has activity; August has none for this account — the
+        # row should still show (activity in *some* period), same as the
+        # unsplit report's own "no activity anywhere" rule just extended
+        # across the whole matrix instead of one range.
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-07-10", "July expense"), active_acct["id"], 50)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        assert active_acct["code"] in r.text
+        assert never_used["code"] not in r.text
+        r_zeros = c.get(f"/income-statement?scenario={actual['code']}"
+                        f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly&zeros=1")
+        assert never_used["code"] in r_zeros.text
+
+
+def test_income_statement_split_export_csv_has_one_column_group_per_period(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-07-15", "July"), income["id"], -100)
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-08-15", "August"), income["id"], -300)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/export/income-statement.csv?scenario={actual['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        header = r.text.lstrip("﻿").splitlines()[0]
+        assert header == f"Section,Code,Account,Path,2026-07 {actual['code']},2026-08 {actual['code']}"
+        assert "100.00" in r.text
+        assert "300.00" in r.text
 
 
 def test_pct_of_base_toggle_flips_variance_convention_on_every_report(conn):

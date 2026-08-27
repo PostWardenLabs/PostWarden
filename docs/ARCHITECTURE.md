@@ -58,7 +58,7 @@ reading order:
 | Settings | `/settings`, `/settings/account`, `/settings/connect-bi`, `/settings/connect-bi/download.pbids` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default. `connect_bi.html` shows the `postwarden_bi` read-only role's host/port/database (SPEC.md decision 14) — host/port come from `request.url.hostname`/`POSTWARDEN_BI_PORT` since they're the only two things that vary per install; the `.pbids` route hands back the same two as a downloadable Power BI Data Source file, no credentials in it |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker. Recent activity and Upcoming transactions are the same widget shape twice (journal_lines vs. scheduled_entry_lines) — both reuse one `flow_side()` closure to build the "Salary Income → Cash" label, batched per widget the same way (one query for every row's lines rather than N+1) |
 | Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet, Income Statement, and the Budget grid |
-| Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column; `_build_account_tree`'s optional `compare_by_id` rolls both scenarios up in one tree, one group per top-level income/expense account (`_income_statement_groups()`) for the waterfall — see the module comment above `_pct_variance` |
+| Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column; `_build_account_tree`'s optional `compare_by_id` rolls both scenarios up in one tree, one group per top-level income/expense account (`_income_statement_groups()`) for the waterfall — see the module comment above `_pct_variance`. Its own `split` param (`""`/`monthly`/`quarterly`/`yearly`) turns the single range into a column-per-period matrix — see [Split: multiple periods at once](#split-multiple-periods-at-once) |
 | Balance sheet | `/balance-sheet`, `/export/balance-sheet.csv` | |
 | Budget grid | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern) |
 | Variance | `/variance`, `/export/variance.csv` | general two-scenario diff. Two modes: no rollup (native depth) builds a real `_build_account_tree` for chevrons + zero-balances, same as Trial Balance/Balance Sheet/Income Statement; a chosen `account_levels` depth stays on `fn_rollup_balance`'s SQL-side aggregation instead (accounts posted at different native depths reconciled into one row — no tree to walk there, so no chevrons, and the zeros checkbox is a no-op with a tooltip saying so) |
@@ -214,6 +214,86 @@ compared is the denominator — not just the sign, the actual divisor.
   Actual never changes client-side, so there's nothing to keep the
   toggle itself in sync with; only a full page reload (the checkbox's
   own auto-refresh) ever changes which formula is live.
+
+### Split: multiple periods at once
+
+Income Statement's `split` query param (`""`/`monthly`/`quarterly`/
+`yearly`, a `<select name="split">` next to Period) turns the report
+from one date range into a matrix — one column group per calendar
+period instead of one for the whole range. Scoped to Income Statement
+only: it's the only report built around a date *range* to begin with —
+Variance takes a single `as_of` date (a snapshot, like Balance Sheet)
+and Budget Grid already steps one calendar month at a time via its own
+prev/next links, so neither has a range to split without a separate
+redesign of its own filter model first.
+
+- **`_split_periods(date_from, date_to, split)`** turns the range into a
+  list of `{label, date_from, date_to, partial}` dicts — real calendar
+  months/quarters/years (`date_trunc`-style boundaries computed in
+  Python, not even day-slicing), each **clipped** to the requested range
+  at both ends rather than expanded outward to a whole calendar period:
+  a custom range of Aug 15–Oct 3 split quarterly produces a Q3 column
+  covering only Aug 15–Sep 30 and a Q4 column covering only Oct 1–3,
+  `partial=True` on both, rather than silently pulling in days outside
+  what date_from/date_to actually asked for. Returns `[]` — the same
+  "nothing to do" signal `compare=""` already is elsewhere — for an
+  unrecognized/empty `split`, an inverted range, or (income-statement-
+  export-csv only, since that route doesn't default blank dates to this
+  month the way the page route does) an empty date_from/date_to; capped
+  at 60 periods as a sanity limit, not a real one.
+- **`_income_statement_matrix(scenario, periods, compare, zeros,
+  pct_of_base)`** is the split-view counterpart to `_income_statement_
+  rows()`, built as a thin wrapper around that same single-period
+  function rather than a parallel calculation. Every period gets its own
+  full `_income_statement_rows()` call with `zeros` forced on, which
+  guarantees every account row/group exists in every period aligned by
+  account id — a plain lookup merge from there, with no risk of August
+  ending up with a different set of rows than September because one had
+  a zero-balance account the other didn't. A separate "combined
+  activity" tree (the same `_build_account_tree`/`_income_statement_
+  groups` machinery the single-period report already uses, fed the sum
+  of `|base_net|`/`|compare_net|` across every period) decides which
+  rows/groups actually render under the *real* `zeros` flag — a row
+  shows if it had activity in *any* period, hiding only if it was zero
+  everywhere, the same meaning "show zero balances" already has, just
+  extended across the whole matrix. Each surviving row/group then gets
+  its real per-period figures overlaid via a `periods` list, keyed by
+  account id (a group's own id is its root account's, `rows[0]`) —
+  matched within its own income/expense list specifically, not a
+  combined search across both, since nothing stops two top-level
+  accounts of different types sharing a name.
+- **Template**: `income_statement.html` branches on whether `periods` is
+  set — the unsplit branch is the original single-range table, byte-for-
+  byte the same markup as before Split existed. The split branch mirrors
+  it almost line for line, with an extra `{% for p in periods %}` wrapped
+  around each column group and a two-row `<thead>` (period labels
+  spanning 1 or 4 columns, then the repeated sub-column labels
+  underneath) instead of one. Wrapped in its own `.table-scroll`
+  (`overflow-x: auto`) — a year split monthly with a compare scenario is
+  12 × 4 = 48 data columns, easily wider than `main`'s 1080px max-width,
+  and without a scoped scroll container the whole page would scroll
+  sideways along with it, dragging the sidebar out of view. Every other
+  `table.ledger` stays a handful of fixed columns that never approaches
+  this regardless of window size, so only this one table gets the
+  wrapper.
+- **CSV export** (`/export/income-statement.csv?split=...`) gets its own
+  wide-format branch for the same reason a two-row HTML `<thead>`
+  wouldn't survive a CSV round trip: one row per account, one column per
+  period × sub-column, headers prefixed with the period label
+  (`"2026-08 ACTUAL"`, `"2026-08 Variance"`, ...) so a plain spreadsheet
+  import stays legible with no merged header to reconstruct.
+- **money() normalizes negative zero**: a flipped-sign zero-balance
+  income row (`_income_statement_groups`' own `sign = -1 if flip else
+  1`, applied to a literal 0) is a genuine Decimal/float negative zero,
+  which `%.2f`-style formatting renders as a confusing `"-0.00"`.
+  Pre-existing, but Split's internal `zeros=1` (forced on every
+  per-period call, to keep rows aligned — see above) surfaces far more
+  zero-balance rows than the single-range report normally shows, so it
+  came up here first. Fixed at both ends: `_income_statement_groups`'
+  own `signed()` helper normalizes it at the source (covers the CSV
+  export, which writes raw figures with no formatting rescue), and
+  `money()` itself guards independently too (covers `data-value`
+  attributes and any other direct caller).
 
 ### Click an amount → filtered Journal, with a back link
 

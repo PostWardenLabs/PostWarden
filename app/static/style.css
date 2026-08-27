@@ -822,6 +822,14 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
 }
 
 /* -- the ledger table ---------------------------------------------------- */
+/* Income Statement's Split view only — a period's own column group
+   repeats per period (1080px main content vs. up to 48 data columns for
+   a year split monthly with a compare scenario), so that one table
+   scrolls horizontally inside its own box instead of the whole page
+   dragging the sidebar out of view sideways with it. Every other
+   table.ledger stays a handful of fixed columns that never gets there
+   regardless of window size, so it isn't wrapped in this. */
+.table-scroll { overflow-x: auto; }
 table.ledger {
   width: 100%; border-collapse: collapse; font-size: 0.9rem;
   background: var(--paper);

@@ -3,11 +3,12 @@
 {% block content %}
 {% macro amt(value, pct) %}{{ value | money }}{% if pct is not none %} <span class="dim small">({{ pct }}%)</span>{% endif %}{% endmacro %}
 {% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
-{% set report_url = "/income-statement?scenario=" + scenario + "&compare=" + compare + "&date_from=" + date_from + "&date_to=" + date_to + "&zeros=" + (zeros | string) %}
-{% macro entry_link(scen_code, code, value) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_from={{ date_from }}&date_to={{ date_to }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
+{% set report_url = "/income-statement?scenario=" + scenario + "&compare=" + compare + "&date_from=" + date_from + "&date_to=" + date_to + "&zeros=" + (zeros | string) + "&split=" + split %}
+{% macro entry_link(scen_code, code, value, d_from, d_to) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_from={{ d_from }}&date_to={{ d_to }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 
 <div class="page-head">
-  <p class="page-sub">Scenario <span class="mono">{{ scenario }}</span>{% if compare %} vs. <span class="mono">{{ compare }}</span>{% endif %}</p>
+  <p class="page-sub">Scenario <span class="mono">{{ scenario }}</span>{% if compare %} vs. <span class="mono">{{ compare }}</span>{% endif %}
+    {% if periods %}· split {{ split }} ({{ periods | length }} period{{ 's' if periods | length != 1 }}){% endif %}</p>
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
 
@@ -26,6 +27,14 @@
       {% for s in scenarios %}
       <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
       {% endfor %}
+    </select>
+  </label>
+  <label class="field">Split
+    <select name="split">
+      <option value="" {{ 'selected' if not split }}>No split</option>
+      <option value="monthly" {{ 'selected' if split == 'monthly' }}>Monthly</option>
+      <option value="quarterly" {{ 'selected' if split == 'quarterly' }}>Quarterly</option>
+      <option value="yearly" {{ 'selected' if split == 'yearly' }}>Yearly</option>
     </select>
   </label>
   <label class="field">Period
@@ -53,10 +62,11 @@
       <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
       {% endif %}
     </span>
-    <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Export CSV</a>
+    <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}&split={{ split }}">Export CSV</a>
   </p>
 </form>
 
+{% if not periods %}
 <table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
   <thead>
     <tr>
@@ -78,11 +88,11 @@
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
         <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net, date_from, date_to) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net, date_from, date_to) if not r.has_children else (r.compare_net | money) }}</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -114,11 +124,11 @@
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
         <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net, date_from, date_to) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net, date_from, date_to) if not r.has_children else (r.compare_net | money) }}</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -155,6 +165,160 @@
     {% endfor %}
   </tbody>
 </table>
+
+{% else %}
+{# Split view: the exact same rows/subtotals/net-income structure above,
+   just with one column group per Split period instead of one. Each
+   row/group already carries a `periods` list (see
+   _income_statement_matrix in main.py) whose entries are the very same
+   shape a single-period row/group has — r.periods[i].base_net is
+   r.base_net's split-view counterpart, not a different field — so this
+   mirrors the unsplit table's markup almost line for line, just with an
+   extra {% for p in periods %} wrapped around each column group. Colspan
+   on type-head rows and money-first placement both need to account for
+   how many columns a period group actually is (1, or 4 with a compare
+   scenario) rather than the fixed 3/6 the unsplit table used.
+
+   Wrapped in its own scrolling container, unlike the unsplit table
+   above — a year split monthly with a compare scenario is 12 * 4 = 48
+   data columns, easily wider than `main`'s own 1080px max-width. Scoped
+   to just this table (see .table-scroll in style.css) rather than every
+   table.ledger in the app: every other report stays a handful of fixed
+   columns that never approaches this regardless of window size, so
+   wrapping them too would be unrelated defensive styling this feature
+   doesn't need. #}
+<div class="table-scroll">
+<table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
+  <thead>
+    <tr>
+      <th rowspan="2">Code</th>
+      <th rowspan="2">Account</th>
+      {% for p in periods %}
+      <th class="num{{ ' money-first' if loop.first }}" colspan="{{ 4 if has_compare else 1 }}">
+        {{ p.label }}{% if p.partial %} <span class="dim small">({{ p.date_from }} – {{ p.date_to }})</span>{% endif %}
+      </th>
+      {% endfor %}
+    </tr>
+    <tr>
+      {% for p in periods %}
+      <th class="num money{{ ' money-first' if loop.first }}">{{ scenario }}</th>
+      {% if has_compare %}
+      <th class="num money">Variance</th>
+      <th class="num">% variance</th>
+      <th class="num money">{{ compare }}</th>
+      {% endif %}
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% set colspan = 2 + periods | length * (4 if has_compare else 1) %}
+    {% for g in income_groups %}
+    <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
+      {% for r in g.rows %}
+      <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        {% for p in periods %}
+        {% set rp = r.periods[loop.index0] %}
+        <td class="num money{{ ' money-first' if loop.first }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
+        {% if has_compare %}
+        <td class="num money {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
+        <td class="num">{{ var(rp.pct_variance) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      {% if income_groups | length > 1 %}
+      <tr class="subtotal">
+        <td></td><td>Total {{ g.name }}</td>
+        {% for p in periods %}
+        {% set gp = g.periods[loop.index0] %}
+        <td class="num money{{ ' money-first' if loop.first }}">{{ gp.base_subtotal | money }}</td>
+        {% if has_compare %}
+        <td class="num money {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
+        <td class="num">{{ var(gp.pct_variance) }}</td>
+        <td class="num money">{{ gp.compare_subtotal | money }}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endif %}
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total income</td>
+      {% for p in periods %}
+      {% set pt = periods_totals[loop.index0] %}
+      <td class="num money{{ ' money-first' if loop.first }}">{{ pt.total_base_income | money }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if pt.income_variance_amount < 0 }}">{{ pt.income_variance_amount | money }}</td>
+      <td class="num">{{ var(pt.income_variance) }}</td>
+      <td class="num money">{{ pt.total_compare_income | money }}</td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+
+    {% for g in expense_groups %}
+    <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
+      {% for r in g.rows %}
+      <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
+        <td class="mono dim">{{ r.account_code }}</td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        {% for p in periods %}
+        {% set rp = r.periods[loop.index0] %}
+        <td class="num money{{ ' money-first' if loop.first }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
+        {% if has_compare %}
+        <td class="num money {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
+        <td class="num">{{ var(rp.pct_variance) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total {{ g.name }}</td>
+      {% for p in periods %}
+      {% set gp = g.periods[loop.index0] %}
+      <td class="num money{{ ' money-first' if loop.first }}">{{ amt(gp.base_subtotal, gp.base_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
+      <td class="num">{{ var(gp.pct_variance) }}</td>
+      <td class="num money">{{ amt(gp.compare_subtotal, gp.compare_pct_of_income) }}</td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+    <tr class="grand">
+      <td></td>
+      <td>{{ 'Net income' if loop.last else 'Net income after ' + g.name }}</td>
+      {% for p in periods %}
+      {% set gp = g.periods[loop.index0] %}
+      <td class="num money{{ ' money-first' if loop.first }} {{ 'neg' if gp.base_running_after < 0 }}">{{ amt(gp.base_running_after, gp.base_running_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if gp.running_variance < 0 }}">{{ gp.running_variance | money }}</td>
+      <td class="num">{{ var(gp.running_pct_variance) }}</td>
+      <td class="num money {{ 'neg' if gp.compare_running_after < 0 }}">{{ amt(gp.compare_running_after, gp.compare_running_pct_of_income) }}</td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr class="grand">
+      <td></td>
+      <td>Net income</td>
+      {% for p in periods %}
+      {% set pt = periods_totals[loop.index0] %}
+      <td class="num money{{ ' money-first' if loop.first }} {{ 'neg' if pt.net_income < 0 }}">{{ amt(pt.net_income, pt.net_income_pct_of_income) }}</td>
+      {% if has_compare %}
+      <td class="num money {{ 'neg' if pt.net_income_variance_amount < 0 }}">{{ pt.net_income_variance_amount | money }}</td>
+      <td class="num">{{ var(pt.net_income_variance) }}</td>
+      <td class="num money {{ 'neg' if pt.compare_net_income < 0 }}">{{ amt(pt.compare_net_income, pt.compare_net_income_pct_of_income) }}</td>
+      {% endif %}
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
 {% if not income_groups and not expense_groups %}<p class="dim">No income or expense activity in this period.</p>{% endif %}
 {% endblock %}
 

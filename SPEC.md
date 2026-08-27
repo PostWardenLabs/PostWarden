@@ -494,6 +494,56 @@ invisible to the user the moment its name is set explicitly regardless;
 only the merged-away rows' ids need to disappear, and any of the
 selected ids would have worked equally well as the keeper.
 
+### 19. Split (multiple periods at once) is Income Statement-only, and clips rather than snaps
+
+Income Statement's `split` param (Monthly/Quarterly/Yearly) turns the
+single date range into a matrix — one column group per calendar period.
+Two decisions worth writing down, since both had a real alternative on
+the table.
+
+**Scoped to Income Statement, not Variance or Budget Grid too.** The
+request that prompted this named all three (they're the reports that
+share a % variance column, per decision-adjacent `pct_of_base`
+machinery in `docs/ARCHITECTURE.md`), but only Income Statement is
+actually built around a date *range* — Variance takes a single `as_of`
+date (a snapshot, the same shape as Balance Sheet), and Budget Grid
+already steps one calendar month at a time via its own prev/next links.
+Neither has a range to split without first redesigning its own filter
+model into something range-shaped, which is a different, larger piece
+of work than "add a Split dropdown" — out of scope here, and not
+something this decision tries to pre-judge the shape of. If either
+report gets a range-based filter later, extending Split to it is a
+separate, later decision.
+
+**A partial edge period clips to the requested range; it never snaps
+outward to a whole calendar period.** A custom range like Aug 15–Oct 3
+split Quarterly could reasonably mean either: (a) Q3's column only
+totals Aug 15–Sep 30 (what was actually asked for) and Q4's only totals
+Oct 1–3, both labeled as partial: or (b) expand the effective range so
+every column is a full calendar quarter, pulling in Jul 1–14 and Oct
+4–whatever even though From/To never asked for them. (b) was rejected —
+a report silently including dates outside what its own filter bar says
+is a worse failure mode than a column whose total looks smaller than a
+full quarter's, and the same "never show something the filter didn't
+ask for" instinct already governs every other report's date handling in
+this app. (a) means a period's own label ("2026-Q3") can outlive being
+literally true for that column's contents, so the template shows the
+real covered span alongside it whenever a period is partial, rather
+than let the calendar-period name imply a full quarter's worth of data
+that isn't actually there.
+
+Implementation-wise, `_income_statement_matrix()` (see
+`docs/ARCHITECTURE.md`'s own Split section) is a thin wrapper around the
+existing single-range `_income_statement_rows()` — one call per period —
+rather than a parallel matrix-shaped calculation. The alternative (a
+second computation path that queries every period's balances in one
+pass) would likely be marginally faster at a large period count, but
+duplicates every rule the single-range function already gets right
+(zero-balance rollup, the income/expense sign flip, the `pct_of_base`
+convention toggle, income-statement-only/budget-scenario handling) —
+personal-ledger scale never makes N+1 queries-per-period a real cost,
+so there was nothing to trade the duplication for.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries
