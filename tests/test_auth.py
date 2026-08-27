@@ -1928,6 +1928,35 @@ def test_entries_page_filters_by_amount_between(conn):
         assert "Too small" in r.text and "Just right" in r.text and "Too big" in r.text
 
 
+def test_amount_value_fields_stay_hidden_until_an_operator_is_picked(conn):
+    # Both amount value boxes are server-rendered off amount_op, same as
+    # the "between" field always was — the plain (single-bound) value box
+    # used to stay in the DOM and visible even at "Any", which is what made
+    # the filter bar look like it always had a lone, unlabeled empty box
+    # sitting there. Now both share the same hidden-until-relevant
+    # treatment; "between" mode's own boxes get distinguishing Min/Max
+    # placeholders since two boxes with an identical "0.00" hint don't say
+    # which bound is which.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/entries", "/staging"):
+            r = c.get(url)
+            assert 'id="amount-value-field"' in r.text and 'hidden' in r.text
+            assert '<label class="field" id="amount-value-field" style="flex: none;" hidden>' in r.text
+
+            r = c.get(f"{url}?amount_op=gte")
+            assert '<label class="field" id="amount-value-field" style="flex: none;" >' in r.text
+            assert 'placeholder="0.00"' in r.text
+
+            r = c.get(f"{url}?amount_op=between")
+            assert '<label class="field" id="amount-value-field" style="flex: none;" >' in r.text
+            assert '<label class="field" id="amount-value2-field" style="flex: none;" >' in r.text
+            assert 'placeholder="Min"' in r.text and 'placeholder="Max"' in r.text
+
+
 def test_entries_page_clear_filters_link_only_shows_when_a_filter_is_active(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)

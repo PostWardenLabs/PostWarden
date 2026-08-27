@@ -78,13 +78,13 @@
       <option value="between" {{ 'selected' if amount_op == 'between' }}>between</option>
     </select>
   </label>
-  <label class="field">&nbsp;
+  <label class="field" id="amount-value-field" style="flex: none;" {{ '' if amount_op else 'hidden' }}>&nbsp;
     <input type="text" name="amount_value" class="amount" inputmode="decimal"
-           value="{{ amount_value }}" placeholder="0.00" style="width: 7rem;">
+           value="{{ amount_value }}" placeholder="{{ 'Min' if amount_op == 'between' else '0.00' }}" style="width: 7rem;">
   </label>
-  <label class="field" id="amount-value2-field" {{ '' if amount_op == 'between' else 'hidden' }}>and
+  <label class="field" id="amount-value2-field" style="flex: none;" {{ '' if amount_op == 'between' else 'hidden' }}>and
     <input type="text" name="amount_value2" class="amount" inputmode="decimal"
-           value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
+           value="{{ amount_value2 }}" placeholder="Max" style="width: 7rem;">
   </label>
   </div>
   {# A second row, not more of the field bar above: "hide reversed" and
