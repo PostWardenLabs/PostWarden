@@ -18,6 +18,7 @@
   --rule-strong:  #aebbc7;
   --red:          #b3392c;
   --ok:           #1f7a52;
+  --warn:         #9c6b0e;
   --focus:        #2f6fb0;
   --accent:       var(--ink);
   --accent-hover: #2c3a4c;
@@ -44,6 +45,7 @@
   --rule-strong:  #8fae8b;
   --red:          #a63c2e;   /* the red rule; imbalance; credit accent */
   --ok:           #2f6b45;
+  --warn:         #93690f;
   --focus:        #3e6f8e;
   --accent:       var(--ink);
   --accent-hover: #2c4034;
@@ -61,6 +63,7 @@
   --rule-strong:  #435041;
   --red:          #e2685a;
   --ok:           #6fcf8e;
+  --warn:         #e2954a;
   --focus:        #7fb0d9;
   --accent:       #c9a227;
   --accent-hover: #ddb939;
@@ -79,15 +82,17 @@
   --rule-strong:  #3c4a52;
   --red:          #e2685a;
   --ok:           #5fbf9e;
+  --warn:         #e0a542;
   --focus:        #6fb0d8;
   --accent:       #46a8c9;
   --accent-hover: #5cbdde;
   --accent-text:  #0e1518;
 }
 
-/* Mono — true grayscale, no hue anywhere except the functional red/green
-   the ledger itself needs (imbalance, credit, income). The most
-   minimalist of the set: black-on-white, one weight of accent. */
+/* Mono — true grayscale, no hue anywhere except the functional red/ok/
+   warn the ledger itself needs (imbalance, credit, income; pending-
+   approval banners). The most minimalist of the set: black-on-white,
+   one weight of accent. */
 :root[data-theme="mono"] {
   --paper:        #fafafa;
   --paper-deep:   #f0f0f0;
@@ -98,6 +103,7 @@
   --rule-strong:  #b0b0b0;
   --red:          #b3261e;
   --ok:           #2e7d4f;
+  --warn:         #b8860b;
   --focus:        #4a4a4a;
   --accent:       var(--ink);
   --accent-hover: #333333;
@@ -116,6 +122,7 @@
   --rule-strong:  #cabfae;
   --red:          #a8402f;
   --ok:           #4f7350;
+  --warn:         #96701a;
   --focus:        #6b7280;
   --accent:       var(--ink);
   --accent-hover: #443c32;
@@ -136,6 +143,7 @@
   --rule-strong:  #c7cbdc;
   --red:          #d0393e;
   --ok:           #2ba672;
+  --warn:         #d99a2b;
   --focus:        #6366f1;
   --accent:       #5442f5;
   --accent-hover: #6f5ffa;
@@ -155,6 +163,7 @@
   --rule-strong:  #3d5445;
   --red:          #e2776a;
   --ok:           #7ed9a0;
+  --warn:         #e0b34a;
   --focus:        #6fa8d8;
   --accent:       #4f9863;
   --accent-hover: #5fac74;
@@ -173,6 +182,7 @@
   --rule-strong:  #9fc0e0;
   --red:          #c23b3b;
   --ok:           #1f8a5f;
+  --warn:         #c98a1f;
   --focus:        #2f6fb0;
   --accent:       #1c6fd6;
   --accent-hover: #3480e0;
@@ -192,6 +202,7 @@
   --rule-strong:  #000000;
   --red:          #b30000;
   --ok:           #006622;
+  --warn:         #806600;
   --focus:        #0000cc;
   --accent:       #000000;
   --accent-hover: #262626;
@@ -223,6 +234,7 @@
   --rule-strong:  #5b565d;
   --red:          #ff6188;
   --ok:           #a9dc76;
+  --warn:         #ffd866;
   --focus:        #78dce8;
   --accent:       #ab9df2;
   --accent-hover: #c0b4f6;
@@ -242,6 +254,7 @@
   --rule-strong:  #cbb3aa;
   --red:          #e14775;
   --ok:           #269d69;
+  --warn:         #b8860b;
   --focus:        #1c8ca8;
   --accent:       #7058be;
   --accent-hover: #8570cc;
@@ -260,6 +273,7 @@
   --rule-strong:  #4b5263;
   --red:          #e06c75;
   --ok:           #98c379;
+  --warn:         #e5c07b;
   --focus:        #56b6c2;
   --accent:       #61afef;
   --accent-hover: #7cc0f5;
@@ -279,6 +293,7 @@
   --rule-strong:  #c7c7c9;
   --red:          #e45649;
   --ok:           #50a14f;
+  --warn:         #c18401;
   --focus:        #0184bc;
   --accent:       #4078f2;
   --accent-hover: #5f91f5;
@@ -301,6 +316,7 @@
   --rule-strong:  #30363d;
   --red:          #f85149;
   --ok:           #3fb950;
+  --warn:         #d29922;
   --focus:        #58a6ff;
   --accent:       #58a6ff;
   --accent-hover: #79b8ff;
@@ -323,6 +339,7 @@
   --rule-strong:  #45475a;
   --red:          #f38ba8;
   --ok:           #a6e3a1;
+  --warn:         #f9e2af;
   --focus:        #89dceb;
   --accent:       #cba6f7;
   --accent-hover: #dcc2fa;
@@ -344,6 +361,7 @@
   --rule-strong:  #414868;
   --red:          #f7768e;
   --ok:           #9ece6a;
+  --warn:         #e0af68;
   --focus:        #7dcfff;
   --accent:       #7aa2f7;
   --accent-hover: #92b4f9;
@@ -363,6 +381,7 @@
   --rule-strong:  #2a3242;
   --red:          #f07178;
   --ok:           #aad94c;
+  --warn:         #ff8f40;
   --focus:        #59c2ff;
   --accent:       #e6b450;
   --accent-hover: #f2c565;
@@ -375,8 +394,9 @@
    (frontend/src/ts/constants/themes.ts in monkeytypegame/monkeytype)
    rather than a VS Code gallery. Monkeytype's palette only defines a
    background/main/sub/subAlt/text/error set — no separate "success"
-   green the way an editor has one — so --ok is chosen to fit each
-   theme's register rather than copied from a nonexistent source value. */
+   green or "pending" amber the way an editor/ledger has — so --ok and
+   --warn are both chosen to fit each theme's register rather than
+   copied from a nonexistent source value. */
 
 /* Paper — Monkeytype's own minimalist light theme: warm light grays, one
    ink color doing double duty as text and accent (same restrained-accent
@@ -394,6 +414,7 @@
   --rule-strong:  #b2b2b2;
   --red:          #d70000;
   --ok:           #2f7d32;
+  --warn:         #a3790a;
   --focus:        #444444;
   --accent:       #444444;
   --accent-hover: #2b2b2b;
@@ -415,6 +436,7 @@
   --rule-strong:  #1c4012;
   --red:          #da3333;
   --ok:           #15ff00;
+  --warn:         #d9a300;
   --focus:        #15ff00;
   --accent:       #15ff00;
   --accent-hover: #4dff3d;
@@ -435,6 +457,7 @@
   --rule-strong:  #4c566a;
   --red:          #bf616a;
   --ok:           #a3be8c;
+  --warn:         #ebcb8b;
   --focus:        #81a1c1;
   --accent:       #88c0d0;
   --accent-hover: #9fd0de;
@@ -445,9 +468,10 @@
    ink, nothing else — the dark-mode counterpart to Contrast's light-mode
    austerity rather than to Mono (which still lets --focus/--accent stay
    achromatic-adjacent; Shadow pushes ink itself into both roles). --red/
-   --ok exist only because the ledger's imbalance/credit and income
-   signals have to actually read as red/green to mean anything — the
-   same deliberate exception Mono documents on its own block above. */
+   --ok/--warn exist only because the ledger's imbalance/credit/income and
+   pending-approval signals have to actually read as red/green/amber to
+   mean anything — the same deliberate exception Mono documents on its
+   own block above. */
 :root[data-theme="shadow"] {
   --paper:        #000000;
   --paper-deep:   #171717;
@@ -458,6 +482,7 @@
   --rule-strong:  #3a3a3a;
   --red:          #d64545;
   --ok:           #6fae6f;
+  --warn:         #ab8f4a;
   --focus:        #8a8a8a;
   --accent:       #eeeeee;
   --accent-hover: #ffffff;
@@ -778,6 +803,23 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
 }
 .flash-ok  { border-color: var(--ok);  background: color-mix(in srgb, var(--ok) 14%, var(--paper));  color: var(--ok); }
 .flash-err { border-color: var(--red); background: color-mix(in srgb, var(--red) 14%, var(--paper)); color: var(--red); }
+/* .flash-warn: not "success" (green) and not an actual error (red) — a
+   real success message is always something an action just did (a payee
+   created, an entry posted); an actual error means something failed.
+   "N entries waiting in Staging for your approval" is neither — nothing
+   failed, but it's also not done, it's a pending state asking for
+   attention — so it gets its own amber fill distinct from both. Only the
+   *fill* differs from .flash-ok/.flash-err's own pattern (border/
+   background/text all keyed off one color) — text stays --ink rather
+   than --warn itself, since several themes' --warn is chosen for fill
+   contrast against --paper specifically (a light amber on a light theme,
+   for instance) and reads too low-contrast as body-sized link text.
+   See base.html for why the "waiting" banners use flash-warn specifically
+   while every ok=/err= flash elsewhere stays green/red. */
+.flash-warn {
+  border-color: var(--warn); background: color-mix(in srgb, var(--warn) 20%, var(--paper));
+  color: var(--ink);
+}
 
 /* -- the ledger table ---------------------------------------------------- */
 table.ledger {

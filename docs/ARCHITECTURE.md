@@ -370,6 +370,18 @@ navigation.
 present as a banner. Stateless on purpose — no session-stored flash
 queue to forget to clear.
 
+A third banner color, `.flash-warn` (amber), exists in `style.css` but
+isn't wired into `flash_redirect`/`base.html`'s `ok=`/`err=` mechanism —
+there's no `warn=` query param. It's used exactly once, hand-coded
+directly in the two templates that need it (`dashboard.html`,
+`scheduled.html`, both `<div class="flash flash-warn">`) for "N entries
+waiting in Staging for your approval": not a success (nothing finished)
+and not an error (nothing failed), just a pending state asking for
+attention — green or red would both say the wrong thing. A route that
+ever needs the same "pending, not done, not failed" distinction through
+`flash_redirect` would need a real `warn=` param added there and to
+`base.html`'s render block; nothing currently does.
+
 ### CSRF
 
 `require_csrf(request, token)` (in `main.py`) compares the submitted

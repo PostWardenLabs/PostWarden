@@ -6,7 +6,9 @@
 </div>
 
 {% if pending_count %}
-<div class="flash flash-ok" style="margin-bottom: 1.2rem;">
+{# Amber, not green — nothing succeeded here, it's a pending state asking
+   for attention. See style.css's .flash-warn. #}
+<div class="flash flash-warn" style="margin-bottom: 1.2rem;">
   <a href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a>
 </div>
 {% endif %}

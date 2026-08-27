@@ -2072,6 +2072,40 @@ def test_payees_page_amount_links_to_filtered_journal(conn):
         assert empty_row and "amount-link" not in empty_row.group(0)
 
 
+def test_dashboard_and_scheduled_staging_banners_are_flash_warn_not_flash_ok(conn):
+    # "N entries waiting in Staging" is a pending state, not a success —
+    # it moved from .flash-ok (green) to .flash-warn (amber); see
+    # style.css's own comment on .flash-warn for why.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, target_scenario_id, interval_unit, next_date)
+               VALUES ('Banner check', %s, 'month', CURRENT_DATE) RETURNING id""",
+            (actual_id,))
+        sched_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, scheduled_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Banner check', %s) RETURNING id""",
+            (staging_id, sched_id))
+        eid = cur.fetchone()["id"]
+        acct1, acct2 = mk_account(cur), mk_account(cur)
+        mk_line(cur, eid, acct1["id"], 5, line_no=1)
+        mk_line(cur, eid, acct2["id"], -5, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/", "/scheduled"):
+            r = c.get(url)
+            assert 'class="flash flash-warn"' in r.text
+            assert 'class="flash flash-ok"' not in r.text
+
+
 def test_income_statement_amounts_link_to_filtered_journal(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
