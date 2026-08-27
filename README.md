@@ -52,8 +52,12 @@ instance.
   it ever becomes a real posting — a draft, not yet history. Import
   round-trips the same column layout Export CSV produces, so export →
   edit in a spreadsheet → re-import is a real workflow.
-- **CSV export everywhere**, a chart-of-accounts manager, payees, tags,
-  and twenty-two hand-built visual themes if the default doesn't suit
+- **CSV export everywhere**, a chart-of-accounts manager, and dedicated
+  management pages for payees and tags — rename, delete, archive a payee
+  without touching its history, or select several and merge them into
+  one (typo'd duplicates, "Trader Joe's" vs "Trader Joes") with every
+  entry that used any of them repointed automatically. Twenty-two
+  hand-built visual themes if the default doesn't suit
   you — ten original, plus VS Code– and [monkeytype.com](https://monkeytype.com)-inspired
   palettes (Catppuccin, Nord, Tokyo Night, Monokai Pro, and more), picked
   from a searchable dropdown in Settings. A separate Font picker there

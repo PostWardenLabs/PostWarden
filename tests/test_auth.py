@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app, dateformat, templates
 from conftest import (mk_account, mk_budget_line, mk_entry, mk_line, mk_payee,
-                     mk_scenario, mk_user)
+                     mk_scenario, mk_tag, mk_user)
 
 client_kwargs = {"base_url": "http://testserver", "follow_redirects": False}
 
@@ -2059,17 +2059,392 @@ def test_payees_page_amount_links_to_filtered_journal(conn):
         assert r.status_code == 200
         # The test DB is shared across the whole pytest run, so anchor on
         # this payee's own row rather than the first count-of-1 link found
-        # anywhere on the page.
-        m = re.search(rf'<td>{payee["name"]}</td>.*?<a class="amount-link" href="([^"]+)">1</a>',
-                      r.text, re.S)
+        # anywhere on the page. The name sits in its own
+        # .entity-name-label span now (payees.html's Edit toggle swaps it
+        # for a rename form in place — see that template), not bare
+        # inside the <td>.
+        m = re.search(
+            rf'<span class="entity-name-label">{payee["name"]}</span>.*?'
+            r'<a class="amount-link" href="([^"]+)">1</a>',
+            r.text, re.S)
         assert m, "no amount-link found for the payee with one entry"
         qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
         assert qs["payee"] == [payee["name"]]
         back_path = urlparse(unquote(qs["back"][0])).path
         assert back_path == "/payees"
         # A payee with no entries at all isn't a link — nothing to click through to.
-        empty_row = re.search(rf'<td>{empty_payee["name"]}</td>.*?</tr>', r.text, re.S)
+        empty_row = re.search(
+            rf'<span class="entity-name-label">{empty_payee["name"]}</span>.*?</tr>',
+            r.text, re.S)
         assert empty_row and "amount-link" not in empty_row.group(0)
+
+
+def _csrf(c, conn):
+    """The csrf_token in c's own current session — a version of the
+    "log in, then fetch csrf_token from the sessions row" boilerplate
+    every state-changing test above repeats inline, factored out for the
+    Payees/Tags tests below since several of them need a fresh token more
+    than once per test (rename, then delete; two merges)."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
+                   (c.cookies["postwarden_session"],))
+        return cur.fetchone()["csrf_token"]
+
+
+def test_payee_rename_updates_the_name_and_leaves_entries_pointing_at_it(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        payee = mk_payee(cur, name="Old Name")
+        scen = mk_scenario(cur, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"], payee_id=payee["id"])
+        mk_line(cur, eid, mk_account(cur)["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post(f"/payees/{payee['id']}/rename",
+                  data={"name": "New Name", "csrf_token": csrf_token})
+        assert r.status_code == 303
+        assert "New+Name" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM payees WHERE id = %s", (payee["id"],))
+        assert cur.fetchone()["name"] == "New Name"
+        # The entry itself never stored the payee's name — only payee_id —
+        # so it still resolves to the same row under its new name.
+        cur.execute(
+            """SELECT p.name FROM journal_entries e JOIN payees p ON p.id = e.payee_id
+               WHERE e.id = %s""", (eid,))
+        assert cur.fetchone()["name"] == "New Name"
+
+
+def test_payee_rename_rejects_an_empty_name(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        payee = mk_payee(cur, name="Keep me")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post(f"/payees/{payee['id']}/rename",
+                  data={"name": "   ", "csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT name FROM payees WHERE id = %s", (payee["id"],))
+        assert cur.fetchone()["name"] == "Keep me"
+
+
+def test_payee_delete_removes_the_row_and_blanks_referencing_entries(conn):
+    # payees(id) is ON DELETE SET NULL on every table that references it
+    # (journal_entries, scheduled_entries, entry_templates) — this is what
+    # makes Delete safe by construction rather than blocked or cascading;
+    # see /payees/{id}/delete's own comment in main.py.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        payee = mk_payee(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"], payee_id=payee["id"])
+        mk_line(cur, eid, mk_account(cur)["id"], 10)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post(f"/payees/{payee['id']}/delete", data={"csrf_token": csrf_token})
+        assert r.status_code == 303
+        assert "ok=" in r.headers["location"]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM payees WHERE id = %s", (payee["id"],))
+        assert cur.fetchone() is None
+        cur.execute("SELECT payee_id FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone()["payee_id"] is None  # entry itself untouched otherwise
+        cur.execute("SELECT COUNT(*) AS n FROM journal_lines WHERE entry_id = %s", (eid,))
+        assert cur.fetchone()["n"] == 1
+
+
+def test_payee_delete_rejects_an_unknown_id(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/payees/999999999/delete", data={"csrf_token": csrf_token})
+        assert "err=" in r.headers["location"]
+
+
+def test_payee_toggle_active_flash_names_which_way_it_went(conn):
+    # Archive/Reactivate on the page — the flash message used to be a
+    # generic "Payee updated" regardless of direction; RETURNING the new
+    # state is what lets it actually say "archived" vs "reactivated".
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        payee = mk_payee(cur, name="Toggle Me")
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r1 = c.post(f"/payees/{payee['id']}/toggle-active", data={"csrf_token": csrf_token})
+        assert "archived" in r1.headers["location"]
+        r2 = c.post(f"/payees/{payee['id']}/toggle-active", data={"csrf_token": csrf_token})
+        assert "reactivated" in r2.headers["location"]
+
+
+def test_payee_merge_repoints_entries_scheduled_entries_and_templates(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        survivor = mk_payee(cur, name="Survivor")
+        other = mk_payee(cur, name="Other")
+        scen = mk_scenario(cur, enforce_balance=False)
+        eid1 = mk_entry(cur, scen["id"], payee_id=survivor["id"])
+        mk_line(cur, eid1, mk_account(cur)["id"], 10)
+        eid2 = mk_entry(cur, scen["id"], payee_id=other["id"])
+        mk_line(cur, eid2, mk_account(cur)["id"], 20)
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, payee_id, target_scenario_id, interval_unit, next_date)
+               VALUES ('Sched', %s, %s, 'month', CURRENT_DATE + 30)""",
+            (other["id"], scen["id"]))
+        cur.execute(
+            "INSERT INTO entry_templates (name, description, payee_id) VALUES (%s, %s, %s)",
+            ("Merge test template", "Tpl", other["id"]))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/payees/merge", data={
+            "payee_id": [str(survivor["id"]), str(other["id"])],
+            "target_name": "Merged Name", "csrf_token": csrf_token,
+        })
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert "ok=" in loc
+        assert "Merged+Name" in loc
+        # Only eid2 actually needed repointing — eid1 already belonged to
+        # the survivor row, so it isn't counted as "affected".
+        assert "1+entry+affected" in loc
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM payees WHERE id = %s", (other["id"],))
+        assert cur.fetchone() is None  # the merged-away row is gone
+        cur.execute("SELECT name FROM payees WHERE id = %s", (survivor["id"],))
+        assert cur.fetchone()["name"] == "Merged Name"
+        cur.execute("SELECT payee_id FROM journal_entries WHERE id = %s", (eid2,))
+        assert cur.fetchone()["payee_id"] == survivor["id"]
+        cur.execute("SELECT payee_id FROM scheduled_entries WHERE description = 'Sched'")
+        assert cur.fetchone()["payee_id"] == survivor["id"]
+        cur.execute(
+            "SELECT payee_id FROM entry_templates WHERE name = 'Merge test template'")
+        assert cur.fetchone()["payee_id"] == survivor["id"]
+
+
+def test_payee_merge_requires_at_least_two_selected(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        payee = mk_payee(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/payees/merge", data={
+            "payee_id": [str(payee["id"])], "target_name": "Whatever",
+            "csrf_token": csrf_token,
+        })
+        assert "err=" in r.headers["location"]
+
+
+def test_tags_page_lists_tags_with_entry_counts_and_links(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        tag = mk_tag(cur)
+        eid = mk_entry(cur, scen["id"], "Tagged entry")
+        mk_line(cur, eid, mk_account(cur)["id"], 10)
+        cur.execute("INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)",
+                   (eid, tag["id"]))
+        empty_tag = mk_tag(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/tags")
+        assert r.status_code == 200
+        m = re.search(
+            rf'<span class="entity-name-label">{tag["name"]}</span>.*?'
+            r'<a class="amount-link" href="([^"]+)">1</a>',
+            r.text, re.S)
+        assert m, "no amount-link found for the tag with one entry"
+        qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
+        assert qs["tags"] == [tag["name"]]
+        empty_row = re.search(
+            rf'<span class="entity-name-label">{empty_tag["name"]}</span>.*?</tr>',
+            r.text, re.S)
+        assert empty_row and "amount-link" not in empty_row.group(0)
+        # No Status column/Archive button — tags carry no is_active.
+        assert "Archive" not in r.text
+
+
+def test_tag_create_rename_delete_round_trip(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+
+        r1 = c.post("/tags", data={"name": "zzcreatetagtest", "csrf_token": csrf_token})
+        assert "ok=" in r1.headers["location"]
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM tags WHERE name = 'zzcreatetagtest'")
+            tag_id = cur.fetchone()["id"]
+
+        r2 = c.post(f"/tags/{tag_id}/rename",
+                   data={"name": "renamed-tag", "csrf_token": csrf_token})
+        assert "ok=" in r2.headers["location"]
+        with conn.cursor() as cur:
+            cur.execute("SELECT name FROM tags WHERE id = %s", (tag_id,))
+            assert cur.fetchone()["name"] == "renamed-tag"
+
+        # An invalid name (uppercase/punctuation the CHECK constraint
+        # rejects) fails through _parse_tags before it ever reaches SQL.
+        r3 = c.post(f"/tags/{tag_id}/rename",
+                   data={"name": "Not Valid!", "csrf_token": csrf_token})
+        assert "err=" in r3.headers["location"]
+
+        r4 = c.post(f"/tags/{tag_id}/delete", data={"csrf_token": csrf_token})
+        assert "ok=" in r4.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM tags WHERE id = %s", (tag_id,))
+        assert cur.fetchone() is None
+
+
+def test_tag_delete_removes_it_from_every_entry_that_had_it(conn):
+    # journal_entry_tags/scheduled_entry_tags/entry_template_tags all
+    # reference tags(id) ON DELETE CASCADE (unlike payees' SET NULL) —
+    # deleting a tag drops the association row entirely.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        tag = mk_tag(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, mk_account(cur)["id"], 10)
+        cur.execute("INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s)",
+                   (eid, tag["id"]))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post(f"/tags/{tag['id']}/delete", data={"csrf_token": csrf_token})
+        assert "ok=" in r.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) AS n FROM journal_entry_tags WHERE entry_id = %s", (eid,))
+        assert cur.fetchone()["n"] == 0
+        # The entry and its line are both untouched — only the tag association is gone.
+        cur.execute("SELECT 1 FROM journal_entries WHERE id = %s", (eid,))
+        assert cur.fetchone() is not None
+
+
+def test_tag_merge_dedupes_when_an_entry_already_carries_both_tags(conn):
+    # The case _parse_tags/entity-manage.js can't prevent at the source —
+    # an entry tagged with *both* tags being merged — is exactly what the
+    # "INSERT ... ON CONFLICT DO NOTHING" pass in /tags/merge exists for
+    # (see its own comment in main.py): a plain UPDATE tag_id would hit
+    # journal_entry_tags' (entry_id, tag_id) primary key here.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        survivor = mk_tag(cur)
+        other = mk_tag(cur)
+        scen = mk_scenario(cur, enforce_balance=False)
+        both = mk_entry(cur, scen["id"], "Has both tags")
+        mk_line(cur, both, mk_account(cur)["id"], 10)
+        only_other = mk_entry(cur, scen["id"], "Has only the merged-away tag")
+        mk_line(cur, only_other, mk_account(cur)["id"], 20)
+        cur.execute(
+            "INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (%s, %s), (%s, %s), (%s, %s)",
+            (both, survivor["id"], both, other["id"], only_other, other["id"]))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/tags/merge", data={
+            "tag_id": [str(survivor["id"]), str(other["id"])],
+            "target_name": "merged-tag", "csrf_token": csrf_token,
+        })
+        assert r.status_code == 303
+        loc = r.headers["location"]
+        assert "ok=" in loc
+        assert "2+entries" in loc  # both entries carried the merged-away tag
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM tags WHERE id = %s", (other["id"],))
+        assert cur.fetchone() is None
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM journal_entry_tags WHERE entry_id = %s AND tag_id = %s",
+            (both, survivor["id"]))
+        assert cur.fetchone()["n"] == 1  # not duplicated despite already having it
+        cur.execute(
+            "SELECT 1 FROM journal_entry_tags WHERE entry_id = %s AND tag_id = %s",
+            (only_other, survivor["id"]))
+        assert cur.fetchone() is not None  # picked up the survivor's tag
+
+
+def test_tag_merge_requires_at_least_two_selected(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        tag = mk_tag(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/tags/merge", data={
+            "tag_id": [str(tag["id"])], "target_name": "whatever",
+            "csrf_token": csrf_token,
+        })
+        assert "err=" in r.headers["location"]
+
+
+def test_sidebar_lists_tags_right_after_payees(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/")
+        m = re.search(r'href="/payees"[^>]*>Payees</a>\s*<a href="/tags"', r.text)
+        assert m, "Tags does not immediately follow Payees in the sidebar"
+
+
+def test_dashboard_and_scheduled_staging_banners_are_flash_warn_not_flash_ok(conn):
+    # "N entries waiting in Staging" is a pending state, not a success —
+    # it moved from .flash-ok (green) to .flash-warn (amber); see
+    # style.css's own comment on .flash-warn for why.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO scheduled_entries
+                   (description, target_scenario_id, interval_unit, next_date)
+               VALUES ('Banner check', %s, 'month', CURRENT_DATE) RETURNING id""",
+            (actual_id,))
+        sched_id = cur.fetchone()["id"]
+        cur.execute("SELECT id FROM scenarios WHERE is_staging")
+        staging_id = cur.fetchone()["id"]
+        cur.execute(
+            """INSERT INTO journal_entries
+                   (scenario_id, entry_date, description, scheduled_entry_id)
+               VALUES (%s, CURRENT_DATE, 'Banner check', %s) RETURNING id""",
+            (staging_id, sched_id))
+        eid = cur.fetchone()["id"]
+        acct1, acct2 = mk_account(cur), mk_account(cur)
+        mk_line(cur, eid, acct1["id"], 5, line_no=1)
+        mk_line(cur, eid, acct2["id"], -5, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        for url in ("/", "/scheduled"):
+            r = c.get(url)
+            assert 'class="flash flash-warn"' in r.text
+            assert 'class="flash flash-ok"' not in r.text
 
 
 def test_income_statement_amounts_link_to_filtered_journal(conn):
