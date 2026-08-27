@@ -137,6 +137,15 @@ def mk_payee(cur, name=None) -> dict:
     return cur.fetchone()
 
 
+def mk_tag(cur, name=None) -> dict:
+    # tags.name's own CHECK requires lowercase (name = lower(trim(name)))
+    # and a restricted character set — random lowercase letters only,
+    # unlike mk_payee's uppercase (payees.name has no such constraint).
+    name = name or ("tag" + "".join(random.choices(string.ascii_lowercase, k=8)))
+    cur.execute("INSERT INTO tags (name) VALUES (%s) RETURNING id, name", (name,))
+    return cur.fetchone()
+
+
 def mk_line(cur, entry_id, account_id, amount, line_no=1, memo=None):
     cur.execute(
         """INSERT INTO journal_lines (entry_id, line_no, account_id, amount, memo)

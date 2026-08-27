@@ -2212,16 +2212,254 @@ def quick_create_payee(request: Request, name: str = Form(...), csrf_token: str 
 
 @app.post("/payees/{payee_id}/toggle-active")
 def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
+    # "Archive"/"Reactivate" on the page — is_active only ever controls
+    # whether a payee still shows up in the New entry/Scheduled/Staging
+    # pickers going forward; it never touches history (see /payees/{id}
+    # /delete below for the route that actually does that). RETURNING the
+    # new state, rather than assuming toggle flipped it the way the caller
+    # expects, is what lets the flash message actually say which way it
+    # went instead of a generic "updated".
     try:
         require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
-                "UPDATE payees SET is_active = NOT is_active WHERE id = %s",
+                """UPDATE payees SET is_active = NOT is_active WHERE id = %s
+                   RETURNING name, is_active""",
                 (payee_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError(f"Payee #{payee_id} not found")
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/payees", err=msg)
-    return flash_redirect("/payees", ok="Payee updated")
+    verb = "reactivated" if row["is_active"] else "archived"
+    return flash_redirect("/payees", ok=f"Payee {row['name']!r} {verb}")
+
+
+@app.post("/payees/{payee_id}/rename")
+def rename_payee(payee_id: int, request: Request, name: str = Form(...),
+                 csrf_token: str = Form(...)):
+    """The EDIT button's target — same "organizational, not a fact about
+    the transaction" reasoning as an entry's own description (decision 16):
+    a payee's name is metadata, safe to correct on something already used
+    by posted entries. Nothing else about those entries changes; they just
+    render whatever this payee is named *now*, the same as they always
+    have (payees.name isn't copied onto journal_entries — see the FK)."""
+    name = name.strip()
+    try:
+        require_csrf(request, csrf_token)
+        if not name:
+            raise ValueError("Payee name is required")
+        with tx() as cur:
+            cur.execute("UPDATE payees SET name = %s WHERE id = %s", (name, payee_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Payee #{payee_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/payees", err=msg)
+    return flash_redirect("/payees", ok=f"Payee renamed to {name!r}")
+
+
+@app.post("/payees/{payee_id}/delete")
+def delete_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
+    """A real delete, unlike Archive — every FK onto payees(id)
+    (journal_entries, scheduled_entries, entry_templates) is ON DELETE SET
+    NULL, so this is safe by construction: any entry that used this payee
+    just goes back to having none, same as it started, rather than the
+    delete being blocked or cascading into deleting entries themselves."""
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute("DELETE FROM payees WHERE id = %s RETURNING name", (payee_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError(f"Payee #{payee_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/payees", err=msg)
+    return flash_redirect("/payees", ok=f"Payee {row['name']!r} deleted")
+
+
+@app.post("/payees/merge")
+async def merge_payees(request: Request):
+    """The MERGE button's target, fired once per confirm from the popup
+    entity-manage.js builds (see that file) — every selected payee's id,
+    plus the final name typed into the popup (which may just be one of
+    the originals, unchanged). The first selected id is kept as the
+    surviving row (its id is what every FK below gets repointed to);
+    which one survives is otherwise arbitrary, since the name is set
+    explicitly afterward regardless of which row it started as. Deleting
+    the others *before* the rename (not after) matters: if the typed name
+    equals one of the about-to-be-deleted payees' own current name, naming
+    the survivor that first would collide with payees.name's UNIQUE
+    constraint — deleting that row first frees the name up."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        ids = [int(v) for v in form.getlist("payee_id") if v]
+        if len(ids) < 2:
+            raise ValueError("Select at least two payees to merge")
+        target_name = (form.get("target_name") or "").strip()
+        if not target_name:
+            raise ValueError("A name is required")
+        survivor_id, other_ids = ids[0], ids[1:]
+        with tx() as cur:
+            cur.execute(
+                "UPDATE journal_entries SET payee_id = %s WHERE payee_id = ANY(%s)",
+                (survivor_id, other_ids))
+            affected = cur.rowcount
+            cur.execute(
+                "UPDATE scheduled_entries SET payee_id = %s WHERE payee_id = ANY(%s)",
+                (survivor_id, other_ids))
+            cur.execute(
+                "UPDATE entry_templates SET payee_id = %s WHERE payee_id = ANY(%s)",
+                (survivor_id, other_ids))
+            cur.execute("DELETE FROM payees WHERE id = ANY(%s)", (other_ids,))
+            cur.execute("UPDATE payees SET name = %s WHERE id = %s",
+                       (target_name, survivor_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Payee #{survivor_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/payees", err=msg)
+    n = len(ids)
+    return flash_redirect("/payees",
+        ok=f'{n} payees merged to {target_name!r}. '
+           f'{affected} {"entry" if affected == 1 else "entries"} affected')
+
+
+# ---------------------------------------------------------------------------
+# Tags — a management page mirroring Payees, for the entity itself rather
+# than for tagging one entry (that's tags.js, on entries.html/scheduled.html/
+# entry_templates.html). Unlike payees, a tag carries no is_active — there's
+# no per-tag Archive here, just Edit/Delete/Select+Merge (see payees.html's
+# own comment on why Delete needed Archive kept alongside it; a tag has no
+# equivalent "keep it out of future pickers without losing history" need,
+# since the tag-input widget suggests from `tags` directly and a tag with
+# zero remaining uses just stops showing up in anyone's history to filter
+# by — nothing to hide it from).
+# ---------------------------------------------------------------------------
+def tags_all():
+    return q("""SELECT t.*, (SELECT COUNT(*) FROM journal_entry_tags jet
+                             WHERE jet.tag_id = t.id) AS entry_count
+                FROM tags t ORDER BY t.name""")
+
+
+@app.get("/tags")
+def tags_page(request: Request, ok: str = None, err: str = None):
+    return templates.TemplateResponse(request, "tags.html", {
+        "nav": "tags", "tags": tags_all(), "ok": ok, "err": err,
+    })
+
+
+@app.post("/tags")
+def create_tag(request: Request, name: str = Form(...), csrf_token: str = Form(...)):
+    try:
+        require_csrf(request, csrf_token)
+        names = _parse_tags(name)
+        if len(names) != 1:
+            raise ValueError("Enter exactly one tag name")
+        with tx() as cur:
+            cur.execute("INSERT INTO tags (name) VALUES (%s)", (names[0],))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/tags", err=msg)
+    return flash_redirect("/tags", ok=f"Tag {names[0]!r} created")
+
+
+@app.post("/tags/{tag_id}/rename")
+def rename_tag(tag_id: int, request: Request, name: str = Form(...),
+              csrf_token: str = Form(...)):
+    """Same "organizational, not a fact" reasoning as /payees/{id}/rename —
+    a tag's name is metadata, safe to correct after the fact; every entry
+    that already carries it just renders whatever it's named now (a tag
+    name isn't copied anywhere, only referenced by journal_entry_tags'
+    tag_id). Goes through _parse_tags for the same lowercase/pattern
+    validation typing one into the chip input gets, not a raw UPDATE."""
+    try:
+        require_csrf(request, csrf_token)
+        names = _parse_tags(name)
+        if len(names) != 1:
+            raise ValueError("Enter exactly one tag name")
+        with tx() as cur:
+            cur.execute("UPDATE tags SET name = %s WHERE id = %s", (names[0], tag_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Tag #{tag_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/tags", err=msg)
+    return flash_redirect("/tags", ok=f"Tag renamed to {names[0]!r}")
+
+
+@app.post("/tags/{tag_id}/delete")
+def delete_tag(tag_id: int, request: Request, csrf_token: str = Form(...)):
+    """journal_entry_tags/scheduled_entry_tags/entry_template_tags all
+    reference tags(id) ON DELETE CASCADE (unlike payees' ON DELETE SET
+    NULL) — deleting a tag just drops it from whatever it was on, rather
+    than leaving a dangling reference to null out. Nothing else about
+    those entries changes; they simply stop carrying this tag."""
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute("DELETE FROM tags WHERE id = %s RETURNING name", (tag_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError(f"Tag #{tag_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/tags", err=msg)
+    return flash_redirect("/tags", ok=f"Tag {row['name']!r} deleted")
+
+
+@app.post("/tags/merge")
+async def merge_tags(request: Request):
+    """MERGE's target for Tags — same shape as /payees/merge (see its own
+    comment for the survivor/delete-then-rename reasoning), except a tag's
+    associations are many-to-many, not a single FK column: journal_entry_
+    tags/scheduled_entry_tags/entry_template_tags each get an "insert the
+    survivor's own association wherever a merged-away tag had one, ON
+    CONFLICT DO NOTHING" pass before the old tag rows are deleted, since a
+    plain UPDATE ... SET tag_id could collide with a (entry_id, tag_id)
+    pair that already exists (something tagged with *both* the survivor
+    and a tag being folded into it) and violate the junction table's own
+    primary key. "Entries affected" counts distinct journal_entries only,
+    same as Payees — scheduled entries/templates carrying a merged tag
+    aren't reflected in that count either, for the same reason."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        ids = [int(v) for v in form.getlist("tag_id") if v]
+        if len(ids) < 2:
+            raise ValueError("Select at least two tags to merge")
+        target_names = _parse_tags(form.get("target_name") or "")
+        if len(target_names) != 1:
+            raise ValueError("Enter exactly one tag name")
+        target_name = target_names[0]
+        survivor_id, other_ids = ids[0], ids[1:]
+        with tx() as cur:
+            cur.execute(
+                "SELECT COUNT(DISTINCT entry_id) AS n FROM journal_entry_tags WHERE tag_id = ANY(%s)",
+                (other_ids,))
+            affected = cur.fetchone()["n"]
+            for table, id_col in (("journal_entry_tags", "entry_id"),
+                                  ("scheduled_entry_tags", "scheduled_entry_id"),
+                                  ("entry_template_tags", "template_id")):
+                cur.execute(
+                    f"""INSERT INTO {table} ({id_col}, tag_id)
+                        SELECT {id_col}, %s FROM {table} WHERE tag_id = ANY(%s)
+                        ON CONFLICT DO NOTHING""",
+                    (survivor_id, other_ids))
+            cur.execute("DELETE FROM tags WHERE id = ANY(%s)", (other_ids,))
+            cur.execute("UPDATE tags SET name = %s WHERE id = %s", (target_name, survivor_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Tag #{survivor_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/tags", err=msg)
+    n = len(ids)
+    return flash_redirect("/tags",
+        ok=f'{n} tags merged to {target_name!r}. '
+           f'{affected} {"entry" if affected == 1 else "entries"} affected')
 
 
 # ---------------------------------------------------------------------------

@@ -435,6 +435,54 @@ entries before committing) can share one identical timestamp — `seq`
 can't, by construction, since a plain identity column advances on every
 row regardless of how many share a transaction.
 
+### 18. Payees and tags get a real Delete, alongside — not instead of — their existing soft states
+
+Payees already had `is_active` (decision: never written down as its own
+numbered entry, just the schema's own comment on `payees` — "hide this
+from future pickers, keep it on everything it's already posted to").
+Tags never had any lifecycle state at all — decision 16 already
+established they're organizational, freely re-attachable metadata. Both
+pages (`/payees`, `/tags` — see `docs/ARCHITECTURE.md`) now also offer a
+real **Delete**, and the natural question is why that isn't simply what
+Archive/deactivate already meant, or why Delete didn't just replace it.
+
+It isn't the same operation. Archiving a payee removes it from the New
+entry/Scheduled/Staging pickers *going forward* while leaving every
+past entry that used it completely untouched, name and all — the
+"Whole Foods" on a receipt from two years ago stays "Whole Foods"
+whether or not you still shop there. Delete is a different claim
+entirely: "this row shouldn't exist," full stop — every entry that
+referenced it loses the label (`payees`'s FKs are `ON DELETE SET NULL`;
+a tag's junction rows are `ON DELETE CASCADE`, decision 16's own
+mechanism). Collapsing those into one button would force a choice
+neither actually wants: keep Archive-only and there's no way to undo a
+payee created by typo or genuinely walk away from a mis-tag; make
+Delete the only option and "I don't use this vendor anymore" starts
+quietly editing history it was never meant to touch. Payees keep both,
+each doing the one thing its name promises. Tags only ever needed
+Delete — nothing about "pending, not yet realized" applies to a
+free-form label the way it does to a vendor you might pay again, and
+decision 16 already means a tag with zero remaining uses isn't
+cluttering anything; there's no equivalent "hide from future pickers"
+need for Delete to sit alongside.
+
+**Merge** is the other new piece, on both pages: fold two or more
+selected rows into one. The alternative considered — auto-picking the
+survivor's name (e.g. whichever has the most entries, or the
+alphabetically-first) — was rejected because a merge is usually
+prompted by realizing two names are the *same real thing under
+different spellings* ("Trader Joe's" vs "Trader Joes"), and neither
+existing spelling is necessarily the one worth keeping; the UI (see
+`entity-manage.js` in `docs/ARCHITECTURE.md`) instead prompts for the
+final name outright, pre-filled with the first selected row's name as
+a sensible default but freely editable, covering "merge and clean up
+the name" in one step instead of two. The surviving *row* (as opposed
+to name) is arbitrarily the first one selected — its id is what every
+foreign key gets repointed to — since which physical row survives is
+invisible to the user the moment its name is set explicitly regardless;
+only the merged-away rows' ids need to disappear, and any of the
+selected ids would have worked equally well as the keeper.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

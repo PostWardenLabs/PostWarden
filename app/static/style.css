@@ -1100,6 +1100,12 @@ button.quiet:disabled {
 .select-only { display: none; }
 body.select-mode label.checkline.select-only { display: flex; }
 body.select-mode button.select-only { display: inline-block; }
+/* Payees/Tags' own Select mode (entity-manage.js) reuses this exact
+   body.select-mode hook rather than a second one — same reasoning as
+   above, just table cells instead of a details-summary gutter: each
+   row's checkbox lives in its own <td>, so revealing it needs
+   table-cell, not flex/inline-block. */
+body.select-mode td.select-only, body.select-mode th.select-only { display: table-cell; }
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which
@@ -1459,6 +1465,44 @@ details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
 details.entry-new { border-style: dashed; }
 details.entry-new summary {
   display: block; font-weight: 600; color: var(--accent);
+}
+/* Payees/Tags' own "+ Add payee"/"+ Add tag" bar (payees.html/tags.html)
+   reuses this same dashed-box/details-summary shape, deliberately "less
+   colorful" than New entry's: New entry's dashed bar leads into a whole
+   multi-line grid, so --accent draws the eye to it as *the* primary
+   action on the page; this one leads into a single text field, and reads
+   better as a plain, secondary affordance than a headline. */
+details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
+
+/* -- entity manager (Payees, Tags) ---------------------------------------
+   Both pages share one shape (see entity-manage.js): a Select/Merge bar,
+   a table with a select-only checkbox column, and per-row Edit/Archive/
+   Delete (Tags: Edit/Delete only — see main.py's Tags section for why it
+   carries no Archive). */
+.entity-table td.actions { white-space: nowrap; }
+.entity-table td.actions form { display: inline; }
+.entity-table td.actions > * + * { margin-left: 0.4rem; }
+/* The rename form replaces the plain name text in place, at the same
+   size/weight as everything else in the row — not styled like a
+   standalone field (no border by default) until actually focused, so
+   "click Edit" reads as the label itself turning editable rather than a
+   form appearing next to it. */
+.entity-rename-form { display: inline-block; }
+/* Same reason label.field[hidden] above needs its own override: this
+   rule's own `display: inline-block` (author stylesheet) otherwise beats
+   the browser's built-in `[hidden] { display: none }` default at equal
+   specificity, so the rename form would sit there rendered — right next
+   to the label it's supposed to replace — despite the `hidden` attribute
+   entity-manage.js relies on to keep it out of the way until Edit is
+   clicked. */
+.entity-rename-form[hidden] { display: none; }
+.entity-rename-input {
+  font: inherit; font-family: inherit; color: inherit;
+  padding: 0.1rem 0.3rem; border: 1px solid transparent; border-radius: 2px;
+  background: transparent; min-width: 12rem;
+}
+.entity-rename-input:focus {
+  background: var(--surface); border-color: var(--rule-strong);
 }
 .badge {
   display: inline-block; font-size: 0.68rem; letter-spacing: 0.05em;
