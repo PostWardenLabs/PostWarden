@@ -1602,7 +1602,11 @@ def test_entries_page_offers_select_entries_with_reverse_disabled_until_checked(
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         r = c.get(f"/entries?scenario={scen['code']}")
         assert 'id="select-toggle"' in r.text
-        assert 'id="reverse-btn" class="select-only" disabled' in r.text
+        # Reverse itself is no longer select-only — it's always on the
+        # page (so its existence doesn't depend on discovering Select
+        # first), just disabled until something's actually checked.
+        assert 'id="reverse-btn" disabled' in r.text
+        assert 'id="reverse-btn" class="select-only"' not in r.text
         assert f'value="{eid}"' in r.text
         # The old per-entry button is gone — bulk Reverse (checked +
         # the top button) is the only mechanism now.

@@ -199,12 +199,16 @@
 
 {#
   "Select entries" reveals a checkbox per entry (same style/mechanism
-  as Staging's own bulk actions) and the bar below — Reverse posts a
-  reversal for everything checked, same as the old per-entry "Reverse
-  this entry" button used to (removed; one mechanism instead of two,
-  same reasoning as Staging's Reject consolidation). Hidden by default
-  via .select-only (see entries-select.js and its CSS) — reading the
-  Journal is the common case, selecting is the deliberate exception.
+  as Staging's own bulk actions) — Reverse posts a reversal for
+  everything checked, same as the old per-entry "Reverse this entry"
+  button used to (removed; one mechanism instead of two, same reasoning
+  as Staging's Reject consolidation). The checkboxes and "select all"/
+  "Edit tags" stay hidden until Select mode is on (.select-only — see
+  entries-select.js and its CSS), same as ever, but Reverse itself
+  doesn't carry that class anymore: it's always on the page, just
+  disabled (same muted look button:disabled gives every other disabled
+  button) until something's actually checked — a person reads Reverse
+  exists and what it does without first having to discover Select.
 
   This form wraps only the toolbar, not the entries below it — each
   entry gets its own "Edit description" <form>, and a <form> can't
@@ -218,7 +222,7 @@
   <p class="bar" style="align-items: center;">
     <button type="button" class="quiet" id="select-toggle">Select</button>
     <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
-    <button type="submit" id="reverse-btn" class="select-only" disabled>Reverse (Alt+R)</button>
+    <button type="submit" id="reverse-btn" disabled>Reverse (Alt+R)</button>
     <button type="button" class="quiet select-only" id="edit-tags-btn" disabled>Edit tags</button>
   </p>
 </form>
