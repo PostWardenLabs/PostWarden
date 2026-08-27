@@ -109,6 +109,20 @@ scenario) form a star schema Power BI can consume without transformation.
 parameterized statement, callable from the app, psql, or BI alike. The
 philosophy: if a number matters, it should be computable by SQL alone.
 
+`v_dim_account.path` is the full breadcrumb including the account's own
+name (e.g. "... : Housing & Utilities : Rent / Mortgage Interest") —
+right for a picker/dropdown, where nothing else on the row names the
+account. Every report row shows `account_name` next to it too, though,
+so a second column, `parent_path`, carries the same breadcrumb with the
+account's own name dropped off the end (`NULL` at the root). Rendering
+`account_name` beside `path` instead reads as "Rent / Mortgage Interest
+... : Rent / Mortgage Interest" — the leaf echoed back inside its own
+path. `fn_rollup_balance`'s `path` output is `parent_path` under the
+hood for the same reason (it backs Variance's rolled-up mode, which
+renders it the same way); `fn_trial_balance`'s stays the full `path`,
+since its only callers are the dashboard's own aggregation and the
+`/api/*` JSON endpoints, neither of which pairs it with the name.
+
 ### 7. Thin application, no ORM
 
 `db/schema.sql` is the single source of truth; the FastAPI layer is plain

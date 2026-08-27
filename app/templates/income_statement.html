@@ -87,7 +87,7 @@
       {% for r in g.rows %}
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net, date_from, date_to) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
@@ -123,7 +123,7 @@
       {% for r in g.rows %}
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net, date_from, date_to) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
@@ -246,7 +246,7 @@
       {% for r in g.rows %}
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         {% for p in periods %}
         {% set rp = r.periods[loop.index0] %}
         {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
@@ -297,7 +297,7 @@
       {% for r in g.rows %}
       <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         {% for p in periods %}
         {% set rp = r.periods[loop.index0] %}
         {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}

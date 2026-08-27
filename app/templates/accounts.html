@@ -30,7 +30,7 @@
         {% for a in display_accounts %}
         <tr class="{{ 'inactive' if not a.is_active }}">
           <td class="mono dim">{{ a.code }}</td>
-          <td>{{ a.name }} <span class="dim small">{{ a.path }}</span></td>
+          <td>{{ a.name }} {% if a.parent_path %}<span class="dim small">{{ a.parent_path }}</span>{% endif %}</td>
           <td class="dim">{{ type_labels[a.account_type] }}</td>
           <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
           <td>

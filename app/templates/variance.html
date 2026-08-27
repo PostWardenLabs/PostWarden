@@ -63,7 +63,7 @@
       {% for r in g.rows %}
       <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name{% if r.depth is defined %} depth-{{ [r.depth, 6] | min }}{% endif %}">{% if r.id is defined %}<span class="tree-toggle"></span>{% endif %}{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name{% if r.depth is defined %} depth-{{ [r.depth, 6] | min }}{% endif %}">{% if r.id is defined %}<span class="tree-toggle"></span>{% endif %}{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         <td class="num money money-first">{{ r.baseline_net | money }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>

@@ -858,10 +858,18 @@ FOR EACH ROW EXECUTE FUNCTION fn_budget_line_guard();
 -- ---------------------------------------------------------------------------
 
 -- Account dimension with full hierarchy path and normal balance side.
+-- `path` is the full breadcrumb including the account's own name (e.g.
+-- "Fixed & Essential Living (Needs) : Housing & Utilities : Rent /
+-- Mortgage Interest") — the right thing for a picker/dropdown where no
+-- other column names the account. `parent_path` is the same breadcrumb
+-- with the account's own name dropped off the end (NULL at the root) —
+-- the right thing anywhere the account's name is *also* shown next to
+-- it (every report row), so the name doesn't get echoed back a second
+-- time inside its own path.
 CREATE VIEW v_dim_account AS
 WITH RECURSIVE tree AS (
     SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-           currency, name::text AS path, 1 AS depth,
+           currency, name::text AS path, NULL::text AS parent_path, 1 AS depth,
            code::text AS sort_path
       FROM accounts
      WHERE parent_id IS NULL
@@ -869,13 +877,14 @@ WITH RECURSIVE tree AS (
     SELECT a.id, a.code, a.name, a.account_type, a.parent_id, a.is_postable,
            a.is_active, a.currency,
            tree.path || ' : ' || a.name,
+           tree.path,
            tree.depth + 1,
            tree.sort_path || '.' || a.code
       FROM accounts a
       JOIN tree ON a.parent_id = tree.id
 )
 SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-       currency, path, depth, sort_path,
+       currency, path, parent_path, depth, sort_path,
        CASE WHEN account_type IN ('asset', 'expense')
             THEN 'debit' ELSE 'credit' END AS normal_side
   FROM tree;
@@ -1077,7 +1086,7 @@ RETURNS TABLE (
     account_code   TEXT,
     account_name   TEXT,
     acct_type      account_type,
-    path           TEXT,
+    path           TEXT,  -- v_dim_account.parent_path (own name excluded — see its comment); Variance is the one caller and always shows this beside account_name
     sort_path      TEXT,
     total_debits   NUMERIC(18,2),
     total_credits  NUMERIC(18,2),
@@ -1098,7 +1107,7 @@ LANGUAGE sql STABLE AS $$
          WHERE f.scenario_code = p_scenario
            AND f.entry_date <= COALESCE(p_as_of, 'infinity'::date)
     )
-    SELECT da.id, da.code, da.name, da.account_type, da.path, da.sort_path,
+    SELECT da.id, da.code, da.name, da.account_type, da.parent_path, da.sort_path,
            COALESCE(SUM(t.debit),  0)::numeric(18,2),
            COALESCE(SUM(t.credit), 0)::numeric(18,2),
            COALESCE(SUM(t.amount), 0)::numeric(18,2),
@@ -1106,7 +1115,7 @@ LANGUAGE sql STABLE AS $$
            GREATEST(-COALESCE(SUM(t.amount), 0), 0)::numeric(18,2)
       FROM targets t
       JOIN v_dim_account da ON da.sort_path = t.target_sort_path
-     GROUP BY da.id, da.code, da.name, da.account_type, da.path, da.sort_path
+     GROUP BY da.id, da.code, da.name, da.account_type, da.parent_path, da.sort_path
      ORDER BY da.sort_path;
 $$;
 

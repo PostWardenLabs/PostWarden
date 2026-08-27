@@ -46,7 +46,7 @@
       {% for r in g.rows %}
       <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
-        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
         {% if r.id is defined and not r.has_children and (r.debit_balance or r.credit_balance) %}
         <td class="num money money-first">{{ entry_link(r.account_code, r.debit_balance, g.type in ('income', 'expense')) if r.debit_balance else '' }}</td>
         <td class="num money">{{ entry_link(r.account_code, r.credit_balance, g.type in ('income', 'expense')) if r.credit_balance else '' }}</td>

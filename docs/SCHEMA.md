@@ -305,13 +305,13 @@ every one is callable identically from the app, `psql`, or a BI tool.
 
 | Object | Shape | Purpose |
 |---|---|---|
-| `v_dim_account` | view | Every account with its full `path`, `depth`, `sort_path`, and derived `normal_side` — the recursive CTE that makes the tree queryable without walking `parent_id` by hand. |
+| `v_dim_account` | view | Every account with its full `path` (breadcrumb including its own name — for pickers, where nothing else names the account), `parent_path` (same breadcrumb with its own name dropped off the end, `NULL` at the root — for anywhere `account_name` is *also* shown, so reports don't echo the leaf name twice), `depth`, `sort_path`, and derived `normal_side` — the recursive CTE that makes the tree queryable without walking `parent_id` by hand. |
 | `v_fact_lines` | view | One row per journal line, fully denormalized (scenario, account, payee, tags, `month`). The star schema's fact table. |
 | `v_monthly_activity` | view | `v_fact_lines` pre-aggregated to account × month × scenario — the budget-vs-actual base for BI tools that don't want to aggregate 3M rows themselves. |
 | `v_dim_date` | view | A plain date dimension, 2020–2035, for BI tools that want one. |
 | `fn_trial_balance(scenario, as_of, from)` | function | Every postable account with activity in the window — the literal Trial Balance report's data source, filtered (unlike `fn_account_balances` below). |
 | `fn_account_balances(scenario, as_of, from)` | function | Every *active* account's own direct balance, unconditionally — no postable/has-activity filtering. The base the app's Python-side account-tree rollup (Trial Balance, Balance Sheet, the Budget grid's Actual column) builds subtotals from; a summary account needs a row here even at $0 so it can be positioned in the tree. |
-| `fn_rollup_balance(scenario, depth, as_of)` | function | Balances rolled up to a common `account_levels` depth — lets a scenario posted straight to "Bank" line up against one that split Checking/Savings. Backs the Variance page. |
+| `fn_rollup_balance(scenario, depth, as_of)` | function | Balances rolled up to a common `account_levels` depth — lets a scenario posted straight to "Bank" line up against one that split Checking/Savings. Backs the Variance page; its `path` column is `v_dim_account.parent_path` (own name excluded), since Variance always renders it beside `account_name`. |
 
 **`postwarden_bi`** is a dedicated Postgres role (added directly in `db/schema.sql`,
 SPEC.md decision 14) for BI tools connecting straight to Postgres instead of

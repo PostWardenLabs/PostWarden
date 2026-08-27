@@ -44,7 +44,7 @@
     {% for r in assets %}
     <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
       <td class="mono dim">{{ r.account_code }}</td>
-      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
       <td class="num money money-first">{{ entry_link(r.account_code, r.subtotal) if not r.has_children else (r.subtotal | money) }}</td>
     </tr>
     {% endfor %}
@@ -57,7 +57,7 @@
     {% for r in liabilities %}
     <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
       <td class="mono dim">{{ r.account_code }}</td>
-      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
       <td class="num money money-first">{{ entry_link(r.account_code, -r.subtotal) if not r.has_children else ((-r.subtotal) | money) }}</td>
     </tr>
     {% endfor %}
@@ -70,7 +70,7 @@
     {% for r in equity %}
     <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
       <td class="mono dim">{{ r.account_code }}</td>
-      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
       <td class="num money money-first">{{ entry_link(r.account_code, -r.subtotal) if not r.has_children else ((-r.subtotal) | money) }}</td>
     </tr>
     {% endfor %}

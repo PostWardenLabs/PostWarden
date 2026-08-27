@@ -585,7 +585,10 @@ def _build_account_tree(accounts: list[dict], balances_by_id: dict,
     for a in accounts:
         nodes[a["id"]] = {
             "id": a["id"], "parent_id": a["parent_id"], "account_code": a["code"],
-            "account_name": a["name"], "path": a["path"], "account_type": a["account_type"],
+            # parent_path (not path) — every caller renders this right next
+            # to account_name, so it must exclude the account's own name or
+            # the leaf reads twice (see v_dim_account's comment in schema.sql).
+            "account_name": a["name"], "path": a["parent_path"], "account_type": a["account_type"],
             "depth": a["depth"], "net": balances_by_id.get(a["id"], 0),
             "compare_net": compare_by_id.get(a["id"], 0), "children": [],
         }
