@@ -857,11 +857,21 @@ input[type="number"], input.amount {
    restyles its embedded native button (::file-selector-button is the
    standard pseudo-element; -webkit-file-upload-button is the same thing
    for older WebKit) to match every other button in the app instead of
-   the browser's own unstyled default. */
-input[type="file"] { padding: 0.3rem; cursor: pointer; }
+   the browser's own unstyled default. `font: inherit` alone (the
+   pseudo-element's default here previously) pulls the surrounding
+   page's own body-size sans font rather than button's actual mono/
+   0.7rem/uppercase treatment — the button read as noticeably bigger and
+   in the wrong typeface next to every other control on Import. The
+   explicit font-size below on the outer input also shrinks the native
+   "No file chosen" label next to it (the one part of a file input with
+   no CSS hook of its own to restyle directly — its exact rendering is
+   the browser's, not this stylesheet's, to control) closer to the
+   app's own small/dim body text instead of full body size. */
+input[type="file"] { padding: 0.3rem; cursor: pointer; font-size: 0.82rem; }
 input[type="file"]::file-selector-button,
 input[type="file"]::-webkit-file-upload-button {
-  font: inherit; cursor: pointer;
+  font-family: var(--mono); font-size: 0.7rem; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.04em;
   background: var(--accent); color: var(--accent-text);
   border: 1px solid var(--accent); padding: 0.3rem 0.8rem; border-radius: 2px;
   margin-right: 0.6rem;
