@@ -259,14 +259,15 @@ write your own — the numbering is yours to keep or break.
 Splits every expense by how negotiable it is, and keeps taxes and debt
 service visible as their own thing instead of buried inside "spending."
 
-- **`5000` Fixed & Essential Living (Needs)** — non-negotiable, hard to
-  reduce short-term: `5100` Housing & Utilities (`5110` Rent/Mortgage,
-  `5120` Utilities), `5200` Transportation, `5300` Health & Insurance
-  (`5310` Insurance, `5320` Medical & Pharmacy), `5400` Groceries.
-- **`6000` Flexible & Lifestyle (Wants)** — the first thing you cut
-  when tightening up: `6100` Dining Out & Coffee, `6200` Entertainment
-  & Subscriptions, `6300` Shopping & Personal Care, `6400` Travel &
-  Vacations.
+- **`5000` Fixed & Essential Living** — the Needs: non-negotiable, hard
+  to reduce short-term. `5100` Housing & Utilities (`5110` Rent/
+  Mortgage, `5120` Utilities), `5200` Transportation, `5300` Health &
+  Insurance (`5310` Insurance, `5320` Medical & Pharmacy), `5400`
+  Groceries.
+- **`6000` Flexible & Lifestyle Expenses** — the Wants: the first thing
+  you cut when tightening up. `6100` Dining Out & Coffee, `6200`
+  Entertainment & Subscriptions, `6300` Shopping & Personal Care,
+  `6400` Travel & Vacations.
 - **`7000` Taxes** — mandatory statutory deductions, isolated so
   "actual spendable income" is a real number instead of taxes buried
   inside a paycheck's net figure: `7100` Income Tax, `7200` Payroll

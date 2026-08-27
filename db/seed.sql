@@ -87,10 +87,10 @@ INSERT INTO accounts (code, name, account_type, parent_id) VALUES
 -- account_type='expense' root with no parent, same shape 1000/2000/3000/
 -- 4000 use. See the file header and docs/GUIDE.md for why.
 
--- 5000: Fixed & Essential Living (Needs) — non-negotiable, hard to reduce
--- short-term.
+-- 5000: Fixed & Essential Living — the "Needs" half of the split.
+-- Non-negotiable, hard to reduce short-term.
 INSERT INTO accounts (code, name, account_type, is_postable) VALUES
-    ('5000', 'Fixed & Essential Living (Needs)', 'expense', FALSE);
+    ('5000', 'Fixed & Essential Living', 'expense', FALSE);
 INSERT INTO accounts (code, name, account_type, parent_id, is_postable) VALUES
     ('5100', 'Housing & Utilities', 'expense', (SELECT id FROM accounts WHERE code = '5000'), FALSE),
     ('5300', 'Health & Insurance',  'expense', (SELECT id FROM accounts WHERE code = '5000'), FALSE);
@@ -102,10 +102,11 @@ INSERT INTO accounts (code, name, account_type, parent_id) VALUES
     ('5320', 'Medical & Pharmacy',       'expense', (SELECT id FROM accounts WHERE code = '5300')),
     ('5400', 'Groceries',                'expense', (SELECT id FROM accounts WHERE code = '5000'));
 
--- 6000: Flexible & Lifestyle Expenses (Wants) — the first thing you cut.
--- Note Dining Out lives here, deliberately separate from 5400 Groceries.
+-- 6000: Flexible & Lifestyle Expenses — the "Wants" half of the split.
+-- The first thing you cut. Note Dining Out lives here, deliberately
+-- separate from 5400 Groceries.
 INSERT INTO accounts (code, name, account_type, is_postable) VALUES
-    ('6000', 'Flexible & Lifestyle Expenses (Wants)', 'expense', FALSE);
+    ('6000', 'Flexible & Lifestyle Expenses', 'expense', FALSE);
 INSERT INTO accounts (code, name, account_type, parent_id) VALUES
     ('6100', 'Dining Out & Coffee',           'expense', (SELECT id FROM accounts WHERE code = '6000')),
     ('6200', 'Entertainment & Subscriptions', 'expense', (SELECT id FROM accounts WHERE code = '6000')),
