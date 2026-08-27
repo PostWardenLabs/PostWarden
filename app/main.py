@@ -1076,8 +1076,13 @@ async def save_budget_cell(request: Request):
 # ---------------------------------------------------------------------------
 def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) -> dict:
     """Shared by the variance page and its CSV export — same rollup, same
-    baseline/compare resolution, so the export matches what's on screen."""
-    scens = [s for s in scenarios_all() if not s["income_statement_only"]]
+    baseline/compare resolution, so the export matches what's on screen.
+    Excludes Staging same as income-statement-only scenarios: Staging is a
+    layover for entries waiting on approval, not a real balance sheet a
+    user would ever want to compare against — whatever happens to be
+    sitting there is incidental and temporary, not information worth
+    reading a variance off of."""
+    scens = [s for s in scenarios_all() if not s["income_statement_only"] and not s["is_staging"]]
     codes = [s["code"] for s in scens]
     if not compare:
         others = [s["code"] for s in scens if s["code"] != baseline]
