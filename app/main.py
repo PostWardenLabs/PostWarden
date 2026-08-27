@@ -785,16 +785,55 @@ def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool)
     return out
 
 
+def _income_statement_balances(scenario_code: str, accounts_by_id: dict,
+                               date_to_v: str | None, date_from_v: str | None) -> dict:
+    """Account balances for one side of the Income Statement (base or
+    compare) — journal-based via fn_account_balances for a normal
+    scenario, same as every other report, but an income-statement-only
+    scenario (Budget Grid's own scenario type) never takes a journal
+    entry at all (fn_income_statement_only_guard blocks it), so that
+    path always came back empty — the Compare column silently showing
+    nothing was actually correct given what it was querying, just not
+    what "compare to a budget scenario" should mean. Its numbers live in
+    budget_lines instead, one row per (account, month); summed across
+    every month the report's date range touches, since Income Statement
+    (unlike Budget Grid) covers an arbitrary range, not one month at a
+    time. budget_lines.amount is a plain positive target with no debit/
+    credit sign to it, flipped here into the same journal sign
+    convention fn_account_balances returns (income negative) — the
+    `sign` flip _income_statement_groups() applies next expects that
+    convention from either source equally; same flip _budget_rows() does
+    in the opposite direction for its own Actual column."""
+    scen = q1("SELECT id, income_statement_only FROM scenarios WHERE code = %s", (scenario_code,))
+    if not scen:
+        return {}
+    if not scen["income_statement_only"]:
+        return {r["account_id"]: r["net"] for r in
+                q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario_code, date_to_v, date_from_v))}
+    where, params = ["scenario_id = %s"], [scen["id"]]
+    if date_from_v:
+        where.append("period_month >= date_trunc('month', %s::date)")
+        params.append(date_from_v)
+    if date_to_v:
+        where.append("period_month <= date_trunc('month', %s::date)")
+        params.append(date_to_v)
+    rows = q(f"""SELECT account_id, SUM(amount) AS amt FROM budget_lines
+                  WHERE {' AND '.join(where)} GROUP BY account_id""", params)
+    return {
+        r["account_id"]: (-1 if accounts_by_id.get(r["account_id"], {}).get("account_type") == "income" else 1) * r["amt"]
+        for r in rows
+    }
+
+
 def _income_statement_rows(scenario: str, date_from: str, date_to: str,
                            compare: str = "", zeros: int = 0) -> dict:
     date_to_v, date_from_v = date_to or None, date_from or None
     accounts = q("""SELECT * FROM v_dim_account
                      WHERE is_active AND account_type IN ('income', 'expense')
                      ORDER BY sort_path""")
-    base_by_id = {r["account_id"]: r["net"] for r in
-                 q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario, date_to_v, date_from_v))}
-    compare_by_id = ({r["account_id"]: r["net"] for r in
-                      q("SELECT * FROM fn_account_balances(%s, %s, %s)", (compare, date_to_v, date_from_v))}
+    accounts_by_id = {a["id"]: a for a in accounts}
+    base_by_id = _income_statement_balances(scenario, accounts_by_id, date_to_v, date_from_v)
+    compare_by_id = (_income_statement_balances(compare, accounts_by_id, date_to_v, date_from_v)
                      if compare else {})
     roots = _build_account_tree(accounts, base_by_id, compare_by_id)
     income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros)

@@ -1379,6 +1379,48 @@ def test_income_statement_compares_two_scenarios_with_variance_and_pct_of_income
         assert "(75.0%)" in r.text
 
 
+def test_income_statement_compares_against_an_income_statement_only_scenario(conn):
+    # An income-statement-only (Budget Grid) scenario never takes a
+    # journal entry at all — its numbers live in budget_lines instead —
+    # so comparing against one used to silently show 0 for every row
+    # (fn_account_balances, journal-based, found nothing to sum). This is
+    # the fix: pull budget_lines for a scenario that's income-statement-
+    # only, summed across every month the report's date range touches,
+    # and flip budget_lines' plain-positive-target sign into the same
+    # journal convention fn_account_balances returns so the existing
+    # income/expense sign flip downstream still reads it correctly.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        budget = mk_scenario(cur, income_statement_only=True)
+        income = mk_account(cur, account_type="income")
+        expense = mk_account(cur, account_type="expense")
+        today = date.today()
+        month_start = today.replace(day=1).isoformat()
+        mk_budget_line(cur, budget["id"], income["id"], 1000, period_month=month_start)
+        mk_budget_line(cur, budget["id"], expense["id"], 600, period_month=month_start)
+        mk_line(cur, mk_entry(cur, actual["id"]), income["id"], -1000)
+        mk_line(cur, mk_entry(cur, actual["id"]), expense["id"], 450)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
+                 f"&date_from={month_start}&date_to={today.isoformat()}")
+        assert r.status_code == 200
+        # Income: actual 1000 vs budgeted 1000 -> matches exactly, 0.0%.
+        assert 'data-value="1000.00"' in r.text
+        assert "0.0%" in r.text
+        # Expense: actual 450 vs budgeted 600 -> -150.00, -25.0%.
+        assert _account_row_value(r.text, expense["code"]) == "450.00"
+        assert "-150.00" in r.text
+        assert "-25.0%" in r.text
+        # Net income: actual 550 (1000-450) vs budgeted 400 (1000-600) -> 150.00, 37.5%.
+        assert "550.00" in r.text
+        assert "37.5%" in r.text
+        assert "400.00" in r.text
+        assert "150.00" in r.text  # net income variance = 550 - 400
+
+
 def test_income_statement_no_compare_has_no_variance_column(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
