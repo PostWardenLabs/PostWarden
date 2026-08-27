@@ -13,23 +13,27 @@
 {% else %}
 
 <form method="get" action="/budget" data-auto-refresh>
-  <div class="bar">
-  <label class="field">Scenario
-    <select name="scenario">
-      {% for s in scenarios %}
-      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field">Month
-    <input type="month" name="month" value="{{ month[:7] }}">
-  </label>
+  <div class="bar" style="justify-content: space-between;">
+    <span class="bar" style="margin-bottom: 0;">
+      <label class="field">Scenario
+        <select name="scenario">
+          {% for s in scenarios %}
+          <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">Month
+        <input type="month" name="month" value="{{ month[:7] }}">
+      </label>
+      <button type="submit">Go</button>
+    </span>
+    <span class="bar" style="margin-bottom: 0;">
+      <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_month[:7] }}</a>
+      <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ next_month[:7] }}&pct_of_base={{ pct_of_base }}">{{ next_month[:7] }} &rarr;</a>
+    </span>
   </div>
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
-    <button type="submit">Go</button>
-    <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_month[:7] }}</a>
-    <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ next_month[:7] }}&pct_of_base={{ pct_of_base }}">{{ next_month[:7] }} &rarr;</a>
   </p>
 </form>
 

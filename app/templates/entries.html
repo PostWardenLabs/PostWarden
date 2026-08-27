@@ -87,24 +87,23 @@
              value="{{ amount_value2 }}" placeholder="Max" style="width: 7rem;" {{ '' if amount_op == 'between' else 'hidden' }}>
     </span>
   </label>
+  {# Sits right after Amount, still a direct child of the field row (not
+     the second row below) — the row's own align-items: flex-end lines
+     it up with the bottom of the selects/inputs beside it, same as
+     Budget Grid's Go button next to its Month field. #}
+  {% if has_filters %}
+  <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
+  {% else %}
+  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
+  {% endif %}
   </div>
-  {# A second row, not more of the field bar above: "hide reversed" and
-     "Clear filters" both narrow/reset *this* view, so they stay
-     grouped together on the left; Export CSV is a different kind of
-     action (getting data out, not changing what's shown) and sits set
-     apart on the right via space-between — same three controls, same
-     individual styles, just no longer crammed inline against the filter
-     fields where they read as one more field instead of the row's own
-     distinct actions. #}
+  {# A second row, not more of the field bar above: "hide reversed" narrows
+     *this* view same as Clear filters (now up in the field row itself);
+     Export CSV is a different kind of action (getting data out, not
+     changing what's shown) and sits set apart on the right via
+     space-between. #}
   <p class="bar" style="justify-content: space-between; align-items: center;">
-    <span class="bar" style="align-items: center; margin-bottom: 0;">
-      <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
-      {% if has_filters %}
-      <a class="button-link" href="/entries{{ '?' + clear_filters_qs if clear_filters_qs }}">Clear filters</a>
-      {% else %}
-      <a class="button-link disabled" aria-disabled="true">Clear filters</a>
-      {% endif %}
-    </span>
+    <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
     <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
   </p>
 </form>

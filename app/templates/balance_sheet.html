@@ -9,7 +9,8 @@
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
 
-<form class="bar" method="get" action="/balance-sheet">
+<form method="get" action="/balance-sheet" data-auto-refresh>
+  <div class="bar">
   <label class="field">Scenario
     <select name="scenario">
       {% for s in scenarios %}
@@ -20,9 +21,14 @@
   <label class="field">As of
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
-  <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
-  <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export CSV</a>
+  </div>
+  <p class="bar" style="justify-content: space-between; align-items: center;">
+    <span class="bar" style="align-items: center; margin-bottom: 0;">
+      <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
+      <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
+    </span>
+    <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export CSV</a>
+  </p>
 </form>
 
 <table class="ledger" data-collapse-key="postwarden-balance-sheet-collapsed">

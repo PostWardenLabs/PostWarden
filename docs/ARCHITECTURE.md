@@ -390,23 +390,31 @@ gracefully without JS.
 
 ### Auto-refreshing filter bars
 
-Every report's filter form and the Journal's are `<form class="bar"
-method="get">` — a plain GET, so the current filters are always a
-bookmarkable/shareable URL, no client-side state involved. `auto-refresh.js`
-is one delegated `change` listener per such form (found by that same
-class + method, no opt-in markup needed on individual fields) that calls
-`form.requestSubmit()` the moment a `<select>`, date/month field, or
-checkbox changes (Trial Balance's "show zero balances"/"show true
-balances", Balance Sheet's "show true balances"). It's a `change`
-listener on the *form*, not on each field, so it needs no re-binding
-when combobox.js/datepicker.js swap a plain `<select>`/`<input
-type="date">` for their own enhanced markup — both of those already
-dispatch a real bubbling `change` on the original element when a value
-is picked (see their own files), which is all a bubble-phase listener
-on an ancestor ever needed. Deliberately excludes text fields (Search,
-the Amount value) and the tag picker: those are typed into, not picked
-from, so including them would turn every keystroke into a mid-word
-navigation.
+Every report's filter form and the Journal's are a plain GET
+(`method="get"`), so the current filters are always a
+bookmarkable/shareable URL, no client-side state involved. Staging is
+the only one still a single-row `<form class="bar">`; every other
+filter form (Journal, Balance Sheet, Trial Balance, Income Statement,
+Variance, Budget Grid) has a second row below its fields — a checkbox,
+Export CSV, Budget Grid's Go/prev-next — so those wrap their fields in
+a nested `<div class="bar">` and carry `data-auto-refresh` on the
+`<form>` itself instead of `class="bar"` (putting `.bar` on the form
+too would flex its own children — the fields div and the second row —
+side by side instead of stacking them; see auto-refresh.js's own
+comment). `auto-refresh.js` is one delegated `change` listener per such
+form (found by `form.bar, form[data-auto-refresh]`, no opt-in markup
+needed on individual fields) that calls `form.requestSubmit()` the
+moment a `<select>`, date/month field, or checkbox changes (Trial
+Balance's "show zero balances"/"show true balances", Balance Sheet's
+"show true balances"). It's a `change` listener on the *form*, not on
+each field, so it needs no re-binding when combobox.js/datepicker.js
+swap a plain `<select>`/`<input type="date">` for their own enhanced
+markup — both of those already dispatch a real bubbling `change` on the
+original element when a value is picked (see their own files), which is
+all a bubble-phase listener on an ancestor ever needed. Deliberately
+excludes text fields (Search, the Amount value) and the tag picker:
+those are typed into, not picked from, so including them would turn
+every keystroke into a mid-word navigation.
 
 ### Flash messages
 

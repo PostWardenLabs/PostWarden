@@ -3,15 +3,16 @@
    `<form class="bar" method="get">` on the page gets this automatically
    (see enhanceAll() below) — a single row with its fields as direct
    children of the form, so .bar's flex layout can sit right on the form
-   itself with nothing extra needed. Staging and Balance Sheet/Trial
-   Balance are shaped this way (no second row of their own).
+   itself with nothing extra needed. Staging is the one page still
+   shaped this way (no second row of its own).
 
-   A filter form with a second row below its fields (Journal's Clear
-   filters/Export CSV; Income Statement/Variance's Hide zero
-   balances/% variance toggle/Export CSV; Budget Grid's toggle/Go/prev-
-   next) wraps the fields in a nested `<div class="bar">` instead, since
-   putting .bar on the form too would flex the form's own children (that
-   div, the second row) side by side instead of stacking them.
+   A filter form with a second row below its fields (Journal's Export
+   CSV; Balance Sheet/Trial Balance's checkboxes/Export CSV; Income
+   Statement/Variance's Hide zero balances/% variance toggle/Export CSV;
+   Budget Grid's toggle on its own line under the Scenario/Month/Go/prev-
+   next row) wraps the fields in a nested `<div class="bar">` instead,
+   since putting .bar on the form too would flex the form's own children
+   (that div, the second row) side by side instead of stacking them.
    `data-auto-refresh` is the same hook with no such layout side effect
    — see any of those templates' own filter form for why it carries
    this instead of the class.

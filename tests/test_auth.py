@@ -2946,12 +2946,15 @@ def test_report_filter_bars_load_auto_refresh(conn):
         # of checkboxes/Export CSV below them — see entries.html's own
         # comment on why) can't carry class="bar" itself without flexing
         # that div and the second row side by side — data-auto-refresh is
-        # the same hook with no such layout side effect. Journal, Income
-        # Statement, Variance, and Budget Grid all need it for exactly
-        # this reason; its absence on the Journal specifically used to be
-        # a real bug (Scenario/Account/Amount filters sitting inert while
-        # every report's own filter bar already auto-submitted).
-        for url in ("/entries", "/income-statement", "/variance", "/budget"):
+        # the same hook with no such layout side effect. Journal, Balance
+        # Sheet, Trial Balance, Income Statement, Variance, and Budget
+        # Grid all need it for exactly this reason; its absence on the
+        # Journal specifically used to be a real bug (Scenario/Account/
+        # Amount filters sitting inert while every report's own filter
+        # bar already auto-submitted). Staging is the one page still a
+        # single-row class="bar" (no second row of its own).
+        for url in ("/entries", "/trial-balance", "/balance-sheet",
+                    "/income-statement", "/variance", "/budget"):
             r = c.get(url)
             assert "data-auto-refresh" in r.text, url
 
