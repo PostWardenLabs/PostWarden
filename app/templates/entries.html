@@ -229,7 +229,7 @@
       <input type="checkbox" name="entry_id" value="{{ e.id }}" class="entry-check" form="entries-select-form">
     </label>
     <span class="mono dim">{{ e.entry_date | dateformat }}</span>
-    <span class="mono dim">#{{ e.id }} · {{ e.scenario_code }}</span>
+    <span class="mono dim">#{{ e.id }}</span>
     <span>{{ e.description }}
       {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
       {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
