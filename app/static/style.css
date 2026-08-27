@@ -660,7 +660,7 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 @media (max-width: 720px) {
   .auth-split { flex-direction: column; }
   .auth-brand {
-    flex: none; min-height: 10rem;
+    flex: none; min-height: 10rem; flex-direction: column;
     border-right: none; border-bottom: 1px solid var(--rule-strong);
   }
   .auth-wordmark { font-size: 3rem; }
