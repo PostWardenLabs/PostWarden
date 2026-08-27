@@ -861,10 +861,12 @@ input[type="number"], input.amount {
    no CSS hook of its own at all, restyled or not — it's the browser's
    to render, not this stylesheet's), so no amount of restyling that
    pairing ever stopped reading as a different design system planted in
-   the page. A plain button (matching every other secondary button in
-   the app) proxies clicks to the real input instead, sitting next to a
-   plain text box (matching every other field) that import-file.js keeps
-   in sync with whatever's actually chosen. */
+   the page. A plain button — filled, like Import right next to it,
+   rather than .quiet, since choosing a file is the one prerequisite
+   step this form actually needs before Import means anything — proxies
+   clicks to the real input instead, sitting next to a plain text box
+   (matching every other field) that import-file.js keeps in sync with
+   whatever's actually chosen. */
 .file-field { display: flex; align-items: center; gap: 0.6rem; }
 .file-field-name {
   flex: 1; min-width: 0; color: var(--ink); background: var(--surface);
