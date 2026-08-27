@@ -1051,6 +1051,17 @@ input[type="checkbox"].switch:checked::after { content: none; }
   text-decoration: none; border-bottom: 1px dotted var(--rule-strong);
 }
 .quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
+/* A <button> version of the same look — Staging's inline "Edit" (see
+   staging-inline-edit.js) is a click handler, not a navigation, so it
+   can't be the <a> every other .quiet-link is; this strips the
+   browser's own button chrome (border, background, that ambient
+   padding-block a <button> gets that an <a> never did) back down to
+   plain text with the same dotted underline. */
+button.quiet-link {
+  appearance: none; background: none; border: none;
+  font: inherit; font-family: var(--sans); cursor: pointer;
+}
+button.quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
 
 /* An amount on a report that drills through to the Journal postings
    behind it — looks like plain text until hovered, so a report doesn't

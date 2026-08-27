@@ -6,6 +6,15 @@
 </div>
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+{#
+  Both empty at page load, same shape app.js always expects — Staging
+  never shows a scenario picker of its own, so nothing here fills
+  these in server-side the way the Journal's "+ New entry" panel does.
+  staging-inline-edit.js populates ACCOUNTS itself (via the grid's own
+  setAccounts(), one JSON fetch per entry opened for edit) rather than
+  relying on this blob or accounts-by-scenario-data below.
+#}
+<script type="application/json" id="accounts-data">[]</script>
 
 {#
   Same filter fields as the Journal's own bar, same shared query logic
@@ -111,37 +120,132 @@
       <span class="num mono">{{ e.total_debits | money }}</span>
       <span></span>
     </summary>
-    <div class="lines">
-      <table class="ledger">
-        <thead><tr>
-          <th>Account</th>
-          <th class="num money money-first">Debit</th>
-          <th class="num money">Credit</th>
-          <th>Memo</th>
-        </tr></thead>
-        <tbody>
-          {% for l in pending_lines.get(e.id, []) %}
-          <tr>
-            <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
-            <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
-            <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
-            <td class="dim">{{ l.memo or '' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="lines" data-entry-id="{{ e.id }}">
       {#
-        Rejecting one entry is the top-of-page bulk Reject with just this
-        one checked, same as it is for many — no per-entry Reject here
-        anymore, one mechanism instead of two.
+        staging-inline-edit.js swaps this whole block out for the shared
+        edit panel (see #staging-edit-panel below) in place, rather than
+        navigating to a separate page — .staging-view is just what gets
+        hidden while that's happening, so it can come back unchanged if
+        editing is cancelled.
       #}
-      <p style="margin-top: 0.6rem;">
-        <a class="quiet-link" href="/staging/{{ e.id }}/edit">Edit</a>
-      </p>
+      <div class="staging-view">
+        <table class="ledger">
+          <thead><tr>
+            <th>Account</th>
+            <th class="num money money-first">Debit</th>
+            <th class="num money">Credit</th>
+            <th>Memo</th>
+          </tr></thead>
+          <tbody>
+            {% for l in pending_lines.get(e.id, []) %}
+            <tr>
+              <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
+              <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
+              <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
+              <td class="dim">{{ l.memo or '' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {#
+          Rejecting one entry is the top-of-page bulk Reject with just
+          this one checked, same as it is for many — no per-entry Reject
+          here anymore, one mechanism instead of two.
+        #}
+        <p style="margin-top: 0.6rem;">
+          <button type="button" class="quiet-link staging-edit-btn" data-entry-id="{{ e.id }}">Edit</button>
+        </p>
+      </div>
     </div>
   </details>
   {% endfor %}
 </form>
+
+{#
+  One shared editable grid, reused for whichever entry is currently
+  being edited — the same "+ New entry" component the Journal uses
+  (app.js drives it exactly the same way there), just relocated into
+  place instead of always living on the page. Parked here, hidden,
+  until staging-inline-edit.js moves it into an entry's own .lines div;
+  Cancel (or opening a different entry) moves it back. Only one entry
+  can be mid-edit at a time — there's exactly one #lines-body/#entry-
+  form/etc. on the page, the same singleton shape app.js has always
+  assumed, on every other page it runs on too.
+#}
+<div id="staging-edit-panel-home" hidden></div>
+<div id="staging-edit-panel" hidden>
+  <div id="entry-error" class="flash flash-err" hidden></div>
+  <form method="post" action="" id="entry-form">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+    <div class="bar">
+      <label class="field">Date
+        <input type="date" name="entry_date" required>
+      </label>
+      <label class="field" style="flex:1; min-width: 16rem;">Description
+        <input type="text" name="description" required>
+      </label>
+      <label class="field">Reference
+        <input type="text" name="reference" placeholder="Optional">
+      </label>
+      <label class="field">Payee
+        <select name="payee_id" data-create-url="/payees/quick-create">
+          <option value="">None</option>
+          {% for p in payees %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field" style="flex:1; min-width: 14rem;">Tags
+        <div class="tag-input" data-placeholder="Add a tag…">
+          <input type="hidden" name="tags" value="">
+        </div>
+      </label>
+    </div>
+
+    {#
+      A real <select>, same reason "+ New entry"'s own is one: app.js's
+      enforcing() reads scenario.selectedOptions[0].dataset.enforce, and
+      there's only ever one option here since an
+      entry's target scenario isn't something this form changes — but
+      app.js has no reason to know that. staging-inline-edit.js rewrites
+      this single option's value/text/data-enforce to match whichever
+      entry is currently open, same as it rewrites everything else on
+      the panel. data-enhanced="1" opts it out of combobox.js.
+    #}
+    <select name="scenario_id" id="scenario" class="sr-only" aria-hidden="true"
+            tabindex="-1" data-enhanced="1">
+      <option value="" data-enforce="1"></option>
+    </select>
+
+    <table class="ledger entry-grid" id="lines">
+      <thead>
+        <tr>
+          <th class="col-account">Account</th>
+          <th class="num col-amount money money-first">Debit</th>
+          <th class="num col-amount money">Credit</th>
+          <th>Memo</th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"><!-- rows injected by app.js / staging-inline-edit.js --></tbody>
+    </table>
+
+    <div class="balance-bar" id="balance-bar">
+      <span><span class="lbl">Debits</span> <span id="t-debits">0.00</span></span>
+      <span><span class="lbl">Credits</span> <span id="t-credits">0.00</span></span>
+      <span><span class="lbl">Difference</span> <span class="diff" id="t-diff">0.00</span></span>
+      <span id="balance-msg" class="dim small"></span>
+    </div>
+
+    <p class="bar" style="margin-top: 1rem; justify-content: space-between;">
+      <span class="bar" style="gap: 0.7rem; margin-bottom: 0;">
+        <button type="submit" id="post-btn">Save changes (Alt+S)</button>
+        <button type="button" class="quiet" id="add-row">Add line (Alt+N)</button>
+        <button type="button" class="quiet" id="distribute-row" title="Fill the current line with whatever balances the entry">Distribute (Alt+D)</button>
+      </span>
+      <button type="button" class="quiet" id="staging-edit-cancel">Cancel</button>
+    </p>
+  </form>
+</div>
 {% elif has_filters %}
 <p class="dim">No staged entries match these filters. <a class="quiet-link" href="/staging">Clear filters</a>
   to see everything pending.</p>
@@ -153,5 +257,7 @@
 
 {% block scripts %}
 <script src="{{ asset('tags.js') }}"></script>
+<script src="{{ asset('app.js') }}"></script>
+<script src="{{ asset('staging-inline-edit.js') }}"></script>
 <script src="{{ asset('staging.js') }}"></script>
 {% endblock %}

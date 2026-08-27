@@ -327,6 +327,12 @@ def test_staging_page_lists_pending_entries_and_approves_them(conn):
         assert f'value="{eid}"' in r.text
         assert 'id="select-all"' in r.text
         assert 'id="approve-btn" disabled' in r.text
+        # Edit is an inline panel now (staging-inline-edit.js), not a link
+        # to a separate page — a button carrying the entry's id, plus the
+        # one shared panel it relocates into place, parked hidden.
+        assert f'class="quiet-link staging-edit-btn" data-entry-id="{eid}"' in r.text
+        assert f'href="/staging/{eid}/edit"' not in r.text
+        assert 'id="staging-edit-panel" hidden' in r.text
 
         with conn.cursor() as cur:
             cur.execute("SELECT csrf_token FROM sessions WHERE token = %s",
@@ -374,7 +380,10 @@ def _mk_staged_entry(cur, description="Staged via test", target_scenario_id=None
     return eid, acct1, acct2
 
 
-def test_staging_edit_page_prefills_the_grid(conn):
+def test_staging_edit_data_returns_the_entry_and_its_lines(conn):
+    # GET /staging/{id}/edit is a JSON data endpoint now, not a page —
+    # staging-inline-edit.js fetches it to fill in the shared edit panel
+    # in place, rather than navigating to a separate screen.
     with conn.cursor() as cur:
         user = mk_user(cur)
         eid, acct1, acct2 = _mk_staged_entry(cur)
@@ -383,10 +392,13 @@ def test_staging_edit_page_prefills_the_grid(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         r = c.get(f"/staging/{eid}/edit")
         assert r.status_code == 200
-        assert "Staged via test" in r.text
-        assert acct1["code"] in r.text
-        assert acct2["code"] in r.text
-        assert "40" in r.text
+        data = r.json()
+        assert data["ok"] is True
+        assert data["entry"]["description"] == "Staged via test"
+        codes = [ln["code"] for ln in data["lines"]]
+        assert acct1["code"] in codes
+        assert acct2["code"] in codes
+        assert data["lines"][0]["debit"] == "40.00"
 
 
 def test_staging_edit_replaces_the_lines_and_updates_the_header(conn):
@@ -453,7 +465,8 @@ def test_staging_edit_rejects_an_already_approved_entry(conn):
                        (c.cookies["postwarden_session"],))
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.get(f"/staging/{eid}/edit")
-        assert "err=" in r.headers["location"]
+        assert r.status_code == 400
+        assert r.json()["ok"] is False
 
         r2 = c.post(f"/staging/{eid}/edit", data={
             "csrf_token": csrf_token, "entry_date": "2026-01-02",

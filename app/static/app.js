@@ -413,5 +413,15 @@
     clear: () => { body.innerHTML = ""; },
     ensureTrailingBlank,
     recalc,
+    // Lets a caller repoint the grid at a different set of postable
+    // accounts without a real scenario-picker <select> to drive it —
+    // Staging's inline edit panel (see staging-inline-edit.js) has
+    // exactly one scenario per entry, fetched along with everything
+    // else about that entry, so there's no user-facing picker whose
+    // own change event would otherwise run refreshAccountsForScenario()
+    // for us. Takes effect on the next buildAccountOptions() call
+    // (addRow, or refreshAccountsForScenario itself), same as ACCOUNTS
+    // always has.
+    setAccounts: (list) => { ACCOUNTS = list || []; },
   };
 })();

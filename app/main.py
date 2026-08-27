@@ -2488,6 +2488,11 @@ def staging_page(request: Request, date_from: str = "", date_to: str = "", qtext
         "target_scenarios": [s for s in scenarios_all() if not s["is_staging"]],
         "filter_accounts": postable_accounts_for_pickers(),
         "filter_payee_names": [r["name"] for r in q("SELECT name FROM payees ORDER BY name")],
+        # For the inline edit panel's own Payee field (see
+        # staging-inline-edit.js) — unlike accounts, payees aren't
+        # scenario-scoped, so the one global list works for editing any
+        # pending entry and doesn't need to be fetched per-entry.
+        "payees": q("SELECT id, name FROM payees WHERE is_active ORDER BY name"),
         "has_filters": has_filters,
         "ok": ok, "err": err,
     })
@@ -2596,18 +2601,25 @@ def _pending_staging_entry(entry_id: str):
 
 
 @app.get("/staging/{entry_id}/edit")
-def staging_edit_page(entry_id: str, request: Request, err: str = None):
+def staging_edit_data(entry_id: str):
+    """A JSON data endpoint now, not a page — Staging's own page
+    (staging.html) edits an entry inline, reusing the exact "+ New
+    entry" grid component the Journal uses (see staging-inline-edit.js),
+    instead of navigating here first. This is what that panel fetches
+    to fill itself in: everything specific to *this* entry. Everything
+    NOT entry-specific (payees, all_tags) is already on the Staging page
+    itself, rendered once, not refetched per entry opened."""
     try:
         staged = _pending_staging_entry(entry_id)
     except ValueError as e:
-        return flash_redirect("/staging", err=str(e))
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
 
     target_scenario = q1("SELECT id, code, name, enforce_balance FROM scenarios WHERE id = %s",
                          (staged["target_scenario_id"],))
     # debit/credit come back as Decimal — not JSON-serializable as-is (see
     # templates_full()'s identical str()-or-None conversion for the same
-    # reason) — turned into plain strings/None here, before the tojson
-    # blob staging_edit.js reads to build the grid.
+    # reason) — turned into plain strings/None here, before
+    # staging-inline-edit.js reads them to build the grid.
     lines = [{
         "code": ln["code"],
         "debit": str(ln["debit"]) if ln["debit"] else None,
@@ -2621,14 +2633,19 @@ def staging_edit_page(entry_id: str, request: Request, err: str = None):
             JOIN tags tg ON tg.id = jet.tag_id
            WHERE jet.entry_id = %s ORDER BY tg.name""", (entry_id,))]
     by_scenario = postable_accounts_by_scenario()
-    active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
+    accounts = by_scenario.get(staged["target_scenario_id"], [])
 
-    return templates.TemplateResponse(request, "staging_edit.html", {
-        "nav": "staging", "entry": staged, "lines": lines, "tags": tag_names,
-        "target_scenario": target_scenario,
-        "accounts": by_scenario.get(staged["target_scenario_id"], []),
-        "payees": active_payees, "all_tags": all_tags(),
-        "today": date.today().isoformat(), "err": err,
+    return JSONResponse({
+        "ok": True,
+        "entry": {
+            "id": staged["id"],
+            "entry_date": staged["entry_date"].isoformat(),
+            "description": staged["description"],
+            "reference": staged["reference"] or "",
+            "payee_id": staged["payee_id"],
+        },
+        "lines": lines, "tags": tag_names,
+        "target_scenario": target_scenario, "accounts": accounts,
     })
 
 
