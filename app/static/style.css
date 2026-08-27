@@ -632,6 +632,18 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 .auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start; padding: 2rem 2rem 2rem 3rem; }
 .auth-form-wrap { width: 100%; max-width: 20rem; }
 .auth-form-wrap h2:first-child { margin-top: 0; }
+/* The login form forces .grid-form down to a single column (see its own
+   inline style="grid-template-columns: 1fr") so Username/Password/
+   Remember me each get a full-width row — a grid item's default
+   justify-items: stretch does the same to the submit button right
+   along with them, though, since nothing about being a <button> exempts
+   it from that. Every other .grid-form on the app (Scenarios' "Create
+   scenario", etc.) uses the default multi-column auto-fit instead, so
+   its own button only ever stretches to one of several narrower
+   columns — narrow enough that nobody noticed the same stretch
+   happening there too. justify-self: start opts this one button out
+   back to its own natural width, without touching .grid-form itself. */
+.auth-form-wrap form.grid-form > button { justify-self: start; }
 
 /* -- demo callout: a guide-style bubble that floats over the brand pane
    and points across the seam at the form, rather than a flash message
