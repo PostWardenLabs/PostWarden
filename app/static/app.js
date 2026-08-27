@@ -23,9 +23,10 @@
   const form = document.getElementById("entry-form");
   const errBox = document.getElementById("entry-error");
   // Only entries.html wraps the grid in a collapsible <details> — Alt+E
-  // opens it from anywhere on the Journal page; on every other page this
-  // file runs (Scheduled, Templates, Staging's edit screen) the form is
-  // already the whole page, so there's nothing to open.
+  // toggles it open/closed from anywhere on the Journal page; on every
+  // other page this file runs (Scheduled, Templates, Staging's edit
+  // screen) the form is already the whole page, so there's nothing to
+  // toggle.
   const newEntryPanel = document.getElementById("new-entry-panel");
   if (!body) return;
 
@@ -357,8 +358,12 @@
       distributeBtn.click();
     } else if (e.code === "KeyE" && newEntryPanel) {
       e.preventDefault();
-      newEntryPanel.open = true;
-      focusAccountField(rows()[0] || makeRow());
+      if (newEntryPanel.open) {
+        newEntryPanel.open = false;
+      } else {
+        newEntryPanel.open = true;
+        focusAccountField(rows()[0] || makeRow());
+      }
     } else if (e.code === "KeyS" && postBtn) {
       e.preventDefault();
       postBtn.click(); // no-op while disabled (unbalanced/invalid), same as clicking it by hand
