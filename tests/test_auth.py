@@ -1039,6 +1039,7 @@ def test_variance_page_rolls_up_a_coarse_scenario_against_a_fine_one(conn):
         assert 'data-value="100.00"' in r.text  # actual: 40 + 60 rolled into the parent
         assert 'data-value="90.00"' in r.text   # budget: posted straight to the parent
         assert 'data-value="-10.00"' in r.text  # variance: 90 - 100
+        assert "-10.0%" in r.text               # % variance: (90 - 100) / |100| * 100
 
 
 def test_accounts_page_filters_to_selected_level(conn):

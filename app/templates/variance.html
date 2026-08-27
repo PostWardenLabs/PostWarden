@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Variance{% endblock %}
 {% block content %}
+{# Same macro as income_statement.html's own — "—" for nothing to
+   compare against (a zero baseline) rather than a misleading 0%. #}
+{% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
 <div class="page-head">
   <a href="/help#variance" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
@@ -45,11 +48,12 @@
       <th class="num money money-first">{{ baseline }}</th>
       <th class="num money">{{ compare }}</th>
       <th class="num money">Variance</th>
+      <th class="num">% variance</th>
     </tr>
   </thead>
   <tbody>
     {% for g in grouped %}
-    <tr class="type-head"><td colspan="5">{{ g.label }}</td></tr>
+    <tr class="type-head"><td colspan="6">{{ g.label }}</td></tr>
       {% for r in g.rows %}
       <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
@@ -57,6 +61,7 @@
         <td class="num money money-first">{{ r.baseline_net | money }}</td>
         <td class="num money">{{ r.compare_net | money }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
+        <td class="num">{{ var(r.pct_variance) }}</td>
       </tr>
       {% endfor %}
     <tr class="subtotal">
@@ -64,6 +69,7 @@
       <td class="num money money-first">{{ g.sub_baseline | money }}</td>
       <td class="num money">{{ g.sub_compare | money }}</td>
       <td class="num money {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
+      <td class="num">{{ var(g.sub_pct_variance) }}</td>
     </tr>
     {% endfor %}
     <tr class="grand">
@@ -72,6 +78,7 @@
       <td class="num money money-first">{{ total_baseline | money }}</td>
       <td class="num money">{{ total_compare | money }}</td>
       <td class="num money {{ 'neg' if total_variance < 0 }}">{{ total_variance | money }}</td>
+      <td class="num">{{ var(total_pct_variance) }}</td>
     </tr>
   </tbody>
 </table>

@@ -1186,12 +1186,15 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 r["baseline_net"] = r["subtotal"]
                 r["compare_net"] = r["compare_subtotal"]
                 r["variance"] = r["compare_net"] - r["baseline_net"]
+                r["pct_variance"] = _pct_variance(r["compare_net"], r["baseline_net"])
             if rows:
+                sub_baseline = sum(rr["subtotal"] for rr in type_roots)
+                sub_compare = sum(rr["compare_subtotal"] for rr in type_roots)
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": rows,
-                    "sub_baseline": sum(rr["subtotal"] for rr in type_roots),
-                    "sub_compare": sum(rr["compare_subtotal"] for rr in type_roots),
-                    "sub_variance": sum(rr["compare_subtotal"] - rr["subtotal"] for rr in type_roots),
+                    "sub_baseline": sub_baseline, "sub_compare": sub_compare,
+                    "sub_variance": sub_compare - sub_baseline,
+                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline),
                 })
         merged = [r for g in grouped for r in g["rows"]]
         # Roots only, not the full (branch + leaf) `merged` list — a
@@ -1225,6 +1228,7 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 "account_code": ref["account_code"], "account_name": ref["account_name"],
                 "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
                 "baseline_net": b_net, "compare_net": c_net, "variance": c_net - b_net,
+                "pct_variance": _pct_variance(c_net, b_net),
                 "has_children": False,
             })
 
@@ -1232,11 +1236,13 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
         for t in ACCOUNT_TYPES:
             sub = sorted((r for r in merged if r["acct_type"] == t), key=lambda r: r["sort_path"])
             if sub:
+                sub_baseline = sum(r["baseline_net"] for r in sub)
+                sub_compare = sum(r["compare_net"] for r in sub)
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": sub,
-                    "sub_baseline": sum(r["baseline_net"] for r in sub),
-                    "sub_compare": sum(r["compare_net"] for r in sub),
-                    "sub_variance": sum(r["variance"] for r in sub),
+                    "sub_baseline": sub_baseline, "sub_compare": sub_compare,
+                    "sub_variance": sub_compare - sub_baseline,
+                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline),
                 })
         total_baseline = sum(r["baseline_net"] for r in merged)
         total_compare = sum(r["compare_net"] for r in merged)
@@ -1246,6 +1252,7 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
         "merged": merged, "grouped": grouped, "rolled_up": level_depth is not None,
         "total_baseline": total_baseline, "total_compare": total_compare,
         "total_variance": total_compare - total_baseline,
+        "total_pct_variance": _pct_variance(total_compare, total_baseline),
     }
 
 
@@ -1262,6 +1269,7 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
         "total_baseline": v["total_baseline"],
         "total_compare": v["total_compare"],
         "total_variance": v["total_variance"],
+        "total_pct_variance": v["total_pct_variance"],
         "today": date.today().isoformat(),
     })
 
