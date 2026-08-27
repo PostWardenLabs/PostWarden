@@ -1364,12 +1364,15 @@ def test_income_statement_compares_two_scenarios_with_variance_and_pct_of_income
         r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
                  f"&date_from={today}&date_to={today}")
         assert r.status_code == 200
-        # Income row: actual 400 vs budget 600 -> -33.3% variance.
+        # Income row: actual 400 vs budget 600 -> -200 variance, -33.3%.
         assert 'data-value="400.00"' in r.text
         assert 'data-value="600.00"' in r.text
+        assert '-200.00' in r.text
         assert '-33.3%' in r.text
         # Net income: actual 300 vs budget 450 -> -33.3% again (same ratio here).
         assert _account_row_value(r.text, expense["code"]) == "100.00"
+        # Expense row variance: 100 - 150 = -50.
+        assert '-50.00' in r.text
         # % of income on the Expenses subtotal (100/400 = 25%) and the
         # final Net income line (300/400 = 75%).
         assert "(25.0%)" in r.text

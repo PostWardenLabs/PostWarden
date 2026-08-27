@@ -773,12 +773,14 @@ def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool)
         for r in rows:
             r["base_net"] = sign * r["subtotal"]
             r["compare_net"] = sign * r["compare_subtotal"]
+            r["variance"] = r["base_net"] - r["compare_net"]
             r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"])
         out.append({
             "name": root["account_name"], "rows": rows,
             "base_subtotal": sign * root["subtotal"], "compare_subtotal": sign * root["compare_subtotal"],
         })
     for g in out:
+        g["variance"] = g["base_subtotal"] - g["compare_subtotal"]
         g["pct_variance"] = _pct_variance(g["base_subtotal"], g["compare_subtotal"])
     return out
 
@@ -800,6 +802,7 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
 
     total_base_income = sum(g["base_subtotal"] for g in income_groups)
     total_compare_income = sum(g["compare_subtotal"] for g in income_groups)
+    income_variance_amount = total_base_income - total_compare_income
     income_variance = _pct_variance(total_base_income, total_compare_income)
 
     base_running, compare_running = total_base_income, total_compare_income
@@ -808,6 +811,7 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
         compare_running -= g["compare_subtotal"]
         g["base_running_after"] = base_running
         g["compare_running_after"] = compare_running
+        g["running_variance"] = base_running - compare_running
         g["running_pct_variance"] = _pct_variance(base_running, compare_running)
         g["base_pct_of_income"] = _pct_of(g["base_subtotal"], total_base_income)
         g["compare_pct_of_income"] = _pct_of(g["compare_subtotal"], total_compare_income)
@@ -819,8 +823,9 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
     return {
         "income_groups": income_groups, "expense_groups": expense_groups,
         "total_base_income": total_base_income, "total_compare_income": total_compare_income,
-        "income_variance": income_variance,
+        "income_variance_amount": income_variance_amount, "income_variance": income_variance,
         "net_income": net_income, "compare_net_income": compare_net_income,
+        "net_income_variance_amount": net_income - compare_net_income,
         "net_income_variance": _pct_variance(net_income, compare_net_income),
         "net_income_pct_of_income": _pct_of(net_income, total_base_income),
         "compare_net_income_pct_of_income": _pct_of(compare_net_income, total_compare_income),
@@ -850,35 +855,37 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
     w = csv.writer(buf)
     header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
     if compare:
-        header += [compare, "% variance"]
+        header += [compare, "Variance", "% variance"]
     w.writerow(header)
 
-    def row(section, code, name, path, base, comp=None, pct=None):
+    def row(section, code, name, path, base, comp=None, variance=None, pct=None):
         line = [section, code, name, path, base]
         if compare:
-            line += [comp if comp is not None else "", pct if pct is not None else ""]
+            line += [comp if comp is not None else "",
+                     variance if variance is not None else "",
+                     pct if pct is not None else ""]
         w.writerow(line)
 
     for g in result["income_groups"]:
         for r in g["rows"]:
             row(g["name"], r["account_code"], r["account_name"], r["path"],
-                r["base_net"], r["compare_net"], r["pct_variance"])
+                r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
     row("Income", "", "Total income", "", result["total_base_income"],
-        result["total_compare_income"], result["income_variance"])
+        result["total_compare_income"], result["income_variance_amount"], result["income_variance"])
     for i, g in enumerate(result["expense_groups"]):
         w.writerow([])
         for r in g["rows"]:
             row(g["name"], r["account_code"], r["account_name"], r["path"],
-                r["base_net"], r["compare_net"], r["pct_variance"])
+                r["base_net"], r["compare_net"], r["variance"], r["pct_variance"])
         row(g["name"], "", f"Total {g['name']}", "", g["base_subtotal"],
-            g["compare_subtotal"], g["pct_variance"])
+            g["compare_subtotal"], g["variance"], g["pct_variance"])
         is_last = i == len(result["expense_groups"]) - 1
         label = "Net income" if is_last else f"Net income after {g['name']}"
         row(g["name"], "", label, "", g["base_running_after"],
-            g["compare_running_after"], g["running_pct_variance"])
+            g["compare_running_after"], g["running_variance"], g["running_pct_variance"])
     if not result["expense_groups"]:
         row("Income", "", "Net income", "", result["net_income"],
-            result["compare_net_income"], result["net_income_variance"])
+            result["compare_net_income"], result["net_income_variance_amount"], result["net_income_variance"])
     return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
 
 
