@@ -379,7 +379,15 @@ Grouped the way `db/schema.sql` groups them.
   per entry), `scheduled_entry_id` (this is a materialized occurrence of
   that schedule, sitting in STAGING), `promoted_entry_id` (once approved,
   the id of the *real* entry this staged one was copied into — NULL
-  means still pending). `created_by_user_id` for the audit trail.
+  means still pending). `created_by_user_id` for the audit trail. `id`
+  is a random 6-character code (`fn_generate_entry_id()`), not a
+  sequential integer — see SPEC.md decision 17 for why; every FK that
+  points at it (`reverses_entry_id`, `promoted_entry_id`,
+  `journal_lines.entry_id`, `journal_entry_tags.entry_id`) is `TEXT` to
+  match. `seq` is that decision's other half — a plain identity column,
+  never displayed or referenced outside an `ORDER BY`, standing in for
+  "which same-day entry was actually posted first" now that `id` itself
+  can't.
 - **`journal_lines`** — the fact table. `entry_id`, `line_no`,
   `account_id`, and the canonical **signed** `amount` (debit > 0,
   credit < 0, never zero); `debit`/`credit` are `GENERATED ALWAYS ...

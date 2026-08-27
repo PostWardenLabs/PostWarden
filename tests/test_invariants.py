@@ -615,15 +615,16 @@ def test_journal_entry_only_description_and_reference_editable(conn, actual_scen
 # Reversal integrity (added on top of the original schema)
 # ---------------------------------------------------------------------------
 def test_self_reversal_rejected(conn, actual_scenario_id):
+    # id is a plain DEFAULT (fn_generate_entry_id()), not a strict
+    # GENERATED ALWAYS AS IDENTITY, so the app can just supply its own
+    # explicit value here — no OVERRIDING SYSTEM VALUE/sequence dance
+    # needed to force a row to point at itself.
     with expect_error(conn):
         with conn.cursor() as cur:
             cur.execute(
                 """INSERT INTO journal_entries
                        (id, scenario_id, entry_date, description, reverses_entry_id)
-                   OVERRIDING SYSTEM VALUE
-                   SELECT nextval(pg_get_serial_sequence('journal_entries', 'id')),
-                          %s, CURRENT_DATE, 'self reversal', currval(
-                              pg_get_serial_sequence('journal_entries', 'id'))""",
+                   VALUES ('SELFRV', %s, CURRENT_DATE, 'self reversal', 'SELFRV')""",
                 (actual_scenario_id,))
 
 
@@ -637,10 +638,7 @@ def test_self_promotion_rejected(conn, actual_scenario_id):
             cur.execute(
                 """INSERT INTO journal_entries
                        (id, scenario_id, entry_date, description, promoted_entry_id)
-                   OVERRIDING SYSTEM VALUE
-                   SELECT nextval(pg_get_serial_sequence('journal_entries', 'id')),
-                          %s, CURRENT_DATE, 'self promotion', currval(
-                              pg_get_serial_sequence('journal_entries', 'id'))""",
+                   VALUES ('SELFPR', %s, CURRENT_DATE, 'self promotion', 'SELFPR')""",
                 (actual_scenario_id,))
 
 

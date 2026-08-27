@@ -123,7 +123,7 @@ def mk_account_level(cur, name, depth) -> dict:
     return cur.fetchone()
 
 
-def mk_entry(cur, scenario_id, description="Test entry", payee_id=None) -> int:
+def mk_entry(cur, scenario_id, description="Test entry", payee_id=None) -> str:
     cur.execute(
         """INSERT INTO journal_entries (scenario_id, entry_date, description, payee_id)
            VALUES (%s, CURRENT_DATE, %s, %s) RETURNING id""",

@@ -445,7 +445,7 @@ def dashboard(request: Request):
           JOIN scenarios s ON s.id = e.scenario_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE s.code = 'ACTUAL'
-         ORDER BY e.entry_date DESC, e.id DESC
+         ORDER BY e.entry_date DESC, e.seq DESC
          LIMIT 8""")
 
     # The widget's "Salary Income → Cash" label — which account(s) the
@@ -1351,11 +1351,11 @@ def _sync_tags(cur, table: str, id_col: str, obj_id: int, tag_names: list[str]) 
             (obj_id, tag_id))
 
 
-def _sync_entry_tags(cur, entry_id: int, tag_names: list[str]) -> None:
+def _sync_entry_tags(cur, entry_id: str, tag_names: list[str]) -> None:
     _sync_tags(cur, "journal_entry_tags", "entry_id", entry_id, tag_names)
 
 
-def _add_tag_to_entries(entry_ids: list[int], tag_name: str) -> None:
+def _add_tag_to_entries(entry_ids: list[str], tag_name: str) -> None:
     """Adds one tag to every given entry that doesn't already have it —
     the Journal's bulk 'Edit tags' popup (see entries-select.js), one
     call per chip added. Deliberately additive, not _sync_entry_tags'
@@ -1380,7 +1380,7 @@ def _add_tag_to_entries(entry_ids: list[int], tag_name: str) -> None:
                 (entry_id, tag_id))
 
 
-def _remove_tag_from_entries(entry_ids: list[int], tag_name: str) -> None:
+def _remove_tag_from_entries(entry_ids: list[str], tag_name: str) -> None:
     """The other half of the bulk tag popup — one call per chip removed,
     dropping that one tag from whichever of the given entries actually
     have it. A tag nobody uses anymore is just left in `tags`, same as
@@ -1647,7 +1647,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
           LEFT JOIN users u ON u.id = e.created_by_user_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE {' AND '.join(where)}
-         ORDER BY e.entry_date DESC, e.id DESC
+         ORDER BY e.entry_date DESC, e.seq DESC
          LIMIT %s OFFSET %s""",
         params + [ENTRIES_PAGE_SIZE + 1, (page - 1) * ENTRIES_PAGE_SIZE])
     # Fetched one extra row purely to know whether a next page exists —
@@ -1750,7 +1750,7 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
           JOIN accounts a ON a.id = l.account_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE {' AND '.join(where)}
-         ORDER BY e.entry_date DESC, e.id DESC, l.line_no""", params)
+         ORDER BY e.entry_date DESC, e.seq DESC, l.line_no""", params)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Entry #", "Date", "Scenario", "Description", "Reference",
@@ -1763,7 +1763,7 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
     return csv_response(buf, "postwarden-journal.csv")
 
 
-def _reverse_one_entry(entry_id: int, user_id: int) -> int:
+def _reverse_one_entry(entry_id: str, user_id: int) -> str:
     """Posts the reversing entry for one already-posted entry — the actual
     work behind both the single-entry route and the bulk one below, so
     there's exactly one place that knows what a reversal looks like.
@@ -1806,7 +1806,7 @@ def _reverse_one_entry(entry_id: int, user_id: int) -> int:
 
 
 @app.post("/entries/{entry_id}/reverse")
-def reverse_entry(entry_id: int, request: Request, csrf_token: str = Form(...)):
+def reverse_entry(entry_id: str, request: Request, csrf_token: str = Form(...)):
     try:
         require_csrf(request, csrf_token)
         new_id = _reverse_one_entry(entry_id, auth.current_user(request)["user_id"])
@@ -1830,7 +1830,7 @@ async def reverse_entries_bulk(request: Request):
     except ValueError as e:
         return flash_redirect("/entries", err=str(e))
 
-    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    entry_ids = [v for v in form.getlist("entry_id") if v]
     if not entry_ids:
         return flash_redirect("/entries", err="Select at least one entry to reverse")
 
@@ -1859,7 +1859,7 @@ async def edit_entries_tags(request: Request):
     form = await request.form()
     try:
         require_csrf(request, form.get("csrf_token"))
-        entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+        entry_ids = [v for v in form.getlist("entry_id") if v]
         if not entry_ids:
             raise ValueError("No entries selected")
         action = form.get("action")
@@ -1880,7 +1880,7 @@ async def edit_entries_tags(request: Request):
 
 
 @app.post("/entries/{entry_id}/edit-description")
-def edit_entry_description(entry_id: int, request: Request,
+def edit_entry_description(entry_id: str, request: Request,
                            description: str = Form(...), csrf_token: str = Form(...)):
     """A typo in a posted entry's description is exactly the kind of
     mistake decision 4's append-only rule was never meant to trap
@@ -2196,7 +2196,7 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
           LEFT JOIN scenarios ib_ts ON ib_ts.id = ib.target_scenario_id
           LEFT JOIN payees p ON p.id = e.payee_id
          WHERE {' AND '.join(where)}
-         ORDER BY e.entry_date, e.id""", params)
+         ORDER BY e.entry_date, e.seq""", params)
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
     if ids:
@@ -2389,7 +2389,7 @@ async def approve_staging_entries(request: Request):
     except ValueError as e:
         return flash_redirect("/staging", err=str(e))
 
-    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    entry_ids = [v for v in form.getlist("entry_id") if v]
     if not entry_ids:
         return flash_redirect("/staging", err="Select at least one entry to approve")
 
@@ -2452,7 +2452,7 @@ async def approve_staging_entries(request: Request):
     return flash_redirect("/staging", ok=ok_msg, err=err_msg)
 
 
-def _pending_staging_entry(entry_id: int):
+def _pending_staging_entry(entry_id: str):
     """The one entry /staging/{id}/edit and /staging/{id}/reject both act
     on — raises ValueError (same as any other bad input in these routes)
     unless it's actually eligible: a real Staging entry, not yet approved.
@@ -2484,7 +2484,7 @@ def _pending_staging_entry(entry_id: int):
 
 
 @app.get("/staging/{entry_id}/edit")
-def staging_edit_page(entry_id: int, request: Request, err: str = None):
+def staging_edit_page(entry_id: str, request: Request, err: str = None):
     try:
         staged = _pending_staging_entry(entry_id)
     except ValueError as e:
@@ -2521,7 +2521,7 @@ def staging_edit_page(entry_id: int, request: Request, err: str = None):
 
 
 @app.post("/staging/{entry_id}/edit")
-async def staging_edit_save(entry_id: int, request: Request):
+async def staging_edit_save(entry_id: str, request: Request):
     form = await request.form()
     # Same reason as create_entry (app.js's grid submits every page it's
     # on the same way, via fetch requesting JSON) — a rejected edit needs
@@ -2583,7 +2583,7 @@ async def staging_edit_save(entry_id: int, request: Request):
 
 
 @app.post("/staging/{entry_id}/reject")
-def staging_reject(entry_id: int, request: Request, csrf_token: str = Form(...)):
+def staging_reject(entry_id: str, request: Request, csrf_token: str = Form(...)):
     try:
         require_csrf(request, csrf_token)
         _pending_staging_entry(entry_id)
@@ -2616,7 +2616,7 @@ async def reject_staging_entries(request: Request):
     except ValueError as e:
         return flash_redirect("/staging", err=str(e))
 
-    entry_ids = [int(v) for v in form.getlist("entry_id") if v]
+    entry_ids = [v for v in form.getlist("entry_id") if v]
     if not entry_ids:
         return flash_redirect("/staging", err="Select at least one entry to reject")
 
@@ -2961,7 +2961,7 @@ def api_entries(scenario: str = None, date_from: str = None,
         where.append("entry_date <= %s")
         params.append(date_to)
     return q(f"""SELECT * FROM v_fact_lines WHERE {' AND '.join(where)}
-                 ORDER BY entry_date DESC, entry_id DESC, line_id LIMIT 1000""",
+                 ORDER BY entry_date DESC, seq DESC, line_id LIMIT 1000""",
              params)
 
 

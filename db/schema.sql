@@ -346,13 +346,40 @@ CREATE INDEX idx_entry_template_lines_parent ON entry_template_lines(template_id
 -- ---------------------------------------------------------------------------
 -- Journal entries (header) and journal lines (the fact table)
 -- ---------------------------------------------------------------------------
+-- journal_entries.id is a random 6-character code (A-Z0-9), not a
+-- sequential integer — see SPEC.md's entry-id decision for why. Defined
+-- ahead of the table so it can be the column's DEFAULT; the collision
+-- check queries journal_entries itself, which is fine even while this
+-- function is only ever called *for* an INSERT into that same table —
+-- by the time a row is actually being inserted, the table already
+-- exists and already holds whatever rows came before it.
+CREATE OR REPLACE FUNCTION fn_generate_entry_id() RETURNS TEXT
+LANGUAGE plpgsql AS $$
+DECLARE
+    -- No ambiguous-character exclusion (0/O, 1/I/L, ...) — the full 36-
+    -- symbol alphabet keeps the collision math simple, and this app
+    -- doesn't ask anyone to read one aloud or copy it by hand often
+    -- enough for that ambiguity to matter in practice.
+    v_alphabet CONSTANT TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    v_id       TEXT;
+BEGIN
+    LOOP
+        SELECT string_agg(substr(v_alphabet, (floor(random() * 36) + 1)::int, 1), '')
+          INTO v_id
+          FROM generate_series(1, 6);
+        EXIT WHEN NOT EXISTS (SELECT 1 FROM journal_entries WHERE id = v_id);
+    END LOOP;
+    RETURN v_id;
+END $$;
+
 CREATE TABLE journal_entries (
-    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                 TEXT PRIMARY KEY DEFAULT fn_generate_entry_id()
+                       CHECK (id ~ '^[A-Z0-9]{6}$'),
     scenario_id        BIGINT NOT NULL REFERENCES scenarios(id) ON DELETE RESTRICT,
     entry_date         DATE NOT NULL,
     description        TEXT NOT NULL CHECK (length(trim(description)) > 0),
     reference          TEXT,
-    reverses_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE RESTRICT,
+    reverses_entry_id  TEXT REFERENCES journal_entries(id) ON DELETE RESTRICT,
     payee_id           BIGINT REFERENCES payees(id) ON DELETE SET NULL,
     -- Set when this entry was auto-posted to the Staging scenario by a
     -- schedule (see scheduled_entries below) — lets the admin page find
@@ -366,11 +393,23 @@ CREATE TABLE journal_entries (
     -- Set on a Staging entry once approved: the id of the real entry it
     -- was copied into. NULL means "still awaiting approval" for anything
     -- sitting in Staging.
-    promoted_entry_id  BIGINT REFERENCES journal_entries(id) ON DELETE SET NULL,
+    promoted_entry_id  TEXT REFERENCES journal_entries(id) ON DELETE SET NULL,
     -- Who posted it, for the audit trail — nullable so direct psql/import
     -- inserts don't need a user, but the app always sets it from the session.
     created_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Purely internal — never displayed, never referenced by the app
+    -- except in an ORDER BY. Now that id is a random 6-character code
+    -- rather than a sequential integer, something has to stand in for
+    -- "which of two same-day entries was posted first" — created_at
+    -- itself can't: it defaults to now(), which Postgres fixes once per
+    -- *transaction*, not per statement, so a batch of entries inserted
+    -- together (a schedule materializing several occurrences at once,
+    -- an import, even just this file's own test fixtures) can all land
+    -- with the exact same timestamp. A plain identity column sidesteps
+    -- that the same way the old id used to, just without being the
+    -- thing anyone actually sees or references.
+    seq                BIGINT GENERATED ALWAYS AS IDENTITY,
     CHECK (reverses_entry_id <> id),
     CHECK (promoted_entry_id <> id)
 );
@@ -396,7 +435,7 @@ CREATE UNIQUE INDEX uq_one_reversal_per_entry
 
 CREATE TABLE journal_lines (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    entry_id   BIGINT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    entry_id   TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
     line_no    SMALLINT NOT NULL CHECK (line_no > 0),
     account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE RESTRICT,
     -- Canonical signed amount: debit > 0, credit < 0. Never zero.
@@ -427,7 +466,7 @@ CREATE TABLE tags (
 );
 
 CREATE TABLE journal_entry_tags (
-    entry_id BIGINT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+    entry_id TEXT NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
     tag_id   BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (entry_id, tag_id)
 );
@@ -457,7 +496,7 @@ CREATE TABLE entry_template_tags (
 CREATE OR REPLACE FUNCTION fn_entry_balanced() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_entry_id   BIGINT;
+    v_entry_id   TEXT;
     v_sum        NUMERIC(18,2);
     v_line_count INT;
     v_enforce    BOOLEAN;
@@ -839,6 +878,17 @@ CREATE VIEW v_fact_lines AS
 SELECT l.id                                   AS line_id,
        e.id                                   AS entry_id,
        e.entry_date,
+       -- Entry ids are a random 6-character code (see SPEC.md), not a
+       -- sequential integer, so they can't stand in for "which entry
+       -- was posted more recently" the way an ORDER BY entry_id DESC
+       -- tiebreaker used to. Exposed here so /api/entries can use it
+       -- instead — the one v_fact_lines consumer outside this app that
+       -- needs a stable "most recent first" ordering. created_at isn't
+       -- enough on its own for that — Postgres fixes now() once per
+       -- transaction, so a batch of entries inserted together can share
+       -- one timestamp — seq (a plain identity column, never otherwise
+       -- referenced) is the one that's actually always distinct.
+       e.created_at, e.seq,
        (date_trunc('month', e.entry_date))::date AS month,
        s.id                                   AS scenario_id,
        s.code                                 AS scenario_code,

@@ -387,6 +387,54 @@ inline edit — a typo fix, same reasoning as a tag: organizational, not
 a fact about the transaction, and equally worth being able to fix on
 something already posted.
 
+### 17. Entry ids are a random 6-character code, not a sequential integer
+
+Every other table in this schema uses a plain `BIGINT GENERATED ALWAYS
+AS IDENTITY` — the obvious default, and correct for anything nobody's
+expected to read as a sequence. `journal_entries.id` was the same until
+this decision, and it had a real problem once Staging entered the
+picture: a pending Staging row draws from the *same* id sequence as a
+real posted entry (it's the same table — see decision 15), and
+rejecting one deletes it outright. A ledger that's posted entries
+`#21` and `#23` with no `#22` anywhere looks broken even though nothing
+actually is — `#22` was a schedule occurrence or an import row someone
+correctly rejected, and its number is gone for good. There was no way
+to explain that gap to someone just reading their own Journal.
+
+A sequential id also implied something it never actually promised:
+"higher number = posted later" is true only until the first rejected
+Staging row breaks it, and reordering an entire population of ids to
+close a gap after the fact isn't something you can do to a live ledger
+without renumbering everything downstream of it.
+
+The fix isn't to give Staging its own id sequence — that reintroduces
+exactly the two-tables-pretending-to-be-one shape decision 15
+deliberately avoided, just moved into the id column instead of a
+second table. Instead, `id` is now a random 6-character code from
+`fn_generate_entry_id()` (uppercase A-Z and 0-9, retried on the rare
+collision — 36⁶ ≈ 2.18 billion possible codes, comfortably more than a
+personal ledger will ever approach): nothing about it implies a
+complete, gapless sequence, so a Staging entry's id being consumed and
+never appearing anywhere a person looks isn't confusing the way a
+missing sequential number was. `reverses_entry_id`, `promoted_entry_id`,
+`journal_lines.entry_id`, and `journal_entry_tags.entry_id` all follow
+suit (`TEXT`, matching `id`'s own type) — no other column on any other
+table changes.
+
+One thing a sequential id gave away for free that a random one can't:
+same-day ordering. `ORDER BY entry_date, id` used to mean "and within a
+day, in the order they were actually posted" as a side effect of id
+being monotonic. A random id carries no such order, so `journal_entries`
+now also has `seq` — a plain identity column, exactly what `id` used to
+be, except it's never displayed, never referenced outside an `ORDER BY`,
+and exists for that one purpose alone. It isn't `created_at` doing this
+job: Postgres fixes `now()` once per *transaction*, not per statement,
+so a batch of entries inserted together (a schedule materializing
+several occurrences, an import, even a test fixture building several
+entries before committing) can share one identical timestamp — `seq`
+can't, by construction, since a plain identity column advances on every
+row regardless of how many share a transaction.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries
