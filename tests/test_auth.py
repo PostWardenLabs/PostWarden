@@ -329,8 +329,10 @@ def test_staging_page_lists_pending_entries_and_approves_them(conn):
         assert 'id="approve-btn" disabled' in r.text
         # Edit is an inline panel now (staging-inline-edit.js), not a link
         # to a separate page — a button carrying the entry's id, plus the
-        # one shared panel it relocates into place, parked hidden.
-        assert f'class="quiet-link staging-edit-btn" data-entry-id="{eid}"' in r.text
+        # one shared panel it relocates into place, parked hidden. Styled
+        # like a real button (.quiet, same as Approve/Reject's own look),
+        # not the plain-text .quiet-link treatment.
+        assert f'class="quiet staging-edit-btn" data-entry-id="{eid}"' in r.text
         assert f'href="/staging/{eid}/edit"' not in r.text
         assert 'id="staging-edit-panel" hidden' in r.text
 
