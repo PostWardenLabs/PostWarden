@@ -36,7 +36,6 @@
   </label>
   <label class="checkline" title="{{ 'Only applies at native depth — a rolled-up row already represents whatever was pooled into it, with no zero-balance rows left to reveal underneath.' if rolled_up }}">
     <input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  <button type="submit">Refresh</button>
   <a class="quiet-link" href="/export/variance.csv?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ as_of }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 

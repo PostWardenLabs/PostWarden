@@ -45,7 +45,6 @@
     <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
   </label>
   <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  <button type="submit">Refresh</button>
   <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 

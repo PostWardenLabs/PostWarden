@@ -22,7 +22,6 @@
   </label>
   <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
   <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  <button type="submit">Refresh</button>
   <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 
