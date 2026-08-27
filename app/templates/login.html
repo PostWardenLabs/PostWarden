@@ -5,13 +5,6 @@
   <div class="auth-brand">
     <span class="auth-wordmark">PostWarden</span>
     <span class="auth-version">v{{ version }}</span>
-    {% if demo_banner %}
-    <div class="demo-callout">
-      <p>User: <code class="mono">{{ demo_user }}</code></p>
-      <p>Password: <code class="mono">{{ demo_password }}</code></p>
-      <p>credentials prefilled in</p>
-    </div>
-    {% endif %}
   </div>
   <div class="auth-panel">
     <div class="auth-form-wrap">
@@ -33,6 +26,13 @@
         <button type="submit">Log in</button>
       </form>
     </div>
+    {% if demo_banner %}
+    <div class="demo-callout">
+      <p>User: <code class="mono"><strong>{{ demo_user }}</strong></code></p>
+      <p>Password: <code class="mono"><strong>{{ demo_password }}</strong></code></p>
+      <p>credentials prefilled in</p>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

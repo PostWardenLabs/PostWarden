@@ -629,7 +629,10 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
   position: absolute; bottom: 1.3rem; left: 1.5rem;
   font-size: 0.78rem; color: var(--ink-soft);
 }
-.auth-panel { flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start; padding: 2rem 2rem 2rem 3rem; }
+.auth-panel {
+  flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start;
+  padding: 2rem 2rem 2rem 3rem; gap: 1.5rem; flex-wrap: wrap;
+}
 .auth-form-wrap { width: 100%; max-width: 20rem; }
 .auth-form-wrap h2:first-child { margin-top: 0; }
 /* The login form forces .grid-form down to a single column (see its own
@@ -645,14 +648,13 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
    back to its own natural width, without touching .grid-form itself. */
 .auth-form-wrap form.grid-form > button { justify-self: start; }
 
-/* -- demo callout: a guide-style bubble that floats over the brand pane
-   and points across the seam at the form, rather than a flash message
-   sitting on top of the credential fields themselves. .auth-brand is
-   already `position: relative` (for .auth-version), so this just
-   anchors off that. */
+/* -- demo callout: a guide-style bubble sitting beside the form, in the
+   auth-panel's own flex row — not layered over anything, just the
+   second thing on that row after .auth-form-wrap, so a speech-bubble
+   arrow on its *left* edge is enough to read as "pointing at the
+   fields," no absolute positioning/anchoring needed. */
 .demo-callout {
-  position: absolute; top: 50%; right: 1.75rem; width: 13.5rem;
-  transform: translateY(-50%);
+  position: relative; width: 12rem; flex-shrink: 0;
   background: var(--surface); border: 1px solid var(--rule-strong);
   border-radius: 10px; padding: 0.8rem 1rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
@@ -663,11 +665,11 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 .demo-callout code { font-size: 0.82rem; }
 .demo-callout::before,
 .demo-callout::after {
-  content: ""; position: absolute; top: 50%; left: 100%;
+  content: ""; position: absolute; top: 50%; right: 100%;
   transform: translateY(-50%); border: 9px solid transparent;
 }
-.demo-callout::before { border-left-color: var(--rule-strong); }
-.demo-callout::after  { left: calc(100% - 1px); border-left-color: var(--surface); }
+.demo-callout::before { border-right-color: var(--rule-strong); }
+.demo-callout::after  { right: calc(100% - 1px); border-right-color: var(--surface); }
 
 @media (max-width: 720px) {
   .auth-split { flex-direction: column; }
@@ -677,10 +679,13 @@ main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
   }
   .auth-wordmark { font-size: 3rem; }
   .auth-version { bottom: 0.7rem; }
-  .auth-panel { flex: none; padding: 2.5rem 2rem; }
+  .auth-panel { flex: none; flex-direction: column; align-items: stretch; padding: 2.5rem 2rem; }
   .demo-callout {
-    position: static; transform: none; width: auto; max-width: 16rem;
-    margin: 0.9rem auto 0; box-shadow: none;
+    /* Stacked layout has no "beside the form" left to point at, and no
+       row for it to sit second-in — shown above the form instead (order:
+       -1), same "read this before you start typing" intent the callout
+       has always had. */
+    order: -1; width: auto; max-width: 16rem; margin: 0 auto 1.4rem; box-shadow: none;
   }
   .demo-callout::before, .demo-callout::after { display: none; }
 }
