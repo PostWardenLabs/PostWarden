@@ -2928,9 +2928,9 @@ def test_budget_cell_route_rejects_unknown_account(conn):
 
 
 def test_report_filter_bars_load_auto_refresh(conn):
-    # Every GET filter form (class="bar") auto-submits on a select/date
-    # change via one shared script — a regression guard that the script
-    # tag itself is still wired into base.html, not that the JS behavior
+    # Every GET filter form auto-submits on a select/date/checkbox change
+    # via one shared script — a regression guard that the script tag
+    # itself is still wired into base.html, not that the JS behavior
     # works (that needs a real browser; see docs/ARCHITECTURE.md).
     with conn.cursor() as cur:
         user = mk_user(cur)
@@ -2942,14 +2942,18 @@ def test_report_filter_bars_load_auto_refresh(conn):
             r = c.get(url)
             assert r.status_code == 200
             assert 'auto-refresh.js' in r.text, url
-        # The Journal's own filter form isn't class="bar" (it wraps its
-        # fields in a nested div — see entries.html and auto-refresh.js's
-        # own comment on why) — data-auto-refresh is the same hook without
-        # that class's flex-layout side effect. Its absence is exactly the
-        # bug that left the Journal's Scenario/Account/Amount filters
-        # inert while every report's own filter bar already auto-submitted.
-        r = c.get("/entries")
-        assert "data-auto-refresh" in r.text
+        # A filter form whose fields wrap in a nested div (a second row
+        # of checkboxes/Export CSV below them — see entries.html's own
+        # comment on why) can't carry class="bar" itself without flexing
+        # that div and the second row side by side — data-auto-refresh is
+        # the same hook with no such layout side effect. Journal, Income
+        # Statement, Variance, and Budget Grid all need it for exactly
+        # this reason; its absence on the Journal specifically used to be
+        # a real bug (Scenario/Account/Amount filters sitting inert while
+        # every report's own filter bar already auto-submitted).
+        for url in ("/entries", "/income-statement", "/variance", "/budget"):
+            r = c.get(url)
+            assert "data-auto-refresh" in r.text, url
 
 
 def test_entry_grids_offer_a_distribute_button(conn):

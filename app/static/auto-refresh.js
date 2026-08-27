@@ -1,19 +1,20 @@
 /* PostWarden — auto-refresh a filter bar when a combobox or date picker
    changes, instead of waiting for its Refresh/Filter/Go button. Every
    `<form class="bar" method="get">` on the page gets this automatically
-   (see enhanceAll() below) — that's every report's own filter form,
-   a single row with its fields as direct children of the form, so
-   .bar's flex layout can sit right on the form itself with nothing
-   extra needed.
+   (see enhanceAll() below) — a single row with its fields as direct
+   children of the form, so .bar's flex layout can sit right on the form
+   itself with nothing extra needed. Staging and Balance Sheet/Trial
+   Balance are shaped this way (no second row of their own).
 
-   The Journal's filter form wraps its fields in a nested
-   `<div class="bar">` instead (there's a second row below it — Clear
-   filters/Export CSV — that can't share the same flex row), so putting
-   .bar on the form too would flex the form's own children (that div,
-   the second row) side by side instead of stacking them.
-   `data-auto-refresh` is the same hook with no layout side effect, for
-   exactly that shape — see entries.html's own filter form for why it
-   carries this instead of the class.
+   A filter form with a second row below its fields (Journal's Clear
+   filters/Export CSV; Income Statement/Variance's Hide zero
+   balances/% variance toggle/Export CSV; Budget Grid's toggle/Go/prev-
+   next) wraps the fields in a nested `<div class="bar">` instead, since
+   putting .bar on the form too would flex the form's own children (that
+   div, the second row) side by side instead of stacking them.
+   `data-auto-refresh` is the same hook with no such layout side effect
+   — see any of those templates' own filter form for why it carries
+   this instead of the class.
 
    Deliberately scoped to selects, date fields, checkboxes, and the tag
    picker's own hidden value field — never a free-typed text field — via

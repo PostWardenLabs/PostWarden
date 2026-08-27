@@ -11,7 +11,8 @@
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
 
-<form class="bar" method="get" action="/income-statement">
+<form method="get" action="/income-statement" data-auto-refresh>
+  <div class="bar">
   <label class="field">Scenario
     <select name="scenario">
       {% for s in scenarios %}
@@ -44,11 +45,16 @@
   <label class="field">To
     <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
   </label>
-  <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  {% if compare %}
-  <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
-  {% endif %}
-  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Export CSV</a>
+  </div>
+  <p class="bar" style="justify-content: space-between; align-items: center;">
+    <span class="bar" style="align-items: center; margin-bottom: 0;">
+      <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
+      {% if compare %}
+      <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
+      {% endif %}
+    </span>
+    <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Export CSV</a>
+  </p>
 </form>
 
 <table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
