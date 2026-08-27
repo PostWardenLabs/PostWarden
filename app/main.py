@@ -1439,7 +1439,12 @@ TAG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9 _-]{0,39}$")
 
 
 def all_tags() -> list[str]:
-    return [r["name"] for r in q("SELECT name FROM tags ORDER BY name")]
+    # Active only — same reasoning as payees' active_payees query below:
+    # this feeds the tag-input's autocomplete (see tags.js), so an
+    # archived tag stops being offered as something new to pick, without
+    # touching what already carries it (tags_by_entry, the per-entry
+    # badges, never filters on is_active at all).
+    return [r["name"] for r in q("SELECT name FROM tags WHERE is_active ORDER BY name")]
 
 
 def _parse_tags(raw: str) -> list[str]:
@@ -1464,9 +1469,16 @@ def _sync_tags(cur, table: str, id_col: str, obj_id: int, tag_names: list[str]) 
     entry_id/tag_id junction table with the same shape."""
     cur.execute(f"DELETE FROM {table} WHERE {id_col} = %s", (obj_id,))
     for name in tag_names:
+        # ON CONFLICT ... SET is_active = TRUE (not just the no-op `name
+        # = EXCLUDED.name` this used before is_active existed) — same
+        # reasoning as quick_create_payee: typing an existing tag's name
+        # here is exactly the signal that it's back in use, so this
+        # quietly reactivates one that was archived rather than leaving
+        # it archived-but-now-attached-to-something, which would be a
+        # tag with no way back into its own suggestion list.
         cur.execute(
             """INSERT INTO tags (name) VALUES (%s)
-               ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+               ON CONFLICT (name) DO UPDATE SET is_active = TRUE
                RETURNING id""",
             (name,))
         tag_id = cur.fetchone()["id"]
@@ -1491,9 +1503,10 @@ def _add_tag_to_entries(entry_ids: list[str], tag_name: str) -> None:
     violate (see SPEC.md's tag-editing decision), so this works the
     same on a posted entry as a pending one."""
     with tx() as cur:
+        # Reactivates on conflict — same reasoning as _sync_tags above.
         cur.execute(
             """INSERT INTO tags (name) VALUES (%s)
-               ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+               ON CONFLICT (name) DO UPDATE SET is_active = TRUE
                RETURNING id""",
             (tag_name,))
         tag_id = cur.fetchone()["id"]
@@ -2212,7 +2225,7 @@ def quick_create_payee(request: Request, name: str = Form(...), csrf_token: str 
 
 @app.post("/payees/{payee_id}/toggle-active")
 def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
-    # "Archive"/"Reactivate" on the page — is_active only ever controls
+    # "Archive"/"Unarchive" on the page — is_active only ever controls
     # whether a payee still shows up in the New entry/Scheduled/Staging
     # pickers going forward; it never touches history (see /payees/{id}
     # /delete below for the route that actually does that). RETURNING the
@@ -2232,7 +2245,7 @@ def toggle_payee(payee_id: int, request: Request, csrf_token: str = Form(...)):
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/payees", err=msg)
-    verb = "reactivated" if row["is_active"] else "archived"
+    verb = "unarchived" if row["is_active"] else "archived"
     return flash_redirect("/payees", ok=f"Payee {row['name']!r} {verb}")
 
 
@@ -2331,13 +2344,10 @@ async def merge_payees(request: Request):
 # ---------------------------------------------------------------------------
 # Tags — a management page mirroring Payees, for the entity itself rather
 # than for tagging one entry (that's tags.js, on entries.html/scheduled.html/
-# entry_templates.html). Unlike payees, a tag carries no is_active — there's
-# no per-tag Archive here, just Edit/Delete/Select+Merge (see payees.html's
-# own comment on why Delete needed Archive kept alongside it; a tag has no
-# equivalent "keep it out of future pickers without losing history" need,
-# since the tag-input widget suggests from `tags` directly and a tag with
-# zero remaining uses just stops showing up in anyone's history to filter
-# by — nothing to hide it from).
+# entry_templates.html). Same lifecycle as Payees now: Archive/Unarchive
+# (is_active — hides a tag from the tag-input's suggestion list, all_tags()
+# below, without touching any entry that already carries it) alongside a
+# real Delete, plus Edit/Select+Merge.
 # ---------------------------------------------------------------------------
 def tags_all():
     return q("""SELECT t.*, (SELECT COUNT(*) FROM journal_entry_tags jet
@@ -2365,6 +2375,29 @@ def create_tag(request: Request, name: str = Form(...), csrf_token: str = Form(.
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/tags", err=msg)
     return flash_redirect("/tags", ok=f"Tag {names[0]!r} created")
+
+
+@app.post("/tags/{tag_id}/toggle-active")
+def toggle_tag(tag_id: int, request: Request, csrf_token: str = Form(...)):
+    """Archive/Unarchive on the page — same shape as /payees/{id}/
+    toggle-active (see its own comment): only ever changes whether this
+    tag still shows up in the tag-input's suggestion list going forward,
+    never touches an entry that already carries it."""
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute(
+                """UPDATE tags SET is_active = NOT is_active WHERE id = %s
+                   RETURNING name, is_active""",
+                (tag_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError(f"Tag #{tag_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/tags", err=msg)
+    verb = "unarchived" if row["is_active"] else "archived"
+    return flash_redirect("/tags", ok=f"Tag {row['name']!r} {verb}")
 
 
 @app.post("/tags/{tag_id}/rename")

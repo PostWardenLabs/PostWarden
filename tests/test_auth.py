@@ -2174,9 +2174,9 @@ def test_payee_delete_rejects_an_unknown_id(conn):
 
 
 def test_payee_toggle_active_flash_names_which_way_it_went(conn):
-    # Archive/Reactivate on the page — the flash message used to be a
+    # Archive/Unarchive on the page — the flash message used to be a
     # generic "Payee updated" regardless of direction; RETURNING the new
-    # state is what lets it actually say "archived" vs "reactivated".
+    # state is what lets it actually say "archived" vs "unarchived".
     with conn.cursor() as cur:
         user = mk_user(cur)
         payee = mk_payee(cur, name="Toggle Me")
@@ -2187,7 +2187,7 @@ def test_payee_toggle_active_flash_names_which_way_it_went(conn):
         r1 = c.post(f"/payees/{payee['id']}/toggle-active", data={"csrf_token": csrf_token})
         assert "archived" in r1.headers["location"]
         r2 = c.post(f"/payees/{payee['id']}/toggle-active", data={"csrf_token": csrf_token})
-        assert "reactivated" in r2.headers["location"]
+        assert "unarchived" in r2.headers["location"]
 
 
 def test_payee_merge_repoints_entries_scheduled_entries_and_templates(conn):
@@ -2279,8 +2279,7 @@ def test_tags_page_lists_tags_with_entry_counts_and_links(conn):
             rf'<span class="entity-name-label">{empty_tag["name"]}</span>.*?</tr>',
             r.text, re.S)
         assert empty_row and "amount-link" not in empty_row.group(0)
-        # No Status column/Archive button — tags carry no is_active.
-        assert "Archive" not in r.text
+        assert "Archive" in r.text
 
 
 def test_tag_create_rename_delete_round_trip(conn):
@@ -2315,6 +2314,73 @@ def test_tag_create_rename_delete_round_trip(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT 1 FROM tags WHERE id = %s", (tag_id,))
         assert cur.fetchone() is None
+
+
+def test_tag_toggle_active_flash_names_which_way_it_went(conn):
+    # Same shape as the payee version above — Archive/Unarchive, RETURNING
+    # the new state so the flash message says which way it went.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        tag = mk_tag(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r1 = c.post(f"/tags/{tag['id']}/toggle-active", data={"csrf_token": csrf_token})
+        assert "archived" in r1.headers["location"]
+        r2 = c.post(f"/tags/{tag['id']}/toggle-active", data={"csrf_token": csrf_token})
+        assert "unarchived" in r2.headers["location"]
+
+
+def test_archived_tag_is_hidden_from_the_tag_input_suggestion_list(conn):
+    # all_tags() (the #tags-data blob every tag-input reads for
+    # autocomplete) filters WHERE is_active — an archived tag stops being
+    # offered as something new to pick, same as an archived payee drops
+    # out of active_payees.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        active_tag = mk_tag(cur)
+        archived_tag = mk_tag(cur)
+        cur.execute("UPDATE tags SET is_active = FALSE WHERE id = %s", (archived_tag["id"],))
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/entries")
+        blob = json.loads(
+            re.search(r'id="tags-data">(.*?)</script>', r.text, re.S).group(1))
+        assert active_tag["name"] in blob
+        assert archived_tag["name"] not in blob
+
+
+def test_tagging_an_entry_with_an_archived_tags_name_reactivates_it(conn):
+    # _sync_entry_tags' ON CONFLICT reactivates rather than a no-op update
+    # — typing an old tag's name back onto an entry is the same "back in
+    # use" signal quick_create_payee already treats a reused payee name
+    # as. Exercised through the real /entries POST route, not _sync_tags
+    # directly, so this also confirms entity-manage.js's counterpart on
+    # the Journal side (tags.js's tag-input) hits the same path.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        tag = mk_tag(cur, name="archivedtag")
+        cur.execute("UPDATE tags SET is_active = FALSE WHERE id = %s", (tag["id"],))
+        acct1, acct2 = mk_account(cur), mk_account(cur)
+        cur.execute("SELECT id FROM scenarios WHERE code = 'ACTUAL'")
+        actual_id = cur.fetchone()["id"]
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        csrf_token = _csrf(c, conn)
+        r = c.post("/entries", data={
+            "csrf_token": csrf_token, "entry_date": "2026-01-01",
+            "scenario_id": str(actual_id), "description": "Reuses an archived tag",
+            "tags": "archivedtag",
+            "account": [acct1["code"], acct2["code"]],
+            "debit": ["10", ""], "credit": ["", "10"], "memo": ["", ""],
+        })
+        assert "ok=" in r.headers["location"]
+    with conn.cursor() as cur:
+        cur.execute("SELECT is_active FROM tags WHERE id = %s", (tag["id"],))
+        assert cur.fetchone()["is_active"] is True
 
 
 def test_tag_delete_removes_it_from_every_entry_that_had_it(conn):

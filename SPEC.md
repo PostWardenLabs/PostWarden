@@ -458,13 +458,24 @@ mechanism). Collapsing those into one button would force a choice
 neither actually wants: keep Archive-only and there's no way to undo a
 payee created by typo or genuinely walk away from a mis-tag; make
 Delete the only option and "I don't use this vendor anymore" starts
-quietly editing history it was never meant to touch. Payees keep both,
-each doing the one thing its name promises. Tags only ever needed
-Delete — nothing about "pending, not yet realized" applies to a
-free-form label the way it does to a vendor you might pay again, and
-decision 16 already means a tag with zero remaining uses isn't
-cluttering anything; there's no equivalent "hide from future pickers"
-need for Delete to sit alongside.
+quietly editing history it was never meant to touch. Payees and tags
+both keep Archive/Unarchive *and* Delete now, each doing the one thing
+its name promises.
+
+Tags originally shipped with Delete only — the reasoning above held
+that a tag has no equivalent "hide from future pickers" need, since a
+tag with zero remaining uses (decision 16) isn't cluttering anything.
+That missed where the actual clutter lives: not an entry's own tag
+badges (which only ever show what's really attached), but the tag-input
+widget's *suggestion list* (`all_tags()`) — every tag ever created shows
+up there forever, whether or not it's still a category worth reaching
+for, the same clutter problem the New entry payee combobox already had
+before payees got `is_active`. Tags now carry the identical column
+`payees` does, filtered out of `all_tags()` the same way
+`quick_create_payee` already filters payees, and `_sync_tags()`/
+`_add_tag_to_entries()` reactivate an archived tag on reuse the same
+way `quick_create_payee` reactivates a payee — typing an old tag's name
+back into an entry is exactly the same "back in use" signal either way.
 
 **Merge** is the other new piece, on both pages: fold two or more
 selected rows into one. The alternative considered — auto-picking the

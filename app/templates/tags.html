@@ -8,10 +8,8 @@
 </div>
 
 {#
-  Same Select/Merge/+Add/table shape as Payees (see that page's own
-  comments) — driven by the same entity-manage.js. No Status column and
-  no Archive button here: a tag carries no is_active (see main.py's Tags
-  section for why), so there's nothing to toggle, only Edit/Delete.
+  Same Select/Merge/+Add/table/Status/Archive shape as Payees (see that
+  page's own comments) — driven by the same entity-manage.js.
 #}
 <p class="bar" style="align-items: center;">
   <button type="button" class="quiet select-toggle">Select</button>
@@ -39,11 +37,11 @@
 <table class="ledger entity-table">
   <thead><tr>
     <th class="select-only"></th>
-    <th>Name</th><th class="num">Entries</th><th></th>
+    <th>Name</th><th class="num">Entries</th><th>Status</th><th></th>
   </tr></thead>
   <tbody>
     {% for t in tags %}
-    <tr>
+    <tr class="{{ 'inactive' if not t.is_active }}">
       <td class="select-only">
         <input type="checkbox" class="entity-check" value="{{ t.id }}" data-name="{{ t.name }}">
       </td>
@@ -56,8 +54,13 @@
         </form>
       </td>
       <td class="num mono">{{ entry_link(t.name, t.entry_count) if t.entry_count else t.entry_count }}</td>
+      <td class="dim">{{ 'active' if t.is_active else 'archived' }}</td>
       <td class="actions">
         <button type="button" class="quiet entity-edit-btn">Edit</button>
+        <form method="post" action="/tags/{{ t.id }}/toggle-active">
+          <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+          <button type="submit" class="quiet">{{ 'Archive' if t.is_active else 'Unarchive' }}</button>
+        </form>
         <form method="post" action="/tags/{{ t.id }}/delete"
               data-confirm="Delete tag “{{ t.name }}”? It'll be removed from every entry that has it — this can't be undone."
               data-confirm-danger="1">
@@ -67,7 +70,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="4" class="dim">No tags yet.</td></tr>
+    <tr><td colspan="5" class="dim">No tags yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

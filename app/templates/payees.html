@@ -64,7 +64,7 @@
         <button type="button" class="quiet entity-edit-btn">Edit</button>
         <form method="post" action="/payees/{{ p.id }}/toggle-active">
           <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-          <button type="submit" class="quiet">{{ 'Archive' if p.is_active else 'Reactivate' }}</button>
+          <button type="submit" class="quiet">{{ 'Archive' if p.is_active else 'Unarchive' }}</button>
         </form>
         <form method="post" action="/payees/{{ p.id }}/delete"
               data-confirm="Delete payee “{{ p.name }}”? Entries that used it will lose the payee label — this can't be undone."

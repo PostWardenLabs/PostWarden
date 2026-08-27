@@ -194,17 +194,19 @@
 
     <h2 id="payees">Payees</h2>
     <p><strong>Edit</strong> renames a payee in place — click it, type the new name, press Enter.
-      <strong>Archive</strong> only hides a payee from the New entry/Scheduled/Staging pickers going forward;
-      entries that already used it are untouched either way, and its entry count is a link straight through to
-      them. <strong>Delete</strong> is the one that actually removes the row — entries that used it just lose the
-      payee label, they aren't deleted. <strong>Select</strong> reveals checkboxes for <strong>Merge</strong>,
-      which folds two or more payees into one you name (defaulting to the first one picked) and repoints every
-      entry, scheduled entry, and template that used any of them.
+      <strong>Archive</strong>/<strong>Unarchive</strong> only hides a payee from the New entry/Scheduled/Staging
+      pickers going forward; entries that already used it are untouched either way, and its entry count is a link
+      straight through to them. <strong>Delete</strong> is the one that actually removes the row — entries that
+      used it just lose the payee label, they aren't deleted. <strong>Select</strong> reveals checkboxes for
+      <strong>Merge</strong>, which folds two or more payees into one you name (defaulting to the first one
+      picked) and repoints every entry, scheduled entry, and template that used any of them.
 
     <h2 id="tags">Tags</h2>
-    <p>Same Edit/Delete/Select+Merge as Payees, for tags instead — a tag can be assigned to more than one entry at
-      once (unlike a payee, which is one per entry), created either here or inline while tagging an entry. Merging
-      here folds every tag's entries onto the surviving name, without duplicating a tag an entry already carries.
+    <p>Same Edit/Archive/Unarchive/Delete/Select+Merge as Payees, for tags instead — a tag can be assigned to more
+      than one entry at once (unlike a payee, which is one per entry), created either here or inline while tagging
+      an entry (typing an archived tag's name while tagging something quietly unarchives it, same as a payee
+      typed into New entry's own combobox). Merging here folds every tag's entries onto the surviving name,
+      without duplicating a tag an entry already carries.
   </div>
 </div>
 {% endblock %}

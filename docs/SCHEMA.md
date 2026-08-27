@@ -363,12 +363,14 @@ Grouped the way `db/schema.sql` groups them.
 - **`payees`** — `name` (unique), `is_active`. One per entry (a plain FK
   on `journal_entries`, not a junction table) — unlike tags, a posting
   has exactly one payee or none.
-- **`tags`** — `name` (lowercase, validated character set), many-to-many
-  with entries/schedules/templates via three junction tables
-  (`journal_entry_tags`, `scheduled_entry_tags`, `entry_template_tags`).
-  Deliberately *not* covered by the immutability trigger — tags are
-  metadata about an entry, not part of the accounting fact, so re-tagging
-  a posted entry is fine.
+- **`tags`** — `name` (lowercase, validated character set), `is_active`
+  (same meaning as `payees.is_active` — hides it from the tag-input's
+  suggestion list, never from an entry that already carries it),
+  many-to-many with entries/schedules/templates via three junction
+  tables (`journal_entry_tags`, `scheduled_entry_tags`,
+  `entry_template_tags`). Deliberately *not* covered by the immutability
+  trigger — tags are metadata about an entry, not part of the accounting
+  fact, so re-tagging a posted entry is fine.
 
 ### The ledger itself
 - **`journal_entries`** — the header: `scenario_id`, `entry_date`,

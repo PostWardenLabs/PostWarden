@@ -462,6 +462,13 @@ CREATE TABLE tags (
     id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE
                CHECK (name = lower(trim(name)) AND name ~ '^[a-z0-9][a-z0-9 _-]{0,39}$'),
+    -- Same shape/meaning as payees.is_active: hides a tag from the tag-
+    -- input's suggestion list (all_tags() — see app/main.py) so an old,
+    -- unused tag stops cluttering autocomplete, without touching any
+    -- entry that already carries it. Never checked by anything that
+    -- reads an entry's own tags (tags_by_entry, the per-entry badges) —
+    -- only by what offers a tag as something new to pick.
+    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
