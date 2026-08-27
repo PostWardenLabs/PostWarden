@@ -13,7 +13,7 @@
   <div class="stat-tile">
     <div class="stat-label">Net worth</div>
     <div class="stat-value {{ 'neg' if net_worth < 0 }}">{{ net_worth | money }}</div>
-    <a class="quiet-link" href="/balance-sheet">Balance sheet →</a>
+    <a class="quiet-link" href="/balance-sheet">Balance Sheet →</a>
   </div>
   <div class="stat-tile">
     <div class="stat-label">{{ month_label }} income</div>
@@ -26,7 +26,7 @@
   <div class="stat-tile">
     <div class="stat-label">{{ month_label }} net</div>
     <div class="stat-value {{ 'neg' if mtd_net < 0 }}">{{ mtd_net | money }}</div>
-    <a class="quiet-link" href="/income-statement">Income statement →</a>
+    <a class="quiet-link" href="/income-statement">Income Statement →</a>
   </div>
 </div>
 
@@ -76,7 +76,7 @@
       <td class="num money money-first">{{ e.total_debits | money }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="3" class="dim">No upcoming scheduled transactions. Set one up from <a class="quiet-link" href="/scheduled">Scheduled</a>.</td></tr>
+    <tr><td colspan="3" class="dim">No upcoming scheduled transactions. Set one up from <a class="quiet-link" href="/scheduled">Scheduled Entries</a>.</td></tr>
     {% endfor %}
   </tbody>
 </table>

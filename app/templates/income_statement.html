@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Income statement{% endblock %}
+{% block title %}Income Statement{% endblock %}
 {% block content %}
 {% macro amt(value, pct) %}{{ value | money }}{% if pct is not none %} <span class="dim small">({{ pct }}%)</span>{% endif %}{% endmacro %}
 {% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}

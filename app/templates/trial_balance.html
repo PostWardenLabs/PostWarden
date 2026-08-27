@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Trial balance{% endblock %}
+{% block title %}Trial Balance{% endblock %}
 {% block content %}
 {% set report_url = "/trial-balance?scenario=" + scenario + "&as_of=" + as_of + "&zeros=" + (zeros | string) + "&raw=" + (raw | string) %}
 {% macro entry_link(code, value, is_flow) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start if (is_flow and not raw) else '' }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
