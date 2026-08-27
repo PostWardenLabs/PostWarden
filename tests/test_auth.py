@@ -1934,9 +1934,13 @@ def test_amount_value_fields_stay_hidden_until_an_operator_is_picked(conn):
     # used to stay in the DOM and visible even at "Any", which is what made
     # the filter bar look like it always had a lone, unlabeled empty box
     # sitting there. Now both share the same hidden-until-relevant
-    # treatment; "between" mode's own boxes get distinguishing Min/Max
-    # placeholders since two boxes with an identical "0.00" hint don't say
-    # which bound is which.
+    # treatment. Both boxes live inside one shared .field (.amount-range)
+    # so "and" can sit between them instead of as the second box's own
+    # label above it; "between" mode's own boxes get distinguishing
+    # Min/Max placeholders since two boxes with an identical hint don't
+    # say which bound is which, and the single-box case says "Value"
+    # rather than the old "0.00" (which read like a live amount, not a
+    # hint for what to type).
     with conn.cursor() as cur:
         user = mk_user(cur)
     conn.commit()
@@ -1944,16 +1948,18 @@ def test_amount_value_fields_stay_hidden_until_an_operator_is_picked(conn):
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         for url in ("/entries", "/staging"):
             r = c.get(url)
-            assert 'id="amount-value-field"' in r.text and 'hidden' in r.text
             assert '<label class="field" id="amount-value-field" style="flex: none;" hidden>' in r.text
 
             r = c.get(f"{url}?amount_op=gte")
             assert '<label class="field" id="amount-value-field" style="flex: none;" >' in r.text
-            assert 'placeholder="0.00"' in r.text
+            assert 'placeholder="Value"' in r.text
+            assert 'id="amount-and" hidden' in r.text
+            assert 'id="amount-value2-input"' in r.text and 'hidden' in r.text
 
             r = c.get(f"{url}?amount_op=between")
             assert '<label class="field" id="amount-value-field" style="flex: none;" >' in r.text
-            assert '<label class="field" id="amount-value2-field" style="flex: none;" >' in r.text
+            assert 'id="amount-and" >' in r.text
+            assert '<input type="text" name="amount_value2" id="amount-value2-input"' in r.text
             assert 'placeholder="Min"' in r.text and 'placeholder="Max"' in r.text
 
 

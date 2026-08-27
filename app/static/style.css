@@ -836,6 +836,16 @@ label.field { display: flex; flex-direction: column; gap: 0.2rem;
    second bound, shown only for "between" — would sit there rendered
    anyway. This is what actually makes `hidden` hide it. */
 label.field[hidden] { display: none; }
+/* The Amount filter's two "between" bounds sit inside one shared .field
+   (see entries.html/staging.html) rather than each getting its own —
+   an "and" as a second field's own <label> text put it above that
+   field's input instead of between the two boxes, which is what it's
+   actually there to separate. .amount-range lays the pair out as one
+   row instead: input, "and", input, all at the same baseline. The
+   second input and the "and" span carry a plain `hidden` attribute
+   directly (not a `.field` label), so the browser's own `[hidden] {
+   display: none }` applies with nothing here needing to re-assert it. */
+.amount-range { display: flex; align-items: center; gap: 0.4rem; }
 /* Every text field, select, and the comboboxes/date inputs skinned on
    top of one (combobox.js and datepicker.js both leave font-family
    alone, so they've always inherited this) shares one font: --sans —

@@ -74,12 +74,13 @@
     </select>
   </label>
   <label class="field" id="amount-value-field" style="flex: none;" {{ '' if amount_op else 'hidden' }}>&nbsp;
-    <input type="text" name="amount_value" class="amount" inputmode="decimal"
-           value="{{ amount_value }}" placeholder="{{ 'Min' if amount_op == 'between' else '0.00' }}" style="width: 7rem;">
-  </label>
-  <label class="field" id="amount-value2-field" style="flex: none;" {{ '' if amount_op == 'between' else 'hidden' }}>and
-    <input type="text" name="amount_value2" class="amount" inputmode="decimal"
-           value="{{ amount_value2 }}" placeholder="Max" style="width: 7rem;">
+    <span class="amount-range">
+      <input type="text" name="amount_value" class="amount" inputmode="decimal"
+             value="{{ amount_value }}" placeholder="{{ 'Min' if amount_op == 'between' else 'Value' }}" style="width: 7rem;">
+      <span class="dim small" id="amount-and" {{ '' if amount_op == 'between' else 'hidden' }}>and</span>
+      <input type="text" name="amount_value2" id="amount-value2-input" class="amount" inputmode="decimal"
+             value="{{ amount_value2 }}" placeholder="Max" style="width: 7rem;" {{ '' if amount_op == 'between' else 'hidden' }}>
+    </span>
   </label>
 </form>
 
