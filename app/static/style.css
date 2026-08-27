@@ -852,34 +852,27 @@ input[type="number"], input.amount {
   font-variant-numeric: tabular-nums;
 }
 
-/* A file input's outer box already picks up the plain input/select/
-   textarea rule above (bordered, --surface background) — this only
-   restyles its embedded native button (::file-selector-button is the
-   standard pseudo-element; -webkit-file-upload-button is the same thing
-   for older WebKit) to match every other button in the app instead of
-   the browser's own unstyled default. `font: inherit` alone (the
-   pseudo-element's default here previously) pulls the surrounding
-   page's own body-size sans font rather than button's actual mono/
-   0.7rem/uppercase treatment — the button read as noticeably bigger and
-   in the wrong typeface next to every other control on Import. The
-   explicit font-size below on the outer input also shrinks the native
-   "No file chosen" label next to it (the one part of a file input with
-   no CSS hook of its own to restyle directly — its exact rendering is
-   the browser's, not this stylesheet's, to control) closer to the
-   app's own small/dim body text instead of full body size. */
-input[type="file"] { padding: 0.3rem; cursor: pointer; font-size: 0.82rem; }
-input[type="file"]::file-selector-button,
-input[type="file"]::-webkit-file-upload-button {
-  font-family: var(--mono); font-size: 0.7rem; cursor: pointer;
-  text-transform: uppercase; letter-spacing: 0.04em;
-  background: var(--accent); color: var(--accent-text);
-  border: 1px solid var(--accent); padding: 0.3rem 0.8rem; border-radius: 2px;
-  margin-right: 0.6rem;
+/* Import's CSV file field (see import.html + import-file.js). A real
+   <input type="file"> stays in the DOM — still a real, focusable,
+   keyboard-operable control, `.sr-only` rather than display:none — but
+   nothing about its own built-in rendering shows: the browser fuses its
+   button and the "No file chosen" text it sits next to into one control
+   with no separate hooks for either (the filename part especially has
+   no CSS hook of its own at all, restyled or not — it's the browser's
+   to render, not this stylesheet's), so no amount of restyling that
+   pairing ever stopped reading as a different design system planted in
+   the page. A plain button (matching every other secondary button in
+   the app) proxies clicks to the real input instead, sitting next to a
+   plain text box (matching every other field) that import-file.js keeps
+   in sync with whatever's actually chosen. */
+.file-field { display: flex; align-items: center; gap: 0.6rem; }
+.file-field-name {
+  flex: 1; min-width: 0; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule-strong); border-radius: 2px;
+  padding: 0.35rem 0.5rem; font-size: 0.82rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-input[type="file"]:hover::file-selector-button,
-input[type="file"]:hover::-webkit-file-upload-button {
-  background: var(--accent-hover); border-color: var(--accent-hover);
-}
+.file-field-name.dim { color: var(--ink-soft); }
 
 /* .button-link: a plain navigation <a> styled to match <button> exactly,
    for the rare case that's a link to another page rather than a form
