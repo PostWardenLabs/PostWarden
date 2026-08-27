@@ -957,10 +957,20 @@ button.quiet:disabled {
    Per-element display values, not a bare `display: none` override —
    .checkline and button already set their own (flex, inline-block), and
    a generic reset would have to guess which one applies to a given
-   .select-only element. */
+   .select-only element.
+
+   Gated on body.select-mode, not #entries-select-form.select-mode: the
+   form wraps only the toolbar, not the entries below it (see
+   entries.html's own comment on why — each checkbox belongs to it via
+   form="entries-select-form" rather than DOM nesting), so a selector
+   scoped to the form itself can only ever match .select-only elements
+   that happen to live in the toolbar (the toolbar's own "select all"
+   checkbox) — never the per-entry ones this mode exists for. body is
+   an ancestor of both, so this is the one selector that reaches
+   everything .select-only actually needs to reveal. */
 .select-only { display: none; }
-#entries-select-form.select-mode label.checkline.select-only { display: flex; }
-#entries-select-form.select-mode button.select-only { display: inline-block; }
+body.select-mode label.checkline.select-only { display: flex; }
+body.select-mode button.select-only { display: inline-block; }
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which

@@ -35,7 +35,13 @@
   }
 
   function setSelectMode(on) {
-    form.classList.toggle("select-mode", on);
+    // On document.body, not the form itself — the per-entry checkboxes
+    // this mode reveals live inside each entry's <summary>, not inside
+    // #entries-select-form (see its own comment on why), so a class
+    // scoped to the form could never be read by a selector that needs
+    // to reach them. body is an ancestor of both the toolbar and every
+    // entry row.
+    document.body.classList.toggle("select-mode", on);
     toggle.textContent = on ? "Deselect" : "Select";
     if (!on) {
       checks.forEach((c) => { c.checked = false; });
@@ -44,7 +50,7 @@
     }
   }
 
-  toggle.addEventListener("click", () => setSelectMode(!form.classList.contains("select-mode")));
+  toggle.addEventListener("click", () => setSelectMode(!document.body.classList.contains("select-mode")));
 
   if (selectAll) {
     selectAll.addEventListener("change", () => {
