@@ -265,7 +265,7 @@
       that's actually editable — see SPEC.md decision 16.
     #}
     <form method="post" action="/entries/{{ e.id }}/edit-description" class="bar"
-          style="margin-top: 0.6rem; align-items: center;">
+          style="margin-top: 0.6rem;">
       <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
       <label class="field" style="flex: 1; min-width: 16rem;">Description
         <input type="text" name="description" value="{{ e.description }}" required>
