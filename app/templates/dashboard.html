@@ -50,7 +50,7 @@
       <td class="num money money-first">{{ e.total_debits | money }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="3" class="dim">No entries yet. Post one from <a href="/entries?new=1">+ New entry</a>.</td></tr>
+    <tr><td colspan="3" class="dim">No entries yet. Post one from <a class="quiet-link" href="/entries?new=1">+ New entry</a>.</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -76,7 +76,7 @@
       <td class="num money money-first">{{ e.total_debits | money }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="3" class="dim">No upcoming scheduled transactions. Set one up from <a href="/scheduled">Scheduled</a>.</td></tr>
+    <tr><td colspan="3" class="dim">No upcoming scheduled transactions. Set one up from <a class="quiet-link" href="/scheduled">Scheduled</a>.</td></tr>
     {% endfor %}
   </tbody>
 </table>
