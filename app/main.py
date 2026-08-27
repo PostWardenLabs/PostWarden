@@ -865,7 +865,7 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
 # back to one plain "Current earnings (unclosed)" line — the true,
 # un-simulated all-time total.
 # ---------------------------------------------------------------------------
-def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
+def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0, zeros: int = 0) -> dict:
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
     accounts = q("SELECT * FROM v_dim_account WHERE is_active ORDER BY sort_path")
@@ -889,14 +889,19 @@ def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
             ("Current Year Earnings (Unclosed)", fy_earnings),
             ("Prior Year Earnings (Unclosed)", total_pnl - fy_earnings),
         ]
+    # Same "hide a boring zero line" rule Trial Balance's own synthetic
+    # earnings rows follow — a zero unclosed-earnings line is noise, not
+    # information, unless zeros asked to see everything.
+    if not zeros:
+        earnings_lines = [(label, amt) for label, amt in earnings_lines if amt != 0]
 
     roots = _build_account_tree(accounts, full_balances)
     asset_roots = [r for r in roots if r["account_type"] == "asset"]
     liability_roots = [r for r in roots if r["account_type"] == "liability"]
     equity_roots = [r for r in roots if r["account_type"] == "equity"]
-    assets = _flatten_tree(asset_roots, zeros=False)
-    liabilities = _flatten_tree(liability_roots, zeros=False)
-    equity = _flatten_tree(equity_roots, zeros=False)
+    assets = _flatten_tree(asset_roots, zeros=zeros)
+    liabilities = _flatten_tree(liability_roots, zeros=zeros)
+    equity = _flatten_tree(equity_roots, zeros=zeros)
 
     total_assets = sum(r["subtotal"] for r in asset_roots)
     total_liabilities = -sum(r["subtotal"] for r in liability_roots)
@@ -912,17 +917,18 @@ def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0) -> dict:
 
 
 @app.get("/balance-sheet")
-def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None, raw: int = 0):
-    result = _balance_sheet_rows(scenario, as_of, raw)
+def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None,
+                       raw: int = 0, zeros: int = 0):
+    result = _balance_sheet_rows(scenario, as_of, raw, zeros)
     return templates.TemplateResponse(request, "balance_sheet.html", {
         "nav": "balance_sheet", "scenarios": scenarios_all(), "scenario": scenario,
-        "as_of": as_of or "", "raw": raw, "today": date.today().isoformat(), **result,
+        "as_of": as_of or "", "raw": raw, "zeros": zeros, "today": date.today().isoformat(), **result,
     })
 
 
 @app.get("/export/balance-sheet.csv")
-def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: int = 0):
-    result = _balance_sheet_rows(scenario, as_of, raw)
+def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: int = 0, zeros: int = 0):
+    result = _balance_sheet_rows(scenario, as_of, raw, zeros)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["Section", "Code", "Account", "Path", "Amount"])
