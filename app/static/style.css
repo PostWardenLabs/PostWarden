@@ -1263,11 +1263,19 @@ details.entry {
 details.entry[open] { border-left-color: var(--red); }
 details.entry summary {
   display: grid;
-  grid-template-columns: 6.5rem 5.5rem 1fr auto auto;
+  grid-template-columns: 6.5rem 7rem 1fr auto auto;
   gap: 0.9rem; align-items: baseline;
   padding: 0.5rem 0.8rem; cursor: pointer; list-style: none;
   font-size: 0.9rem;
 }
+/* The date column (2nd grid item on both the Journal's and Staging's
+   entry rows) was sized for the default ISO format (2026-08-18) — the
+   "long" date-format preference (Aug 18, 2026, up to 12 characters,
+   every month abbreviation being exactly 3 letters) no longer fit in
+   5.5rem and wrapped onto two lines mid-date. Widened the column
+   (5.5rem → 7rem) and this belt-and-suspenders nowrap so a date can
+   never wrap regardless of format or column math again. */
+details.entry summary > .mono.dim:nth-child(2) { white-space: nowrap; }
 details.entry summary::-webkit-details-marker { display: none; }
 details.entry summary:hover { background: var(--paper-deep); }
 details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
