@@ -477,6 +477,35 @@ def dashboard(request: Request):
         credits = credit_names.get(r["id"], set())
         r["flow"] = Markup("{} → {}").format(flow_side(credits), flow_side(debits))
 
+    # Upcoming transactions — every *active* schedule, soonest first. Never
+    # shows one that's actually due: the auth middleware's
+    # materialize_due_schedules() call (see there) already turns a due
+    # occurrence into a real Staging entry and pushes next_date past today
+    # before this route ever runs, so every row here is a real future date.
+    upcoming = q("""
+        SELECT se.id, se.next_date, se.description, p.name AS payee_name,
+               (SELECT COALESCE(SUM(l.debit), 0) FROM scheduled_entry_lines l
+                 WHERE l.scheduled_entry_id = se.id) AS total_debits
+          FROM scheduled_entries se
+          LEFT JOIN payees p ON p.id = se.payee_id
+         WHERE se.is_active
+         ORDER BY se.next_date, se.id
+         LIMIT 8""")
+
+    upcoming_ids = [r["id"] for r in upcoming]
+    debit_names2, credit_names2 = {}, {}
+    if upcoming_ids:
+        for ln in q("""SELECT l.scheduled_entry_id AS entry_id, a.name AS account_name, l.debit, l.credit
+                         FROM scheduled_entry_lines l
+                         JOIN accounts a ON a.id = l.account_id
+                        WHERE l.scheduled_entry_id = ANY(%s)""", (upcoming_ids,)):
+            bucket = debit_names2 if ln["debit"] > 0 else credit_names2
+            bucket.setdefault(ln["entry_id"], set()).add(ln["account_name"])
+    for r in upcoming:
+        debits = debit_names2.get(r["id"], set())
+        credits = credit_names2.get(r["id"], set())
+        r["flow"] = Markup("{} → {}").format(flow_side(credits), flow_side(debits))
+
     pending, _ = pending_staging_entries()
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -484,7 +513,7 @@ def dashboard(request: Request):
         "mtd_income": mtd_income, "mtd_expenses": mtd_expenses,
         "mtd_net": mtd_income - mtd_expenses,
         "month_label": today.strftime("%B %Y"),
-        "recent": recent, "pending_count": len(pending),
+        "recent": recent, "upcoming": upcoming, "pending_count": len(pending),
         "today": today_iso,
     })
 

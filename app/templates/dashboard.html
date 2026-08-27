@@ -55,4 +55,30 @@
   </tbody>
 </table>
 {% if recent %}<p><a class="quiet-link" href="/entries">View full journal →</a></p>{% endif %}
+
+<h2>Upcoming transactions</h2>
+<table class="ledger">
+  <thead><tr>
+    <th>Date</th>
+    <th>Description</th>
+    <th class="num money money-first">Amount</th>
+  </tr></thead>
+  <tbody>
+    {% for e in upcoming %}
+    <tr>
+      <td class="mono dim">{{ e.next_date | dateformat }}</td>
+      <td class="activity-desc-cell">
+        <span class="activity-desc">
+          {{ e.description }}{% if e.payee_name %} <span class="dim small">· {{ e.payee_name }}</span>{% endif %}
+        </span>
+        {% if e.flow %}<span class="activity-flow dim small">{{ e.flow }}</span>{% endif %}
+      </td>
+      <td class="num money money-first">{{ e.total_debits | money }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="dim">No upcoming scheduled transactions. Set one up from <a href="/scheduled">Scheduled</a>.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if upcoming %}<p><a class="quiet-link" href="/scheduled">View all scheduled →</a></p>{% endif %}
 {% endblock %}
