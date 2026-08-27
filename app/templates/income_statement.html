@@ -8,7 +8,7 @@
 
 <div class="page-head">
   <p class="page-sub">Scenario <span class="mono">{{ scenario }}</span>{% if compare %} vs. <span class="mono">{{ compare }}</span>{% endif %}
-    {% if periods %}· split {{ split }} ({{ periods | length - 1 }} period{{ 's' if periods | length != 2 }} + Total){% endif %}</p>
+    {% if periods %}· split {{ split }} ({{ periods | length - 2 }} period{{ 's' if periods | length != 3 }} + Total + Average){% endif %}</p>
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
 
@@ -169,40 +169,48 @@
 {% else %}
 {# Split view: the exact same rows/subtotals/net-income structure above,
    just with one column group per Split period instead of one — the
-   trailing "Total" entry in `periods` (see _income_statement_matrix in
-   main.py) is a real whole-range column, not a template special case,
-   so every {% for p in periods %} below renders it exactly like any
-   other period with zero extra branching. Each row/group already
-   carries a `periods` list whose entries are the very same shape a
-   single-period row/group has — r.periods[i].base_net is r.base_net's
-   split-view counterpart, not a different field — so this mirrors the
-   unsplit table's markup almost line for line, just with an extra
-   {% for p in periods %} wrapped around each column group. Colspan on
-   type-head rows and money-first placement both need to account for how
-   many columns a period group actually is (1, or 4 with a compare
-   scenario) rather than the fixed 3/6 the unsplit table used.
+   trailing "Total" and "Average" entries in `periods` (see
+   _income_statement_matrix in main.py) are real columns, not template
+   special cases, so every {% for p in periods %} below renders them
+   exactly like any other period with zero extra branching. Each
+   row/group already carries a `periods` list whose entries are the
+   very same shape a single-period row/group has — r.periods[i].base_net
+   is r.base_net's split-view counterpart, not a different field — so
+   this mirrors the unsplit table's markup almost line for line, just
+   with an extra {% for p in periods %} wrapped around each column
+   group. Colspan on type-head rows and money-first placement both need
+   to account for how many columns a period group actually is (1, or 4
+   with a compare scenario) rather than the fixed 3/6 the unsplit table
+   used.
 
-   `col_cls` (recomputed identically in every {% for p in periods %}
-   below — Jinja has no shared closure across separate loops, so this is
-   deliberately repeated rather than factored out) marks each period
-   group's *leftmost* sub-column only: `money-first` for the very first
-   period (matching the unsplit table's own left rule marking where the
-   numeric zone begins), `period-start` for every period after the
-   first — the vertical divider between one period's columns and the
-   next, including between the last real period and the trailing Total.
-   Both are absent with only one column group total (nothing to divide
-   from), which fixed here for free just from `loop.first` never being
-   false in a one-iteration loop, so `multi_period` doesn't even need
-   its own check.
+   Two classes get recomputed identically in every {% for p in periods %}
+   below (Jinja has no shared closure across separate loops, so this is
+   deliberately repeated rather than factored out):
+   - `col_cls`, on a period's *leftmost* sub-column only: `money-first`
+     for the very first period (matching the unsplit table's own left
+     rule marking where the numeric zone begins), `period-start` for
+     every period after the first — the vertical divider between one
+     period's columns and the next, including between the last real
+     period and Total, and between Total and Average. Both are absent
+     with only one column group total (nothing to divide from), which
+     falls out for free from `loop.first` never being false in a
+     one-iteration loop, so `multi_period` doesn't even need its own
+     check for that case.
+   - `agg_cls`, on *every* sub-column of a period (not just the
+     leftmost) — the bold+tinted `.period-agg` treatment marking Total
+     and Average as aggregates rather than a real period's own figures,
+     plus `.period-agg-average`'s italic on top for Average specifically
+     so the two aggregate columns stay visually distinguishable from
+     each other, not just from the real periods.
 
    Wrapped in its own scrolling container, unlike the unsplit table
    above — a year split monthly with a compare scenario is 12 * 4 = 48
-   data columns, easily wider than `main`'s own 1080px max-width. Scoped
-   to just this table (see .table-scroll in style.css) rather than every
-   table.ledger in the app: every other report stays a handful of fixed
-   columns that never approaches this regardless of window size, so
-   wrapping them too would be unrelated defensive styling this feature
-   doesn't need. #}
+   data columns (plus Total/Average, 20 more), easily wider than
+   `main`'s own 1080px max-width. Scoped to just this table (see
+   .table-scroll in style.css) rather than every table.ledger in the
+   app: every other report stays a handful of fixed columns that never
+   approaches this regardless of window size, so wrapping them too
+   would be unrelated defensive styling this feature doesn't need. #}
 {% set multi_period = periods | length > 1 %}
 <div class="table-scroll">
 <table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
@@ -212,7 +220,8 @@
       <th rowspan="2">Account</th>
       {% for p in periods %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <th class="num period-label{{ col_cls }}" colspan="{{ 4 if has_compare else 1 }}" title="{{ p.date_from }} – {{ p.date_to }}">
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <th class="num period-label{{ col_cls }}{{ agg_cls }}" colspan="{{ 4 if has_compare else 1 }}" title="{{ p.date_from }} – {{ p.date_to }}">
         {% if p.is_total is defined and p.is_total %}<span id="totals-period-label">{{ p.label }}</span>{% else %}{{ p.label }}{% endif %}{% if p.partial %}<sup>*</sup>{% endif %}
       </th>
       {% endfor %}
@@ -220,11 +229,12 @@
     <tr>
       {% for p in periods %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <th class="num money{{ col_cls }}">{{ scenario }}</th>
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <th class="num money{{ col_cls }}{{ agg_cls }}">{{ scenario }}</th>
       {% if has_compare %}
-      <th class="num money">Variance</th>
-      <th class="num">% variance</th>
-      <th class="num money">{{ compare }}</th>
+      <th class="num money{{ agg_cls }}">Variance</th>
+      <th class="num{{ agg_cls }}">% variance</th>
+      <th class="num money{{ agg_cls }}">{{ compare }}</th>
       {% endif %}
       {% endfor %}
     </tr>
@@ -240,11 +250,12 @@
         {% for p in periods %}
         {% set rp = r.periods[loop.index0] %}
         {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-        <td class="num money{{ col_cls }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
+        {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+        <td class="num money{{ col_cls }}{{ agg_cls }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
-        <td class="num">{{ var(rp.pct_variance) }}</td>
-        <td class="num money">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
+        <td class="num money{{ agg_cls }} {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
+        <td class="num{{ agg_cls }}">{{ var(rp.pct_variance) }}</td>
+        <td class="num money{{ agg_cls }}">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
         {% endif %}
         {% endfor %}
       </tr>
@@ -255,11 +266,12 @@
         {% for p in periods %}
         {% set gp = g.periods[loop.index0] %}
         {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-        <td class="num money{{ col_cls }}">{{ gp.base_subtotal | money }}</td>
+        {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+        <td class="num money{{ col_cls }}{{ agg_cls }}">{{ gp.base_subtotal | money }}</td>
         {% if has_compare %}
-        <td class="num money {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
-        <td class="num">{{ var(gp.pct_variance) }}</td>
-        <td class="num money">{{ gp.compare_subtotal | money }}</td>
+        <td class="num money{{ agg_cls }} {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
+        <td class="num{{ agg_cls }}">{{ var(gp.pct_variance) }}</td>
+        <td class="num money{{ agg_cls }}">{{ gp.compare_subtotal | money }}</td>
         {% endif %}
         {% endfor %}
       </tr>
@@ -270,11 +282,12 @@
       {% for p in periods %}
       {% set pt = periods_totals[loop.index0] %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <td class="num money{{ col_cls }}">{{ pt.total_base_income | money }}</td>
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <td class="num money{{ col_cls }}{{ agg_cls }}">{{ pt.total_base_income | money }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if pt.income_variance_amount < 0 }}">{{ pt.income_variance_amount | money }}</td>
-      <td class="num">{{ var(pt.income_variance) }}</td>
-      <td class="num money">{{ pt.total_compare_income | money }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if pt.income_variance_amount < 0 }}">{{ pt.income_variance_amount | money }}</td>
+      <td class="num{{ agg_cls }}">{{ var(pt.income_variance) }}</td>
+      <td class="num money{{ agg_cls }}">{{ pt.total_compare_income | money }}</td>
       {% endif %}
       {% endfor %}
     </tr>
@@ -288,11 +301,12 @@
         {% for p in periods %}
         {% set rp = r.periods[loop.index0] %}
         {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-        <td class="num money{{ col_cls }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
+        {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+        <td class="num money{{ col_cls }}{{ agg_cls }}">{{ entry_link(scenario, r.account_code, rp.base_net, p.date_from, p.date_to) if not r.has_children else (rp.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
-        <td class="num">{{ var(rp.pct_variance) }}</td>
-        <td class="num money">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
+        <td class="num money{{ agg_cls }} {{ 'neg' if rp.variance < 0 }}">{{ rp.variance | money }}</td>
+        <td class="num{{ agg_cls }}">{{ var(rp.pct_variance) }}</td>
+        <td class="num money{{ agg_cls }}">{{ entry_link(compare, r.account_code, rp.compare_net, p.date_from, p.date_to) if not r.has_children else (rp.compare_net | money) }}</td>
         {% endif %}
         {% endfor %}
       </tr>
@@ -302,11 +316,12 @@
       {% for p in periods %}
       {% set gp = g.periods[loop.index0] %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <td class="num money{{ col_cls }}">{{ amt(gp.base_subtotal, gp.base_pct_of_income) }}</td>
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <td class="num money{{ col_cls }}{{ agg_cls }}">{{ amt(gp.base_subtotal, gp.base_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
-      <td class="num">{{ var(gp.pct_variance) }}</td>
-      <td class="num money">{{ amt(gp.compare_subtotal, gp.compare_pct_of_income) }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if gp.variance < 0 }}">{{ gp.variance | money }}</td>
+      <td class="num{{ agg_cls }}">{{ var(gp.pct_variance) }}</td>
+      <td class="num money{{ agg_cls }}">{{ amt(gp.compare_subtotal, gp.compare_pct_of_income) }}</td>
       {% endif %}
       {% endfor %}
     </tr>
@@ -316,11 +331,12 @@
       {% for p in periods %}
       {% set gp = g.periods[loop.index0] %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <td class="num money{{ col_cls }} {{ 'neg' if gp.base_running_after < 0 }}">{{ amt(gp.base_running_after, gp.base_running_pct_of_income) }}</td>
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <td class="num money{{ col_cls }}{{ agg_cls }} {{ 'neg' if gp.base_running_after < 0 }}">{{ amt(gp.base_running_after, gp.base_running_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if gp.running_variance < 0 }}">{{ gp.running_variance | money }}</td>
-      <td class="num">{{ var(gp.running_pct_variance) }}</td>
-      <td class="num money {{ 'neg' if gp.compare_running_after < 0 }}">{{ amt(gp.compare_running_after, gp.compare_running_pct_of_income) }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if gp.running_variance < 0 }}">{{ gp.running_variance | money }}</td>
+      <td class="num{{ agg_cls }}">{{ var(gp.running_pct_variance) }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if gp.compare_running_after < 0 }}">{{ amt(gp.compare_running_after, gp.compare_running_pct_of_income) }}</td>
       {% endif %}
       {% endfor %}
     </tr>
@@ -331,11 +347,12 @@
       {% for p in periods %}
       {% set pt = periods_totals[loop.index0] %}
       {% set col_cls = ' money-first' if loop.first else (' period-start' if multi_period else '') %}
-      <td class="num money{{ col_cls }} {{ 'neg' if pt.net_income < 0 }}">{{ amt(pt.net_income, pt.net_income_pct_of_income) }}</td>
+      {% set agg_cls = ' period-agg-average' if (p.is_average is defined and p.is_average) else (' period-agg' if (p.is_total is defined and p.is_total) else '') %}
+      <td class="num money{{ col_cls }}{{ agg_cls }} {{ 'neg' if pt.net_income < 0 }}">{{ amt(pt.net_income, pt.net_income_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if pt.net_income_variance_amount < 0 }}">{{ pt.net_income_variance_amount | money }}</td>
-      <td class="num">{{ var(pt.net_income_variance) }}</td>
-      <td class="num money {{ 'neg' if pt.compare_net_income < 0 }}">{{ amt(pt.compare_net_income, pt.compare_net_income_pct_of_income) }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if pt.net_income_variance_amount < 0 }}">{{ pt.net_income_variance_amount | money }}</td>
+      <td class="num{{ agg_cls }}">{{ var(pt.net_income_variance) }}</td>
+      <td class="num money{{ agg_cls }} {{ 'neg' if pt.compare_net_income < 0 }}">{{ amt(pt.compare_net_income, pt.compare_net_income_pct_of_income) }}</td>
       {% endif %}
       {% endfor %}
     </tr>

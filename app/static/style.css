@@ -865,6 +865,26 @@ table.ledger .num, table.ledger th.num {
    group (nothing to divide from). */
 table.ledger th.period-label { text-align: center; }
 table.ledger th.period-start, table.ledger td.period-start { border-left: 1px solid var(--rule-strong); }
+/* .period-agg marks every sub-column of the trailing Total/Average
+   column groups (not just the leftmost, unlike .period-start above) —
+   bold plus a richer tint than the plain .money background, so the two
+   aggregate columns read as a different *kind* of figure at a glance,
+   not just one more period. .period-agg-average layers italic on top,
+   applied instead of (never alongside) .period-agg, so Total and
+   Average stay visually distinguishable from each other too, not just
+   from the real periods. color-mix against --rule-strong rather than a
+   fixed color, same reasoning as every other themed tint in this file —
+   stays correct across all 22 themes and dark mode without its own
+   per-theme override. */
+table.ledger .period-agg {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--rule-strong) 22%, var(--paper-deep));
+}
+table.ledger .period-agg-average {
+  font-weight: 600;
+  font-style: italic;
+  background: color-mix(in srgb, var(--rule-strong) 22%, var(--paper-deep));
+}
 /* Dashboard's Recent activity widget: the debit/credit account label
    ("Salary Income → Cash") sticks to the right of the description
    cell — clear of the Amount column, which keeps its own tinted

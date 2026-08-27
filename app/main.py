@@ -985,6 +985,52 @@ def _split_periods(date_from: str, date_to: str, split: str) -> list[dict]:
     return out
 
 
+def _divide(v, n):
+    return v / n if v is not None else None
+
+
+def _scale_income_statement_result(result: dict, n: int) -> dict:
+    """The Average column's own figures — the Totals column's exact
+    figures divided by the real period count `n`. Safe/exact as a plain
+    division rather than a fresh computation because every dollar amount
+    here is additive across periods (Totals.base_net already equals
+    sum(period.base_net for period in periods) — Split's periods
+    partition the date range with no overlap or gap), and every
+    percentage/ratio field (pct_variance, income_variance,
+    *_pct_of_income, ...) is scale-invariant: dividing both the amount
+    and whatever it's a ratio *of* by the same n leaves the ratio
+    identical to what Totals already computed — recomputing it from
+    the divided figures would just be extra work to land on the exact
+    same number. So only the plain dollar fields get divided here; every
+    percentage field is carried through unchanged via the row/group
+    dict's own shallow copy."""
+    def scale_row(r):
+        return {**r, "base_net": _divide(r["base_net"], n), "compare_net": _divide(r["compare_net"], n),
+                "variance": _divide(r["variance"], n)}
+
+    def scale_group(g, is_expense):
+        g2 = {**g, "rows": [scale_row(r) for r in g["rows"]],
+              "base_subtotal": _divide(g["base_subtotal"], n), "compare_subtotal": _divide(g["compare_subtotal"], n),
+              "variance": _divide(g["variance"], n)}
+        if is_expense:
+            g2["base_running_after"] = _divide(g["base_running_after"], n)
+            g2["compare_running_after"] = _divide(g["compare_running_after"], n)
+            g2["running_variance"] = _divide(g["running_variance"], n)
+        return g2
+
+    return {
+        **result,
+        "income_groups": [scale_group(g, False) for g in result["income_groups"]],
+        "expense_groups": [scale_group(g, True) for g in result["expense_groups"]],
+        "total_base_income": _divide(result["total_base_income"], n),
+        "total_compare_income": _divide(result["total_compare_income"], n),
+        "income_variance_amount": _divide(result["income_variance_amount"], n),
+        "net_income": _divide(result["net_income"], n),
+        "compare_net_income": _divide(result["compare_net_income"], n),
+        "net_income_variance_amount": _divide(result["net_income_variance_amount"], n),
+    }
+
+
 def _income_statement_matrix(scenario: str, periods: list[dict], date_from: str, date_to: str,
                              compare: str = "", zeros: int = 0, pct_of_base: bool = False) -> dict:
     """Split-view counterpart to _income_statement_rows() above — one
@@ -1025,7 +1071,8 @@ def _income_statement_matrix(scenario: str, periods: list[dict], date_from: str,
     (a row that's genuinely zero in every real period but somehow
     nonzero in Totals shouldn't be able to happen, but "never asked
     the question" is a stronger guarantee than "computed the same
-    answer twice")."""
+    answer twice"). Average follows right after Totals, same treatment
+    — see _scale_income_statement_result()."""
     accounts = q("""SELECT * FROM v_dim_account
                      WHERE is_active AND account_type IN ('income', 'expense')
                      ORDER BY sort_path""")
@@ -1063,11 +1110,22 @@ def _income_statement_matrix(scenario: str, periods: list[dict], date_from: str,
     totals_rows_by_id = {r["id"]: r for g in totals_result["income_groups"] + totals_result["expense_groups"]
                          for r in g["rows"]}
     period_rows_by_id.append(totals_rows_by_id)
-    all_periods = per_period + [totals_result]
-    periods_with_total = periods + [{
-        "label": "Total", "date_from": date_from, "date_to": date_to,
-        "partial": False, "is_total": True,
-    }]
+
+    # Average: Totals' own figures divided by the real period count — see
+    # _scale_income_statement_result's own docstring for why a plain
+    # division is exact here rather than an approximation. Same "just one
+    # more period" treatment as Totals, appended right after it so the
+    # template needs no special casing for this column either.
+    average_result = _scale_income_statement_result(totals_result, len(periods))
+    average_rows_by_id = {r["id"]: r for g in average_result["income_groups"] + average_result["expense_groups"]
+                          for r in g["rows"]}
+    period_rows_by_id.append(average_rows_by_id)
+
+    all_periods = per_period + [totals_result, average_result]
+    periods_with_total = periods + [
+        {"label": "Total", "date_from": date_from, "date_to": date_to, "partial": False, "is_total": True},
+        {"label": "Average", "date_from": date_from, "date_to": date_to, "partial": False, "is_average": True},
+    ]
 
     # Matched by the group's own root-account id (its rows[0], same as any
     # other row) within its own income/expense list specifically — not by
@@ -1089,8 +1147,8 @@ def _income_statement_matrix(scenario: str, periods: list[dict], date_from: str,
         # figure the unsplit template reads straight off the result dict),
         # kept as-is rather than reshaped, so the split template's
         # "Total income"/final "Net income" rows read periods_totals[i].x
-        # the same way the unsplit one reads x directly. The last entry
-        # is the Totals column's own whole-range result.
+        # the same way the unsplit one reads x directly. The last two
+        # entries are the Totals and Average columns' own results.
         "periods_totals": all_periods,
         "has_compare": bool(compare),
         "periods": periods_with_total,

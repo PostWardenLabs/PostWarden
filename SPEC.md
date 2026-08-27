@@ -564,6 +564,46 @@ default stays the plain, always-correct "Total" — visible with JS
 disabled, and what CSV export uses unconditionally, since a CSV file
 has no script to run.
 
+**Addendum — Average is Totals divided by the period count, not a
+fresh computation.** The alternative considered was giving Average its
+own machinery — a third "combined activity" tree, or a per-row
+averaging pass independent of how Totals gets built — on the theory
+that an average conceptually is its own thing, not just Totals scaled
+down. That's true in general, but not here specifically: Split's own
+periods are contiguous and non-overlapping by construction (`_split_
+periods` clips them to partition `[date_from, date_to]` exactly, no
+gaps or double-counted days), which makes Totals.base_net for any
+account *identically equal* to the sum of that account's base_net
+across every real period — not approximately, not "close enough for
+a report," genuinely the same number arrived at two different ways.
+Once that holds, Average = Totals / n is exact, and every percentage
+field (`pct_variance`, `*_pct_of_income`, ...) turns out to be
+scale-invariant on top of that — a ratio of two amounts is unchanged
+by dividing both by the same n, so those fields don't even need
+recomputing, only copying through. Building Average as a real second
+computation would have reproduced the exact same numbers through a
+longer path, for no benefit; the one thing worth being careful about
+(and worth this addendum) is that this equivalence depends specifically
+on periods never overlapping — if Split ever grows a mode where periods
+could overlap (unlikely, but worth flagging for whoever touches this
+next), Average would need to go back to being computed independently
+rather than derived from Totals this way.
+
+**Addendum — Totals and Average are visually distinguished from the
+real periods, and from each other.** Once a report has two kinds of
+column — a period's own real figures, and an aggregate across all of
+them — reading the header text is the only way to tell them apart at a
+glance, and that's easy to miss while scanning a wide table. Both
+aggregate columns get a shared "this is not a real period" treatment
+(bold text, a tinted background derived from the theme's own rule
+color via `color-mix()` rather than a fixed hex, so it stays correct
+across every theme this app ships); Average additionally gets italic on
+top, so the two aggregates don't read as one undifferentiated block
+either. The alternative — a written annotation instead of a formatting
+change (e.g., "(avg)" appended to the label) — was available but
+formatting was what was actually asked for, and reads faster at a
+glance than parsing extra text in an already-dense header.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

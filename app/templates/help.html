@@ -120,9 +120,11 @@
       column per period — pick "This year" and split Monthly to see all 12 months side by side instead of running
       the report 12 times. A period that doesn't line up to a whole calendar month/quarter/year at either edge of
       a custom range only totals what's actually inside it — marked with a <sup>*</sup> and explained in a footnote
-      below the table — never expanding outward to a full calendar period you didn't ask for. A last <strong>Total</strong>
-      column always follows the real periods with the whole range's own figures, labeled to match whatever the
-      Period dropdown reads ("This Quarter", "Custom range", ...).
+      below the table — never expanding outward to a full calendar period you didn't ask for. Two columns always
+      follow the real periods: <strong>Total</strong> (the whole range's own figures, labeled to match whatever the
+      Period dropdown reads — "This Quarter", "Custom range", ...) and <strong>Average</strong> (Total divided by
+      the number of periods shown). Both are bold with a tinted background so they read as aggregates rather than
+      another real period at a glance; Average is also italic, to tell the two apart from each other.
 
     <h2 id="variance">Variance</h2>
     <p>Compares two scenarios side by side, rolled up to a common level so a scenario entered straight against

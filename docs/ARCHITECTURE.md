@@ -266,17 +266,26 @@ redesign of its own filter model first.
   account's, `rows[0]`) — matched within its own income/expense list
   specifically, not a combined search across both, since nothing stops
   two top-level accounts of different types sharing a name.
-- **The trailing Totals column**: one more whole-range `_income_
-  statement_rows()` call (`date_from`/`date_to`, not any one period's
-  own bounds), appended to `periods`/`periods_totals` *after* the
-  zero-activity union check above — it only ever restates rows the real
-  periods already decided to show, so it never gets a vote in that
-  check itself (redundant at best, an unnecessary second source of
-  truth at worst). Because it's just one more entry in `periods`, the
-  template's own `{% for p in periods %}` renders it with zero special
-  casing anywhere in the row/subtotal/net-income markup — only the
-  period-label header needs to know it's the Totals column at all (see
-  next bullet). Its default label is the plain, JS-free-safe "Total";
+- **The trailing Totals and Average columns**: Totals is one more
+  whole-range `_income_statement_rows()` call (`date_from`/`date_to`,
+  not any one period's own bounds), appended to `periods`/
+  `periods_totals` *after* the zero-activity union check above — it
+  only ever restates rows the real periods already decided to show, so
+  it never gets a vote in that check itself (redundant at best, an
+  unnecessary second source of truth at worst). Average follows right
+  after it: `_scale_income_statement_result(totals_result, len(periods))`
+  divides every dollar figure in Totals' own result by the real period
+  count and carries every percentage/ratio field through unchanged — a
+  plain division is *exact* here, not an approximation, because Split's
+  periods partition the date range with no overlap or gap (so
+  Totals.base_net already equals the sum of every period's own
+  base_net) and every percentage field is a ratio of two such amounts,
+  which stays identical whether or not both sides get divided by the
+  same n. Because both are just one more entry each in `periods`, the
+  template's own `{% for p in periods %}` renders them with zero
+  special casing anywhere in the row/subtotal/net-income markup — only
+  the period-label header needs to know which is which (see next
+  bullet). Totals' default label is the plain, JS-free-safe "Total";
   `period-picker.js` rewrites a `#totals-period-label` span client-side
   to match whatever the Period dropdown currently reads ("This
   Quarter", "Custom range", ...) on load and on every change, since the
@@ -284,7 +293,9 @@ redesign of its own filter model first.
   the date_from/date_to it resolved to (see that script's own comment —
   a deliberate, pre-existing boundary this doesn't cross). CSV export
   has no such client-side rewrite to lean on, so it always reads the
-  plain "Total".
+  plain "Total". Average's own label is always the static "Average" —
+  it doesn't map onto a Period-dropdown preset the way Totals does, so
+  there's nothing for period-picker.js to rewrite it to.
 - **Template**: `income_statement.html` branches on whether `periods` is
   set — the unsplit branch is the original single-range table, byte-for-
   byte the same markup as before Split existed. The split branch mirrors
@@ -295,32 +306,49 @@ redesign of its own filter model first.
   (`.period-label`, overriding `.num`'s own right-align by source order —
   same specificity, later rule wins) rather than right-aligned like a
   plain numeric header, since it spans every sub-column beneath it
-  instead of heading just one. Each period group's *leftmost* sub-column
-  carries `.period-start` (a `var(--rule-strong)` left rule, not
-  `.money-first`'s red one) for every period after the first — the
-  vertical divider between one period's columns and the next, including
-  before the trailing Total — computed once as `multi_period = periods |
-  length > 1` (which the Totals column being always-present means is
-  true the moment there's at least one real period, so a single-period
-  split still gets a divider before its own Total column). With only one
-  column group total there's nothing to divide from, so no divider
-  renders — Jinja has no shared closure across separate `{% for %}`
-  loops, so this same three-line `col_cls` computation is deliberately
-  repeated in each one rather than factored out. Wrapped in its own
-  `.table-scroll` (`overflow-x: auto`) — a year split monthly with a
-  compare scenario is 12 × 4 = 48 data columns (13 with Totals), easily
-  wider than `main`'s 1080px max-width, and without a scoped scroll
-  container the whole page would scroll sideways along with it, dragging
-  the sidebar out of view. Every other `table.ledger` stays a handful of
-  fixed columns that never approaches this regardless of window size, so
-  only this one table gets the wrapper.
+  instead of heading just one. Two classes get recomputed identically in
+  every `{% for p in periods %}` (Jinja has no shared closure across
+  separate loops, so both are deliberately repeated rather than factored
+  out):
+  - `col_cls`, on a period's *leftmost* sub-column only — `.period-start`
+    (a `var(--rule-strong)` left rule, not `.money-first`'s red one) for
+    every period after the first, the vertical divider between one
+    period's columns and the next, including before Totals and before
+    Average — computed once as `multi_period = periods | length > 1`
+    (which Totals+Average being always-present means is true the moment
+    there's at least one real period, so a single-period split still
+    gets dividers before its own Total/Average columns). With only one
+    column group total there's nothing to divide from, so no divider
+    renders.
+  - `agg_cls`, on *every* sub-column of a period (not just the
+    leftmost) — `.period-agg` (bold, plus a `color-mix(in srgb,
+    var(--rule-strong) 22%, var(--paper-deep))` tint richer than the
+    plain `.money` background) marks Totals and Average as aggregates
+    rather than a real period's own figures; `.period-agg-average`
+    layers italic on top for Average specifically (applied instead of,
+    never alongside, `.period-agg`), so the two aggregate columns stay
+    visually distinguishable from *each other*, not just from the real
+    periods. Both colors derive from existing theme tokens via
+    `color-mix()` rather than a fixed value, so they stay correct across
+    all 22 themes and dark mode with no per-theme override needed.
+
+  Wrapped in its own `.table-scroll` (`overflow-x: auto`) — a year split
+  monthly with a compare scenario is 12 × 4 = 48 data columns (20 more
+  with Totals/Average), easily wider than `main`'s 1080px max-width, and
+  without a scoped scroll container the whole page would scroll sideways
+  along with it, dragging the sidebar out of view. Every other
+  `table.ledger` stays a handful of fixed columns that never approaches
+  this regardless of window size, so only this one table gets the
+  wrapper.
 - **CSV export** (`/export/income-statement.csv?split=...`) gets its own
   wide-format branch for the same reason a two-row HTML `<thead>`
   wouldn't survive a CSV round trip: one row per account, one column per
-  period × sub-column (the trailing Totals column included, same as the
-  HTML table), headers prefixed with the period label (`"2026-08
-  ACTUAL"`, `"2026-08 Variance"`, ..., `"Total ACTUAL"`) so a plain
-  spreadsheet import stays legible with no merged header to reconstruct.
+  period × sub-column (the trailing Totals and Average columns included,
+  same as the HTML table), headers prefixed with the period label
+  (`"2026-08 ACTUAL"`, `"2026-08 Variance"`, ..., `"Total ACTUAL"`,
+  `"Average ACTUAL"`) so a plain spreadsheet import stays legible with no
+  merged header to reconstruct — no bold/italic/tint to carry over, of
+  course, since a CSV cell has no such thing.
 - **money() normalizes negative zero**: a flipped-sign zero-balance
   income row (`_income_statement_groups`' own `sign = -1 if flip else
   1`, applied to a literal 0) is a genuine Decimal/float negative zero,

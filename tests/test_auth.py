@@ -1584,8 +1584,41 @@ def test_income_statement_split_appends_a_totals_column(conn):
         assert '<span id="totals-period-label">Total</span>' in r.text
         assert _account_row_value(r.text, income["code"]) == "100.00"  # July, still first
         assert "400.00" in r.text  # the Totals column's own figure
-        # page-sub reports the *real* period count (2), not periods+Total (3).
-        assert "split monthly (2 periods + Total)" in r.text
+        # page-sub reports the *real* period count (2), not periods+Total+Average (4).
+        assert "split monthly (2 periods + Total + Average)" in r.text
+
+
+def test_income_statement_split_appends_an_average_column(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        budget = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-07-15", "July actual"), income["id"], -100)
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-08-15", "August actual"), income["id"], -300)
+        mk_line(cur, _mk_backdated_entry(cur, budget["id"], "2026-07-15", "July budget"), income["id"], -200)
+        mk_line(cur, _mk_backdated_entry(cur, budget["id"], "2026-08-15", "August budget"), income["id"], -200)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        # Totals' own actual (400) and budget (400) divided by the 2 real
+        # periods -> 200.00 each, a plain static label (no client-side
+        # rewrite like Total gets — "Average" doesn't map to a
+        # Period-dropdown preset the way "Total" maps to "This Quarter").
+        assert re.search(r">\s*Average\s*<", r.text)
+        assert "200.00" in r.text
+        # Both aggregate columns carry the "stand out" treatment (the %
+        # variance sub-column's own class attribute is exactly
+        # class="num{agg_cls}", nothing appended after — a clean,
+        # unambiguous substring to check each variant landed on the
+        # right column); Average additionally gets its own italic class
+        # so the two remain distinguishable from each other, not just
+        # from the real periods.
+        assert 'class="num period-agg"' in r.text
+        assert 'class="num period-agg-average"' in r.text
 
 
 def test_income_statement_split_marks_partial_periods_with_an_asterisk_and_footnote(conn):
@@ -1606,9 +1639,11 @@ def test_income_statement_split_marks_partial_periods_with_an_asterisk_and_footn
         assert "2026-Q3<sup>*</sup>" in r.text
         assert "2026-Q4<sup>*</sup>" in r.text
         assert "clipped to the selected From/To range" in r.text
-        # The Totals column always covers the exact requested range, so
-        # it's never itself "partial" — no asterisk on "Total".
+        # The Totals/Average columns always cover the exact requested
+        # range, so neither is ever itself "partial" — no asterisk on
+        # either.
         assert "Total<sup>*</sup>" not in r.text
+        assert "Average<sup>*</sup>" not in r.text
 
 
 def test_income_statement_split_draws_a_divider_between_periods_only_with_more_than_one(conn):
@@ -1618,20 +1653,20 @@ def test_income_statement_split_draws_a_divider_between_periods_only_with_more_t
     conn.commit()
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
-        # Two real periods + Total = 3 column groups -> dividers between
-        # both boundaries.
+        # Two real periods + Total + Average = 4 column groups -> dividers
+        # between every boundary.
         r = c.get(f"/income-statement?scenario={actual['code']}"
                  f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
         assert r.status_code == 200
         assert "period-start" in r.text
         # A range that only produces one real period (July only) still
-        # gets a Total column, so there's still exactly one boundary
-        # (before Total) worth a divider.
+        # gets Total and Average columns, so there are still boundaries
+        # (before Total, before Average) worth a divider.
         r_one = c.get(f"/income-statement?scenario={actual['code']}"
                       f"&date_from=2026-07-01&date_to=2026-07-31&split=monthly")
         assert r_one.status_code == 200
         assert "period-start" in r_one.text
-        assert "split monthly (1 period + Total)" in r_one.text
+        assert "split monthly (1 period + Total + Average)" in r_one.text
         # The period super-header is centered, not right-aligned like a
         # plain numeric column.
         assert 'class="num period-label' in r.text
@@ -1657,10 +1692,12 @@ def test_income_statement_split_export_csv_has_one_column_group_per_period(conn)
         # lean on (see period-picker.js), so it always reads the plain
         # "Total" rather than a Period-preset label like "Custom range".
         assert header == (f"Section,Code,Account,Path,"
-                          f"2026-07 {actual['code']},2026-08 {actual['code']},Total {actual['code']}")
+                          f"2026-07 {actual['code']},2026-08 {actual['code']},"
+                          f"Total {actual['code']},Average {actual['code']}")
         assert "100.00" in r.text
         assert "300.00" in r.text
         assert "400.00" in r.text  # the Total column: 100 + 300
+        assert "200.00" in r.text  # the Average column: 400 / 2
 
 
 def test_pct_of_base_toggle_flips_variance_convention_on_every_report(conn):
