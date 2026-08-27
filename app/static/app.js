@@ -305,8 +305,11 @@
   // load: description/reference/tags empty, payee unset, date/scenario
   // back to their original defaults, grid back to two blank rows. Same
   // shape as entry_templates.js's "Load template" (it's loading the blank
-  // template, in effect), just no keyboard shortcut — the button is
-  // placed and styled precisely so this only ever happens on purpose.
+  // template, in effect). Alt+C (wired below, alongside the other
+  // shortcuts) mirrors the button exactly rather than adding its own
+  // logic — the button's own placement (far from Post/Add line/
+  // Distribute, via space-between) is what guards against a misclick,
+  // not the absence of a shortcut.
   const clearBtn = document.getElementById("clear-entry-btn");
   if (clearBtn) {
     clearBtn.addEventListener("click", () => {
@@ -359,6 +362,9 @@
     } else if (e.code === "KeyS" && postBtn) {
       e.preventDefault();
       postBtn.click(); // no-op while disabled (unbalanced/invalid), same as clicking it by hand
+    } else if (e.code === "KeyC" && clearBtn) {
+      e.preventDefault();
+      clearBtn.click();
     }
   });
 
