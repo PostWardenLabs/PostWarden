@@ -47,9 +47,9 @@
       <th>Code</th>
       <th>Account</th>
       <th class="num money money-first">Actual</th>
-      <th class="num money">Budgeted</th>
       <th class="num money">Variance</th>
       <th class="num">% variance</th>
+      <th class="num money">Budgeted</th>
     </tr>
   </thead>
   <tbody>
@@ -61,6 +61,8 @@
       <td class="mono dim">{{ r.account_code }}</td>
       <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
       <td class="num money money-first">{{ r.actual | money }}</td>
+      <td class="num money variance-cell {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
+      <td class="num pct-variance-cell">{{ var(r.pct_variance) }}</td>
       {% if r.has_children %}
       <td class="num money budgeted-cell">{{ r.budgeted | money }}</td>
       {% else %}
@@ -71,25 +73,23 @@
                value="{{ '%.2f' % r.budgeted if r.budgeted else '' }}">
       </td>
       {% endif %}
-      <td class="num money variance-cell {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
-      <td class="num pct-variance-cell">{{ var(r.pct_variance) }}</td>
     </tr>
     {% endfor %}
     <tr class="subtotal" data-type-subtotal="{{ g.type }}" data-actual="{{ '%.2f' % g.sub_actual }}">
       <td></td><td>{{ g.label }} subtotal</td>
       <td class="num money money-first">{{ g.sub_actual | money }}</td>
-      <td class="num money budgeted-cell">{{ g.sub_budgeted | money }}</td>
       <td class="num money variance-cell {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
       <td class="num pct-variance-cell">{{ var(g.sub_pct_variance) }}</td>
+      <td class="num money budgeted-cell">{{ g.sub_budgeted | money }}</td>
     </tr>
     {% endfor %}
     <tr class="grand" data-net-row data-actual="{{ '%.2f' % net_actual }}">
       <td></td>
       <td>Net (Income &minus; Expenses)</td>
       <td class="num money money-first">{{ net_actual | money }}</td>
-      <td class="num money budgeted-cell">{{ net_budgeted | money }}</td>
       <td class="num money variance-cell {{ 'neg' if net_variance < 0 }}">{{ net_variance | money }}</td>
       <td class="num pct-variance-cell">{{ var(net_pct_variance) }}</td>
+      <td class="num money budgeted-cell">{{ net_budgeted | money }}</td>
     </tr>
   </tbody>
 </table>

@@ -64,9 +64,9 @@
       <th>Account</th>
       <th class="num money money-first">{{ scenario }}</th>
       {% if has_compare %}
-      <th class="num money">{{ compare }}</th>
       <th class="num money">Variance</th>
       <th class="num">% variance</th>
+      <th class="num money">{{ compare }}</th>
       {% endif %}
     </tr>
   </thead>
@@ -80,9 +80,9 @@
         <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
         <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -91,9 +91,9 @@
         <td></td><td>Total {{ g.name }}</td>
         <td class="num money money-first">{{ g.base_subtotal | money }}</td>
         {% if has_compare %}
-        <td class="num money">{{ g.compare_subtotal | money }}</td>
         <td class="num money {{ 'neg' if g.variance < 0 }}">{{ g.variance | money }}</td>
         <td class="num">{{ var(g.pct_variance) }}</td>
+        <td class="num money">{{ g.compare_subtotal | money }}</td>
         {% endif %}
       </tr>
       {% endif %}
@@ -102,9 +102,9 @@
       <td></td><td>Total income</td>
       <td class="num money money-first">{{ total_base_income | money }}</td>
       {% if has_compare %}
-      <td class="num money">{{ total_compare_income | money }}</td>
       <td class="num money {{ 'neg' if income_variance_amount < 0 }}">{{ income_variance_amount | money }}</td>
       <td class="num">{{ var(income_variance) }}</td>
+      <td class="num money">{{ total_compare_income | money }}</td>
       {% endif %}
     </tr>
 
@@ -116,9 +116,9 @@
         <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
         <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -126,9 +126,9 @@
       <td></td><td>Total {{ g.name }}</td>
       <td class="num money money-first">{{ amt(g.base_subtotal, g.base_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money">{{ amt(g.compare_subtotal, g.compare_pct_of_income) }}</td>
       <td class="num money {{ 'neg' if g.variance < 0 }}">{{ g.variance | money }}</td>
       <td class="num">{{ var(g.pct_variance) }}</td>
+      <td class="num money">{{ amt(g.compare_subtotal, g.compare_pct_of_income) }}</td>
       {% endif %}
     </tr>
     <tr class="grand">
@@ -136,9 +136,9 @@
       <td>{{ 'Net income' if loop.last else 'Net income after ' + g.name }}</td>
       <td class="num money money-first {{ 'neg' if g.base_running_after < 0 }}">{{ amt(g.base_running_after, g.base_running_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if g.compare_running_after < 0 }}">{{ amt(g.compare_running_after, g.compare_running_pct_of_income) }}</td>
       <td class="num money {{ 'neg' if g.running_variance < 0 }}">{{ g.running_variance | money }}</td>
       <td class="num">{{ var(g.running_pct_variance) }}</td>
+      <td class="num money {{ 'neg' if g.compare_running_after < 0 }}">{{ amt(g.compare_running_after, g.compare_running_pct_of_income) }}</td>
       {% endif %}
     </tr>
     {% else %}
@@ -147,9 +147,9 @@
       <td>Net income</td>
       <td class="num money money-first {{ 'neg' if net_income < 0 }}">{{ amt(net_income, net_income_pct_of_income) }}</td>
       {% if has_compare %}
-      <td class="num money {{ 'neg' if compare_net_income < 0 }}">{{ amt(compare_net_income, compare_net_income_pct_of_income) }}</td>
       <td class="num money {{ 'neg' if net_income_variance_amount < 0 }}">{{ net_income_variance_amount | money }}</td>
       <td class="num">{{ var(net_income_variance) }}</td>
+      <td class="num money {{ 'neg' if compare_net_income < 0 }}">{{ amt(compare_net_income, compare_net_income_pct_of_income) }}</td>
       {% endif %}
     </tr>
     {% endfor %}

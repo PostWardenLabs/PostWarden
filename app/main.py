@@ -934,15 +934,15 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
     w = csv.writer(buf)
     header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
     if compare:
-        header += [compare, "Variance", "% variance"]
+        header += ["Variance", "% variance", compare]
     w.writerow(header)
 
     def row(section, code, name, path, base, comp=None, variance=None, pct=None):
         line = [section, code, name, path, base]
         if compare:
-            line += [comp if comp is not None else "",
-                     variance if variance is not None else "",
-                     pct if pct is not None else ""]
+            line += [variance if variance is not None else "",
+                     pct if pct is not None else "",
+                     comp if comp is not None else ""]
         w.writerow(line)
 
     for g in result["income_groups"]:
@@ -1064,9 +1064,11 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
 # ---------------------------------------------------------------------------
 # Budget grid — the ActualBudget-style grid for an income-statement-only
 # scenario (scenarios.income_statement_only): one month at a time, Actual
-# (this month's real postings) next to Budgeted (editable) and the
-# Variance between them, income/expense accounts only, no journal entries
-# anywhere in sight. Reuses _build_account_tree twice — once over
+# (this month's real postings), the Variance against Budgeted (columns
+# in between, both sharing the money-in-between reading order every
+# other two-scenario report uses), and Budgeted itself (editable) last,
+# income/expense accounts only, no journal entries anywhere in sight.
+# Reuses _build_account_tree twice — once over
 # budget_lines, once over ACTUAL's postings for the same month — and
 # merges the two node-for-node rather than inventing a second rollup
 # function, since both sides share the exact same account tree shape.
@@ -1375,10 +1377,10 @@ def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
     compare = v["compare"]
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["Code", "Account", "Path", baseline, compare, "Variance"])
+    w.writerow(["Code", "Account", "Path", baseline, "Variance", compare])
     for r in v["merged"]:
         w.writerow([r["account_code"], r["account_name"], r["path"],
-                   r["baseline_net"], r["compare_net"], r["variance"]])
+                   r["baseline_net"], r["variance"], r["compare_net"]])
     return csv_response(buf, f"postwarden-variance-{baseline}-vs-{compare}.csv")
 
 

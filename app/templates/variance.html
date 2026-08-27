@@ -52,9 +52,9 @@
       <th>Code</th>
       <th>Account</th>
       <th class="num money money-first">{{ baseline }}</th>
-      <th class="num money">{{ compare }}</th>
       <th class="num money">Variance</th>
       <th class="num">% variance</th>
+      <th class="num money">{{ compare }}</th>
     </tr>
   </thead>
   <tbody>
@@ -65,26 +65,26 @@
         <td class="mono dim">{{ r.account_code }}</td>
         <td class="acct-name{% if r.depth is defined %} depth-{{ [r.depth, 6] | min }}{% endif %}">{% if r.id is defined %}<span class="tree-toggle"></span>{% endif %}{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
         <td class="num money money-first">{{ r.baseline_net | money }}</td>
-        <td class="num money">{{ r.compare_net | money }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
+        <td class="num money">{{ r.compare_net | money }}</td>
       </tr>
       {% endfor %}
     <tr class="subtotal">
       <td></td><td>{{ g.label }} subtotal</td>
       <td class="num money money-first">{{ g.sub_baseline | money }}</td>
-      <td class="num money">{{ g.sub_compare | money }}</td>
       <td class="num money {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
       <td class="num">{{ var(g.sub_pct_variance) }}</td>
+      <td class="num money">{{ g.sub_compare | money }}</td>
     </tr>
     {% endfor %}
     <tr class="grand">
       <td></td>
       <td>Total</td>
       <td class="num money money-first">{{ total_baseline | money }}</td>
-      <td class="num money">{{ total_compare | money }}</td>
       <td class="num money {{ 'neg' if total_variance < 0 }}">{{ total_variance | money }}</td>
       <td class="num">{{ var(total_pct_variance) }}</td>
+      <td class="num money">{{ total_compare | money }}</td>
     </tr>
   </tbody>
 </table>
