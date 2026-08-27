@@ -705,15 +705,20 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
    this just reserves a row for the "?" help icon, right-aligned, above
    whatever the page actually starts with. A page whose very first line
    is a short contextual note (Balance Sheet's "As of … scenario …",
-   Scheduled Entries' "N entries waiting in Staging…", the Journal's
-   "back to report") nests that <p class="page-sub"> right inside this
-   div, before the icon — .page-head .page-sub below takes flex: 1 so it
+   Import's "land in Staging for review…", the Journal's "back to
+   report") nests that <p class="page-sub"> right inside this div,
+   before the icon — .page-head .page-sub below takes flex: 1 so it
    fills the row and the icon lands flush right the same as when it's
    alone, rather than the two of them ending up as separate stacked
    lines with the icon's own small height making it visibly
    uncentered against whatever sits just above or below it. Every page
    without such a note leaves this div holding only the anchor, same as
-   ever. */
+   ever. A note that's really an alert (Scheduled Entries' and the
+   Dashboard's own "N entries waiting in Staging…" — see .flash-ok)
+   stays its own full-width banner below this row instead: it needs to
+   read as "something to act on," not a quiet aside, and squeezing an
+   alert-colored box down into a row sized for a 1.35rem icon would
+   undersell it. */
 .page-head { display: flex; justify-content: flex-end; align-items: center; gap: 0.7rem; margin-bottom: 0.6rem; }
 .page-head .page-sub { flex: 1; margin: 0; }
 .help-icon {
