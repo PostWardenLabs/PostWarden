@@ -1,8 +1,19 @@
 /* PostWarden — auto-refresh a filter bar when a combobox or date picker
    changes, instead of waiting for its Refresh/Filter/Go button. Every
    `<form class="bar" method="get">` on the page gets this automatically
-   (see enhanceAll() below) — that's every report's filter form and the
-   Journal's, all built the same way.
+   (see enhanceAll() below) — that's every report's own filter form,
+   a single row with its fields as direct children of the form, so
+   .bar's flex layout can sit right on the form itself with nothing
+   extra needed.
+
+   The Journal's filter form wraps its fields in a nested
+   `<div class="bar">` instead (there's a second row below it — Clear
+   filters/Export CSV — that can't share the same flex row), so putting
+   .bar on the form too would flex the form's own children (that div,
+   the second row) side by side instead of stacking them.
+   `data-auto-refresh` is the same hook with no layout side effect, for
+   exactly that shape — see entries.html's own filter form for why it
+   carries this instead of the class.
 
    Deliberately scoped to selects, date fields, checkboxes, and the tag
    picker's own hidden value field — never a free-typed text field — via
@@ -43,7 +54,7 @@
   }
 
   function enhanceAll() {
-    document.querySelectorAll("form.bar").forEach((form) => {
+    document.querySelectorAll("form.bar, form[data-auto-refresh]").forEach((form) => {
       if (form.method.toLowerCase() === "get") enhance(form);
     });
   }

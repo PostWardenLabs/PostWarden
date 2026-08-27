@@ -2332,6 +2332,14 @@ def test_report_filter_bars_load_auto_refresh(conn):
             r = c.get(url)
             assert r.status_code == 200
             assert 'auto-refresh.js' in r.text, url
+        # The Journal's own filter form isn't class="bar" (it wraps its
+        # fields in a nested div — see entries.html and auto-refresh.js's
+        # own comment on why) — data-auto-refresh is the same hook without
+        # that class's flex-layout side effect. Its absence is exactly the
+        # bug that left the Journal's Scenario/Account/Amount filters
+        # inert while every report's own filter bar already auto-submitted.
+        r = c.get("/entries")
+        assert "data-auto-refresh" in r.text
 
 
 def test_entry_grids_offer_a_distribute_button(conn):

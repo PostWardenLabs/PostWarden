@@ -21,7 +21,7 @@
   <a class="quiet-link" href="/entries?{{ clear_payee_qs }}">clear</a></p>
 {% endif %}
 
-<form method="get" action="/entries">
+<form method="get" action="/entries" data-auto-refresh>
   <input type="hidden" name="back" value="{{ back }}">
   <div class="bar">
   <label class="field">Scenario
