@@ -1562,6 +1562,81 @@ def test_income_statement_split_shows_a_row_active_in_any_period_hides_if_zero_e
         assert never_used["code"] in r_zeros.text
 
 
+def test_income_statement_split_appends_a_totals_column(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+        income = mk_account(cur, account_type="income")
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-07-15", "July"), income["id"], -100)
+        mk_line(cur, _mk_backdated_entry(cur, actual["id"], "2026-08-15", "August"), income["id"], -300)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/income-statement?scenario={actual['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        # A trailing whole-range column — same figure the unsplit report
+        # would show for this exact range (100 + 300 = 400) — server-
+        # rendered with the plain default label "Total" (period-picker.js
+        # rewrites it client-side to match the Period dropdown; a
+        # TestClient GET never runs that JS, so this checks the
+        # graceful-degradation default specifically).
+        assert '<span id="totals-period-label">Total</span>' in r.text
+        assert _account_row_value(r.text, income["code"]) == "100.00"  # July, still first
+        assert "400.00" in r.text  # the Totals column's own figure
+        # page-sub reports the *real* period count (2), not periods+Total (3).
+        assert "split monthly (2 periods + Total)" in r.text
+
+
+def test_income_statement_split_marks_partial_periods_with_an_asterisk_and_footnote(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        # Aug 15-Oct 3 split quarterly: Q3 clipped to Aug 15-Sep 30, Q4
+        # clipped to Oct 1-3 — both partial, so both get the asterisk and
+        # the page gets exactly one shared footnote explaining it (not a
+        # parenthetical date range cluttering each header — see the
+        # user-facing revision after the first cut of this feature).
+        r = c.get(f"/income-statement?scenario={actual['code']}"
+                 f"&date_from=2026-08-15&date_to=2026-10-03&split=quarterly")
+        assert r.status_code == 200
+        assert "2026-Q3<sup>*</sup>" in r.text
+        assert "2026-Q4<sup>*</sup>" in r.text
+        assert "clipped to the selected From/To range" in r.text
+        # The Totals column always covers the exact requested range, so
+        # it's never itself "partial" — no asterisk on "Total".
+        assert "Total<sup>*</sup>" not in r.text
+
+
+def test_income_statement_split_draws_a_divider_between_periods_only_with_more_than_one(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        actual = mk_scenario(cur, enforce_balance=False)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        # Two real periods + Total = 3 column groups -> dividers between
+        # both boundaries.
+        r = c.get(f"/income-statement?scenario={actual['code']}"
+                 f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
+        assert r.status_code == 200
+        assert "period-start" in r.text
+        # A range that only produces one real period (July only) still
+        # gets a Total column, so there's still exactly one boundary
+        # (before Total) worth a divider.
+        r_one = c.get(f"/income-statement?scenario={actual['code']}"
+                      f"&date_from=2026-07-01&date_to=2026-07-31&split=monthly")
+        assert r_one.status_code == 200
+        assert "period-start" in r_one.text
+        assert "split monthly (1 period + Total)" in r_one.text
+        # The period super-header is centered, not right-aligned like a
+        # plain numeric column.
+        assert 'class="num period-label' in r.text
+
+
 def test_income_statement_split_export_csv_has_one_column_group_per_period(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
@@ -1576,9 +1651,16 @@ def test_income_statement_split_export_csv_has_one_column_group_per_period(conn)
                  f"&date_from=2026-07-01&date_to=2026-08-31&split=monthly")
         assert r.status_code == 200
         header = r.text.lstrip("﻿").splitlines()[0]
-        assert header == f"Section,Code,Account,Path,2026-07 {actual['code']},2026-08 {actual['code']}"
+        # A trailing "Total ACTUAL" column — the whole-range figure,
+        # same as the unsplit report would show for this exact range —
+        # after the two real periods; CSV has no client-side rewrite to
+        # lean on (see period-picker.js), so it always reads the plain
+        # "Total" rather than a Period-preset label like "Custom range".
+        assert header == (f"Section,Code,Account,Path,"
+                          f"2026-07 {actual['code']},2026-08 {actual['code']},Total {actual['code']}")
         assert "100.00" in r.text
         assert "300.00" in r.text
+        assert "400.00" in r.text  # the Total column: 100 + 300
 
 
 def test_pct_of_base_toggle_flips_variance_convention_on_every_report(conn):

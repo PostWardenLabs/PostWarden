@@ -851,6 +851,20 @@ table.ledger .num, table.ledger th.num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Income Statement's Split view only. .period-label centers the period
+   super-header ("2026-08", "This Quarter", ...) — it spans every
+   sub-column beneath it (Actual/Variance/%Variance/Compare), so
+   right-aligning it the same as a plain numeric header (table.ledger
+   th.num's own default, same specificity — this rule wins on source
+   order) reads oddly off-center above them. .period-start is the
+   vertical rule between one period's columns and the next (including
+   before the trailing Total column) — same var(--rule-strong) used
+   elsewhere for a structural divider, not the money-first rule's own
+   red — applied to a period's leftmost sub-column only, in both header
+   rows and every body row, never drawn at all with a single column
+   group (nothing to divide from). */
+table.ledger th.period-label { text-align: center; }
+table.ledger th.period-start, table.ledger td.period-start { border-left: 1px solid var(--rule-strong); }
 /* Dashboard's Recent activity widget: the debit/credit account label
    ("Salary Income → Cash") sticks to the right of the description
    cell — clear of the Amount column, which keeps its own tinted

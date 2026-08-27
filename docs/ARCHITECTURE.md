@@ -235,53 +235,92 @@ redesign of its own filter model first.
   a custom range of Aug 15–Oct 3 split quarterly produces a Q3 column
   covering only Aug 15–Sep 30 and a Q4 column covering only Oct 1–3,
   `partial=True` on both, rather than silently pulling in days outside
-  what date_from/date_to actually asked for. Returns `[]` — the same
+  what date_from/date_to actually asked for. The template marks a
+  partial period's label with a `<sup>*</sup>` and shows one shared
+  footnote below the table explaining it, rather than a parenthetical
+  date range inline on every such header (an earlier cut of this that
+  read as more confusing than informative). Returns `[]` — the same
   "nothing to do" signal `compare=""` already is elsewhere — for an
   unrecognized/empty `split`, an inverted range, or (income-statement-
   export-csv only, since that route doesn't default blank dates to this
   month the way the page route does) an empty date_from/date_to; capped
   at 60 periods as a sanity limit, not a real one.
-- **`_income_statement_matrix(scenario, periods, compare, zeros,
-  pct_of_base)`** is the split-view counterpart to `_income_statement_
-  rows()`, built as a thin wrapper around that same single-period
-  function rather than a parallel calculation. Every period gets its own
-  full `_income_statement_rows()` call with `zeros` forced on, which
-  guarantees every account row/group exists in every period aligned by
-  account id — a plain lookup merge from there, with no risk of August
-  ending up with a different set of rows than September because one had
-  a zero-balance account the other didn't. A separate "combined
-  activity" tree (the same `_build_account_tree`/`_income_statement_
-  groups` machinery the single-period report already uses, fed the sum
-  of `|base_net|`/`|compare_net|` across every period) decides which
-  rows/groups actually render under the *real* `zeros` flag — a row
-  shows if it had activity in *any* period, hiding only if it was zero
-  everywhere, the same meaning "show zero balances" already has, just
-  extended across the whole matrix. Each surviving row/group then gets
-  its real per-period figures overlaid via a `periods` list, keyed by
-  account id (a group's own id is its root account's, `rows[0]`) —
-  matched within its own income/expense list specifically, not a
-  combined search across both, since nothing stops two top-level
-  accounts of different types sharing a name.
+- **`_income_statement_matrix(scenario, periods, date_from, date_to,
+  compare, zeros, pct_of_base)`** is the split-view counterpart to
+  `_income_statement_rows()`, built as a thin wrapper around that same
+  single-period function rather than a parallel calculation. Every real
+  period gets its own full `_income_statement_rows()` call with `zeros`
+  forced on, which guarantees every account row/group exists in every
+  period aligned by account id — a plain lookup merge from there, with
+  no risk of August ending up with a different set of rows than
+  September because one had a zero-balance account the other didn't. A
+  separate "combined activity" tree (the same `_build_account_tree`/
+  `_income_statement_groups` machinery the single-period report already
+  uses, fed the sum of `|base_net|`/`|compare_net|` across every *real*
+  period) decides which rows/groups actually render under the *real*
+  `zeros` flag — a row shows if it had activity in *any* period, hiding
+  only if it was zero everywhere, the same meaning "show zero balances"
+  already has, just extended across the whole matrix. Each surviving
+  row/group then gets its real per-period figures overlaid via a
+  `periods` list, keyed by account id (a group's own id is its root
+  account's, `rows[0]`) — matched within its own income/expense list
+  specifically, not a combined search across both, since nothing stops
+  two top-level accounts of different types sharing a name.
+- **The trailing Totals column**: one more whole-range `_income_
+  statement_rows()` call (`date_from`/`date_to`, not any one period's
+  own bounds), appended to `periods`/`periods_totals` *after* the
+  zero-activity union check above — it only ever restates rows the real
+  periods already decided to show, so it never gets a vote in that
+  check itself (redundant at best, an unnecessary second source of
+  truth at worst). Because it's just one more entry in `periods`, the
+  template's own `{% for p in periods %}` renders it with zero special
+  casing anywhere in the row/subtotal/net-income markup — only the
+  period-label header needs to know it's the Totals column at all (see
+  next bullet). Its default label is the plain, JS-free-safe "Total";
+  `period-picker.js` rewrites a `#totals-period-label` span client-side
+  to match whatever the Period dropdown currently reads ("This
+  Quarter", "Custom range", ...) on load and on every change, since the
+  backend itself never learns which preset (if any) was picked, only
+  the date_from/date_to it resolved to (see that script's own comment —
+  a deliberate, pre-existing boundary this doesn't cross). CSV export
+  has no such client-side rewrite to lean on, so it always reads the
+  plain "Total".
 - **Template**: `income_statement.html` branches on whether `periods` is
   set — the unsplit branch is the original single-range table, byte-for-
   byte the same markup as before Split existed. The split branch mirrors
   it almost line for line, with an extra `{% for p in periods %}` wrapped
   around each column group and a two-row `<thead>` (period labels
   spanning 1 or 4 columns, then the repeated sub-column labels
-  underneath) instead of one. Wrapped in its own `.table-scroll`
-  (`overflow-x: auto`) — a year split monthly with a compare scenario is
-  12 × 4 = 48 data columns, easily wider than `main`'s 1080px max-width,
-  and without a scoped scroll container the whole page would scroll
-  sideways along with it, dragging the sidebar out of view. Every other
-  `table.ledger` stays a handful of fixed columns that never approaches
-  this regardless of window size, so only this one table gets the
-  wrapper.
+  underneath) instead of one. The period-label row is centered
+  (`.period-label`, overriding `.num`'s own right-align by source order —
+  same specificity, later rule wins) rather than right-aligned like a
+  plain numeric header, since it spans every sub-column beneath it
+  instead of heading just one. Each period group's *leftmost* sub-column
+  carries `.period-start` (a `var(--rule-strong)` left rule, not
+  `.money-first`'s red one) for every period after the first — the
+  vertical divider between one period's columns and the next, including
+  before the trailing Total — computed once as `multi_period = periods |
+  length > 1` (which the Totals column being always-present means is
+  true the moment there's at least one real period, so a single-period
+  split still gets a divider before its own Total column). With only one
+  column group total there's nothing to divide from, so no divider
+  renders — Jinja has no shared closure across separate `{% for %}`
+  loops, so this same three-line `col_cls` computation is deliberately
+  repeated in each one rather than factored out. Wrapped in its own
+  `.table-scroll` (`overflow-x: auto`) — a year split monthly with a
+  compare scenario is 12 × 4 = 48 data columns (13 with Totals), easily
+  wider than `main`'s 1080px max-width, and without a scoped scroll
+  container the whole page would scroll sideways along with it, dragging
+  the sidebar out of view. Every other `table.ledger` stays a handful of
+  fixed columns that never approaches this regardless of window size, so
+  only this one table gets the wrapper.
 - **CSV export** (`/export/income-statement.csv?split=...`) gets its own
   wide-format branch for the same reason a two-row HTML `<thead>`
   wouldn't survive a CSV round trip: one row per account, one column per
-  period × sub-column, headers prefixed with the period label
-  (`"2026-08 ACTUAL"`, `"2026-08 Variance"`, ...) so a plain spreadsheet
-  import stays legible with no merged header to reconstruct.
+  period × sub-column (the trailing Totals column included, same as the
+  HTML table), headers prefixed with the period label (`"2026-08
+  ACTUAL"`, `"2026-08 Variance"`, ..., `"Total ACTUAL"`) so a plain
+  spreadsheet import stays legible with no merged header to reconstruct.
 - **money() normalizes negative zero**: a flipped-sign zero-balance
   income row (`_income_statement_groups`' own `sign = -1 if flip else
   1`, applied to a literal 0) is a genuine Decimal/float negative zero,

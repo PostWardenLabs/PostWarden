@@ -2,12 +2,29 @@
    statement). Purely a convenience that fills in the two real date
    inputs the form actually submits; the backend only ever sees plain
    date_from/date_to, same as Journal's filters. Picking "Custom range"
-   just leaves whatever's in the two fields for hand-editing. */
+   just leaves whatever's in the two fields for hand-editing.
+
+   Split view's own trailing "Total" column (see income_statement.html)
+   wants to read whatever this dropdown currently says ("This Quarter",
+   "Custom range", ...) instead of a bare "Total" — but the backend
+   itself never learns which preset was picked, only the date_from/
+   date_to it resolved to (that's deliberate — see above), so it can't
+   render that label itself. Handled here instead, client-side, the same
+   place that already knows the preset/date-range relationship: on load
+   and on every change, if a #totals-period-label element exists on the
+   page, its text becomes this dropdown's current selected option text.
+   Degrades gracefully with JS disabled — the server-rendered default is
+   the plain, still-correct "Total". */
 (function () {
   const preset = document.getElementById("period-preset");
   const fromInput = document.getElementById("date_from");
   const toInput = document.getElementById("date_to");
+  const totalsLabel = document.getElementById("totals-period-label");
   if (!preset || !fromInput || !toInput) return;
+
+  function syncTotalsLabel() {
+    if (totalsLabel) totalsLabel.textContent = preset.options[preset.selectedIndex].text;
+  }
 
   const iso = (d) => d.toISOString().slice(0, 10);
   const today = new Date();
@@ -39,6 +56,7 @@
 
   preset.addEventListener("change", () => {
     const range = rangeFor(preset.value);
+    syncTotalsLabel();
     if (!range) return;
     fromInput.value = range[0];
     toInput.value = range[1];
@@ -55,4 +73,5 @@
       break;
     }
   }
+  syncTotalsLabel();
 })();

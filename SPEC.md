@@ -544,6 +544,26 @@ convention toggle, income-statement-only/budget-scenario handling) —
 personal-ledger scale never makes N+1 queries-per-period a real cost,
 so there was nothing to trade the duplication for.
 
+**Addendum — the trailing Totals column's label is rewritten client-side,
+not threaded through the backend.** Split gained a whole-range Totals
+column after the periods (a plain aggregate, same figures the unsplit
+report would show), and the natural ask was for its header to read
+whatever the Period dropdown currently says — "This Quarter", "Custom
+range" — instead of a bare "Total". The dropdown's *choice* only exists
+client-side, though (`period-picker.js`'s own comment: "the backend
+only ever sees plain date_from/date_to" — a deliberate boundary,
+predating Split, that keeps the preset a convenience rather than a
+piece of state the server has to track). Making the Totals header say
+"This Quarter" server-side would mean submitting the preset as a real
+field and threading it through the route, back-links, and CSV export —
+undoing that boundary for the sake of one label. Instead,
+`period-picker.js` (which already fully owns preset↔date-range
+translation) rewrites the header text itself, on load and on change,
+the same place that already knows the answer. The server-rendered
+default stays the plain, always-correct "Total" — visible with JS
+disabled, and what CSV export uses unconditionally, since a CSV file
+has no script to run.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

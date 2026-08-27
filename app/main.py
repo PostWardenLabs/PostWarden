@@ -985,8 +985,8 @@ def _split_periods(date_from: str, date_to: str, split: str) -> list[dict]:
     return out
 
 
-def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = "",
-                             zeros: int = 0, pct_of_base: bool = False) -> dict:
+def _income_statement_matrix(scenario: str, periods: list[dict], date_from: str, date_to: str,
+                             compare: str = "", zeros: int = 0, pct_of_base: bool = False) -> dict:
     """Split-view counterpart to _income_statement_rows() above — one
     column group per Split period instead of one range. A thin wrapper
     around that same single-period function rather than a parallel
@@ -1001,14 +1001,31 @@ def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = 
     _income_statement_groups machinery the single-period report already
     uses) decides which rows/groups actually render under the *real*
     `zeros` flag — fed the sum of |base_net| and |compare_net| across
-    every period, so a row shows if it had activity in *any* period and
-    hides only if it was zero everywhere, the same meaning "show zero
-    balances" already has today, just extended across the whole matrix
-    instead of one range. The scaffold tree's own base_net/compare_net
-    figures are otherwise meaningless (a sum of absolute values, not a
-    real total) — every row/group below gets its *real* per-period
-    numbers overlaid from `per_period` right after, keyed by account id
-    either way (a group's own id is its root account's — rows[0])."""
+    every real period (the Totals column below deliberately never
+    contributes to this — see there), so a row shows if it had activity
+    in *any* period and hides only if it was zero everywhere, the same
+    meaning "show zero balances" already has today, just extended across
+    the whole matrix instead of one range. The scaffold tree's own
+    base_net/compare_net figures are otherwise meaningless (a sum of
+    absolute values, not a real total) — every row/group below gets its
+    *real* per-period numbers overlaid from `per_period` right after,
+    keyed by account id either way (a group's own id is its root
+    account's — rows[0]).
+
+    A trailing "Totals" column — the same whole-range figures the
+    unsplit report would show for this exact scenario/date_from/date_to
+    — is appended after the real periods, same shape as any other period
+    (its own `_income_statement_rows()` call, zeros forced on) so the
+    template's own `{% for p in periods %}` renders it with zero special
+    casing. Computed *after* the scaffold's zero/activity union above and
+    never folded into it — Totals only ever restates rows the real
+    periods already decided to show, so it never needs a vote of its
+    own, and giving it one would be redundant at best (any real period
+    with activity already makes the union nonzero) and risked at worst
+    (a row that's genuinely zero in every real period but somehow
+    nonzero in Totals shouldn't be able to happen, but "never asked
+    the question" is a stronger guarantee than "computed the same
+    answer twice")."""
     accounts = q("""SELECT * FROM v_dim_account
                      WHERE is_active AND account_type IN ('income', 'expense')
                      ORDER BY sort_path""")
@@ -1031,6 +1048,27 @@ def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = 
     income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros, pct_of_base=pct_of_base)
     expense_groups = _income_statement_groups(roots, "expense", flip=False, zeros=zeros, pct_of_base=pct_of_base)
 
+    # The Totals column: whole-range figures, appended as one more
+    # "period" after the union check above (see the docstring's own
+    # paragraph on why it never contributes to it). Its label is a
+    # plain, JS-free-safe default — period-picker.js rewrites it
+    # client-side to match whatever the Period dropdown currently reads
+    # ("This Quarter", "Custom range", ...) once it knows, since the
+    # backend itself never learns which preset (if any) was picked, only
+    # the date_from/date_to it resolved to (see that script's own
+    # comment). CSV export, which has no client-side rewrite to lean on,
+    # keeps the plain "Total" — a reasonable, still-correct spreadsheet
+    # column header either way.
+    totals_result = _income_statement_rows(scenario, date_from, date_to, compare, zeros=1, pct_of_base=pct_of_base)
+    totals_rows_by_id = {r["id"]: r for g in totals_result["income_groups"] + totals_result["expense_groups"]
+                         for r in g["rows"]}
+    period_rows_by_id.append(totals_rows_by_id)
+    all_periods = per_period + [totals_result]
+    periods_with_total = periods + [{
+        "label": "Total", "date_from": date_from, "date_to": date_to,
+        "partial": False, "is_total": True,
+    }]
+
     # Matched by the group's own root-account id (its rows[0], same as any
     # other row) within its own income/expense list specifically — not by
     # name, and not a combined search across both lists: two top-level
@@ -1042,7 +1080,7 @@ def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = 
             root_id = g["rows"][0]["id"]
             for r in g["rows"]:
                 r["periods"] = [rows_by_id.get(r["id"], {}) for rows_by_id in period_rows_by_id]
-            g["periods"] = [next(pg for pg in p[key] if pg["rows"][0]["id"] == root_id) for p in per_period]
+            g["periods"] = [next(pg for pg in p[key] if pg["rows"][0]["id"] == root_id) for p in all_periods]
 
     return {
         "income_groups": income_groups, "expense_groups": expense_groups,
@@ -1051,9 +1089,11 @@ def _income_statement_matrix(scenario: str, periods: list[dict], compare: str = 
         # figure the unsplit template reads straight off the result dict),
         # kept as-is rather than reshaped, so the split template's
         # "Total income"/final "Net income" rows read periods_totals[i].x
-        # the same way the unsplit one reads x directly.
-        "periods_totals": per_period,
+        # the same way the unsplit one reads x directly. The last entry
+        # is the Totals column's own whole-range result.
+        "periods_totals": all_periods,
         "has_compare": bool(compare),
+        "periods": periods_with_total,
     }
 
 
@@ -1066,10 +1106,10 @@ def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: s
     date_to = date_to or today.isoformat()
     periods = _split_periods(date_from, date_to, split)
     if periods:
-        result = _income_statement_matrix(scenario, periods, compare, zeros, bool(pct_of_base))
+        result = _income_statement_matrix(scenario, periods, date_from, date_to, compare, zeros, bool(pct_of_base))
     else:
         result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
-    result["periods"] = periods
+        result["periods"] = periods
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
         "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
@@ -1129,9 +1169,9 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
     # gets one — "2026-08 ACTUAL" reads fine as a single Excel column
     # header, "ACTUAL" repeated 3x with a separate period row above it
     # wouldn't survive a CSV round trip at all.
-    result = _income_statement_matrix(scenario, periods, compare, zeros, bool(pct_of_base))
+    result = _income_statement_matrix(scenario, periods, date_from, date_to, compare, zeros, bool(pct_of_base))
     header = ["Section", "Code", "Account", "Path"]
-    for p in periods:
+    for p in result["periods"]:  # real periods + the trailing Totals column
         header.append(f"{p['label']} {scenario}")
         if compare:
             header += [f"{p['label']} Variance", f"{p['label']} % variance", f"{p['label']} {compare}"]
