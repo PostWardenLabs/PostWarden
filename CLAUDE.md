@@ -6,6 +6,11 @@ level via triggers; FastAPI + Jinja2 + vanilla JS is a thin layer on top.
 No ORM, no build step, no SPA. Before touching anything, read:
 
 - [`README.md`](README.md) — what the app is, how to run it
+- [`docs/GUIDE.md`](docs/GUIDE.md) — the user-facing concepts guide: what
+  PostWarden is/isn't, why double-entry for personal finance, chart-of-
+  accounts patterns. Not code-relevant day to day, but keep it in sync
+  if a change touches what `db/seed.sql` ships or how scenarios/budgets
+  are explained to a newcomer.
 - [`SPEC.md`](SPEC.md) — *why* the schema is shaped this way; read this
   before modeling anything new, especially anything touching scenarios,
   balance enforcement, or the ledger/budget split

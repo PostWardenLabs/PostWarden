@@ -56,8 +56,8 @@ WITH e AS (
 )
 INSERT INTO journal_lines (entry_id, line_no, account_id, amount)
 SELECT e.id, x.line_no, x.account_id, x.amount FROM e, (VALUES
-    (1, (SELECT id FROM accounts WHERE code = '5210'),   1850.00),
-    (2, (SELECT id FROM accounts WHERE code = '2100'),  -1850.00)
+    (1, (SELECT id FROM accounts WHERE code = '5400'),   1850.00),
+    (2, (SELECT id FROM accounts WHERE code = '2110'),  -1850.00)
 ) AS x(line_no, account_id, amount);
 
 -- 5. Credit card payment (liability settled — no expense here) ---------------
@@ -69,7 +69,7 @@ WITH e AS (
 )
 INSERT INTO journal_lines (entry_id, line_no, account_id, amount)
 SELECT e.id, x.line_no, x.account_id, x.amount FROM e, (VALUES
-    (1, (SELECT id FROM accounts WHERE code = '2100'),   1850.00),
+    (1, (SELECT id FROM accounts WHERE code = '2110'),   1850.00),
     (2, (SELECT id FROM accounts WHERE code = '1110'),  -1850.00)
 ) AS x(line_no, account_id, amount);
 
@@ -84,11 +84,11 @@ INSERT INTO budget_lines (scenario_id, account_id, period_month, amount) VALUES
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
      (SELECT id FROM accounts WHERE code = '5110'), DATE '2026-08-01',  9500.00),
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
-     (SELECT id FROM accounts WHERE code = '5210'), DATE '2026-08-01',  6000.00),
+     (SELECT id FROM accounts WHERE code = '5400'), DATE '2026-08-01',  6000.00),
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
-     (SELECT id FROM accounts WHERE code = '5220'), DATE '2026-08-01',  2500.00),
+     (SELECT id FROM accounts WHERE code = '6100'), DATE '2026-08-01',  2500.00),
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
-     (SELECT id FROM accounts WHERE code = '5300'), DATE '2026-08-01',  1800.00),
+     (SELECT id FROM accounts WHERE code = '5200'), DATE '2026-08-01',  1800.00),
     -- September too, so the Budget page's prev/next month links have
     -- somewhere to go.
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
@@ -96,6 +96,6 @@ INSERT INTO budget_lines (scenario_id, account_id, period_month, amount) VALUES
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
      (SELECT id FROM accounts WHERE code = '5110'), DATE '2026-09-01',  9500.00),
     ((SELECT id FROM scenarios WHERE code = 'BUD2026'),
-     (SELECT id FROM accounts WHERE code = '5210'), DATE '2026-09-01',  6200.00);
+     (SELECT id FROM accounts WHERE code = '5400'), DATE '2026-09-01',  6200.00);
 
 COMMIT;

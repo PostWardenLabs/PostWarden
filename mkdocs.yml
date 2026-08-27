@@ -9,6 +9,7 @@ docs_dir: docs
 
 nav:
   - Home: README.md
+  - Concepts guide: GUIDE.md
   - Design spec: SPEC.md
   - Schema reference: SCHEMA.md
   - Architecture: ARCHITECTURE.md

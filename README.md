@@ -231,6 +231,7 @@ Start with this README for orientation, then:
 
 | Doc | For |
 |---|---|
+| [`docs/GUIDE.md`](docs/GUIDE.md) | New to PostWarden or to double-entry itself — what it is, why double-entry for personal finance, and a chart-of-accounts pattern to start from. |
 | [`SPEC.md`](SPEC.md) | Design decisions and the reasoning behind them — read this before changing how anything is modeled. |
 | [`docs/SCHEMA.md`](docs/SCHEMA.md) | The entity-relationship diagram and a table-by-table reference. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the FastAPI app, templates, and JS are organized, and the UI patterns reused across screens. |
@@ -334,7 +335,7 @@ deploy/gcp/               a fully-worked example of running this on Google Cloud
                           see deploy/gcp/README.md and PostWardenPublic for that
 
 SPEC.md                   design decisions and rationale
-docs/                     schema reference + ERD, app architecture — see docs/README.md
+docs/                     concepts guide, schema reference + ERD, app architecture — see docs/README.md
 mkdocs.yml                builds docs/ into docs.postwarden.org (Cloudflare Pages)
 CLAUDE.md                 instructions for an AI coding agent working in this repo
 LICENSE                   AGPL-3.0 — see "License" below

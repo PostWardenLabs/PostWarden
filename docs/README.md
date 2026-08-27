@@ -1,9 +1,10 @@
 # Documentation map
 
-Three documents, three different questions:
+Four documents, four different questions:
 
 | Document | Answers | Read it when... |
 |---|---|---|
+| [`GUIDE.md`](GUIDE.md) | *What* is this, and how do I think about it? | You're new to PostWarden, or new to double-entry accounting, and want the concepts (and a chart-of-accounts pattern) before you start entering numbers. |
 | [`SPEC.md`](SPEC.md) | *Why* is the schema shaped this way? | You're about to change how something is modeled, or you're wondering why it isn't modeled the "obvious" other way. |
 | [`SCHEMA.md`](SCHEMA.md) | *What* tables/triggers/views exist? | You need the ER diagram, a table's exact columns, or which trigger enforces which rule. |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | *How* is the app code organized? | You're adding a route, a template, or a JS file, and want to match the existing conventions instead of inventing new ones. |
