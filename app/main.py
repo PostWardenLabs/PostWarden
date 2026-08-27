@@ -1096,7 +1096,7 @@ async def save_budget_cell(request: Request):
 # income-statement-only one never has the journal-entry facts this reads,
 # by design; see the Budget grid above for that comparison instead.
 # ---------------------------------------------------------------------------
-def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) -> dict:
+def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, zeros: int = 0) -> dict:
     """Shared by the variance page and its CSV export — same rollup, same
     baseline/compare resolution, so the export matches what's on screen.
     Excludes Staging same as income-statement-only scenarios: Staging is a
@@ -1127,64 +1127,120 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str) ->
             level_id = str(bl["id"])
 
     as_of_date = as_of or None
-    baseline_rows = {r["account_id"]: r for r in q(
-        "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
-        (baseline, level_depth, as_of_date))} if baseline in codes else {}
-    compare_rows = {r["account_id"]: r for r in q(
-        "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
-        (compare, level_depth, as_of_date))} if compare in codes else {}
 
-    merged = []
-    for aid in set(baseline_rows) | set(compare_rows):
-        b = baseline_rows.get(aid)
-        c = compare_rows.get(aid)
-        ref = b or c
-        b_net = b["net"] if b else 0
-        c_net = c["net"] if c else 0
-        merged.append({
-            "account_code": ref["account_code"], "account_name": ref["account_name"],
-            "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
-            "baseline_net": b_net, "compare_net": c_net, "variance": c_net - b_net,
-        })
+    if level_depth is None:
+        # Native depth — build a real account tree (same
+        # _build_account_tree/_flatten_tree Trial Balance/Balance Sheet/
+        # Income Statement use) instead of fn_rollup_balance(scenario,
+        # NULL, ...), which already amounted to the same thing minus
+        # zero-balance rows and real ancestor branches — see that
+        # function's own comment ("matches fn_trial_balance's rows, just
+        # without the always-show-every-postable-leaf zero rows"). Gets
+        # Variance real chevrons and a working zero-balances toggle, same
+        # as every other report, in the one mode where that's actually
+        # meaningful: once a rollup level below has genuinely collapsed
+        # several accounts' postings into one pooled number, there's
+        # nothing finer left underneath to expand or reveal.
+        accounts = q("SELECT * FROM v_dim_account WHERE is_active ORDER BY sort_path")
+        baseline_by_id = ({r["account_id"]: r["net"] for r in
+                           q("SELECT * FROM fn_account_balances(%s, %s)", (baseline, as_of_date))}
+                          if baseline in codes else {})
+        compare_by_id = ({r["account_id"]: r["net"] for r in
+                          q("SELECT * FROM fn_account_balances(%s, %s)", (compare, as_of_date))}
+                         if compare in codes else {})
+        roots = _build_account_tree(accounts, baseline_by_id, compare_by_id)
+        grouped = []
+        for t in ACCOUNT_TYPES:
+            type_roots = [r for r in roots if r["account_type"] == t]
+            rows = _flatten_tree(type_roots, zeros)
+            for r in rows:
+                r["baseline_net"] = r["subtotal"]
+                r["compare_net"] = r["compare_subtotal"]
+                r["variance"] = r["compare_net"] - r["baseline_net"]
+            if rows:
+                grouped.append({
+                    "type": t, "label": TYPE_LABELS[t], "rows": rows,
+                    "sub_baseline": sum(rr["subtotal"] for rr in type_roots),
+                    "sub_compare": sum(rr["compare_subtotal"] for rr in type_roots),
+                    "sub_variance": sum(rr["compare_subtotal"] - rr["subtotal"] for rr in type_roots),
+                })
+        merged = [r for g in grouped for r in g["rows"]]
+        # Roots only, not the full (branch + leaf) `merged` list — a
+        # branch row's own baseline_net/compare_net already double-counts
+        # its descendants, same reason Balance Sheet totals from
+        # `asset_roots`/etc. rather than its own flattened display rows.
+        total_baseline = sum(r["subtotal"] for r in roots)
+        total_compare = sum(r["compare_subtotal"] for r in roots)
+    else:
+        # Rolled up to a chosen level — genuine SQL-side aggregation
+        # across accounts posted at different native depths (e.g. a
+        # Budget scenario posted straight to "Bank" reconciled against
+        # Actual's separate Checking/Savings postings), so this stays on
+        # fn_rollup_balance: no tree to walk, no zero rows to add — a
+        # rolled-up row already represents whatever was pooled into it.
+        baseline_rows = {r["account_id"]: r for r in q(
+            "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
+            (baseline, level_depth, as_of_date))} if baseline in codes else {}
+        compare_rows = {r["account_id"]: r for r in q(
+            "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
+            (compare, level_depth, as_of_date))} if compare in codes else {}
 
-    grouped = []
-    for t in ACCOUNT_TYPES:
-        sub = sorted((r for r in merged if r["acct_type"] == t), key=lambda r: r["sort_path"])
-        if sub:
-            grouped.append({
-                "type": t, "label": TYPE_LABELS[t], "rows": sub,
-                "sub_baseline": sum(r["baseline_net"] for r in sub),
-                "sub_compare": sum(r["compare_net"] for r in sub),
-                "sub_variance": sum(r["variance"] for r in sub),
+        merged = []
+        for aid in set(baseline_rows) | set(compare_rows):
+            b = baseline_rows.get(aid)
+            c = compare_rows.get(aid)
+            ref = b or c
+            b_net = b["net"] if b else 0
+            c_net = c["net"] if c else 0
+            merged.append({
+                "account_code": ref["account_code"], "account_name": ref["account_name"],
+                "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
+                "baseline_net": b_net, "compare_net": c_net, "variance": c_net - b_net,
+                "has_children": False,
             })
+
+        grouped = []
+        for t in ACCOUNT_TYPES:
+            sub = sorted((r for r in merged if r["acct_type"] == t), key=lambda r: r["sort_path"])
+            if sub:
+                grouped.append({
+                    "type": t, "label": TYPE_LABELS[t], "rows": sub,
+                    "sub_baseline": sum(r["baseline_net"] for r in sub),
+                    "sub_compare": sum(r["compare_net"] for r in sub),
+                    "sub_variance": sum(r["variance"] for r in sub),
+                })
+        total_baseline = sum(r["baseline_net"] for r in merged)
+        total_compare = sum(r["compare_net"] for r in merged)
+
     return {
         "scens": scens, "compare": compare, "level_id": level_id,
-        "merged": merged, "grouped": grouped,
+        "merged": merged, "grouped": grouped, "rolled_up": level_depth is not None,
+        "total_baseline": total_baseline, "total_compare": total_compare,
+        "total_variance": total_compare - total_baseline,
     }
 
 
 @app.get("/variance")
 def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
-                  level_id: str = "", as_of: str = None):
-    v = _compute_variance(baseline, compare, level_id, as_of)
-    merged, grouped, scens, compare, level_id = (
-        v["merged"], v["grouped"], v["scens"], v["compare"], v["level_id"])
+                  level_id: str = "", as_of: str = None, zeros: int = 0):
+    v = _compute_variance(baseline, compare, level_id, as_of, zeros)
 
     return templates.TemplateResponse(request, "variance.html", {
-        "nav": "variance", "grouped": grouped, "scenarios": scens,
-        "levels": account_levels_all(), "baseline": baseline, "compare": compare,
-        "level_id": level_id, "as_of": as_of or "",
-        "total_baseline": sum(r["baseline_net"] for r in merged),
-        "total_compare": sum(r["compare_net"] for r in merged),
-        "total_variance": sum(r["variance"] for r in merged),
+        "nav": "variance", "grouped": v["grouped"], "scenarios": v["scens"],
+        "levels": account_levels_all(), "baseline": baseline, "compare": v["compare"],
+        "level_id": v["level_id"], "as_of": as_of or "", "zeros": zeros,
+        "rolled_up": v["rolled_up"],
+        "total_baseline": v["total_baseline"],
+        "total_compare": v["total_compare"],
+        "total_variance": v["total_variance"],
         "today": date.today().isoformat(),
     })
 
 
 @app.get("/export/variance.csv")
 def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
-                        level_id: str = "", as_of: str = None):
-    v = _compute_variance(baseline, compare, level_id, as_of)
+                        level_id: str = "", as_of: str = None, zeros: int = 0):
+    v = _compute_variance(baseline, compare, level_id, as_of, zeros)
     compare = v["compare"]
     buf = io.StringIO()
     w = csv.writer(buf)

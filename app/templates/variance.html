@@ -31,11 +31,13 @@
   <label class="field">As of
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
+  <label class="checkline" title="{{ 'Only applies at native depth — a rolled-up row already represents whatever was pooled into it, with no zero-balance rows left to reveal underneath.' if rolled_up }}">
+    <input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
   <button type="submit">Refresh</button>
-  <a class="quiet-link" href="/export/variance.csv?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ as_of }}">Export CSV</a>
+  <a class="quiet-link" href="/export/variance.csv?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ as_of }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 
-<table class="ledger">
+<table class="ledger" data-collapse-key="postwarden-variance-collapsed">
   <thead>
     <tr>
       <th>Code</th>
@@ -49,9 +51,9 @@
     {% for g in grouped %}
     <tr class="type-head"><td colspan="5">{{ g.label }}</td></tr>
       {% for r in g.rows %}
-      <tr>
+      <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
-        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="acct-name{% if r.depth is defined %} depth-{{ [r.depth, 6] | min }}{% endif %}">{% if r.id is defined %}<span class="tree-toggle"></span>{% endif %}{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
         <td class="num money money-first">{{ r.baseline_net | money }}</td>
         <td class="num money">{{ r.compare_net | money }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
@@ -75,3 +77,5 @@
 </table>
 {% if not grouped %}<p class="dim">No activity in either scenario yet.</p>{% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{{ asset('report-tree.js') }}"></script>{% endblock %}

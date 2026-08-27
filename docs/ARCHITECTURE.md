@@ -61,7 +61,7 @@ reading order:
 | Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column; `_build_account_tree`'s optional `compare_by_id` rolls both scenarios up in one tree, one group per top-level income/expense account (`_income_statement_groups()`) for the waterfall — see the module comment above `_pct_variance` |
 | Balance sheet | `/balance-sheet`, `/export/balance-sheet.csv` | |
 | Budget grid | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern) |
-| Variance | `/variance`, `/export/variance.csv` | general two-scenario diff, rolled up to a common `account_levels` depth |
+| Variance | `/variance`, `/export/variance.csv` | general two-scenario diff. Two modes: no rollup (native depth) builds a real `_build_account_tree` for chevrons + zero-balances, same as Trial Balance/Balance Sheet/Income Statement; a chosen `account_levels` depth stays on `fn_rollup_balance`'s SQL-side aggregation instead (accounts posted at different native depths reconciled into one row — no tree to walk there, so no chevrons, and the zeros checkbox is a no-op with a tooltip saying so) |
 | Chart of accounts | `/accounts`, `/accounts/quick-create` | |
 | Journal entry create | `/entries` POST | `_parse_lines()` turns the grid's parallel `account[]/debit[]/credit[]` arrays into line dicts |
 | Journal browser | `/entries` GET, `/entries/export.csv`, `/entries/reverse`, `/entries/{id}/reverse`, `/entries/tags`, `/entries/{id}/edit-description` | `_entries_filter()` builds the one WHERE clause both the HTML view and the CSV export share; its date/search/tags/account/payee/amount fragments live in `_shared_journal_filters()`, reused as-is by Staging's own filter bar (`_staging_filter()`) — only Scenario differs between the two (the Journal's own posted scenario vs. Staging's target scenario, since every Staging row already shares one real scenario). `_entries_filter()`'s WHERE clause starts unconditionally with `NOT s.is_staging`, not just "no scenario filter selected" — the Journal never shows a pending Staging entry regardless of filter state, even a hand-edited `scenario=STAGING` query string, and its Scenario `<select>` (Staging-filtered same as the WHERE clause) drops the old "All" option entirely rather than offer a catch-all next to specific scenario codes; ACTUAL sorts first (scenario_type enum order) and is what shows selected on an unfiltered page load. **Select entries** (`entries-select.js`) reveals a checkbox per entry, same mechanism as Staging's bulk Approve/Reject — `/entries/reverse` is the bulk sibling of the single-entry route, both backed by one `_reverse_one_entry()` helper; confirms via `confirm.js`'s `ask()` with a count-aware message before submitting, Alt+R triggers it. The old per-entry "Reverse this entry" button is gone, same consolidation as Staging's Reject. Its outer `<form id="entries-select-form">` wraps only the toolbar, not the entries below it — a `<form>` can't nest inside another one, and each entry gets its own "Edit description" `<form>` — every checkbox still belongs to it via `form="entries-select-form"` (an input can be associated with a form anywhere in the document that way, not just one it's a DOM descendant of) rather than literal nesting. **Edit tags** posts to `/entries/tags` once per chip added/removed (`action=add`/`remove`, one tag, the checked `entry_id`s) — `_add_tag_to_entries()`/`_remove_tag_from_entries()` touch only `journal_entry_tags` (no immutability trigger there — see SPEC.md decision 16), additively, never a full replace like `_sync_entry_tags()` does for a single entry's own tags, since different selected entries can have different existing tags. **Edit description** (inline in each entry's expanded panel, its own small `<form>`) is the one column of an already-posted entry actually editable — same decision 16 reasoning as tags |
@@ -125,11 +125,12 @@ Rather than re-explain these at every call site, here's each one, once.
 
 ### The account-tree / rollup pattern
 
-Trial Balance, Balance Sheet, Income Statement, and the Budget grid all
-show the same kind of thing: a hierarchical chart of accounts where a
-summary account (e.g. "Current Assets") needs to display the *sum* of
-everything under it, not just its own direct postings, and the whole
-thing needs to collapse/expand.
+Trial Balance, Balance Sheet, Income Statement, Variance (at native
+depth — see its own route table entry above for the rolled-up case),
+and the Budget grid all show the same kind of thing: a hierarchical
+chart of accounts where a summary account (e.g. "Current Assets") needs
+to display the *sum* of everything under it, not just its own direct
+postings, and the whole thing needs to collapse/expand.
 
 - **Server side** (`app/main.py`): `_build_account_tree(accounts,
   balances_by_id, compare_by_id=None)` takes the flat account list (from
