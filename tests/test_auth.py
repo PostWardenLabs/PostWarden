@@ -1564,6 +1564,27 @@ def test_entries_page_and_settings_page_offer_date_format(conn):
             assert opt in r_settings.text
 
 
+def test_settings_page_offers_a_font_bundle_picker(conn):
+    # Font is a separate choice from Theme (data-font vs. data-theme —
+    # see style.css's font-bundle block and font.js) — a handful of
+    # named bundles, not a free-text typeface field, and one of them
+    # (Classic Serif) is the one that renders actual numbers in serif
+    # rather than the app's usual monospace figures.
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/settings")
+        assert '<select id="font-select">' in r.text
+        for opt in ('value="system"', 'value="serif"', 'value="modern"', 'value="mono"'):
+            assert opt in r.text
+        assert "Classic Serif" in r.text
+
+        r_home = c.get("/")
+        assert 'font.js' in r_home.text
+
+
 def test_entries_page_hide_reversed_excludes_both_sides_of_the_pair(conn):
     # "Hide reversed entries and their reversals" has to drop both halves
     # of a reversal — the original (reverses_entry_id IS NULL but it's

@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}PostWarden{% endblock %} · PostWarden</title>
 <script>
-  // Applied before the stylesheet renders, so a saved theme (and whether
-  // the sidebar is pinned open) is right on first paint instead of
-  // flashing the default and then jumping.
+  // Applied before the stylesheet renders, so a saved theme, a saved
+  // font bundle, and whether the sidebar is pinned open are all right
+  // on first paint instead of flashing the default and then jumping.
   (function () {
     var t = localStorage.getItem("postwarden-theme");
     if (t) document.documentElement.setAttribute("data-theme", t);
+    var f = localStorage.getItem("postwarden-font");
+    if (f) document.documentElement.setAttribute("data-font", f);
     if (localStorage.getItem("postwarden-sidebar-pinned") === "1") {
       document.documentElement.classList.add("sidebar-pinned");
     }
@@ -90,6 +92,7 @@
 <script src="{{ asset('datepicker.js') }}"></script>
 <script src="{{ asset('number-stepper.js') }}"></script>
 <script src="{{ asset('theme.js') }}"></script>
+<script src="{{ asset('font.js') }}"></script>
 <script src="{{ asset('cents-entry.js') }}"></script>
 <script src="{{ asset('money-format.js') }}"></script>
 <script src="{{ asset('date-format.js') }}"></script>

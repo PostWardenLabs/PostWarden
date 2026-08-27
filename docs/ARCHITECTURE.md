@@ -83,7 +83,7 @@ the sidebar nav, the flash-message banner, and three blocks a page fills
 in: `title`, `content`, and `scripts` (page-specific `<script src>` tags
 — a page needs this block only for something `base.html` doesn't already
 load unconditionally: `combobox.js`, `datepicker.js`, `sidebar.js`,
-`theme.js`, `cents-entry.js`, `money-format.js`, `date-format.js`, `auto-refresh.js`,
+`theme.js`, `font.js`, `cents-entry.js`, `money-format.js`, `date-format.js`, `auto-refresh.js`,
 `confirm.js`.
 `tags.js` is the one common enhancement that *isn't* always-on — only
 pages with an actual tag input (`entries.html`, `scheduled.html`, ...)
@@ -119,6 +119,7 @@ through the template context explicitly.
 | `staging.js` | The Staging page — "select all" toggles every entry checkbox; Approve and the bulk Reject button both stay disabled until at least one is checked, and both confirm via `confirm.js`'s `ask()` (count-aware message, so it can't be a static `data-confirm` — the check for that attribute on `e.submitter` is what tells this listener apart from a hypothetical future button that confirms itself the ordinary way). Alt+A clicks Approve, Alt+R clicks Reject. |
 | `staging-inline-edit.js` | Staging's "Edit" — relocates one shared `app.js` grid panel (`#staging-edit-panel`, parked hidden next to `#staging-edit-panel-home` when nothing's open) into whichever pending entry's own `.lines` div was just clicked, in place of navigating to a separate page. Fetches that entry's own data from `GET /staging/{id}/edit` (a JSON endpoint now, not a page) and fills the panel in — description/reference/payee/tags fields directly, the grid via `PostWardenEntryGrid.setAccounts()` + `clear()` + `addRow()` per line, same shape `entry_templates.js`'s "Load template" uses. Only one entry can be mid-edit at a time (one grid on the page); opening a second one closes whichever was already open first, restoring that entry's read-only view. Save (`app.js`'s own submit handler, unchanged) still does a real redirect back to `/staging` — this only removes the navigation it used to take just to *open* an entry for editing. |
 | `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
+| `font.js` | The font-bundle `<select>` in Settings — same shape as `theme.js` (own `localStorage` key `postwarden-font`, own `data-font` attribute, own pre-paint switch in `base.html`'s `<head>`), a deliberately separate, independent choice from Theme. Picks one of a handful of named bundles (System/Classic Serif/Modern Sans/Monospace), each overriding some subset of `--serif`/`--sans`/`--mono` in `style.css`'s `:root[data-font="..."]` blocks — never a single free-text typeface. Classic Serif also repoints `--figures` (see below) at `--serif`, which is what actually renders ledger numbers in serif rather than the app's usual monospace figures. |
 
 ## Patterns used more than once
 

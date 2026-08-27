@@ -25,6 +25,11 @@
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+  /* A role, not an alias — see the font-bundle block below for why this
+     is its own variable rather than every numeric readout just using
+     --mono directly. Defaults to --mono (today's look, unchanged) until
+     a bundle says otherwise. */
+  --figures: var(--mono);
 }
 
 /* Ledger — pale green ledger stock, grounded in the columnar paper this
@@ -459,6 +464,43 @@
   --accent-text:  #000000;
 }
 
+/* -- font bundles ---------------------------------------------------------
+   Independent of color theme — see Settings' "Font" picker, font.js.
+   A person picks a *look*, not a lone typeface: which of --serif/--sans/
+   --mono a bundle touches, and what each becomes, is one design decision
+   bundled together, not three separate free-text fields where a single
+   swapped face without its companions rereading to match tends to look
+   like a mistake rather than a choice.
+
+   Sits after every :root[data-theme=...] block above, on purpose: left
+   at its default, data-font carries no attribute at all (same "no
+   override" convention theme.js already uses for data-theme), so a
+   theme with its own font opinion — Monaspace above, which sets --mono
+   as part of its identity — keeps it. Actually picking a bundle is a
+   deliberate override, same as picking a non-default color theme
+   overrides the base palette; equal specificity, later source order,
+   so a chosen bundle always wins over whatever a theme set for itself.
+
+   --figures is its own role, not an alias for --mono used everywhere
+   .mono already is — account codes, entry IDs, dates, the SQL/hostname
+   snippets in Settings' Connect BI panel all stay genuinely monospace
+   regardless of bundle, since a technical string or an identifier
+   benefits from a fixed-width face in a way a plain quantity doesn't.
+   --figures only backs actual numeric readouts: table.ledger's .num
+   columns, amount inputs, the balance bar, Dashboard's stat tiles. */
+:root[data-font="serif"] {
+  --sans: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --figures: var(--serif);
+}
+:root[data-font="modern"] {
+  --serif: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+  --sans: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+}
+:root[data-font="mono"] {
+  --serif: var(--mono);
+  --sans: var(--mono);
+}
+
 * { box-sizing: border-box; }
 html { font-size: 16px; }
 body {
@@ -755,7 +797,7 @@ table.ledger td {
 }
 table.ledger .num, table.ledger th.num {
   text-align: right;
-  font-family: var(--mono);
+  font-family: var(--figures);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -797,6 +839,20 @@ tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: 
 .dim { color: var(--ink-soft); }
 .small { font-size: 0.8rem; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* Every server-rendered money amount, anywhere — main.py's money()
+   filter always wraps its value in this span, whether it lands inside
+   a table.ledger .num cell, a summary row's plain `.num mono` total, or
+   a Dashboard stat tile — so this is the one selector guaranteed to
+   reach an actual dollar figure regardless of what wraps it. A direct
+   rule on the element itself beats whatever font-family its container
+   set (table.ledger .num, .mono, .stat-value, ...), same as any other
+   cascade tie between an inherited value and a rule matching the
+   element directly — so this is what actually decides a money amount's
+   font, not those containers. They still carry their own --figures
+   rule for numeric content that isn't money (row counts, % variance,
+   the balance bar's live JS-updated totals, which never pass through
+   this filter at all). */
+.money-fmt { font-family: var(--figures); font-variant-numeric: tabular-nums; }
 
 /* -- forms --------------------------------------------------------------- */
 /* Plain class selector, not "form.bar" — a .bar grouping a few fields
@@ -874,7 +930,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
   outline: 2px solid var(--focus); outline-offset: 1px;
 }
 input[type="number"], input.amount {
-  font-family: var(--mono); text-align: right;
+  font-family: var(--figures); text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1286,7 +1342,7 @@ table.entry-grid .col-amount  { width: 15%; }
   margin-top: 0.9rem; padding: 0.7rem 0.9rem;
   background: var(--paper-deep);
   border-left: 3px solid var(--rule-strong);
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-family: var(--figures); font-variant-numeric: tabular-nums;
   font-size: 0.95rem;
 }
 .balance-bar.balanced { border-left-color: var(--ok); }
@@ -1560,7 +1616,7 @@ tr.add-gap .add-gap-type { max-width: 11rem; }
   letter-spacing: 0.05em; margin-bottom: 0.3rem;
 }
 .stat-value {
-  font-family: var(--mono); font-size: 1.5rem; font-weight: 600;
+  font-family: var(--figures); font-size: 1.5rem; font-weight: 600;
   font-variant-numeric: tabular-nums; margin-bottom: 0.4rem;
 }
 .stat-value.neg { color: var(--red); }

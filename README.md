@@ -56,7 +56,11 @@ instance.
   and twenty-two hand-built visual themes if the default doesn't suit
   you — ten original, plus VS Code– and [monkeytype.com](https://monkeytype.com)-inspired
   palettes (Catppuccin, Nord, Tokyo Night, Monokai Pro, and more), picked
-  from a searchable dropdown in Settings.
+  from a searchable dropdown in Settings. A separate Font picker there
+  swaps the whole type system at once (System/Classic Serif/Modern
+  Sans/Monospace) rather than one typeface at a time — Classic Serif is
+  the one that renders the ledger's own numbers in serif instead of the
+  app's usual monospace figures.
 - **A Power BI / Excel connection page** (Settings) — host, port, and a
   dedicated read-only login filled in for this instance, plus a `.pbids`
   download, so connecting a BI tool is a page in the app, not a README to
