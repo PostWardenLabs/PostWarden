@@ -736,14 +736,48 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
 # account down to zero-balance leaves, same checkbox/meaning as Trial
 # Balance's.
 # ---------------------------------------------------------------------------
-def _pct_variance(base, compare_val):
-    """How much `base` differs from `compare_val`, as a % of `compare_val`
-    — "actual is 12% over budget." None (not 0%) when there's nothing to
-    compare against, so the template can render "—" instead of a
-    misleading 0%."""
+def _pct_variance(base, compare_val, pct_of_base: bool = False):
+    """% variance between `base` (a report's "actual"-like primary
+    figure) and `compare_val` (its "budget"/reference-like figure) — two
+    conventions, user-toggleable per report via a "% variance of actual"
+    checkbox next to Hide zero balances (Income Statement, Variance,
+    Budget Grid all share this one flag/wording — see each route's own
+    `pct_of_base` query param).
+
+    Default (pct_of_base=False, "% of budget" — unchecked, matching the
+    checkbox's own unchecked state): how far `base` came from
+    `compare_val`, as a % of `compare_val` — (compare_val - base) /
+    compare_val. "actual came in 12% under budget."
+
+    Checked (pct_of_base=True, "% of actual"): the same gap, as a % of
+    `base` instead — (base - compare_val) / base. "budget was 12% below
+    actual."
+
+    Deliberately two distinct formulas, not one sign-flipped the other —
+    the denominator moves, not just the numerator's sign — so this
+    takes the toggle as an explicit argument rather than being a
+    caller-side negation. None (not 0%) when there's nothing to divide
+    by."""
+    if pct_of_base:
+        if not base:
+            return None
+        return round((base - compare_val) / abs(base) * 100, 1)
     if not compare_val:
         return None
-    return round((base - compare_val) / abs(compare_val) * 100, 1)
+    return round((compare_val - base) / abs(compare_val) * 100, 1)
+
+
+def _variance_amount(base, compare_val, pct_of_base: bool = False):
+    """The plain-currency counterpart to _pct_variance() above — same
+    toggle, same two conventions, kept as its own function (not baked
+    into _pct_variance's return) since every call site needs both the
+    dollar figure and the percentage rendered side by side, not one
+    derived from the other. Default: compare_val - base (budget minus
+    actual). Checked: base - compare_val (actual minus budget) — the
+    numerator flips right along with which side of the % the toggle
+    picks, so the sign of the dollar variance always agrees with
+    whichever percentage is showing next to it."""
+    return (base - compare_val) if pct_of_base else (compare_val - base)
 
 
 def _pct_of(amount, total):
@@ -752,7 +786,8 @@ def _pct_of(amount, total):
     return round(amount / total * 100, 1)
 
 
-def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool) -> list[dict]:
+def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool,
+                             pct_of_base: bool = False) -> list[dict]:
     """One group per top-level account of type `t` — multiple, for a
     second top-level expense account like "6000 Other" (see module
     comment). Each group's rows are that root's own _flatten_tree()
@@ -763,7 +798,9 @@ def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool)
     gave for free by simply never creating the group. `flip` sign-
     corrects credit-normal Income rows (net < 0 for real income) so
     every amount from here on reads as a plain positive figure in its
-    "normal" direction."""
+    "normal" direction. `pct_of_base` — see _pct_variance()'s own
+    comment — is this scenario's own net (base_net/base_subtotal), not
+    the compare scenario's."""
     sign = -1 if flip else 1
     out = []
     for root in sorted((r for r in roots if r["account_type"] == t), key=lambda r: r["account_code"]):
@@ -773,15 +810,15 @@ def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool)
         for r in rows:
             r["base_net"] = sign * r["subtotal"]
             r["compare_net"] = sign * r["compare_subtotal"]
-            r["variance"] = r["base_net"] - r["compare_net"]
-            r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"])
+            r["variance"] = _variance_amount(r["base_net"], r["compare_net"], pct_of_base)
+            r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"], pct_of_base)
         out.append({
             "name": root["account_name"], "rows": rows,
             "base_subtotal": sign * root["subtotal"], "compare_subtotal": sign * root["compare_subtotal"],
         })
     for g in out:
-        g["variance"] = g["base_subtotal"] - g["compare_subtotal"]
-        g["pct_variance"] = _pct_variance(g["base_subtotal"], g["compare_subtotal"])
+        g["variance"] = _variance_amount(g["base_subtotal"], g["compare_subtotal"], pct_of_base)
+        g["pct_variance"] = _pct_variance(g["base_subtotal"], g["compare_subtotal"], pct_of_base)
     return out
 
 
@@ -826,7 +863,8 @@ def _income_statement_balances(scenario_code: str, accounts_by_id: dict,
 
 
 def _income_statement_rows(scenario: str, date_from: str, date_to: str,
-                           compare: str = "", zeros: int = 0) -> dict:
+                           compare: str = "", zeros: int = 0,
+                           pct_of_base: bool = False) -> dict:
     date_to_v, date_from_v = date_to or None, date_from or None
     accounts = q("""SELECT * FROM v_dim_account
                      WHERE is_active AND account_type IN ('income', 'expense')
@@ -836,13 +874,13 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
     compare_by_id = (_income_statement_balances(compare, accounts_by_id, date_to_v, date_from_v)
                      if compare else {})
     roots = _build_account_tree(accounts, base_by_id, compare_by_id)
-    income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros)
-    expense_groups = _income_statement_groups(roots, "expense", flip=False, zeros=zeros)
+    income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros, pct_of_base=pct_of_base)
+    expense_groups = _income_statement_groups(roots, "expense", flip=False, zeros=zeros, pct_of_base=pct_of_base)
 
     total_base_income = sum(g["base_subtotal"] for g in income_groups)
     total_compare_income = sum(g["compare_subtotal"] for g in income_groups)
-    income_variance_amount = total_base_income - total_compare_income
-    income_variance = _pct_variance(total_base_income, total_compare_income)
+    income_variance_amount = _variance_amount(total_base_income, total_compare_income, pct_of_base)
+    income_variance = _pct_variance(total_base_income, total_compare_income, pct_of_base)
 
     base_running, compare_running = total_base_income, total_compare_income
     for g in expense_groups:
@@ -850,8 +888,8 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
         compare_running -= g["compare_subtotal"]
         g["base_running_after"] = base_running
         g["compare_running_after"] = compare_running
-        g["running_variance"] = base_running - compare_running
-        g["running_pct_variance"] = _pct_variance(base_running, compare_running)
+        g["running_variance"] = _variance_amount(base_running, compare_running, pct_of_base)
+        g["running_pct_variance"] = _pct_variance(base_running, compare_running, pct_of_base)
         g["base_pct_of_income"] = _pct_of(g["base_subtotal"], total_base_income)
         g["compare_pct_of_income"] = _pct_of(g["compare_subtotal"], total_compare_income)
         g["base_running_pct_of_income"] = _pct_of(base_running, total_base_income)
@@ -864,8 +902,8 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
         "total_base_income": total_base_income, "total_compare_income": total_compare_income,
         "income_variance_amount": income_variance_amount, "income_variance": income_variance,
         "net_income": net_income, "compare_net_income": compare_net_income,
-        "net_income_variance_amount": net_income - compare_net_income,
-        "net_income_variance": _pct_variance(net_income, compare_net_income),
+        "net_income_variance_amount": _variance_amount(net_income, compare_net_income, pct_of_base),
+        "net_income_variance": _pct_variance(net_income, compare_net_income, pct_of_base),
         "net_income_pct_of_income": _pct_of(net_income, total_base_income),
         "compare_net_income_pct_of_income": _pct_of(compare_net_income, total_compare_income),
         "has_compare": bool(compare),
@@ -874,22 +912,24 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str,
 
 @app.get("/income-statement")
 def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: str = "",
-                          date_from: str = "", date_to: str = "", zeros: int = 0):
+                          date_from: str = "", date_to: str = "", zeros: int = 0,
+                          pct_of_base: int = 0):
     today = date.today()
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
-    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros)
+    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
         "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
-        "zeros": zeros, "today": today.isoformat(), **result,
+        "zeros": zeros, "pct_of_base": pct_of_base, "today": today.isoformat(), **result,
     })
 
 
 @app.get("/export/income-statement.csv")
 def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
-                                date_from: str = "", date_to: str = "", zeros: int = 0):
-    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros)
+                                date_from: str = "", date_to: str = "", zeros: int = 0,
+                                pct_of_base: int = 0):
+    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
     buf = io.StringIO()
     w = csv.writer(buf)
     header = ["Section", "Code", "Account", "Path", scenario or "Amount"]
@@ -1023,8 +1063,8 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
 
 # ---------------------------------------------------------------------------
 # Budget grid — the ActualBudget-style grid for an income-statement-only
-# scenario (scenarios.income_statement_only): one month at a time,
-# Budgeted (editable) next to Actual (this month's real postings) and the
+# scenario (scenarios.income_statement_only): one month at a time, Actual
+# (this month's real postings) next to Budgeted (editable) and the
 # Variance between them, income/expense accounts only, no journal entries
 # anywhere in sight. Reuses _build_account_tree twice — once over
 # budget_lines, once over ACTUAL's postings for the same month — and
@@ -1037,7 +1077,7 @@ def _shift_month(month: str, delta_months: int) -> str:
     return date(d.year + total // 12, total % 12 + 1, 1).isoformat()
 
 
-def _budget_rows(scenario: str, month: str) -> dict:
+def _budget_rows(scenario: str, month: str, pct_of_base: bool = False) -> dict:
     month_start = date.fromisoformat(month)
     month_end = date(month_start.year, month_start.month,
                      calendar.monthrange(month_start.year, month_start.month)[1])
@@ -1078,8 +1118,8 @@ def _budget_rows(scenario: str, month: str) -> dict:
             actual = sign * actual_by_node_id[n["id"]]["subtotal"]
             out.append({
                 **n, "budgeted": budgeted, "actual": actual,
-                "variance": actual - budgeted,
-                "pct_variance": _pct_variance(actual, budgeted),
+                "variance": _variance_amount(actual, budgeted, pct_of_base),
+                "pct_variance": _pct_variance(actual, budgeted, pct_of_base),
                 "children": merge(n["children"]),
             })
         return out
@@ -1100,8 +1140,8 @@ def _budget_rows(scenario: str, month: str) -> dict:
         grouped_by_type[t] = {
             "type": t, "label": TYPE_LABELS[t], "rows": flatten(type_roots),
             "sub_budgeted": sub_budgeted, "sub_actual": sub_actual,
-            "sub_variance": sub_actual - sub_budgeted,
-            "sub_pct_variance": _pct_variance(sub_actual, sub_budgeted),
+            "sub_variance": _variance_amount(sub_actual, sub_budgeted, pct_of_base),
+            "sub_pct_variance": _pct_variance(sub_actual, sub_budgeted, pct_of_base),
         }
     grouped = [grouped_by_type["income"], grouped_by_type["expense"]]
     net_budgeted = grouped_by_type["income"]["sub_budgeted"] - grouped_by_type["expense"]["sub_budgeted"]
@@ -1111,14 +1151,14 @@ def _budget_rows(scenario: str, month: str) -> dict:
         "grouped": grouped, "month_start": month_start.isoformat(),
         "month_end": month_end.isoformat(),
         "net_budgeted": net_budgeted, "net_actual": net_actual,
-        "net_variance": net_actual - net_budgeted,
-        "net_pct_variance": _pct_variance(net_actual, net_budgeted),
+        "net_variance": _variance_amount(net_actual, net_budgeted, pct_of_base),
+        "net_pct_variance": _pct_variance(net_actual, net_budgeted, pct_of_base),
     }
 
 
 @app.get("/budget")
 def budget_page(request: Request, scenario: str = "", month: str = "",
-                ok: str = None, err: str = None):
+                ok: str = None, err: str = None, pct_of_base: int = 0):
     scens = [s for s in scenarios_all() if s["income_statement_only"]]
     scenario = scenario or (scens[0]["code"] if scens else "")
     scen = next((s for s in scens if s["code"] == scenario), None)
@@ -1127,13 +1167,13 @@ def budget_page(request: Request, scenario: str = "", month: str = "",
         month_in += "-01"
     month = date.fromisoformat(month_in).replace(day=1).isoformat()
 
-    data = (_budget_rows(scenario, month) if scen else
+    data = (_budget_rows(scenario, month, bool(pct_of_base)) if scen else
            {"grouped": [], "net_budgeted": 0, "net_actual": 0, "net_variance": 0,
             "net_pct_variance": None, "month_start": month, "month_end": month})
     return templates.TemplateResponse(request, "budget.html", {
         "nav": "budget", "scenarios": scens, "scenario": scenario, "scen": scen,
         "month": month, "prev_month": _shift_month(month, -1),
-        "next_month": _shift_month(month, 1), **data,
+        "next_month": _shift_month(month, 1), "pct_of_base": pct_of_base, **data,
         "ok": ok, "err": err,
     })
 
@@ -1175,7 +1215,8 @@ async def save_budget_cell(request: Request):
 # income-statement-only one never has the journal-entry facts this reads,
 # by design; see the Budget grid above for that comparison instead.
 # ---------------------------------------------------------------------------
-def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, zeros: int = 0) -> dict:
+def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, zeros: int = 0,
+                      pct_of_base: bool = False) -> dict:
     """Shared by the variance page and its CSV export — same rollup, same
     baseline/compare resolution, so the export matches what's on screen.
     Excludes Staging same as income-statement-only scenarios: Staging is a
@@ -1235,16 +1276,16 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
             for r in rows:
                 r["baseline_net"] = r["subtotal"]
                 r["compare_net"] = r["compare_subtotal"]
-                r["variance"] = r["compare_net"] - r["baseline_net"]
-                r["pct_variance"] = _pct_variance(r["compare_net"], r["baseline_net"])
+                r["variance"] = _variance_amount(r["compare_net"], r["baseline_net"], pct_of_base)
+                r["pct_variance"] = _pct_variance(r["compare_net"], r["baseline_net"], pct_of_base)
             if rows:
                 sub_baseline = sum(rr["subtotal"] for rr in type_roots)
                 sub_compare = sum(rr["compare_subtotal"] for rr in type_roots)
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": rows,
                     "sub_baseline": sub_baseline, "sub_compare": sub_compare,
-                    "sub_variance": sub_compare - sub_baseline,
-                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline),
+                    "sub_variance": _variance_amount(sub_compare, sub_baseline, pct_of_base),
+                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline, pct_of_base),
                 })
         merged = [r for g in grouped for r in g["rows"]]
         # Roots only, not the full (branch + leaf) `merged` list — a
@@ -1277,8 +1318,9 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
             merged.append({
                 "account_code": ref["account_code"], "account_name": ref["account_name"],
                 "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
-                "baseline_net": b_net, "compare_net": c_net, "variance": c_net - b_net,
-                "pct_variance": _pct_variance(c_net, b_net),
+                "baseline_net": b_net, "compare_net": c_net,
+                "variance": _variance_amount(c_net, b_net, pct_of_base),
+                "pct_variance": _pct_variance(c_net, b_net, pct_of_base),
                 "has_children": False,
             })
 
@@ -1291,8 +1333,8 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": sub,
                     "sub_baseline": sub_baseline, "sub_compare": sub_compare,
-                    "sub_variance": sub_compare - sub_baseline,
-                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline),
+                    "sub_variance": _variance_amount(sub_compare, sub_baseline, pct_of_base),
+                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline, pct_of_base),
                 })
         total_baseline = sum(r["baseline_net"] for r in merged)
         total_compare = sum(r["compare_net"] for r in merged)
@@ -1301,21 +1343,22 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
         "scens": scens, "compare": compare, "level_id": level_id,
         "merged": merged, "grouped": grouped, "rolled_up": level_depth is not None,
         "total_baseline": total_baseline, "total_compare": total_compare,
-        "total_variance": total_compare - total_baseline,
-        "total_pct_variance": _pct_variance(total_compare, total_baseline),
+        "total_variance": _variance_amount(total_compare, total_baseline, pct_of_base),
+        "total_pct_variance": _pct_variance(total_compare, total_baseline, pct_of_base),
     }
 
 
 @app.get("/variance")
 def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
-                  level_id: str = "", as_of: str = None, zeros: int = 0):
-    v = _compute_variance(baseline, compare, level_id, as_of, zeros)
+                  level_id: str = "", as_of: str = None, zeros: int = 0,
+                  pct_of_base: int = 0):
+    v = _compute_variance(baseline, compare, level_id, as_of, zeros, bool(pct_of_base))
 
     return templates.TemplateResponse(request, "variance.html", {
         "nav": "variance", "grouped": v["grouped"], "scenarios": v["scens"],
         "levels": account_levels_all(), "baseline": baseline, "compare": v["compare"],
         "level_id": v["level_id"], "as_of": as_of or "", "zeros": zeros,
-        "rolled_up": v["rolled_up"],
+        "pct_of_base": pct_of_base, "rolled_up": v["rolled_up"],
         "total_baseline": v["total_baseline"],
         "total_compare": v["total_compare"],
         "total_variance": v["total_variance"],
@@ -1326,8 +1369,9 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
 
 @app.get("/export/variance.csv")
 def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
-                        level_id: str = "", as_of: str = None, zeros: int = 0):
-    v = _compute_variance(baseline, compare, level_id, as_of, zeros)
+                        level_id: str = "", as_of: str = None, zeros: int = 0,
+                        pct_of_base: int = 0):
+    v = _compute_variance(baseline, compare, level_id, as_of, zeros, bool(pct_of_base))
     compare = v["compare"]
     buf = io.StringIO()
     w = csv.writer(buf)

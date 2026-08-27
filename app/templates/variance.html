@@ -36,7 +36,8 @@
   </label>
   <label class="checkline" title="{{ 'Only applies at native depth — a rolled-up row already represents whatever was pooled into it, with no zero-balance rows left to reveal underneath.' if rolled_up }}">
     <input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-  <a class="quiet-link" href="/export/variance.csv?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ as_of }}&zeros={{ zeros }}">Export CSV</a>
+  <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
+  <a class="quiet-link" href="/export/variance.csv?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ as_of }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Export CSV</a>
 </form>
 
 <table class="ledger" data-collapse-key="postwarden-variance-collapsed">

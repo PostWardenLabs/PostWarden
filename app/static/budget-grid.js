@@ -7,7 +7,8 @@
 
    Each row already carries its own Actual as a static data-actual
    attribute (server-rendered, never touched by this script) — Variance
-   is just actual - (live) budgeted, recomputed alongside it. */
+   is (live) budgeted - actual (or actual - budgeted, if "% variance of
+   actual" is checked — see pctOfBase below), recomputed alongside it. */
 (function () {
   const table = document.querySelector("table[data-collapse-key^='postwarden-budget-collapsed']");
   if (!table) return;
@@ -18,20 +19,30 @@
     ? window.PostWardenMoney.format(n)
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Same formula as _pct_variance() in main.py (actual vs. budgeted, as
-  // a % of budgeted) — null (rendered as "—", not a misleading 0%) when
-  // there's nothing budgeted to divide by, same reason that helper
-  // returns None there.
+  // Which of the two conventions is live right now — set server-side from
+  // the same pct_of_base the "% variance of actual" checkbox submits, on
+  // the table itself so a page reload (the checkbox auto-refreshes, same
+  // as every other filter) is the only thing that ever changes it; typing
+  // into a Budgeted cell never does. Same two formulas as _pct_variance()/
+  // _variance_amount() in main.py: default (0, "% of budget" — how far
+  // actual fell from budgeted, as a % of budgeted) or checked (1, "% of
+  // actual" — the same gap as a % of actual instead).
+  const pctOfBase = table.dataset.pctOfBase === "1";
+
   function pctVariance(actual, budgeted) {
+    if (pctOfBase) {
+      if (!actual) return null;
+      return Math.round(((actual - budgeted) / Math.abs(actual)) * 1000) / 10;
+    }
     if (!budgeted) return null;
-    return Math.round(((actual - budgeted) / Math.abs(budgeted)) * 1000) / 10;
+    return Math.round(((budgeted - actual) / Math.abs(budgeted)) * 1000) / 10;
   }
 
   function setVariance(tr, budgeted) {
     const actual = parseFloat(tr.dataset.actual || "0");
     const cell = tr.querySelector(".variance-cell");
     if (cell) {
-      const v = actual - budgeted;
+      const v = pctOfBase ? actual - budgeted : budgeted - actual;
       cell.textContent = fmt(v);
       cell.classList.toggle("neg", v < 0);
     }

@@ -23,22 +23,23 @@
   <label class="field">Month
     <input type="month" name="month" value="{{ month[:7] }}">
   </label>
+  <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
   <button type="submit">Go</button>
-  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}">&larr; {{ prev_month[:7] }}</a>
-  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ next_month[:7] }}">{{ next_month[:7] }} &rarr;</a>
+  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_month[:7] }}</a>
+  <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ next_month[:7] }}&pct_of_base={{ pct_of_base }}">{{ next_month[:7] }} &rarr;</a>
 </form>
 
 {% if not scen %}
 <p class="dim">Scenario <span class="mono">{{ scenario }}</span> not found or isn't income-statement-only.</p>
 {% else %}
 
-<table class="ledger" data-collapse-key="postwarden-budget-collapsed-{{ scenario }}">
+<table class="ledger" data-collapse-key="postwarden-budget-collapsed-{{ scenario }}" data-pct-of-base="{{ 1 if pct_of_base else 0 }}">
   <thead>
     <tr>
       <th>Code</th>
       <th>Account</th>
-      <th class="num money money-first">Budgeted</th>
-      <th class="num money">Actual</th>
+      <th class="num money money-first">Actual</th>
+      <th class="num money">Budgeted</th>
       <th class="num money">Variance</th>
       <th class="num">% variance</th>
     </tr>
@@ -51,25 +52,25 @@
         data-type="{{ r.account_type }}" data-actual="{{ '%.2f' % r.actual }}">
       <td class="mono dim">{{ r.account_code }}</td>
       <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+      <td class="num money money-first">{{ r.actual | money }}</td>
       {% if r.has_children %}
-      <td class="num money money-first budgeted-cell">{{ r.budgeted | money }}</td>
+      <td class="num money budgeted-cell">{{ r.budgeted | money }}</td>
       {% else %}
-      <td class="num money money-first">
+      <td class="num money">
         <input type="text" class="amount budget-cell" inputmode="decimal"
                data-scenario-id="{{ scen.id }}" data-account="{{ r.account_code }}"
                data-month="{{ month }}"
                value="{{ '%.2f' % r.budgeted if r.budgeted else '' }}">
       </td>
       {% endif %}
-      <td class="num money">{{ r.actual | money }}</td>
       <td class="num money variance-cell {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
       <td class="num pct-variance-cell">{{ var(r.pct_variance) }}</td>
     </tr>
     {% endfor %}
     <tr class="subtotal" data-type-subtotal="{{ g.type }}" data-actual="{{ '%.2f' % g.sub_actual }}">
       <td></td><td>{{ g.label }} subtotal</td>
-      <td class="num money money-first budgeted-cell">{{ g.sub_budgeted | money }}</td>
-      <td class="num money">{{ g.sub_actual | money }}</td>
+      <td class="num money money-first">{{ g.sub_actual | money }}</td>
+      <td class="num money budgeted-cell">{{ g.sub_budgeted | money }}</td>
       <td class="num money variance-cell {{ 'neg' if g.sub_variance < 0 }}">{{ g.sub_variance | money }}</td>
       <td class="num pct-variance-cell">{{ var(g.sub_pct_variance) }}</td>
     </tr>
@@ -77,8 +78,8 @@
     <tr class="grand" data-net-row data-actual="{{ '%.2f' % net_actual }}">
       <td></td>
       <td>Net (Income &minus; Expenses)</td>
-      <td class="num money money-first budgeted-cell">{{ net_budgeted | money }}</td>
-      <td class="num money">{{ net_actual | money }}</td>
+      <td class="num money money-first">{{ net_actual | money }}</td>
+      <td class="num money budgeted-cell">{{ net_budgeted | money }}</td>
       <td class="num money variance-cell {{ 'neg' if net_variance < 0 }}">{{ net_variance | money }}</td>
       <td class="num pct-variance-cell">{{ var(net_pct_variance) }}</td>
     </tr>

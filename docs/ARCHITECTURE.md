@@ -172,6 +172,49 @@ postings, and the whole thing needs to collapse/expand.
   persist collapse state in `localStorage`, keyed by a
   `data-collapse-key` on the `<table>`.
 
+### The `pct_of_base` variance-convention toggle
+
+Income Statement, Variance, and Budget Grid all show a % variance
+column, and all three share one "% variance of actual" checkbox (next
+to Hide zero balances, or on its own in Budget Grid's filter bar, which
+has no zeros checkbox) that flips which of the two figures being
+compared is the denominator — not just the sign, the actual divisor.
+
+- **Server side**: `_pct_variance(base, compare_val, pct_of_base=False)`
+  and its dollar-figure counterpart `_variance_amount(base, compare_val,
+  pct_of_base=False)` are the one shared implementation. Default
+  (unchecked, "% of budget"): `(compare_val - base) / abs(compare_val)`.
+  Checked ("% of actual"): `(base - compare_val) / abs(base)`. Every
+  call site passes `base` = that report's own "actual"-like primary
+  figure and `compare_val` = its "budget"/reference-like one — Income
+  Statement's `scenario` vs. `compare`, Variance's `compare` vs.
+  `baseline` (baseline plays the reference/denominator role there, same
+  as budget elsewhere), Budget Grid's `actual` vs. `budgeted` — and each
+  route reads `pct_of_base: int = 0` from the query string and threads
+  it through to `_income_statement_rows()`/`_compute_variance()`/
+  `_budget_rows()` and on to every level (row, subtotal, grand total)
+  that computes a variance.
+- **Markup**: a plain `<label class="checkline"><input type="checkbox"
+  name="pct_of_base" value="1" ...>` inside the report's own `form.bar`
+  (or `form[data-auto-refresh]` — see auto-refresh.js), same as `zeros`
+  — no dedicated JS needed for the checkbox itself, auto-refresh.js's
+  existing delegated `change` listener already resubmits on any checkbox
+  inside a covered form. Income Statement hides the checkbox entirely
+  when there's no `compare` scenario picked (`{% if compare %}`), since
+  there's no variance concept to toggle without one; Variance and Budget
+  Grid always have both sides, so theirs is unconditional. Every
+  Export CSV link and Budget Grid's month prev/next links carry
+  `pct_of_base` forward so it survives navigation, same treatment every
+  other filter already gets.
+- **Budget Grid's client side**: `budget-grid.js` reads the toggle once
+  from a `data-pct-of-base` attribute the template stamps onto the
+  `<table>` (server-rendered from the same query param) and mirrors both
+  formulas in JS, so typing into a Budgeted cell recomputes Variance/%
+  variance live using whichever convention the page loaded with —
+  Actual never changes client-side, so there's nothing to keep the
+  toggle itself in sync with; only a full page reload (the checkbox's
+  own auto-refresh) ever changes which formula is live.
+
 ### Click an amount → filtered Journal, with a back link
 
 Income Statement, Balance Sheet, Trial Balance, and Payees all link a
