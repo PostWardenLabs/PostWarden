@@ -1272,19 +1272,52 @@ details.entry {
 }
 details.entry[open] { border-left-color: var(--red); }
 details.entry summary {
+  position: relative;
   display: grid;
-  grid-template-columns: 6.5rem 7rem 1fr auto auto;
   gap: 0.9rem; align-items: baseline;
   padding: 0.5rem 0.8rem; cursor: pointer; list-style: none;
   font-size: 0.9rem;
 }
-/* The date column (2nd grid item on both the Journal's and Staging's
-   entry rows) was sized for the default ISO format (2026-08-18) — the
-   "long" date-format preference (Aug 18, 2026, up to 12 characters,
-   every month abbreviation being exactly 3 letters) no longer fit in
-   5.5rem and wrapped onto two lines mid-date. Widened the column
-   (5.5rem → 7rem) and this belt-and-suspenders nowrap so a date can
-   never wrap regardless of format or column math again. */
+/* Two different column shapes sharing one .entry look: the Journal
+   always renders a #id span the Staging rows never have (Staging
+   entries share one real scenario, so there's nothing an id column
+   would disambiguate there), so each gets its own explicit template
+   rather than trying to force one 5-column grid to fit both. Date is
+   7rem in both (was 5.5rem/6.5rem at different points) — wide enough
+   for the "long" date-format preference (Aug 18, 2026, up to 12
+   characters) without wrapping. */
+.entry-journal summary { grid-template-columns: 7rem 5.5rem 1fr auto auto; }
+.entry-staging summary { grid-template-columns: 7rem 1fr auto auto; }
+/* The per-row checkbox floats in an absolutely-positioned gutter
+   instead of occupying a grid column of its own — it's always the
+   summary's first DOM child (nth-child(2) below still lands on the
+   date span regardless), but display:none/select-only visibility
+   toggling it on and off used to add or remove a real grid item,
+   shifting every column after it: the Journal's Select mode pushed
+   description into what used to be the amount column and forced a
+   second implicit row once there were more visible children than
+   columns, and Staging's always-visible checkbox ate a whole 6.5rem
+   column for a control barely a quarter that wide, reading as a
+   stray gap before the date. Taking it out of grid flow entirely
+   means the row's columns never move regardless of whether a
+   checkbox happens to be showing. .entry-staging's checkbox is always
+   visible so its row always reserves the gutter; the Journal's is
+   select-only, so body.select-mode reserves it only while that's on. */
+details.entry summary > .checkline {
+  position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%);
+  margin: 0;
+}
+/* details.entry-staging/-journal, not the bare classes: the base rule
+   above sets padding via the shorthand at (details.entry summary)'s own
+   specificity (two elements, one class) — a bare .entry-staging summary
+   (one element, one class) is actually *lower* specificity than that
+   despite reading like an override, and silently loses regardless of
+   source order. Repeating the `details` element here just ties it, and
+   source order (this comes later) settles the tie in this rule's favor. */
+details.entry-staging summary,
+body.select-mode details.entry-journal summary {
+  padding-left: 2.3rem;
+}
 details.entry summary > .mono.dim:nth-child(2) { white-space: nowrap; }
 details.entry summary::-webkit-details-marker { display: none; }
 details.entry summary:hover { background: var(--paper-deep); }
@@ -1509,7 +1542,11 @@ tr.add-gap .add-gap-type { max-width: 11rem; }
              gap: 0.8rem; align-items: end; }
 
 @media (max-width: 720px) {
-  details.entry summary { grid-template-columns: 1fr auto; }
+  /* Same specificity as .entry-journal/.entry-staging's own desktop
+     rules (each one class + one element) — wins here on source order
+     (this block comes later in the file), same as the plain
+     details.entry summary selector this replaced always relied on. */
+  .entry-journal summary, .entry-staging summary { grid-template-columns: 1fr auto; }
   .topbar-inner { gap: 0.6rem; }
   /* "Dashboard · PostWarden" wraps onto two lines once the title plus
      brand no longer fit one row next to topbar-right (username/logout)
