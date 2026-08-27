@@ -703,8 +703,19 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
    need a caption explaining itself before it's even been looked at. */
 /* The page's own name now lives in the topbar (see .wordmark-brand) —
    this just reserves a row for the "?" help icon, right-aligned, above
-   whatever the page actually starts with. */
-.page-head { display: flex; justify-content: flex-end; margin-bottom: 0.6rem; }
+   whatever the page actually starts with. A page whose very first line
+   is a short contextual note (Balance Sheet's "As of … scenario …",
+   Scheduled Entries' "N entries waiting in Staging…", the Journal's
+   "back to report") nests that <p class="page-sub"> right inside this
+   div, before the icon — .page-head .page-sub below takes flex: 1 so it
+   fills the row and the icon lands flush right the same as when it's
+   alone, rather than the two of them ending up as separate stacked
+   lines with the icon's own small height making it visibly
+   uncentered against whatever sits just above or below it. Every page
+   without such a note leaves this div holding only the anchor, same as
+   ever. */
+.page-head { display: flex; justify-content: flex-end; align-items: center; gap: 0.7rem; margin-bottom: 0.6rem; }
+.page-head .page-sub { flex: 1; margin: 0; }
 .help-icon {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 1.35rem; height: 1.35rem; border-radius: 50%;

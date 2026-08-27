@@ -7,9 +7,9 @@
 {% macro entry_link(scen_code, code, value) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_from={{ date_from }}&date_to={{ date_to }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 
 <div class="page-head">
+  <p class="page-sub">Scenario <span class="mono">{{ scenario }}</span>{% if compare %} vs. <span class="mono">{{ compare }}</span>{% endif %}</p>
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
-<p class="page-sub">Scenario <span class="mono">{{ scenario }}</span>{% if compare %} vs. <span class="mono">{{ compare }}</span>{% endif %}</p>
 
 <form class="bar" method="get" action="/income-statement">
   <label class="field">Scenario

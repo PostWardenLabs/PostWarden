@@ -2,12 +2,11 @@
 {% block title %}Scheduled Entries{% endblock %}
 {% block content %}
 <div class="page-head">
+  {% if pending_count %}
+  <p class="page-sub"><a class="quiet-link" href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a></p>
+  {% endif %}
   <a href="/help#scheduled" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
-
-{% if pending_count %}
-<p class="page-sub"><a class="quiet-link" href="/staging">{{ pending_count }} {{ 'entry' if pending_count == 1 else 'entries' }} waiting in Staging for your approval →</a></p>
-{% endif %}
 
 <script type="application/json" id="accounts-data">{{ accounts | tojson }}</script>
 <script type="application/json" id="accounts-by-scenario-data">{{ accounts_by_scenario | tojson }}</script>

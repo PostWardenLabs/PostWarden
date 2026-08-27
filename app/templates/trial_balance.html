@@ -4,10 +4,10 @@
 {% set report_url = "/trial-balance?scenario=" + scenario + "&as_of=" + as_of + "&zeros=" + (zeros | string) + "&raw=" + (raw | string) %}
 {% macro entry_link(code, value, is_flow) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start if (is_flow and not raw) else '' }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 <div class="page-head">
+  <p class="page-sub">{{ 'As of ' + as_of if as_of else 'Through today' }} · scenario <span class="mono">{{ scenario }}</span>
+    {% if not raw %}· simulated monthly close{% endif %}</p>
   <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
-<p class="page-sub">{{ 'As of ' + as_of if as_of else 'Through today' }} · scenario <span class="mono">{{ scenario }}</span>
-  {% if not raw %}· simulated monthly close{% endif %}</p>
 
 <form class="bar" method="get" action="/trial-balance">
   <label class="field">Scenario
