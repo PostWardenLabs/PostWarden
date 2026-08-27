@@ -3,7 +3,7 @@
 {% block content %}
 {% macro amt(value, pct) %}{{ value | money }}{% if pct is not none %} <span class="dim small">({{ pct }}%)</span>{% endif %}{% endmacro %}
 {% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
-{% set report_url = "/income-statement?scenario=" + scenario + "&compare=" + compare + "&date_from=" + date_from + "&date_to=" + date_to %}
+{% set report_url = "/income-statement?scenario=" + scenario + "&compare=" + compare + "&date_from=" + date_from + "&date_to=" + date_to + "&zeros=" + (zeros | string) %}
 {% macro entry_link(scen_code, code, value) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_from={{ date_from }}&date_to={{ date_to }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 
 <div class="page-head">
@@ -44,11 +44,12 @@
   <label class="field">To
     <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
   </label>
+  <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
   <button type="submit">Refresh</button>
-  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}">Export CSV</a>
+  <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}">Export CSV</a>
 </form>
 
-<table class="ledger">
+<table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
   <thead>
     <tr>
       <th>Code</th>
@@ -65,12 +66,12 @@
     {% for g in income_groups %}
     <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
       {% for r in g.rows %}
-      <tr>
+      <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) }}</td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
         {% endif %}
       </tr>
@@ -98,12 +99,12 @@
     {% for g in expense_groups %}
     <tr class="type-head"><td colspan="{{ colspan }}">{{ g.name }}</td></tr>
       {% for r in g.rows %}
-      <tr>
+      <tr data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}">
         <td class="mono dim">{{ r.account_code }}</td>
-        <td>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
-        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) }}</td>
+        <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.account_name }} <span class="dim small">{{ r.path }}</span></td>
+        <td class="num money money-first">{{ entry_link(scenario, r.account_code, r.base_net) if not r.has_children else (r.base_net | money) }}</td>
         {% if has_compare %}
-        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
         {% endif %}
       </tr>
@@ -141,4 +142,7 @@
 {% if not income_groups and not expense_groups %}<p class="dim">No income or expense activity in this period.</p>{% endif %}
 {% endblock %}
 
-{% block scripts %}<script src="{{ asset('period-picker.js') }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ asset('period-picker.js') }}"></script>
+<script src="{{ asset('report-tree.js') }}"></script>
+{% endblock %}

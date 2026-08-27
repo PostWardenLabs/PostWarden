@@ -521,20 +521,32 @@ def _earnings_row(name: str, amount, depth: int = 2) -> dict:
             "has_children": False, "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0)}
 
 
-def _build_account_tree(accounts: list[dict], balances_by_id: dict) -> list[dict]:
+def _build_account_tree(accounts: list[dict], balances_by_id: dict,
+                        compare_by_id: dict = None) -> list[dict]:
     """The account forest (roots = accounts.parent_id IS NULL), each node
     carrying a "subtotal" that rolls up every descendant's own direct
     balance — the actual Trial Balance/Balance Sheet display figure.
     "net" stays each account's own direct postings only, same as
     fn_trial_balance always showed; "subtotal" is the new thing a summary
     account with subdivisions (e.g. "Current Assets"/"Long-term Assets"
-    under "Assets") needed and never had."""
+    under "Assets") needed and never had.
+
+    `compare_by_id` is optional — a second {account_id: net} map rolled
+    up alongside the first into "compare_subtotal"/"compare_net", for
+    Income Statement/Variance's own second-scenario column. A single
+    tree this way drives both a plain report and a two-scenario
+    comparison; callers that pass nothing get compare_subtotal fixed at
+    0 for every node, which _flatten_tree's zero-check treats as "no
+    override" — the exact same hide-if-zero behavior as before this
+    parameter existed."""
+    compare_by_id = compare_by_id or {}
     nodes = {}
     for a in accounts:
         nodes[a["id"]] = {
             "id": a["id"], "parent_id": a["parent_id"], "account_code": a["code"],
             "account_name": a["name"], "path": a["path"], "account_type": a["account_type"],
-            "depth": a["depth"], "net": balances_by_id.get(a["id"], 0), "children": [],
+            "depth": a["depth"], "net": balances_by_id.get(a["id"], 0),
+            "compare_net": compare_by_id.get(a["id"], 0), "children": [],
         }
     roots = []
     for a in accounts:
@@ -543,11 +555,16 @@ def _build_account_tree(accounts: list[dict], balances_by_id: dict) -> list[dict
         (parent["children"] if parent else roots).append(node)
 
     def rollup(node):
-        total = node["net"] + sum(rollup(c) for c in node["children"])
+        total, compare_total = node["net"], node["compare_net"]
+        for c in node["children"]:
+            b, cm = rollup(c)
+            total += b
+            compare_total += cm
         node["subtotal"] = total
+        node["compare_subtotal"] = compare_total
         node["debit_balance"] = max(total, 0)
         node["credit_balance"] = max(-total, 0)
-        return total
+        return total, compare_total
     for r in roots:
         rollup(r)
     return roots
@@ -555,15 +572,17 @@ def _build_account_tree(accounts: list[dict], balances_by_id: dict) -> list[dict
 
 def _flatten_tree(nodes: list[dict], zeros: bool) -> list[dict]:
     """Depth-first flatten for template rendering, dropping any node (and
-    its whole subtree) whose rolled-up subtotal is zero, unless `zeros` —
-    the same "hide accounts with no activity" rule Trial Balance always
-    applied, just against the rollup instead of each account's own
-    balance now. Adds has_children counting only what survives that
-    filter, so a summary account left childless by it doesn't render a
-    collapse arrow with nothing behind it."""
+    its whole subtree) whose rolled-up subtotal is zero on *both* sides
+    (own and compare — a row that only moved in one of the two scenarios
+    is still activity worth showing), unless `zeros` — the same "hide
+    accounts with no activity" rule Trial Balance always applied, just
+    against the rollup instead of each account's own balance now. Adds
+    has_children counting only what survives that filter, so a summary
+    account left childless by it doesn't render a collapse arrow with
+    nothing behind it."""
     out = []
     for node in nodes:
-        if not zeros and node["subtotal"] == 0:
+        if not zeros and node["subtotal"] == 0 and node.get("compare_subtotal", 0) == 0:
             continue
         kept_children = _flatten_tree(node["children"], zeros)
         out.append({**node, "has_children": bool(kept_children)})
@@ -678,6 +697,15 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
 # one — e.g. Actual vs. a Budget scenario — with a % variance and each
 # subtotal/net line's share of total income, so a budget scenario reads
 # next to the real numbers instead of needing the separate Variance page.
+#
+# Each top-level group's own rows come from a real parent/child tree
+# (_build_account_tree/_flatten_tree, same machinery Trial Balance/
+# Balance Sheet use), not a flat "every account with nonzero activity"
+# list — so a mid-tree summary account (e.g. a "Housing" under
+# "Expenses") gets its own collapsible row via report-tree.js instead of
+# disappearing into a flat list of leaves, and `zeros` shows every
+# account down to zero-balance leaves, same checkbox/meaning as Trial
+# Balance's.
 # ---------------------------------------------------------------------------
 def _pct_variance(base, compare_val):
     """How much `base` differs from `compare_val`, as a % of `compare_val`
@@ -695,63 +723,51 @@ def _pct_of(amount, total):
     return round(amount / total * 100, 1)
 
 
-def _income_statement_merge(scenario: str, compare: str, date_to, date_from) -> tuple[list, list]:
-    """One row per account with nonzero activity in *either* scenario —
-    same union-of-both-sides shape as Variance's own merge, but at each
-    account's native posting depth (no rollup) since Income Statement
-    isn't reconciling scenarios posted at different base levels the way
-    Variance is."""
-    rows = q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (scenario, date_to, date_from))
-    compare_rows = (q("SELECT * FROM fn_trial_balance(%s, %s, %s)", (compare, date_to, date_from))
-                    if compare else [])
-    base_by_id = {r["account_id"]: r for r in rows}
-    compare_by_id = {r["account_id"]: r for r in compare_rows}
-
-    def merged_of_type(t: str) -> list[dict]:
-        ids = ({r["account_id"] for r in rows if r["acct_type"] == t and r["net"] != 0} |
-               {r["account_id"] for r in compare_rows if r["acct_type"] == t and r["net"] != 0})
-        out = []
-        for aid in ids:
-            b, c = base_by_id.get(aid), compare_by_id.get(aid)
-            ref = b or c
-            out.append({
-                "account_code": ref["account_code"], "account_name": ref["account_name"],
-                "path": ref["path"], "sort_path": ref["sort_path"],
-                "base_net": b["net"] if b else 0, "compare_net": c["net"] if c else 0,
-            })
-        return out
-    return merged_of_type("income"), merged_of_type("expense")
-
-
-def _grouped_by_top_level(rows: list[dict], flip: bool) -> list[dict]:
-    """Buckets rows by their top-level (depth-1) ancestor — read straight
-    off fn_trial_balance's own path/sort_path columns, no extra query:
-    sort_path is dot-joined codes root-to-leaf and path is " : "-joined
-    names, so each row's first segment of either is its top-level
-    ancestor. `flip` sign-corrects credit-normal Income rows (net < 0 for
-    real income) so every amount from here on reads as a plain positive
-    figure in its "normal" direction."""
+def _income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool) -> list[dict]:
+    """One group per top-level account of type `t` — multiple, for a
+    second top-level expense account like "6000 Other" (see module
+    comment). Each group's rows are that root's own _flatten_tree()
+    output, so the root itself opens the group as a normal (possibly
+    collapsible) row rather than existing only as the header text above
+    it, and any zero-balance root is dropped entirely unless `zeros` —
+    same "no activity anywhere in this group" hiding the old flat merge
+    gave for free by simply never creating the group. `flip` sign-
+    corrects credit-normal Income rows (net < 0 for real income) so
+    every amount from here on reads as a plain positive figure in its
+    "normal" direction."""
     sign = -1 if flip else 1
-    groups: dict[str, dict] = {}
-    for r in rows:
-        code, name = r["sort_path"].split(".")[0], r["path"].split(" : ")[0]
-        g = groups.setdefault(code, {"code": code, "name": name, "rows": []})
-        g["rows"].append({**r, "base_net": sign * r["base_net"], "compare_net": sign * r["compare_net"]})
-    out = sorted(groups.values(), key=lambda g: g["code"])
-    for g in out:
-        g["base_subtotal"] = sum(r["base_net"] for r in g["rows"])
-        g["compare_subtotal"] = sum(r["compare_net"] for r in g["rows"])
-        for r in g["rows"]:
+    out = []
+    for root in sorted((r for r in roots if r["account_type"] == t), key=lambda r: r["account_code"]):
+        if not zeros and root["subtotal"] == 0 and root["compare_subtotal"] == 0:
+            continue
+        rows = _flatten_tree([root], zeros)
+        for r in rows:
+            r["base_net"] = sign * r["subtotal"]
+            r["compare_net"] = sign * r["compare_subtotal"]
             r["pct_variance"] = _pct_variance(r["base_net"], r["compare_net"])
+        out.append({
+            "name": root["account_name"], "rows": rows,
+            "base_subtotal": sign * root["subtotal"], "compare_subtotal": sign * root["compare_subtotal"],
+        })
+    for g in out:
         g["pct_variance"] = _pct_variance(g["base_subtotal"], g["compare_subtotal"])
     return out
 
 
-def _income_statement_rows(scenario: str, date_from: str, date_to: str, compare: str = "") -> dict:
-    income_rows, expense_rows = _income_statement_merge(
-        scenario, compare, date_to or None, date_from or None)
-    income_groups = _grouped_by_top_level(income_rows, flip=True)
-    expense_groups = _grouped_by_top_level(expense_rows, flip=False)
+def _income_statement_rows(scenario: str, date_from: str, date_to: str,
+                           compare: str = "", zeros: int = 0) -> dict:
+    date_to_v, date_from_v = date_to or None, date_from or None
+    accounts = q("""SELECT * FROM v_dim_account
+                     WHERE is_active AND account_type IN ('income', 'expense')
+                     ORDER BY sort_path""")
+    base_by_id = {r["account_id"]: r["net"] for r in
+                 q("SELECT * FROM fn_account_balances(%s, %s, %s)", (scenario, date_to_v, date_from_v))}
+    compare_by_id = ({r["account_id"]: r["net"] for r in
+                      q("SELECT * FROM fn_account_balances(%s, %s, %s)", (compare, date_to_v, date_from_v))}
+                     if compare else {})
+    roots = _build_account_tree(accounts, base_by_id, compare_by_id)
+    income_groups = _income_statement_groups(roots, "income", flip=True, zeros=zeros)
+    expense_groups = _income_statement_groups(roots, "expense", flip=False, zeros=zeros)
 
     total_base_income = sum(g["base_subtotal"] for g in income_groups)
     total_compare_income = sum(g["compare_subtotal"] for g in income_groups)
@@ -785,22 +801,22 @@ def _income_statement_rows(scenario: str, date_from: str, date_to: str, compare:
 
 @app.get("/income-statement")
 def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: str = "",
-                          date_from: str = "", date_to: str = ""):
+                          date_from: str = "", date_to: str = "", zeros: int = 0):
     today = date.today()
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
-    result = _income_statement_rows(scenario, date_from, date_to, compare)
+    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros)
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
         "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
-        "today": today.isoformat(), **result,
+        "zeros": zeros, "today": today.isoformat(), **result,
     })
 
 
 @app.get("/export/income-statement.csv")
 def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
-                                date_from: str = "", date_to: str = ""):
-    result = _income_statement_rows(scenario, date_from, date_to, compare)
+                                date_from: str = "", date_to: str = "", zeros: int = 0):
+    result = _income_statement_rows(scenario, date_from, date_to, compare, zeros)
     buf = io.StringIO()
     w = csv.writer(buf)
     header = ["Section", "Code", "Account", "Path", scenario or "Amount"]

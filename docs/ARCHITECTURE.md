@@ -57,8 +57,8 @@ reading order:
 | Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days. `POSTWARDEN_DEMO_MODE=true` (off by default, only set on the public demo) shows a banner on `login.html` and pre-fills the username/password fields with `POSTWARDEN_ADMIN_USER`/`PASSWORD` — server-rendered `value=` attributes, no JavaScript, so the credentials are genuinely visible in the page rather than silently injected. Deliberately a *second* flag rather than triggering off `POSTWARDEN_ADMIN_USER`/`PASSWORD` being set alone — those two are also the normal self-hoster first-boot convenience, and this keeps a self-hoster's own real password from ever appearing on their own login page |
 | Settings | `/settings`, `/settings/account`, `/settings/connect-bi`, `/settings/connect-bi/download.pbids` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default. `connect_bi.html` shows the `postwarden_bi` read-only role's host/port/database (SPEC.md decision 14) — host/port come from `request.url.hostname`/`POSTWARDEN_BI_PORT` since they're the only two things that vary per install; the `.pbids` route hands back the same two as a downloadable Power BI Data Source file, no credentials in it |
 | Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker |
-| Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet and the Budget grid |
-| Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column |
+| Trial balance | `/trial-balance`, `/export/trial-balance.csv` | `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet, Income Statement, and the Budget grid |
+| Income statement | `/income-statement`, `/export/income-statement.csv` | the only report with a date *range* (not "as of") and a two-scenario compare column; `_build_account_tree`'s optional `compare_by_id` rolls both scenarios up in one tree, one group per top-level income/expense account (`_income_statement_groups()`) for the waterfall — see the module comment above `_pct_variance` |
 | Balance sheet | `/balance-sheet`, `/export/balance-sheet.csv` | |
 | Budget grid | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern) |
 | Variance | `/variance`, `/export/variance.csv` | general two-scenario diff, rolled up to a common `account_levels` depth |
@@ -110,7 +110,7 @@ through the template context explicitly.
 | `entries-select.js` | The Journal's "Select entries" mode — toggles a checkbox per entry and the bulk Reverse/Edit tags buttons (`.select-only` in style.css, hidden until toggled on), same select-all/disabled-until-checked/count-aware-confirm shape as `staging.js`'s Approve/Reject. Alt+R clicks Reverse. Edit tags opens a popup built from confirm.js's own `.confirm-overlay`/`.confirm-modal` CSS (same look, no `ask()` call — this one holds an "Edit Tags" `<h3>` and `tags.js`'s pill box instead of a message and buttons, plus a lower-left Done button in a `.confirm-actions` row that just closes the popup, since there's nothing to save behind it) prefilled with the union of tags across whatever's checked; each chip add/remove diffs against that starting set and fires `/entries/tags` immediately, no Save button to batch behind. Closing the popup (Escape or the backdrop) reloads the page if anything actually changed, since the tag badges next to each entry are server-rendered. Queries checkboxes document-wide (`document.querySelectorAll(".entry-check")`), not scoped to the form — they're associated with it via `form=""` (see the Journal browser row above), not DOM nesting, so `form.querySelectorAll(...)` would never find them. |
 | `cents-entry.js` | Optional "digits fill in from the right" amount entry (POS-terminal style), toggled in Settings. |
 | `accounts.js` | The Chart of Accounts page's collapsible tree, plus its inline "+" add-category form. |
-| `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
+| `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Income Statement/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
 | `period-picker.js` | The date-range preset dropdown on Income Statement — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. |
 | `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
 | `date-format.js` | Same pattern, one filter over: rewrites every `{{ x | dateformat }}` span (Dashboard's Recent activity, Journal, Staging, Scheduled's Next date) using the format saved in Settings — ISO/US/EU/long. Parses the ISO string by hand rather than `new Date(...)`, which would parse as UTC and can shift the displayed day in a timezone behind UTC; every date here is a plain DATE column, so this only ever reorders y/m/d. |
@@ -125,22 +125,36 @@ Rather than re-explain these at every call site, here's each one, once.
 
 ### The account-tree / rollup pattern
 
-Trial Balance, Balance Sheet, and the Budget grid all show the same
-kind of thing: a hierarchical chart of accounts where a summary account
-(e.g. "Current Assets") needs to display the *sum* of everything under
-it, not just its own direct postings, and the whole thing needs to
-collapse/expand.
+Trial Balance, Balance Sheet, Income Statement, and the Budget grid all
+show the same kind of thing: a hierarchical chart of accounts where a
+summary account (e.g. "Current Assets") needs to display the *sum* of
+everything under it, not just its own direct postings, and the whole
+thing needs to collapse/expand.
 
 - **Server side** (`app/main.py`): `_build_account_tree(accounts,
-  balances_by_id)` takes the flat account list (from `v_dim_account`)
-  and a `{account_id: balance}` map, builds the parent/child forest, and
-  rolls each node's `subtotal` up from its own balance plus every
-  descendant's. `_flatten_tree(nodes, zeros)` walks it depth-first for
-  template rendering, dropping a zero-subtotal subtree unless `zeros`.
-  The Budget grid needs *two* numbers per node (Budgeted and Actual), so
-  `_budget_rows()` calls `_build_account_tree` twice and merges the two
-  trees node-for-node rather than teaching the tree builder about
-  multiple values — see its own comment for why.
+  balances_by_id, compare_by_id=None)` takes the flat account list (from
+  `v_dim_account`) and a `{account_id: balance}` map, builds the
+  parent/child forest, and rolls each node's `subtotal` up from its own
+  balance plus every descendant's. The optional second map rolls up
+  alongside the first into `compare_subtotal` — Income Statement's own
+  second-scenario column, so one tree drives both a plain report and a
+  two-scenario comparison; ordinary callers that pass nothing get
+  `compare_subtotal` fixed at 0 on every node. `_flatten_tree(nodes,
+  zeros)` walks it depth-first for template rendering, dropping a
+  subtree whose `subtotal` *and* `compare_subtotal` are both zero unless
+  `zeros` (that "and" is what makes the parameter a no-op for callers
+  with no compare map — `compare_subtotal` is already always 0 there).
+  The Budget grid needs *two* numbers per node too (Budgeted and
+  Actual), but merges them differently — `_budget_rows()` calls
+  `_build_account_tree` twice, once per side, and merges the two trees
+  node-for-node, since Budget always shows every account regardless of
+  either side being zero (it's an entry form, not a report) rather than
+  hiding anything. Income Statement's `_income_statement_groups()`
+  builds one group per top-level income/expense account (its own
+  waterfall — see the module comment above `_pct_variance`), each
+  group's rows being that root's own `_flatten_tree([root], zeros)` —
+  the root itself is a normal (possibly collapsible) row opening the
+  group, not just implied by the header text above it.
 - **Markup**: every row carries `data-id`, `data-parent`, and
   `data-has-children` on the `<tr>`, and an (initially empty) `<span
   class="tree-toggle">` in the name cell — the chevron itself is pure
