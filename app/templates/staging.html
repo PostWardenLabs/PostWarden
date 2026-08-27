@@ -72,11 +72,6 @@
     <input type="text" name="amount_value2" class="amount" inputmode="decimal"
            value="{{ amount_value2 }}" placeholder="0.00" style="width: 7rem;">
   </label>
-  {% if has_filters %}
-  <a class="button-link" href="/staging">Clear filters</a>
-  {% else %}
-  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
-  {% endif %}
 </form>
 
 {% if pending %}
@@ -84,9 +79,23 @@
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
-    <button type="submit" id="approve-btn" disabled>Approve entries (Alt+A)</button>
+    <button type="submit" id="approve-btn" disabled>Approve (Alt+A)</button>
     <button type="submit" class="quiet" id="reject-btn" disabled
             formaction="/staging/reject" formmethod="post">Reject (Alt+R)</button>
+    {# Lives here, not in the filter form above, so it sits next to the
+       actions it's grouped with at a glance — Approve/Reject and Clear
+       filters are all "do something about what's currently pending",
+       one row instead of split across two. Still a plain navigation <a>,
+       not part of this POST form, same as it always was — it only reads
+       as adjacent now, nothing about what it does changed. The empty-
+       results case (has_filters but no pending rows at all) keeps its
+       own Clear filters link in the {% elif has_filters %} branch below,
+       since this form (and this button) don't render at all then. #}
+    {% if has_filters %}
+    <a class="button-link" href="/staging">Clear filters</a>
+    {% else %}
+    <a class="button-link disabled" aria-disabled="true">Clear filters</a>
+    {% endif %}
   </p>
   {% for e in pending %}
   <details class="entry">
