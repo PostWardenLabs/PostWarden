@@ -550,6 +550,20 @@ body {
 :where(a, a:visited) { color: var(--accent); }
 :where(a:hover, a:visited:hover) { color: var(--accent-hover); }
 
+/* -- shared content width ------------------------------------------------ */
+/* .topbar-inner, main, and .footer all size off this one variable (see the
+   "actual fix" comment below) instead of a fixed 1080px. Fluid — min(90vw, …)
+   — so a wide or ultrawide monitor actually gets used instead of stranding
+   the page in a fixed-width column with the topbar's right-hand controls
+   (username/log out) stuck looking centered on the screen rather than
+   sitting near its right edge. Capped at 1680px so prose/forms don't
+   stretch into unreadably long lines on a 5120px-wide monitor — a report
+   with more columns than even that affords (Income Statement's Split view)
+   still falls back to its own horizontal scroll via .table-scroll below. */
+:root {
+  --content-max: min(90vw, 1680px);
+}
+
 /* -- top bar ------------------------------------------------------------- */
 /* .topbar itself is pure chrome now — full-bleed background/border,
    nothing that positions content — because content alignment turned out
@@ -570,19 +584,20 @@ body {
   background: var(--paper);
 }
 .topbar-inner {
-  max-width: 1080px; margin: 0 auto; padding: 0 1.25rem;
+  max-width: var(--content-max); margin: 0 auto; padding: 0 1.25rem;
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 1.5rem; flex-wrap: wrap;
 }
 /* Clears the fixed hamburger button (.sidebar-toggle, permanently at
    1.1rem–2.8rem from the viewport edge) for whichever states leave
-   .topbar-inner flush against it: unpinned below ~1160px wide (where
-   main's own centering margin hasn't grown past this yet either) and
-   pinned-but-reset-to-unpinned-layout at the ≤720px breakpoint below.
-   Zeroed out everywhere else, where .topbar-inner's own box model
-   already provides more room than the button needs on its own. */
+   .topbar-inner flush against it: unpinned below 1024px wide (where
+   main's own centering margin — 0.05 × viewport width, given
+   --content-max's min(90vw, …) branch — hasn't reliably cleared 2.55rem
+   yet either) and pinned-but-reset-to-unpinned-layout at the ≤720px
+   breakpoint below. Zeroed out everywhere else, where .topbar-inner's own
+   box model already provides more room than the button needs on its own. */
 .topbar-left { padding-left: 2.55rem; }
-@media (min-width: 1161px) {
+@media (min-width: 1024px) {
   html:not(.sidebar-pinned) .topbar-left { padding-left: 0; }
 }
 @media (min-width: 721px) {
@@ -670,9 +685,9 @@ html.sidebar-pinned .footer { margin-left: 14rem; }
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
-main { max-width: 1080px; margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
+main { max-width: var(--content-max); margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
 .footer {
-  max-width: 1080px; margin: 0 auto 1.5rem; padding: 0.8rem 1.25rem 0;
+  max-width: var(--content-max); margin: 0 auto 1.5rem; padding: 0.8rem 1.25rem 0;
   border-top: 1px solid var(--rule); color: var(--ink-soft);
   font-size: 0.78rem;
 }
@@ -823,12 +838,13 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
 
 /* -- the ledger table ---------------------------------------------------- */
 /* Income Statement's Split view only — a period's own column group
-   repeats per period (1080px main content vs. up to 48 data columns for
-   a year split monthly with a compare scenario), so that one table
-   scrolls horizontally inside its own box instead of the whole page
-   dragging the sidebar out of view sideways with it. Every other
-   table.ledger stays a handful of fixed columns that never gets there
-   regardless of window size, so it isn't wrapped in this. */
+   repeats per period (main content tops out at 1680px via --content-max
+   vs. up to 48 data columns for a year split monthly with a compare
+   scenario), so that one table scrolls horizontally inside its own box
+   instead of the whole page dragging the sidebar out of view sideways
+   with it. Every other table.ledger stays a handful of fixed columns
+   that never gets there regardless of window size, so it isn't wrapped
+   in this. */
 .table-scroll { overflow-x: auto; }
 table.ledger {
   width: 100%; border-collapse: collapse; font-size: 0.9rem;

@@ -348,7 +348,9 @@ redesign of its own filter model first.
 
   Wrapped in its own `.table-scroll` (`overflow-x: auto`) — a year split
   monthly with a compare scenario is 12 × 4 = 48 data columns (20 more
-  with Totals/Average), easily wider than `main`'s 1080px max-width, and
+  with Totals/Average), easily wider than `main`'s max-width (driven by
+  `--content-max`, fluid up to a 1680px cap — see "The page title lives
+  in the topbar" below), and
   without a scoped scroll container the whole page would scroll sideways
   along with it, dragging the sidebar out of view. Every other
   `table.ledger` stays a handful of fixed columns that never approaches
@@ -430,8 +432,8 @@ a page with neither just starts straight into its content.
 `.topbar` itself is pure chrome (full-bleed background/border, no
 horizontal padding) — the title lines up with the page content beneath
 it because `.topbar-inner`, wrapping `.topbar-left`/`.topbar-right`,
-uses the exact same `max-width: 1080px; margin: 0 auto; padding: 0
-1.25rem` box model as `main` itself, including the same
+uses the exact same `max-width: var(--content-max); margin: 0 auto;
+padding: 0 1.25rem` box model as `main` itself, including the same
 `html.sidebar-pinned` override (`margin-left: 14rem`, `main`'s own
 `margin-right` stays `auto` so it sits flush after the sidebar rather
 than re-centering in what's left — `.topbar-inner` copies that exact
@@ -450,11 +452,27 @@ the actual box model instead of reverse-engineering an equivalent
 sidesteps both failure modes at once — there's no formula to keep in
 sync with main's if it ever changes.
 
+`--content-max` (`min(90vw, 1680px)`, one custom property shared by
+`.topbar-inner`, `main`, and `.footer`) replaced a flat `max-width:
+1080px` on all three so the app actually uses the width available on a
+wide or ultrawide monitor instead of stranding content in a fixed
+column — the fixed value made `.topbar-right` (username/log out) read
+as stuck in the middle of the screen well before a genuinely wide
+report table (Income Statement's Split view) had any chance to use the
+same space. Fluid up to 90% of the viewport so normal/wide monitors get
+used fully; capped at 1680px so prose/forms don't stretch into
+unreadably long lines on a very wide (5120px+) display — a report needing
+more than that still falls back to `.table-scroll`'s own horizontal
+scroll, same as it always could.
+
 `.topbar-left`'s own `padding-left` (2.55rem by default, zeroed out via
 media query once `.topbar-inner`'s own margin — centering or pinned —
 already clears it) exists purely to keep the title clear of the fixed
 hamburger button (`.sidebar-toggle`); see the CSS's own comment for the
-exact breakpoints, one for each of unpinned/pinned.
+exact breakpoints, one for each of unpinned/pinned. The unpinned
+breakpoint (`min-width: 1024px`) is derived from `--content-max`'s own
+formula, not an arbitrary number — see that comment if `--content-max`
+ever changes, since the breakpoint would need recomputing to match.
 
 ### Toggle switch vs checkbox
 
