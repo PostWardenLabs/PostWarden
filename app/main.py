@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 from openpyxl import Workbook
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -286,6 +287,20 @@ _XLSX_LINE_FILL = PatternFill("solid", fgColor="FFEEF0F3")     # a shade off --p
 _XLSX_BOTTOM_BORDER = Border(bottom=Side(style="thin", color="FFAEBBC7"))  # --rule-strong
 _XLSX_RULE = Side(style="thin", color="FFAEBBC7")  # --rule-strong
 _XLSX_LINE_BORDER = Border(left=_XLSX_RULE, right=_XLSX_RULE, top=_XLSX_RULE, bottom=_XLSX_RULE)
+# Split's period-group divider — heavier than the plain grid rule above,
+# so the eye catches "new period starts here" scanning across a wide
+# sheet the same way a ruled column break would in a printed ledger.
+_XLSX_PERIOD_DIVIDER = Side(style="medium", color="FF1B2430")  # --ink
+# Same red/green the HTML report's own .neg (style.css) already uses for
+# a negative figure — --red/--ok — so a variance reads the same way in
+# the browser and in the spreadsheet. Real conditional-formatting rules
+# (CellIsRule below), not a color baked in at generation time, so the
+# color still tracks correctly if a variance cell is edited by hand
+# later — it's font-only (no fill/border in the rule), so it layers over
+# whatever base style (line/group/running) that cell already has rather
+# than replacing it.
+_XLSX_NEG_FONT = Font(color="FFB3392C")  # --red
+_XLSX_POS_FONT = Font(color="FF1F7A52")  # --ok
 # No currency symbol — matches money()'s own plain-text convention above
 # (the app never bakes a symbol into a stored/exported figure; display-only
 # formatting is a client-side concern there, and there's no client here).
@@ -321,6 +336,30 @@ def _xlsx_merged_header(ws, r1: int, c1: int, r2: int, c2: int, text: str):
     cell.font = _XLSX_HEADER_FONT
     cell.fill = _XLSX_HEADER_FILL
     cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _xlsx_thicken_right_border(ws, row: int, col: int):
+    """Replace just the right edge of an already-styled cell with the
+    heavier period-divider rule, keeping whatever left/top/bottom border
+    that cell already carries (the full grid on a shaded line row, a
+    plain rule on a group row, none at all on a running-total or blank
+    separator row). Works on a merged-but-not-anchor cell too (a period's
+    header date spans several columns, but only its own left-most cell
+    holds the merge) — openpyxl allows setting style on those, just not
+    `.value`."""
+    cell = ws.cell(row=row, column=col)
+    b = cell.border
+    cell.border = Border(left=b.left, right=_XLSX_PERIOD_DIVIDER, top=b.top, bottom=b.bottom)
+
+
+def _xlsx_variance_coloring(ws, col: int, row_start: int, row_end: int):
+    """Red text for a negative variance, green for a positive one, over
+    one column's whole data range — applied to both the plain Variance
+    column and the % Variance column, single-range or per-period alike.
+    A zero (rendered as the money/pct format's own "-") gets neither."""
+    cell_range = f"{get_column_letter(col)}{row_start}:{get_column_letter(col)}{row_end}"
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="lessThan", formula=["0"], font=_XLSX_NEG_FONT))
+    ws.conditional_formatting.add(cell_range, CellIsRule(operator="greaterThan", formula=["0"], font=_XLSX_POS_FONT))
 
 
 def _xlsx_data_row(ws, row: int, label_cols: list, value_cols: list, style: str, depth: int = 0):
@@ -1299,6 +1338,28 @@ def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: s
     })
 
 
+def _income_statement_export_filename(scenario: str, compare: str, date_from: str, date_to: str,
+                                      split: str, ext: str) -> str:
+    """Shared by the CSV and XLSX exports below — a filename that
+    actually says what's in it (scenario, compare scenario, date range,
+    split granularity) instead of a bare postwarden-income-statement-
+    ACTUAL.csv that looks identical no matter what the export covers, so
+    two different downloads from this report don't collide — or silently
+    overwrite each other — in a Downloads folder."""
+    name = f"postwarden-income-statement-{scenario}"
+    if compare:
+        name += f"-vs-{compare}"
+    if date_from and date_to:
+        name += f"_{date_from}_to_{date_to}"
+    elif date_from:
+        name += f"_from_{date_from}"
+    elif date_to:
+        name += f"_through_{date_to}"
+    if split:
+        name += f"_{split}"
+    return f"{name}.{ext}"
+
+
 @app.get("/export/income-statement.csv")
 def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
                                 date_from: str = "", date_to: str = "", zeros: int = 0,
@@ -1342,7 +1403,7 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
         if not result["expense_groups"]:
             row("Income", "", "Net income", "", result["net_income"],
                 result["compare_net_income"], result["net_income_variance_amount"], result["net_income_variance"])
-        return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
+        return csv_response(buf, _income_statement_export_filename(scenario, compare, date_from, date_to, split, "csv"))
 
     # Split view: one wide row per account, one group of columns per
     # period instead of one. Each period's own column group is prefixed
@@ -1394,7 +1455,7 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
             [{"base": pt["net_income"], "comp": pt["compare_net_income"],
               "variance": pt["net_income_variance_amount"], "pct": pt["net_income_variance"]}
              for pt in result["periods_totals"]])
-    return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
+    return csv_response(buf, _income_statement_export_filename(scenario, compare, date_from, date_to, split, "csv"))
 
 
 @app.get("/export/income-statement.xlsx")
@@ -1428,7 +1489,17 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
     Variance formulas would have been safe to derive live, and a mixed
     sheet (some cells formulas, most not) wasn't worth the inconsistency
     for what is fundamentally a point-in-time report snapshot, not an
-    editable model."""
+    editable model.
+
+    Two reader aids from live feedback against a real download: every
+    Variance/% Variance column carries real conditional-formatting rules
+    (red negative, green positive — _xlsx_variance_coloring), not a color
+    baked in at generation time, so it still tracks correctly if a cell
+    is edited by hand afterward. Split view also draws a heavier rule
+    down the right edge of every period's own column group (but the
+    last) — see _xlsx_thicken_right_border — since a wide multi-period
+    sheet with only the thin per-cell grid to go on is easy to lose your
+    place scanning across."""
     periods = _split_periods(date_from, date_to, split)
     wb = Workbook()
     ws = wb.active
@@ -1486,6 +1557,10 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
             row(r, "", "Net income", 1, result["net_income"], result["compare_net_income"],
                 result["net_income_variance_amount"], result["net_income_variance"], style="running")
             r += 1
+        last_row = r - 1
+        if compare:
+            _xlsx_variance_coloring(ws, 4, data_start, last_row)  # Variance
+            _xlsx_variance_coloring(ws, 5, data_start, last_row)  # % Variance
     else:
         result = _income_statement_matrix(scenario, periods, date_from, date_to, compare, zeros, bool(pct_of_base))
         cols_per_period = 4 if compare else 1
@@ -1550,6 +1625,25 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
                 totals_period_vals(result["periods_totals"], "net_income", "compare_net_income",
                                    "net_income_variance_amount", "net_income_variance"), style="running")
             r += 1
+        last_row = r - 1
+
+        # A heavier rule down the right edge of every period's own column
+        # group but the last (the very last one is just the sheet's outer
+        # edge, not a boundary between two periods) — spans the header
+        # rows too, not just the data, so it reads as one continuous line
+        # separating "2026-01" from "2026-02" the way a ruled column break
+        # would on a printed ledger. Total/Average count as periods here
+        # same as any real month — they're just two more column groups in
+        # `result["periods"]` — so they get the same treatment.
+        for i, p in enumerate(result["periods"][:-1]):
+            end_col = 3 + i * cols_per_period + cols_per_period - 1
+            for rr in range(header_row, last_row + 1):
+                _xlsx_thicken_right_border(ws, rr, end_col)
+        if compare:
+            for i, p in enumerate(result["periods"]):
+                start_col = 3 + i * cols_per_period
+                _xlsx_variance_coloring(ws, start_col + 1, data_start, last_row)  # Variance
+                _xlsx_variance_coloring(ws, start_col + 2, data_start, last_row)  # % Variance
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
@@ -1559,7 +1653,7 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
         ws.column_dimensions[get_column_letter(col)].width = 14
     ws.freeze_panes = f"C{data_start}"
     ws.sheet_view.showGridLines = False
-    return xlsx_response(wb, f"postwarden-income-statement-{scenario}.xlsx")
+    return xlsx_response(wb, _income_statement_export_filename(scenario, compare, date_from, date_to, split, "xlsx"))
 
 
 # ---------------------------------------------------------------------------
