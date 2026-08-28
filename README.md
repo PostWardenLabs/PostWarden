@@ -49,8 +49,9 @@ instance.
   block of columns. The Journal has its own Export XLSX too, styled the
   way a printed general journal traditionally is rather than as a
   report: each entry's own legs grouped together (debits before credits,
-  credits indented underneath), its entry number merged down every leg,
-  a rule between transactions but never inside one, and a bold
+  credits indented underneath), every entry-level column — number, date,
+  scenario, description, reference, payee — merged and centered down
+  every leg, a rule between transactions but never inside one, and a bold
   double-ruled Debit/Credit total at the bottom.
 - **A Cash Flow Statement** — mark which accounts count as cash
   (checking, savings, physical cash — one checkbox on `/accounts`) and

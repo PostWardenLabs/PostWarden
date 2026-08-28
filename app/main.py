@@ -3467,21 +3467,27 @@ def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = 
     journal traditionally reads rather than as a flat line-per-row dump:
     each entry's own legs grouped together with debits listed before
     credits (not line_no's original posting order — the standard
-    journal-entry presentation), its Entry # merged and vertically
-    centered down every leg it has, credit legs indented under the debit
+    journal-entry presentation), credit legs indented under the debit
     lines above them, and a rule only under an entry's *last* leg — never
     between two legs of the same entry — so a glance down the sheet reads
     "these lines are one transaction" the way the grid alone wouldn't.
+    Every entry-level column (Entry #, Date, Scenario, Description,
+    Reference, Payee — everything that describes the transaction rather
+    than one leg of it) is merged and vertically centered down every leg,
+    written once on the entry's first leg row rather than repeated —
+    merge_cells() discards whatever's in a merged range's non-anchor cells
+    on save regardless, so writing it again on every leg would just be
+    work openpyxl throws away.
 
     Doesn't reuse _xlsx_data_row/_xlsx_header_row's tree-shaped row model
     (label_cols then value_cols, one flat font per row) — this report's
     per-leg indent only ever applies to the account and Credit-amount
-    columns, never the entry-level columns (date, scenario, description, …)
-    repeated on every leg, which doesn't fit that helper's "everything but
-    the first label column" depth convention. Still built from the same
-    shared palette (fonts, money format, grand-total border/coloring,
-    title/subtitle style, no view gridlines) so it reads as one of this
-    app's own exports rather than a one-off."""
+    columns, and the entry-level columns are merged rather than repeated,
+    neither of which fits that helper's "everything but the first label
+    column" depth convention. Still built from the same shared palette
+    (fonts, money format, grand-total border/coloring, title/subtitle
+    style, no view gridlines) so it reads as one of this app's own
+    exports rather than a one-off."""
     where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                        account, payee, amount_op, amount_value,
                                        amount_value2, hide_reversed)
@@ -3526,24 +3532,36 @@ def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = 
     header_row, data_start = 4, 5
     _xlsx_header_row(ws, header_row, headers)
 
+    # Entry-level columns (everything but the leg-level account/amount/memo
+    # ones) — merged and centered down every leg of an entry, same as
+    # Entry # itself, since a value like "Salary — second half of August"
+    # or a payee name describes the whole transaction, not any one leg of
+    # it. Written once, on an entry's first leg row only: merge_cells()
+    # discards whatever's in a merged range's non-anchor cells on save
+    # regardless, so writing them again on every leg would just be work
+    # openpyxl throws away.
+    MERGED_ENTRY_COLS = (1, 2, 3, 4, 5, 6)  # Entry #, Date, Scenario, Description, Reference, Payee
+
     r = data_start
     total_debits = total_credits = 0
     for eid, legs in legs_by_entry.items():
         entry_first_row = r
-        for line in legs:
+        for i, line in enumerate(legs):
             is_credit = bool(line["credit"])
-            # entry_date is a real date object (not a string) so the
-            # column stays sortable/filterable in Excel — number_format
-            # pins it to plain ISO text instead of Excel's own locale-
-            # dependent default date display, matching the CSV export's
-            # plain "YYYY-MM-DD" rendering of the same value.
-            date_cell = ws.cell(row=r, column=2, value=line["entry_date"])
-            date_cell.font = _XLSX_LINE_FONT
-            date_cell.number_format = "yyyy-mm-dd"
-            for col, value in ((3, line["scenario_code"]),
-                               (4, line["description"]), (5, line["reference"] or ""),
-                               (6, line["payee_name"] or "")):
-                ws.cell(row=r, column=col, value=value).font = _XLSX_LINE_FONT
+            if i == 0:
+                ws.cell(row=r, column=1, value=eid).font = _XLSX_LINE_FONT
+                # entry_date is a real date object (not a string) so the
+                # column stays sortable/filterable in Excel — number_format
+                # pins it to plain ISO text instead of Excel's own locale-
+                # dependent default date display, matching the CSV export's
+                # plain "YYYY-MM-DD" rendering of the same value.
+                date_cell = ws.cell(row=r, column=2, value=line["entry_date"])
+                date_cell.font = _XLSX_LINE_FONT
+                date_cell.number_format = "yyyy-mm-dd"
+                for col, value in ((3, line["scenario_code"]),
+                                   (4, line["description"]), (5, line["reference"] or ""),
+                                   (6, line["payee_name"] or "")):
+                    ws.cell(row=r, column=col, value=value).font = _XLSX_LINE_FONT
             for col, value in ((7, line["account_code"]), (8, line["account_name"])):
                 cell = ws.cell(row=r, column=col, value=value)
                 cell.font = _XLSX_LINE_FONT
@@ -3562,11 +3580,11 @@ def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = 
             total_credits += line["credit"] or 0
             r += 1
         entry_last_row = r - 1
-        if entry_last_row > entry_first_row:
-            ws.merge_cells(start_row=entry_first_row, start_column=1, end_row=entry_last_row, end_column=1)
-        anchor = ws.cell(row=entry_first_row, column=1, value=eid)
-        anchor.font = _XLSX_LINE_FONT
-        anchor.alignment = Alignment(horizontal="center", vertical="center")
+        for col in MERGED_ENTRY_COLS:
+            if entry_last_row > entry_first_row:
+                ws.merge_cells(start_row=entry_first_row, start_column=col,
+                               end_row=entry_last_row, end_column=col)
+            ws.cell(row=entry_first_row, column=col).alignment = Alignment(horizontal="center", vertical="center")
         # The one rule this report draws mid-sheet: under an entry's last
         # leg only, so it reads as "the next row starts a new transaction"
         # rather than a grid line between two legs of the same one.
