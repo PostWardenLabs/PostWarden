@@ -355,8 +355,7 @@ Grouped the way `db/schema.sql` groups them.
   `is_active`, `is_cashflow` (opts an account into the Cash Flow
   Statement's cash boundary — checking/savings/physical cash, never a
   credit card, loan, or investment account by default; see SPEC.md
-  decision 20), `currency` (defaulted, not yet used for conversion —
-  see SPEC's extension roadmap).
+  decision 20).
 
 ### Scenarios
 - **`scenarios`** — see [the table above](#two-shapes-of-scenario-side-by-side)

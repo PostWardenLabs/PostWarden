@@ -204,7 +204,6 @@ CREATE TABLE accounts (
     -- shows nothing on the Cash Flow Statement until accounts are
     -- explicitly opted in from /accounts, rather than silently guessing.
     is_cashflow  BOOLEAN NOT NULL DEFAULT FALSE,
-    currency     CHAR(3) NOT NULL DEFAULT 'MXN',
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (parent_id IS NULL OR parent_id <> id)
 );
@@ -878,13 +877,13 @@ FOR EACH ROW EXECUTE FUNCTION fn_budget_line_guard();
 CREATE VIEW v_dim_account AS
 WITH RECURSIVE tree AS (
     SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-           currency, is_cashflow, name::text AS path, NULL::text AS parent_path,
+           is_cashflow, name::text AS path, NULL::text AS parent_path,
            1 AS depth, code::text AS sort_path
       FROM accounts
      WHERE parent_id IS NULL
     UNION ALL
     SELECT a.id, a.code, a.name, a.account_type, a.parent_id, a.is_postable,
-           a.is_active, a.currency, a.is_cashflow,
+           a.is_active, a.is_cashflow,
            tree.path || ' : ' || a.name,
            tree.path,
            tree.depth + 1,
@@ -893,7 +892,7 @@ WITH RECURSIVE tree AS (
       JOIN tree ON a.parent_id = tree.id
 )
 SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-       currency, is_cashflow, path, parent_path, depth, sort_path,
+       is_cashflow, path, parent_path, depth, sort_path,
        CASE WHEN account_type IN ('asset', 'expense')
             THEN 'debit' ELSE 'credit' END AS normal_side
   FROM tree;

@@ -48,11 +48,14 @@ ideas underneath those features, not a tour of the screens.
   share lots times a live price feed. There's no cost-basis tracking,
   no ticker prices, and no realized/unrealized gain calculated for
   you — though you can post one yourself (see the 3300 account below).
-- **Multi-currency**, not yet. Every account carries a `currency`
-  column, but nothing in the app converts or translates between
-  currencies. Pick one and stay in it until that ships — it's on
-  `SPEC.md`'s Extension roadmap (a `prices` table, translated in the
-  reporting views).
+- **Multi-currency**, not yet. Nothing in the app converts or
+  translates between currencies, and there's no per-account or
+  per-entry currency to set in the meantime — pick one and stay in it
+  until that ships. It's on `SPEC.md`'s Extension roadmap, tied to a
+  transaction rather than an account (a checking account doesn't
+  change currency because one purchase against it happened to be in
+  euros) — a `currency` column on entries, plus a `prices` table,
+  translated in the reporting views.
 
 ## What is double-entry accounting?
 

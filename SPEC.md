@@ -964,8 +964,24 @@ record of what was originally proposed and how it actually landed.
   same fact table consolidates multiple sets of books (elimination entries
   become just another scenario or a dedicated elimination entity, exactly
   as in CPM practice).
-- **Multi-currency** — accounts already carry `currency`; add a `prices`
-  table (GnuCash's one good idea worth importing) and translate in views.
+- **Multi-currency** — deliberately *not* scaffolded on `accounts` anymore.
+  A `currency` column lived there for a while, unused end to end (no
+  route ever set it past its own `'MXN'` default, no view consumer, no
+  UI), and was dropped once that became clear (see git log around
+  `accounts.currency`). GnuCash's model
+  (an account is denominated in one currency; a cross-currency
+  transaction's split carries its own `value_num`/`value_denom` pair
+  against that) was the implicit template a per-account column was
+  scaffolding toward, and it's the wrong shape for this app specifically:
+  a checking account is a single real-world account regardless of what
+  currency a given purchase against it happened to post in, so "what
+  currency is *this account*" isn't actually the question multi-currency
+  support needs answered — "what currency was *this transaction*"
+  (or *this leg*, for a split that mixes them) is. If this ever gets
+  built, `currency` belongs on `journal_entries` (or `journal_lines`,
+  if two legs of the same entry can genuinely disagree), not `accounts`
+  — plus a `prices` table (GnuCash's one good idea worth importing
+  regardless) to translate in the reporting views.
 - **Periods & closing** — a fiscal calendar table, closing entries
   generated per period, `is_locked` graduating from scenario-level to
   period-level. Partly pre-empted by decision 10 (the simulated close is
