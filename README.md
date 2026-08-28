@@ -46,7 +46,12 @@ instance.
   Variance/% Variance columns are colored red/green by real conditional-
   formatting rules, not a color baked in at export time; Income
   Statement's Split view also draws a divider between each period's own
-  block of columns.
+  block of columns. The Journal has its own Export XLSX too, styled the
+  way a printed general journal traditionally is rather than as a
+  report: each entry's own legs grouped together (debits before credits,
+  credits indented underneath), its entry number merged down every leg,
+  a rule between transactions but never inside one, and a bold
+  double-ruled Debit/Credit total at the bottom.
 - **A Cash Flow Statement** — mark which accounts count as cash
   (checking, savings, physical cash — one checkbox on `/accounts`) and
   every inflow/outflow for a date range groups by where it actually

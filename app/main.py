@@ -3443,6 +3443,172 @@ def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "
     return csv_response(buf, "postwarden-journal.csv")
 
 
+# Journal's own leg indent, used on both the account columns and the Credit
+# amount for a credit leg — the classic printed-journal convention (debit
+# side flush left, credit side stepped in underneath it) that a flat
+# Debit/Credit column pair alone doesn't convey. Right-aligned explicitly
+# (not left to Excel's default General alignment the way every other
+# report's money cells are) because indent's edge is relative to whichever
+# horizontal alignment is set — General resolves per-type at render time in
+# a way that doesn't reliably indent a right-aligned number, so both the
+# debit and credit amount columns below pin "right" outright to keep the
+# indent's effect predictable.
+_XLSX_JOURNAL_INDENT = Alignment(horizontal="right", indent=1)
+_XLSX_JOURNAL_ACCOUNT_INDENT = Alignment(indent=1)
+
+
+@app.get("/entries/export.xlsx")
+def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = "",
+                        qtext: str = "", tags: str = "", account: str = "", payee: str = "",
+                        amount_op: str = "", amount_value: str = "", amount_value2: str = "",
+                        hide_reversed: int = 0):
+    """XLSX counterpart to entries_export_csv() above — same filters, same
+    rows, same DESC-by-date order, but formatted the way a printed general
+    journal traditionally reads rather than as a flat line-per-row dump:
+    each entry's own legs grouped together with debits listed before
+    credits (not line_no's original posting order — the standard
+    journal-entry presentation), its Entry # merged and vertically
+    centered down every leg it has, credit legs indented under the debit
+    lines above them, and a rule only under an entry's *last* leg — never
+    between two legs of the same entry — so a glance down the sheet reads
+    "these lines are one transaction" the way the grid alone wouldn't.
+
+    Doesn't reuse _xlsx_data_row/_xlsx_header_row's tree-shaped row model
+    (label_cols then value_cols, one flat font per row) — this report's
+    per-leg indent only ever applies to the account and Credit-amount
+    columns, never the entry-level columns (date, scenario, description, …)
+    repeated on every leg, which doesn't fit that helper's "everything but
+    the first label column" depth convention. Still built from the same
+    shared palette (fonts, money format, grand-total border/coloring,
+    title/subtitle style, no view gridlines) so it reads as one of this
+    app's own exports rather than a one-off."""
+    where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
+                                       account, payee, amount_op, amount_value,
+                                       amount_value2, hide_reversed)
+    rows = q(f"""
+        SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
+               e.description, e.reference, p.name AS payee_name,
+               a.code AS account_code, a.name AS account_name,
+               l.debit, l.credit, l.memo
+          FROM journal_lines l
+          JOIN journal_entries e ON e.id = l.entry_id
+          JOIN scenarios s ON s.id = e.scenario_id
+          JOIN accounts a ON a.id = l.account_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE {' AND '.join(where)}
+         ORDER BY e.entry_date DESC, e.seq DESC, l.credit > 0, l.line_no""", params)
+
+    # Group the flat leg rows back into entries, preserving the SQL's own
+    # order (a plain dict, not itertools.groupby, since the codebase's
+    # existing "bucket rows under their parent id" spots — lines_by_entry
+    # a few hundred lines up — already use this same setdefault pattern).
+    legs_by_entry: dict[str, list] = {}
+    for line in rows:
+        legs_by_entry.setdefault(line["entry_id"], []).append(line)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Journal"
+
+    subtitle = scenario or "All scenarios"
+    if date_from and date_to:
+        subtitle += f" · {date_from} to {date_to}"
+    elif date_from:
+        subtitle += f" · from {date_from}"
+    elif date_to:
+        subtitle += f" · through {date_to}"
+    ws.cell(row=1, column=1, value="Journal").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    headers = ["Entry #", "Date", "Scenario", "Description", "Reference",
+              "Payee", "Account code", "Account name", "Debit", "Credit", "Memo"]
+    n_cols = len(headers)
+    header_row, data_start = 4, 5
+    _xlsx_header_row(ws, header_row, headers)
+
+    r = data_start
+    total_debits = total_credits = 0
+    for eid, legs in legs_by_entry.items():
+        entry_first_row = r
+        for line in legs:
+            is_credit = bool(line["credit"])
+            # entry_date is a real date object (not a string) so the
+            # column stays sortable/filterable in Excel — number_format
+            # pins it to plain ISO text instead of Excel's own locale-
+            # dependent default date display, matching the CSV export's
+            # plain "YYYY-MM-DD" rendering of the same value.
+            date_cell = ws.cell(row=r, column=2, value=line["entry_date"])
+            date_cell.font = _XLSX_LINE_FONT
+            date_cell.number_format = "yyyy-mm-dd"
+            for col, value in ((3, line["scenario_code"]),
+                               (4, line["description"]), (5, line["reference"] or ""),
+                               (6, line["payee_name"] or "")):
+                ws.cell(row=r, column=col, value=value).font = _XLSX_LINE_FONT
+            for col, value in ((7, line["account_code"]), (8, line["account_name"])):
+                cell = ws.cell(row=r, column=col, value=value)
+                cell.font = _XLSX_LINE_FONT
+                if is_credit:
+                    cell.alignment = _XLSX_JOURNAL_ACCOUNT_INDENT
+            debit_cell = ws.cell(row=r, column=9, value=line["debit"] or None)
+            debit_cell.font = _XLSX_LINE_FONT
+            debit_cell.number_format = _XLSX_MONEY_FMT
+            debit_cell.alignment = Alignment(horizontal="right")
+            credit_cell = ws.cell(row=r, column=10, value=line["credit"] or None)
+            credit_cell.font = _XLSX_LINE_FONT
+            credit_cell.number_format = _XLSX_MONEY_FMT
+            credit_cell.alignment = _XLSX_JOURNAL_INDENT if is_credit else Alignment(horizontal="right")
+            ws.cell(row=r, column=11, value=line["memo"] or "").font = _XLSX_LINE_FONT
+            total_debits += line["debit"] or 0
+            total_credits += line["credit"] or 0
+            r += 1
+        entry_last_row = r - 1
+        if entry_last_row > entry_first_row:
+            ws.merge_cells(start_row=entry_first_row, start_column=1, end_row=entry_last_row, end_column=1)
+        anchor = ws.cell(row=entry_first_row, column=1, value=eid)
+        anchor.font = _XLSX_LINE_FONT
+        anchor.alignment = Alignment(horizontal="center", vertical="center")
+        # The one rule this report draws mid-sheet: under an entry's last
+        # leg only, so it reads as "the next row starts a new transaction"
+        # rather than a grid line between two legs of the same one.
+        for col in range(1, n_cols + 1):
+            cell = ws.cell(row=entry_last_row, column=col)
+            cell.border = Border(left=cell.border.left, right=cell.border.right,
+                                 top=cell.border.top, bottom=_XLSX_RULE)
+
+    in_balance = total_debits == total_credits
+    style = "grand" if in_balance else "grand_bad"
+    label = "Total" if in_balance else "Total (out of balance — this filter includes a scenario that allows single-sided entries)"
+    ws.cell(row=r, column=4, value=label).font = _XLSX_ROW_FONTS[style]
+    if rows:
+        debit_cell = ws.cell(row=r, column=9, value=f"=SUM(I{data_start}:I{r - 1})")
+        credit_cell = ws.cell(row=r, column=10, value=f"=SUM(J{data_start}:J{r - 1})")
+    else:
+        debit_cell = ws.cell(row=r, column=9, value=0)
+        credit_cell = ws.cell(row=r, column=10, value=0)
+    for cell in (debit_cell, credit_cell):
+        cell.font = _XLSX_ROW_FONTS[style]
+        cell.number_format = _XLSX_MONEY_FMT
+        cell.alignment = Alignment(horizontal="right")
+        cell.border = _XLSX_GRAND_BORDER if in_balance else _XLSX_GRAND_BORDER_BAD
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 9
+    ws.column_dimensions["B"].width = 11
+    ws.column_dimensions["C"].width = 10
+    ws.column_dimensions["D"].width = 32
+    ws.column_dimensions["E"].width = 14
+    ws.column_dimensions["F"].width = 16
+    ws.column_dimensions["G"].width = 11
+    ws.column_dimensions["H"].width = 28
+    ws.column_dimensions["I"].width = 14
+    ws.column_dimensions["J"].width = 14
+    ws.column_dimensions["K"].width = 24
+    ws.freeze_panes = f"B{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, "postwarden-journal.xlsx")
+
+
 def _reverse_one_entry(entry_id: str, user_id: int) -> str:
     """Posts the reversing entry for one already-posted entry — the actual
     work behind both the single-entry route and the bulk one below, so

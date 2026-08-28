@@ -99,12 +99,15 @@
   </div>
   {# A second row, not more of the field bar above: "hide reversed" narrows
      *this* view same as Clear filters (now up in the field row itself);
-     Export CSV is a different kind of action (getting data out, not
-     changing what's shown) and sits set apart on the right via
+     the two exports are a different kind of action (getting data out, not
+     changing what's shown) and sit set apart on the right via
      space-between. #}
   <p class="bar" style="justify-content: space-between; align-items: center;">
     <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
-    <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
+    <span>
+      <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
+      <a class="quiet-link" href="/entries/export.xlsx?{{ export_qs }}">Export XLSX</a>
+    </span>
   </p>
 </form>
 
