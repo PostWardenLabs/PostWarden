@@ -27,7 +27,10 @@
       <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
       <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
     </span>
-    <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
+    <span class="bar" style="align-items: center; margin-bottom: 0;">
+      <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
+      <a class="quiet-link" href="/export/trial-balance.xlsx?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export XLSX</a>
+    </span>
   </p>
 </form>
 

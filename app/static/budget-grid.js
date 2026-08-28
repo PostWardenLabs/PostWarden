@@ -7,8 +7,8 @@
 
    Each row already carries its own Actual as a static data-actual
    attribute (server-rendered, never touched by this script) — Variance
-   is (live) budgeted - actual (or actual - budgeted, if "% variance of
-   actual" is checked — see pctOfBase below), recomputed alongside it. */
+   is (live) actual - budgeted (or budgeted - actual, if "Flip variance
+   direction" is checked — see pctOfBase below), recomputed alongside it. */
 (function () {
   const table = document.querySelector("table[data-collapse-key^='postwarden-budget-collapsed']");
   if (!table) return;
@@ -20,29 +20,30 @@
     : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Which of the two conventions is live right now — set server-side from
-  // the same pct_of_base the "% variance of actual" checkbox submits, on
-  // the table itself so a page reload (the checkbox auto-refreshes, same
-  // as every other filter) is the only thing that ever changes it; typing
-  // into a Budgeted cell never does. Same two formulas as _pct_variance()/
-  // _variance_amount() in main.py: default (0, "% of budget" — how far
-  // actual fell from budgeted, as a % of budgeted) or checked (1, "% of
-  // actual" — the same gap as a % of actual instead).
+  // the same pct_of_base the "Flip variance direction" checkbox submits,
+  // on the table itself so a page reload (the checkbox auto-refreshes,
+  // same as every other filter) is the only thing that ever changes it;
+  // typing into a Budgeted cell never does. Same two formulas as
+  // _pct_variance()/_variance_amount() in main.py: default (0) — the
+  // standard percent-change reading, actual as "new," budgeted as "old"
+  // it's measured against — or checked (1), the same reading with the
+  // two swapped.
   const pctOfBase = table.dataset.pctOfBase === "1";
 
   function pctVariance(actual, budgeted) {
     if (pctOfBase) {
       if (!actual) return null;
-      return Math.round(((actual - budgeted) / Math.abs(actual)) * 1000) / 10;
+      return Math.round(((budgeted - actual) / Math.abs(actual)) * 1000) / 10;
     }
     if (!budgeted) return null;
-    return Math.round(((budgeted - actual) / Math.abs(budgeted)) * 1000) / 10;
+    return Math.round(((actual - budgeted) / Math.abs(budgeted)) * 1000) / 10;
   }
 
   function setVariance(tr, budgeted) {
     const actual = parseFloat(tr.dataset.actual || "0");
     const cell = tr.querySelector(".variance-cell");
     if (cell) {
-      const v = pctOfBase ? actual - budgeted : budgeted - actual;
+      const v = pctOfBase ? budgeted - actual : actual - budgeted;
       cell.textContent = fmt(v);
       cell.classList.toggle("neg", v < 0);
     }

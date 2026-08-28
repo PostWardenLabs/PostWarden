@@ -59,7 +59,8 @@
     <span class="bar" style="align-items: center; margin-bottom: 0;">
       <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
       {% if compare %}
-      <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
+      <label class="checkline" title="Default: Scenario − Compare, as a % of Compare. Checked: Compare − Scenario, as a % of Scenario.">
+        <input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> Flip variance direction</label>
       {% endif %}
     </span>
     <span class="bar" style="align-items: center; margin-bottom: 0;">

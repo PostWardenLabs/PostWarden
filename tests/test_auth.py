@@ -1041,7 +1041,7 @@ def test_variance_page_rolls_up_a_coarse_scenario_against_a_fine_one(conn):
         assert 'data-value="100.00"' in r.text  # actual: 40 + 60 rolled into the parent
         assert 'data-value="90.00"' in r.text   # budget: posted straight to the parent
         assert 'data-value="10.00"' in r.text   # variance: baseline(100) - compare(90)
-        assert "10.0%" in r.text                # % variance: (100 - 90) / |100| * 100
+        assert "11.1%" in r.text                # % variance: (100 - 90) / |90| * 100
 
 
 def test_accounts_page_filters_to_selected_level(conn):
@@ -1372,16 +1372,16 @@ def test_income_statement_compares_two_scenarios_with_variance_and_pct_of_income
         r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
                  f"&date_from={today}&date_to={today}")
         assert r.status_code == 200
-        # Income row: actual 400 vs budget 600 -> variance = budget - actual =
-        # 200, % variance (of budget, the default) = (600-400)/600 = 33.3%.
+        # Income row: actual 400 vs budget 600 -> variance = actual - budget =
+        # -200, % variance (of budget, the default) = (400-600)/600 = -33.3%.
         assert 'data-value="400.00"' in r.text
         assert 'data-value="600.00"' in r.text
-        assert '200.00' in r.text
-        assert '33.3%' in r.text
-        # Net income: actual 300 vs budget 450 -> 33.3% again (same ratio here).
+        assert 'data-value="-200.00"' in r.text
+        assert '-33.3%' in r.text
+        # Net income: actual 300 vs budget 450 -> -33.3% again (same ratio here).
         assert _account_row_value(r.text, expense["code"]) == "100.00"
-        # Expense row variance: 150 - 100 = 50.
-        assert '50.00' in r.text
+        # Expense row variance: actual 100 - budget 150 = -50.
+        assert 'data-value="-50.00"' in r.text
         # % of income on the Expenses subtotal (100/400 = 25%) and the
         # final Net income line (300/400 = 75%).
         assert "(25.0%)" in r.text
@@ -1419,17 +1419,17 @@ def test_income_statement_compares_against_an_income_statement_only_scenario(con
         # Income: actual 1000 vs budgeted 1000 -> matches exactly, 0.0%.
         assert 'data-value="1000.00"' in r.text
         assert "0.0%" in r.text
-        # Expense: actual 450 vs budgeted 600 -> variance = budget - actual =
-        # 150, % variance (of budget, the default) = (600-450)/600 = 25.0%.
+        # Expense: actual 450 vs budgeted 600 -> variance = actual - budget =
+        # -150, % variance (of budget, the default) = (450-600)/600 = -25.0%.
         assert _account_row_value(r.text, expense["code"]) == "450.00"
-        assert "150.00" in r.text
-        assert "25.0%" in r.text
+        assert 'data-value="-150.00"' in r.text
+        assert "-25.0%" in r.text
         # Net income: actual 550 (1000-450) vs budgeted 400 (1000-600) ->
-        # variance = budget - actual = 400 - 550 = -150, pct = (400-550)/400 = -37.5%.
+        # variance = actual - budget = 550 - 400 = 150, pct = (550-400)/400 = 37.5%.
         assert "550.00" in r.text
-        assert "-37.5%" in r.text
+        assert "37.5%" in r.text
         assert "400.00" in r.text
-        assert "-150.00" in r.text
+        assert 'data-value="150.00"' in r.text
 
 
 def test_income_statement_no_compare_has_no_variance_column(conn):
@@ -1533,13 +1533,13 @@ def test_income_statement_split_with_compare_shows_variance_columns_per_period(c
         r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
                  f"&date_from=2026-08-01&date_to=2026-08-31&split=monthly")
         assert r.status_code == 200
-        # August: actual 400 vs budget 600 -> variance = 200, % variance
-        # (of budget, the default) = (600-400)/600 = 33.3% — same formula
-        # test_income_statement_compares_two_scenarios_with_variance_and_
-        # pct_of_income already checks for the unsplit report.
+        # August: actual 400 vs budget 600 -> variance = actual - budget =
+        # -200, % variance (of budget, the default) = (400-600)/600 = -33.3%
+        # — same formula test_income_statement_compares_two_scenarios_with_
+        # variance_and_pct_of_income already checks for the unsplit report.
         assert "400.00" in r.text
-        assert "200.00" in r.text
-        assert "33.3%" in r.text
+        assert 'data-value="-200.00"' in r.text
+        assert "-33.3%" in r.text
         assert "600.00" in r.text
         # Two-row header: a period's label spans 4 columns (Scenario,
         # Variance, % variance, Compare) when comparing.
@@ -1709,14 +1709,13 @@ def test_income_statement_split_export_csv_has_one_column_group_per_period(conn)
 
 
 def test_pct_of_base_toggle_flips_variance_convention_on_every_report(conn):
-    # "% variance of actual" (a checkbox next to Hide zero balances, same
-    # shape everywhere) switches all three reports that show a %
-    # variance column between two conventions: unchecked/default (% of
-    # budget — how far actual fell from budgeted, as a % of budgeted)
-    # and checked (% of actual — the same gap as a % of actual instead).
-    # Denominator moves, not just the numerator's sign, so this checks
-    # both states land on the actual expected number, not just "the sign
-    # flipped."
+    # "Flip variance direction" (a checkbox next to Hide zero balances,
+    # same shape everywhere) switches all three reports that show a %
+    # variance column between two conventions: unchecked/default (base -
+    # compare_val, as a % of compare_val — the standard percent-change
+    # reading) and checked (the same two swapped). Denominator moves, not
+    # just the numerator's sign, so this checks both states land on the
+    # actual expected number, not just "the sign flipped."
     with conn.cursor() as cur:
         user = mk_user(cur)
         actual = mk_scenario(cur, enforce_balance=False)
@@ -1754,23 +1753,24 @@ def test_pct_of_base_toggle_flips_variance_convention_on_every_report(conn):
         today = date.today().isoformat()
 
         # Income Statement: checkbox hidden with no compare, present once
-        # one's picked; checked = % of actual = (400-600)/400 = -50.0%.
+        # one's picked; checked = (compare-base)/|base| = (600-400)/400 =
+        # 50.0%.
         r = c.get(f"/income-statement?scenario={actual['code']}&compare={budget['code']}"
                  f"&date_from={today}&date_to={today}&pct_of_base=1")
         assert 'name="pct_of_base" value="1" checked' in r.text
-        assert "-50.0%" in r.text
+        assert "50.0%" in r.text
 
-        # Variance: baseline 100 vs compare(budget) 90, checked = % of
-        # actual (compare) = (90-100)/90 = -11.1%.
+        # Variance: baseline(base) 100 vs compare 90, checked =
+        # (compare-base)/|base| = (90-100)/100 = -10.0%.
         r = c.get(f"/variance?baseline=ACTUAL&compare={variance_budget['code']}&pct_of_base=1")
         assert 'name="pct_of_base" value="1" checked' in r.text
-        assert "-11.1%" in r.text
+        assert "-10.0%" in r.text
 
-        # Budget Grid: actual 450 vs budgeted 600, checked = % of actual =
-        # (450-600)/450 = -33.3%.
+        # Budget Grid: actual(base) 450 vs budgeted 600, checked =
+        # (compare-base)/|base| = (600-450)/450 = 33.3%.
         r = c.get(f"/budget?scenario={scen['code']}&month=2026-08&pct_of_base=1")
         assert 'name="pct_of_base" value="1" checked' in r.text
-        assert "-33.3%" in r.text
+        assert "33.3%" in r.text
 
 
 def _earlier_this_year_or_none() -> str | None:
@@ -3144,8 +3144,8 @@ def test_budget_page_shows_budgeted_actual_and_variance(conn):
         m = re.search(rf'data-account="{expense["code"]}"[^>]*value="([^"]*)"', r.text)
         assert m and m.group(1) == "600.00"
         assert _account_row_value(r.text, expense["code"]) == "450.00"  # Actual column
-        assert "150.00" in r.text  # Variance = budgeted - actual = 600 - 450
-        assert "25.0%" in r.text   # % variance = (600 - 450) / |600| * 100
+        assert "-150.00" in r.text  # Variance = actual - budgeted = 450 - 600
+        assert "-25.0%" in r.text   # % variance = (450 - 600) / |600| * 100
 
 
 def test_budget_page_rolls_up_a_subdivided_summary_account(conn):

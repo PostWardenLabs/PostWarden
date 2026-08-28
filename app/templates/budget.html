@@ -33,7 +33,8 @@
     </span>
   </div>
   <p class="bar" style="align-items: center;">
-    <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
+    <label class="checkline" title="Default: Actual − Budgeted, as a % of Budgeted. Checked: Budgeted − Actual, as a % of Actual.">
+      <input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> Flip variance direction</label>
   </p>
 </form>
 

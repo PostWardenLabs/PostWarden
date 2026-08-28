@@ -301,6 +301,22 @@ _XLSX_PERIOD_DIVIDER = Side(style="medium", color="FF1B2430")  # --ink
 # than replacing it.
 _XLSX_NEG_FONT = Font(color="FFB3392C")  # --red
 _XLSX_POS_FONT = Font(color="FF1F7A52")  # --ok
+# The other three reports' own row styles, matching style.css's own
+# tr.subtotal/tr.grand treatment exactly (see style.css for both) so a
+# Trial Balance/Balance Sheet/Variance export reads the same way in a
+# spreadsheet as it does on the page: "subtotal" (a rolled-up figure
+# across more than one top-level account, e.g. Trial Balance's own
+# per-type subtotal when a type has multiple roots) is semi-bold and
+# muted rather than fully bold, so it doesn't compete visually with a
+# "group" row's own bold; "grand" is the accountant's double-rule under
+# a total that balances — Excel's "double" border style — with a red
+# variant for a report that doesn't (Trial Balance/Balance Sheet's own
+# in_balance check, Cash Flow's tie-out).
+_XLSX_SUBTOTAL_FONT = Font(name=_XLSX_FONT, size=10, bold=True, color="FF5B6B7C")  # --ink-soft
+_XLSX_GRAND_FONT = Font(name=_XLSX_FONT, size=10, bold=True)
+_XLSX_GRAND_FONT_BAD = Font(name=_XLSX_FONT, size=10, bold=True, color="FFB3392C")  # --red
+_XLSX_GRAND_BORDER = Border(bottom=Side(style="double", color="FF1B2430"))  # --ink
+_XLSX_GRAND_BORDER_BAD = Border(bottom=Side(style="double", color="FFB3392C"))  # --red
 # No currency symbol — matches money()'s own plain-text convention above
 # (the app never bakes a symbol into a stored/exported figure; display-only
 # formatting is a client-side concern there, and there's no client here).
@@ -362,38 +378,98 @@ def _xlsx_variance_coloring(ws, col: int, row_start: int, row_end: int):
     ws.conditional_formatting.add(cell_range, CellIsRule(operator="greaterThan", formula=["0"], font=_XLSX_POS_FONT))
 
 
+def _xlsx_variance_formulas(base_cell: str, compare_cell: str, pct_of_base: bool) -> tuple[str, str]:
+    """Live Excel formulas for a Variance/% Variance pair, replicating
+    _variance_amount()/_pct_variance()'s own two conventions exactly —
+    default: base-minus-compare, % of compare (the standard percent-
+    change reading, base as "new"); pct_of_base ("Flip variance
+    direction" checked): compare-minus-base, % of base instead (see
+    _pct_variance's own docstring for the full reasoning). Safe to derive
+    live, unlike a group/subtotal row's own base/compare figures (see the
+    Income Statement route's docstring on why those stay literals) —
+    each formula only ever references the two cells already sitting in
+    the same row, never a range that could double-count a rolled-up
+    tree. IF(...,"",...) mirrors _pct_variance() returning None (blank,
+    not a literal 0%) when there's nothing to divide by."""
+    if pct_of_base:
+        return (f"={compare_cell}-{base_cell}",
+                f'=IF({base_cell}=0,"",ROUND(({compare_cell}-{base_cell})/ABS({base_cell})*100,1))')
+    return (f"={base_cell}-{compare_cell}",
+            f'=IF({compare_cell}=0,"",ROUND(({base_cell}-{compare_cell})/ABS({compare_cell})*100,1))')
+
+
+def _xlsx_sum_formula(plus_cells: list[str], minus_cells: list[str] = ()) -> str:
+    """A live formula adding/subtracting specific, individually-named
+    cells — e.g. "=C6+C20-C34" — never a row range, so it stays safe
+    regardless of how deep the tree under any one of those cells goes:
+    each cell named here is a group's own root row, which (same
+    reasoning as the "group" row style itself) already carries that
+    subtree's full rolled-up total. Used for Income Statement's "Net
+    income after X" running rows, each one just Income's root row(s)
+    minus every expense group's root row seen so far. Falls back to a
+    literal 0 rather than a bare "=" (not a valid formula) when both
+    lists are empty — a report with no income and no expense rows at
+    all, which shouldn't happen in practice but shouldn't crash either."""
+    if not plus_cells and not minus_cells:
+        return 0
+    return "=" + "+".join(plus_cells) + "".join(f"-{c}" for c in minus_cells)
+
+
+_XLSX_ROW_FONTS = {
+    "group": _XLSX_GROUP_FONT, "line": _XLSX_LINE_FONT, "running": _XLSX_RUNNING_FONT,
+    "subtotal": _XLSX_SUBTOTAL_FONT, "grand": _XLSX_GRAND_FONT, "grand_bad": _XLSX_GRAND_FONT_BAD,
+}
+
+
 def _xlsx_data_row(ws, row: int, label_cols: list, value_cols: list, style: str, depth: int = 0):
     """Write one report row. `label_cols` is [(col, text), ...] for the
     leading text columns (code, account name); `value_cols` is
     [(col, value, number_format), ...] for the money/percent columns.
-    `style` picks the same three treatments the reference workbook used:
-    "group" (a section's own top-level account — bold, ruled underneath;
-    that row's figure already *is* the section's total, since it's the
-    root of the rolled-up tree — see the route's own docstring on why
-    this replaced a separate "Total X" row), "line" (a plain account row
-    — normal weight, its value cells shaded *and* fully gridded, matching
-    the reference workbook's own "these are the numbers you'd read down
-    a column" treatment), or "running" (a running-total row like "Net
-    income after Taxes" — italic, unshaded, unruled). `depth` indents an
-    account name under its parent, same meaning as the HTML report's own
-    chevrons."""
-    font = {"group": _XLSX_GROUP_FONT, "line": _XLSX_LINE_FONT, "running": _XLSX_RUNNING_FONT}[style]
+    `style` picks one of six treatments (_XLSX_ROW_FONTS above names the
+    font for each):
+    - "group": a section's own top-level account, or a bare section-title
+      row when `value_cols` is empty (Trial Balance/Balance Sheet's own
+      "Assets"/"Liabilities" headers) — bold, ruled underneath. For a
+      real account row, that figure already *is* the section's total,
+      since it's the root of the rolled-up tree — see the Income
+      Statement route's own docstring on why this replaced a separate
+      "Total X" row.
+    - "line": a plain account row — normal weight, its value cells shaded
+      *and* fully gridded, matching the reference workbook's own "these
+      are the numbers you'd read down a column" treatment.
+    - "running": a running-total row like "Net income after Taxes" —
+      italic, unshaded, unruled.
+    - "subtotal": a rolled-up figure across more than one top-level
+      account in the same section (Trial Balance's own per-type subtotal
+      when a type has multiple roots) — semi-bold, muted, ruled, matching
+      style.css's tr.subtotal exactly.
+    - "grand"/"grand_bad": the report's own bottom-line total — bold,
+      with the accountant's double-rule under the value cells (style.css's
+      tr.grand), red instead of ink for "grand_bad" when that total
+      doesn't actually balance/tie out.
+    `depth` indents an account name under its parent, same meaning as the
+    HTML report's own chevrons."""
+    font = _XLSX_ROW_FONTS[style]
     for col, text in label_cols:
         cell = ws.cell(row=row, column=col, value=text)
         cell.font = font
         if depth and col != label_cols[0][0]:
             cell.alignment = Alignment(indent=depth)
-        if style == "group":
+        if style in ("group", "subtotal"):
             cell.border = _XLSX_BOTTOM_BORDER
     for col, value, number_format in value_cols:
         cell = ws.cell(row=row, column=col, value=value)
         cell.font = font
         cell.number_format = number_format
-        if style == "group":
+        if style in ("group", "subtotal"):
             cell.border = _XLSX_BOTTOM_BORDER
         elif style == "line":
             cell.fill = _XLSX_LINE_FILL
             cell.border = _XLSX_LINE_BORDER
+        elif style == "grand":
+            cell.border = _XLSX_GRAND_BORDER
+        elif style == "grand_bad":
+            cell.border = _XLSX_GRAND_BORDER_BAD
 
 
 def xlsx_response(wb: Workbook, filename: str) -> Response:
@@ -864,6 +940,15 @@ def trial_balance(request: Request, scenario: str = "ACTUAL",
     })
 
 
+def _trial_balance_export_filename(scenario: str, as_of: str, raw: int, ext: str) -> str:
+    name = f"postwarden-trial-balance-{scenario}"
+    if as_of:
+        name += f"_{as_of}"
+    if raw:
+        name += "_raw"
+    return f"{name}.{ext}"
+
+
 @app.get("/export/trial-balance.csv")
 def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
                              zeros: int = 0, raw: int = 0):
@@ -875,7 +960,67 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
         for r in g["rows"]:
             w.writerow([r["account_code"], r["account_name"], r["path"],
                        r["debit_balance"] or "", r["credit_balance"] or ""])
-    return csv_response(buf, f"postwarden-trial-balance-{scenario}.csv")
+    return csv_response(buf, _trial_balance_export_filename(scenario, as_of, raw, "csv"))
+
+
+@app.get("/export/trial-balance.xlsx")
+def trial_balance_export_xlsx(scenario: str = "ACTUAL", as_of: str = None,
+                              zeros: int = 0, raw: int = 0):
+    """XLSX counterpart to trial_balance_export_csv() above, plus the
+    section/subtotal/grand-total structure the CSV leaves out (it's a
+    plain account list — no type-head, no per-type subtotal, no balance
+    check) but result["grouped"] already carries: a bold section-title
+    row per account type (g["label"]), that type's own subtotal row only
+    when it actually sums more than one top-level account (g["show_type_
+    total"] — a single-root type's own root row already *is* the total,
+    same reasoning as Income Statement's own group-row treatment), and a
+    bottom "In balance"/"Out of balance" row with the accountant's
+    double-rule, red instead of ink when it doesn't."""
+    result = _trial_balance_rows(scenario, as_of, zeros, raw)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Trial Balance"
+
+    subtitle = f"{scenario} · {'As of ' + as_of if as_of else 'Through today'}"
+    if not raw:
+        subtitle += " · simulated monthly close"
+    ws.cell(row=1, column=1, value="Trial Balance").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    headers = ["Code", "Account", "Debit", "Credit"]
+    n_cols = len(headers)
+    header_row, data_start = 4, 5
+    _xlsx_header_row(ws, header_row, headers)
+
+    def row(r: int, code, name, depth, debit, credit, style="line"):
+        value_cols = [(3, debit or None, _XLSX_MONEY_FMT), (4, credit or None, _XLSX_MONEY_FMT)]
+        _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
+
+    r = data_start
+    for g in result["grouped"]:
+        _xlsx_data_row(ws, r, [(1, ""), (2, g["label"])], [], style="group")
+        r += 1
+        for line in g["rows"]:
+            row(r, line["account_code"], line["account_name"], line.get("depth", 2),
+                line["debit_balance"], line["credit_balance"],
+                style="group" if line.get("depth") == 1 else "line")
+            r += 1
+        if g["show_type_total"]:
+            row(r, "", f"{g['label']} subtotal", 1, g["sub_debits"], g["sub_credits"], style="subtotal")
+            r += 1
+    grand_style = "grand" if result["in_balance"] else "grand_bad"
+    label = "In balance" if result["in_balance"] else "Out of balance (this scenario allows single-sided entries)"
+    row(r, "", label, 1, result["total_debits"], result["total_credits"], style=grand_style)
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 44
+    for col in range(3, n_cols + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 14
+    ws.freeze_panes = f"C{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, _trial_balance_export_filename(scenario, as_of, raw, "xlsx"))
 
 
 # ---------------------------------------------------------------------------
@@ -912,34 +1057,37 @@ def trial_balance_export_csv(scenario: str = "ACTUAL", as_of: str = None,
 # Balance's.
 # ---------------------------------------------------------------------------
 def _pct_variance(base, compare_val, pct_of_base: bool = False):
-    """% variance between `base` (a report's "actual"-like primary
-    figure) and `compare_val` (its "budget"/reference-like figure) — two
-    conventions, user-toggleable per report via a "% variance of actual"
-    checkbox next to Hide zero balances (Income Statement, Variance,
-    Budget Grid all share this one flag/wording — see each route's own
-    `pct_of_base` query param).
+    """% variance between `base` (a report's own primary scenario figure
+    — "Scenario" on Income Statement, "Baseline" on Variance, "Actual" on
+    the Budget grid) and `compare_val` (whatever it's being measured
+    against — "Compare to"/"Budgeted") — two conventions, user-toggleable
+    per report via a "Flip variance direction" checkbox next to Hide
+    zero balances (Income Statement, Variance, Budget Grid all share this
+    one flag — see each route's own `pct_of_base` query param; the
+    parameter name predates this docstring and stayed as-is since it's
+    also a public, bookmarkable query string — only what it *does*
+    changed here).
 
-    Default (pct_of_base=False, "% of budget" — unchecked, matching the
-    checkbox's own unchecked state): how far `base` came from
-    `compare_val`, as a % of `compare_val` — (compare_val - base) /
-    compare_val. "actual came in 12% under budget."
+    Default (pct_of_base=False, unchecked): the standard percent-change
+    reading, (new - old) / old, with `base` as the "new" figure and
+    `compare_val` as the "old" one being measured against — (base -
+    compare_val) / compare_val. "actual came in 12% ahead of budget."
 
-    Checked (pct_of_base=True, "% of actual"): the same gap, as a % of
-    `base` instead — (base - compare_val) / base. "budget was 12% below
-    actual."
+    Checked (pct_of_base=True): the same reading with the two swapped —
+    `compare_val` as "new", `base` as "old" — (compare_val - base) /
+    base. "budget came in 12% ahead of actual."
 
-    Deliberately two distinct formulas, not one sign-flipped the other —
-    the denominator moves, not just the numerator's sign — so this
-    takes the toggle as an explicit argument rather than being a
-    caller-side negation. None (not 0%) when there's nothing to divide
-    by."""
+    Both conventions divide by whichever figure is playing "old" in that
+    state, not always the same one — so this takes the toggle as an
+    explicit argument rather than being a caller-side negation. None
+    (not 0%) when there's nothing to divide by."""
     if pct_of_base:
         if not base:
             return None
-        return round((base - compare_val) / abs(base) * 100, 1)
+        return round((compare_val - base) / abs(base) * 100, 1)
     if not compare_val:
         return None
-    return round((compare_val - base) / abs(compare_val) * 100, 1)
+    return round((base - compare_val) / abs(compare_val) * 100, 1)
 
 
 def _variance_amount(base, compare_val, pct_of_base: bool = False):
@@ -947,12 +1095,12 @@ def _variance_amount(base, compare_val, pct_of_base: bool = False):
     toggle, same two conventions, kept as its own function (not baked
     into _pct_variance's return) since every call site needs both the
     dollar figure and the percentage rendered side by side, not one
-    derived from the other. Default: compare_val - base (budget minus
-    actual). Checked: base - compare_val (actual minus budget) — the
-    numerator flips right along with which side of the % the toggle
-    picks, so the sign of the dollar variance always agrees with
-    whichever percentage is showing next to it."""
-    return (base - compare_val) if pct_of_base else (compare_val - base)
+    derived from the other. Default: base - compare_val (actual minus
+    budget — positive when actual is ahead). Checked: compare_val - base
+    (budget minus actual) — the numerator flips right along with which
+    side of the % the toggle picks, so the sign of the dollar variance
+    always agrees with whichever percentage is showing next to it."""
+    return (compare_val - base) if pct_of_base else (base - compare_val)
 
 
 def _pct_of(amount, total):
@@ -1481,25 +1629,33 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
     different labels. Instead, that first row gets the bold/ruled "group"
     treatment directly, in place — one real total per section, not two.
 
-    Every figure is a literal, not a formula, for the same reason: this
-    is a rolled-up multi-root account tree, so a plain SUM() over a
-    visible row range would double-count wherever a group is more than
-    one level deep. What's written is exactly the same number the HTML
-    report and the CSV export already show for that row; only Variance/%
-    Variance formulas would have been safe to derive live, and a mixed
-    sheet (some cells formulas, most not) wasn't worth the inconsistency
-    for what is fundamentally a point-in-time report snapshot, not an
-    editable model.
+    Every account row's own base/compare figure is a literal, not a
+    formula: this is a rolled-up multi-root account tree, so a plain
+    SUM() over a *visible row range* would double-count wherever a group
+    is more than one level deep. What's written there is exactly the
+    same number the HTML report and the CSV export already show for that
+    row. Three things layered on top of those literals *are* live
+    formulas, though, each one safe for the same underlying reason —
+    every cell referenced is named individually, by row, never swept in
+    as part of a range that could double-count:
+    - Variance and % Variance (_xlsx_variance_formulas) — each one only
+      references the two cells already sitting in its own row.
+    - Each "Net income after X" running row (_xlsx_sum_formula) — Income's
+      root row(s) minus every expense group's own root row seen so far,
+      each named as its own cell (e.g. "=C6+C20-C34"), not a range.
+    Edit any base/compare figure by hand later and every running total
+    and variance downstream of it recalculates instead of going stale.
 
-    Two reader aids from live feedback against a real download: every
-    Variance/% Variance column carries real conditional-formatting rules
-    (red negative, green positive — _xlsx_variance_coloring), not a color
-    baked in at generation time, so it still tracks correctly if a cell
-    is edited by hand afterward. Split view also draws a heavier rule
-    down the right edge of every period's own column group (but the
-    last) — see _xlsx_thicken_right_border — since a wide multi-period
-    sheet with only the thin per-cell grid to go on is easy to lose your
-    place scanning across."""
+    Two more reader aids from live feedback against a real download:
+    every Variance/% Variance column also carries real conditional-
+    formatting rules (red negative, green positive —
+    _xlsx_variance_coloring), not a color baked in at generation time, so
+    it still tracks correctly if a cell is edited by hand afterward.
+    Split view also draws a heavier rule down the right edge of every
+    period's own column group (but the last) — see
+    _xlsx_thicken_right_border — since a wide multi-period sheet with
+    only the thin per-cell grid to go on is easy to lose your place
+    scanning across."""
     periods = _split_periods(date_from, date_to, split)
     wb = Workbook()
     ws = wb.active
@@ -1529,17 +1685,34 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
         _xlsx_header_row(ws, header_row, headers)
 
         def row(r: int, code, name, depth, base, comp=None, variance=None, pct=None, style="line"):
+            # variance/pct (the backend-computed figures, same ones the
+            # CSV export writes) are accepted for call-site parity but
+            # unused here — Variance/% Variance are live formulas instead
+            # (_xlsx_variance_formulas), referencing this same row's own
+            # C{r}/F{r} cells.
             value_cols = [(3, base, _XLSX_MONEY_FMT)]
             if compare:
-                value_cols += [(4, variance, _XLSX_MONEY_FMT), (5, pct, _XLSX_PCT_FMT), (6, comp, _XLSX_MONEY_FMT)]
+                var_f, pct_f = _xlsx_variance_formulas(f"C{r}", f"F{r}", bool(pct_of_base))
+                value_cols += [(4, var_f, _XLSX_MONEY_FMT), (5, pct_f, _XLSX_PCT_FMT), (6, comp, _XLSX_MONEY_FMT)]
             _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
 
+        # Root-row cell references for the running-total formulas below —
+        # every income group's own root row (base column C, compare
+        # column F), then every expense group's as its own root row is
+        # written. A "Net income after X" row is then just those income
+        # roots minus however many expense roots have been seen so far —
+        # _xlsx_sum_formula, same "reference the exact cell, never a
+        # range" safety as _xlsx_variance_formulas above.
+        income_roots_c, income_roots_f, expense_roots_c, expense_roots_f = [], [], [], []
         r = data_start
         for g in result["income_groups"]:
             for i, line in enumerate(g["rows"]):
                 row(r, line["account_code"], line["account_name"], line["depth"],
                     line["base_net"], line["compare_net"], line["variance"], line["pct_variance"],
                     style="group" if i == 0 else "line")
+                if i == 0:
+                    income_roots_c.append(f"C{r}")
+                    income_roots_f.append(f"F{r}")
                 r += 1
         for i, g in enumerate(result["expense_groups"]):
             r += 1  # blank separator row — same breathing room the CSV gives with w.writerow([])
@@ -1547,15 +1720,20 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
                 row(r, line["account_code"], line["account_name"], line["depth"],
                     line["base_net"], line["compare_net"], line["variance"], line["pct_variance"],
                     style="group" if j == 0 else "line")
+                if j == 0:
+                    expense_roots_c.append(f"C{r}")
+                    expense_roots_f.append(f"F{r}")
                 r += 1
             is_last = i == len(result["expense_groups"]) - 1
             label = "Net income" if is_last else f"Net income after {g['name']}"
-            row(r, "", label, 1, g["base_running_after"], g["compare_running_after"],
-                g["running_variance"], g["running_pct_variance"], style="running")
+            running_base = _xlsx_sum_formula(income_roots_c, expense_roots_c)
+            running_comp = _xlsx_sum_formula(income_roots_f, expense_roots_f) if compare else None
+            row(r, "", label, 1, running_base, running_comp, style="running")
             r += 1
         if not result["expense_groups"]:
-            row(r, "", "Net income", 1, result["net_income"], result["compare_net_income"],
-                result["net_income_variance_amount"], result["net_income_variance"], style="running")
+            running_base = _xlsx_sum_formula(income_roots_c)
+            running_comp = _xlsx_sum_formula(income_roots_f) if compare else None
+            row(r, "", "Net income", 1, running_base, running_comp, style="running")
             r += 1
         last_row = r - 1
         if compare:
@@ -1582,21 +1760,52 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
             _xlsx_header_row(ws, field_row, field_labels, start_col=start_col)
 
         def row(r: int, code, name, depth, period_vals, style="line"):
+            # v["variance"]/v["pct"] unused here — same live-formula
+            # treatment as the single-range row() above, one Variance/%
+            # Variance formula pair per period, each referencing only
+            # that period's own base/compare cells in this row.
             value_cols, col = [], 3
             for v in period_vals:
+                base_col = col
                 value_cols.append((col, v.get("base"), _XLSX_MONEY_FMT))
                 col += 1
                 if compare:
-                    value_cols += [(col, v.get("variance"), _XLSX_MONEY_FMT),
-                                   (col + 1, v.get("pct"), _XLSX_PCT_FMT),
-                                   (col + 2, v.get("comp"), _XLSX_MONEY_FMT)]
+                    comp_col = col + 2
+                    var_f, pct_f = _xlsx_variance_formulas(
+                        f"{get_column_letter(base_col)}{r}", f"{get_column_letter(comp_col)}{r}", bool(pct_of_base))
+                    value_cols += [(col, var_f, _XLSX_MONEY_FMT),
+                                   (col + 1, pct_f, _XLSX_PCT_FMT),
+                                   (comp_col, v.get("comp"), _XLSX_MONEY_FMT)]
                     col += 3
             _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
 
-        def totals_period_vals(periods_totals, base_key, comp_key, var_key, pct_key):
-            return [{"base": p[base_key], "comp": p[comp_key], "variance": p[var_key], "pct": p[pct_key]}
-                    for p in periods_totals]
+        def running_period_vals(income_rows: list[int], expense_rows: list[int]) -> list[dict]:
+            """One {"base", "comp"} formula pair per period column-group
+            for a "Net income after X" row — same _xlsx_sum_formula
+            safety as the single-range branch above, just repeated once
+            per period's own pair of columns instead of the fixed C/F
+            pair, since `income_rows`/`expense_rows` name *row* numbers
+            (one physical row per account, shared across every period)
+            while the actual cell reference still needs that period's own
+            column."""
+            out = []
+            for i in range(len(result["periods"])):
+                base_col = get_column_letter(3 + i * cols_per_period)
+                base_f = _xlsx_sum_formula([f"{base_col}{rr}" for rr in income_rows],
+                                           [f"{base_col}{rr}" for rr in expense_rows])
+                comp_f = None
+                if compare:
+                    comp_col = get_column_letter(3 + i * cols_per_period + 3)
+                    comp_f = _xlsx_sum_formula([f"{comp_col}{rr}" for rr in income_rows],
+                                               [f"{comp_col}{rr}" for rr in expense_rows])
+                out.append({"base": base_f, "comp": comp_f})
+            return out
 
+        # Root *row numbers* only here (not column letters) — one physical
+        # row per account, the same row number reused across every
+        # period's own column-group, unlike the single-range branch above
+        # where "C"/"F" are already the one-and-only base/compare columns.
+        income_root_rows, expense_root_rows = [], []
         r = data_start
         for g in result["income_groups"]:
             for i, line in enumerate(g["rows"]):
@@ -1604,6 +1813,8 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
                     [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
                       "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in line["periods"]],
                     style="group" if i == 0 else "line")
+                if i == 0:
+                    income_root_rows.append(r)
                 r += 1
         for i, g in enumerate(result["expense_groups"]):
             r += 1
@@ -1612,34 +1823,36 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
                     [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
                       "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in line["periods"]],
                     style="group" if j == 0 else "line")
+                if j == 0:
+                    expense_root_rows.append(r)
                 r += 1
             is_last = i == len(result["expense_groups"]) - 1
             label = "Net income" if is_last else f"Net income after {g['name']}"
-            row(r, "", label, 1,
-                [{"base": gp["base_running_after"], "comp": gp["compare_running_after"],
-                  "variance": gp["running_variance"], "pct": gp["running_pct_variance"]} for gp in g["periods"]],
-                style="running")
+            row(r, "", label, 1, running_period_vals(income_root_rows, expense_root_rows), style="running")
             r += 1
         if not result["expense_groups"]:
-            row(r, "", "Net income", 1,
-                totals_period_vals(result["periods_totals"], "net_income", "compare_net_income",
-                                   "net_income_variance_amount", "net_income_variance"), style="running")
+            row(r, "", "Net income", 1, running_period_vals(income_root_rows, []), style="running")
             r += 1
         last_row = r - 1
 
-        # A heavier rule down the right edge of every period's own column
-        # group but the last (the very last one is just the sheet's outer
-        # edge, not a boundary between two periods) — spans the header
-        # rows too, not just the data, so it reads as one continuous line
-        # separating "2026-01" from "2026-02" the way a ruled column break
-        # would on a printed ledger. Total/Average count as periods here
-        # same as any real month — they're just two more column groups in
-        # `result["periods"]` — so they get the same treatment.
-        for i, p in enumerate(result["periods"][:-1]):
-            end_col = 3 + i * cols_per_period + cols_per_period - 1
-            for rr in range(header_row, last_row + 1):
-                _xlsx_thicken_right_border(ws, rr, end_col)
         if compare:
+            # A heavier rule down the right edge of every period's own
+            # column group but the last (the very last one is just the
+            # sheet's outer edge, not a boundary between two periods) —
+            # spans the header rows too, not just the data, so it reads
+            # as one continuous line separating "2026-01" from "2026-02"
+            # the way a ruled column break would on a printed ledger.
+            # Total/Average count as periods here same as any real month
+            # — they're just two more column groups in `result["periods"]`
+            # — so they get the same treatment. Compare-only: with no
+            # compare scenario each period is a single plain column
+            # (cols_per_period == 1), and a divider after literally every
+            # column read as clutter rather than a period boundary — see
+            # live feedback that asked for this to be scoped down.
+            for i, p in enumerate(result["periods"][:-1]):
+                end_col = 3 + i * cols_per_period + cols_per_period - 1
+                for rr in range(header_row, last_row + 1):
+                    _xlsx_thicken_right_border(ws, rr, end_col)
             for i, p in enumerate(result["periods"]):
                 start_col = 3 + i * cols_per_period
                 _xlsx_variance_coloring(ws, start_col + 1, data_start, last_row)  # Variance
@@ -1729,6 +1942,15 @@ def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = 
     })
 
 
+def _balance_sheet_export_filename(scenario: str, as_of: str, raw: int, ext: str) -> str:
+    name = f"postwarden-balance-sheet-{scenario}"
+    if as_of:
+        name += f"_{as_of}"
+    if raw:
+        name += "_raw"
+    return f"{name}.{ext}"
+
+
 @app.get("/export/balance-sheet.csv")
 def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: int = 0, zeros: int = 0):
     result = _balance_sheet_rows(scenario, as_of, raw, zeros)
@@ -1746,7 +1968,74 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
-    return csv_response(buf, f"postwarden-balance-sheet-{scenario}.csv")
+    return csv_response(buf, _balance_sheet_export_filename(scenario, as_of, raw, "csv"))
+
+
+@app.get("/export/balance-sheet.xlsx")
+def balance_sheet_export_xlsx(scenario: str = "ACTUAL", as_of: str = None, raw: int = 0, zeros: int = 0):
+    """XLSX counterpart to balance_sheet_export_csv() above. Each section
+    (Assets/Liabilities/Equity) gets a bold section-title row, same as
+    Trial Balance; a section's own top-level account row (depth 1) gets
+    the same "group" bold+ruled treatment Income Statement's groups use,
+    since — same reasoning as there — that row's figure already is that
+    root's own rolled-up total, no separate "Total X" needed unless a
+    section actually has more than one root (rare, but Trial Balance's
+    own g["show_type_total"] doesn't exist here since _balance_sheet_rows
+    never separated multi-root sections out that way; a second top-level
+    Assets account just adds a second bold row in the same section,
+    consistent with how Income Statement handles a second top-level
+    expense account too). "Total assets"/"Total liabilities + equity" are
+    a real cross-section identity, not a duplicate of anything above
+    them, so they keep their own grand-total row with the accountant's
+    double-rule — red instead of ink when the sheet doesn't balance."""
+    result = _balance_sheet_rows(scenario, as_of, raw, zeros)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Balance Sheet"
+
+    subtitle = f"{scenario} · {'As of ' + as_of if as_of else 'Through today'}"
+    if not raw:
+        subtitle += " · simulated monthly close"
+    ws.cell(row=1, column=1, value="Balance Sheet").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    headers = ["Code", "Account", "Amount"]
+    n_cols = len(headers)
+    header_row, data_start = 4, 5
+    _xlsx_header_row(ws, header_row, headers)
+
+    def row(r: int, code, name, depth, amount, style="line"):
+        _xlsx_data_row(ws, r, [(1, code), (2, name)], [(3, amount, _XLSX_MONEY_FMT)], style, max(depth - 1, 0))
+
+    r = data_start
+    sections = [("Assets", result["assets"], 1), ("Liabilities", result["liabilities"], -1),
+               ("Equity", result["equity"], -1)]
+    for label, rows, sign in sections:
+        _xlsx_data_row(ws, r, [(1, ""), (2, label)], [], style="group")
+        r += 1
+        for line in rows:
+            row(r, line["account_code"], line["account_name"], line.get("depth", 2),
+                sign * line["subtotal"], style="group" if line.get("depth") == 1 else "line")
+            r += 1
+        if label == "Equity":
+            for earn_label, amount in result["earnings_lines"]:
+                row(r, "", earn_label, 2, amount, style="line")
+                r += 1
+    r += 1  # blank separator, same breathing room the CSV gives with w.writerow([])
+    grand_style = "grand" if result["in_balance"] else "grand_bad"
+    row(r, "", "Total assets", 1, result["total_assets"], style=grand_style)
+    r += 1
+    row(r, "", "Total liabilities + equity", 1, result["total_liab_and_equity"], style=grand_style)
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 44
+    for col in range(3, n_cols + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 14
+    ws.freeze_panes = f"C{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, _balance_sheet_export_filename(scenario, as_of, raw, "xlsx"))
 
 
 # ---------------------------------------------------------------------------
@@ -2002,7 +2291,108 @@ def cash_flow_export_csv(scenario: str = "ACTUAL", date_from: str = "", date_to:
     w.writerow(["", "", "Ending cash balance", result["tie_out"]["ending"], "", ""])
     w.writerow([])
     w.writerow(["", "", "Tie-out check", "PASS" if result["tie_out"]["ok"] else "FAIL — see app log", "", ""])
-    return csv_response(buf, f"postwarden-cash-flow-{scenario}.csv")
+    return csv_response(buf, _cash_flow_export_filename(scenario, date_from, date_to, "csv"))
+
+
+def _cash_flow_export_filename(scenario: str, date_from: str, date_to: str, ext: str) -> str:
+    name = f"postwarden-cash-flow-{scenario}"
+    if date_from and date_to:
+        name += f"_{date_from}_to_{date_to}"
+    elif date_from:
+        name += f"_from_{date_from}"
+    elif date_to:
+        name += f"_through_{date_to}"
+    return f"{name}.{ext}"
+
+
+@app.get("/export/cash-flow.xlsx")
+def cash_flow_export_xlsx(scenario: str = "ACTUAL", date_from: str = "", date_to: str = ""):
+    """XLSX counterpart to cash_flow_export_csv() above. No account tree
+    here (fn_cash_flow_lines' rows are already flat, one per contra
+    account — see _cash_flow_rows' own docstring), so no depth/indent and
+    no "first row is the total" duplication concern the tree-shaped
+    reports have. Beginning/Net change/Ending get the same bold "group"
+    headline treatment as a section title, and the closing Tie-out row
+    reuses the grand/grand_bad split Trial Balance/Balance Sheet use for
+    their own balance check — green ink for PASS, red for FAIL, same
+    accountant's double-rule underneath."""
+    result = _cash_flow_rows(scenario, date_from, date_to)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cash Flow"
+
+    subtitle = scenario
+    if date_from and date_to:
+        subtitle += f" · {date_from} to {date_to}"
+    elif date_from:
+        subtitle += f" · from {date_from}"
+    elif date_to:
+        subtitle += f" · through {date_to}"
+    ws.cell(row=1, column=1, value="Cash Flow Statement").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    headers = ["Code", "Account", "Amount", "Flagged", "Net of"]
+    n_cols = len(headers)
+    header_row, data_start = 4, 5
+    _xlsx_header_row(ws, header_row, headers)
+
+    def netted_of(line: dict) -> str:
+        return "; ".join(f"{n['account_name']} {n['amount']:.2f}" for n in line["netted_from"])
+
+    def row(r: int, code, name, amount, flagged="", netted="", style="line"):
+        label_cols = [(1, code), (2, name)]
+        value_cols = [(3, amount, _XLSX_MONEY_FMT)]
+        _xlsx_data_row(ws, r, label_cols, value_cols, style)
+        # Flagged/Net of are plain descriptive text, not money — no
+        # banding/border/number-format, same as every report's non-money
+        # label columns.
+        font = _XLSX_ROW_FONTS[style]
+        for col, text in ((4, flagged), (5, netted)):
+            cell = ws.cell(row=r, column=col, value=text or None)
+            cell.font = font
+
+    r = data_start
+    row(r, "", "Beginning cash balance", result["tie_out"]["beginning"], style="group")
+    r += 2  # blank separator row, same breathing room the CSV gives with w.writerow([])
+    for section, rows_, total_label, total in (
+        ("Inflows", result["inflows"], "Total inflows", result["total_inflows"]),
+        ("Outflows", result["outflows"], "Total outflows", result["total_outflows"]),
+    ):
+        _xlsx_data_row(ws, r, [(1, ""), (2, section)], [], style="group")
+        r += 1
+        for line in rows_:
+            row(r, line["account_code"], line["account_name"], line["amount"],
+                "yes" if line["flagged"] else "", netted_of(line))
+            r += 1
+        row(r, "", total_label, total, style="subtotal")
+        r += 2
+    if result["ledger_adjustments"]:
+        _xlsx_data_row(ws, r, [(1, ""), (2, "Ledger adjustments")], [], style="group")
+        r += 1
+        for line in result["ledger_adjustments"]:
+            row(r, line["account_code"], line["account_name"], line["amount"],
+                "yes" if line["flagged"] else "")
+            r += 1
+        row(r, "", "Total ledger adjustments", result["total_adjustments"], style="subtotal")
+        r += 2
+    row(r, "", "Net change in cash", result["net_change"], style="group")
+    r += 1
+    row(r, "", "Ending cash balance", result["tie_out"]["ending"], style="group")
+    r += 2
+    tie_style = "grand" if result["tie_out"]["ok"] else "grand_bad"
+    tie_text = "PASS" if result["tie_out"]["ok"] else "FAIL — see app log"
+    _xlsx_data_row(ws, r, [(1, ""), (2, "Tie-out check")], [(3, tie_text, "General")], style=tie_style)
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 44
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 10
+    ws.column_dimensions["E"].width = 36
+    ws.freeze_panes = f"C{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, _cash_flow_export_filename(scenario, date_from, date_to, "xlsx"))
 
 
 # ---------------------------------------------------------------------------
@@ -2222,16 +2612,16 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
             for r in rows:
                 r["baseline_net"] = r["subtotal"]
                 r["compare_net"] = r["compare_subtotal"]
-                r["variance"] = _variance_amount(r["compare_net"], r["baseline_net"], pct_of_base)
-                r["pct_variance"] = _pct_variance(r["compare_net"], r["baseline_net"], pct_of_base)
+                r["variance"] = _variance_amount(r["baseline_net"], r["compare_net"], pct_of_base)
+                r["pct_variance"] = _pct_variance(r["baseline_net"], r["compare_net"], pct_of_base)
             if rows:
                 sub_baseline = sum(rr["subtotal"] for rr in type_roots)
                 sub_compare = sum(rr["compare_subtotal"] for rr in type_roots)
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": rows,
                     "sub_baseline": sub_baseline, "sub_compare": sub_compare,
-                    "sub_variance": _variance_amount(sub_compare, sub_baseline, pct_of_base),
-                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline, pct_of_base),
+                    "sub_variance": _variance_amount(sub_baseline, sub_compare, pct_of_base),
+                    "sub_pct_variance": _pct_variance(sub_baseline, sub_compare, pct_of_base),
                 })
         merged = [r for g in grouped for r in g["rows"]]
         # Roots only, not the full (branch + leaf) `merged` list — a
@@ -2265,8 +2655,8 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 "account_code": ref["account_code"], "account_name": ref["account_name"],
                 "path": ref["path"], "sort_path": ref["sort_path"], "acct_type": ref["acct_type"],
                 "baseline_net": b_net, "compare_net": c_net,
-                "variance": _variance_amount(c_net, b_net, pct_of_base),
-                "pct_variance": _pct_variance(c_net, b_net, pct_of_base),
+                "variance": _variance_amount(b_net, c_net, pct_of_base),
+                "pct_variance": _pct_variance(b_net, c_net, pct_of_base),
                 "has_children": False,
             })
 
@@ -2279,8 +2669,8 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": sub,
                     "sub_baseline": sub_baseline, "sub_compare": sub_compare,
-                    "sub_variance": _variance_amount(sub_compare, sub_baseline, pct_of_base),
-                    "sub_pct_variance": _pct_variance(sub_compare, sub_baseline, pct_of_base),
+                    "sub_variance": _variance_amount(sub_baseline, sub_compare, pct_of_base),
+                    "sub_pct_variance": _pct_variance(sub_baseline, sub_compare, pct_of_base),
                 })
         total_baseline = sum(r["baseline_net"] for r in merged)
         total_compare = sum(r["compare_net"] for r in merged)
@@ -2289,8 +2679,8 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
         "scens": scens, "compare": compare, "level_id": level_id,
         "merged": merged, "grouped": grouped, "rolled_up": level_depth is not None,
         "total_baseline": total_baseline, "total_compare": total_compare,
-        "total_variance": _variance_amount(total_compare, total_baseline, pct_of_base),
-        "total_pct_variance": _pct_variance(total_compare, total_baseline, pct_of_base),
+        "total_variance": _variance_amount(total_baseline, total_compare, pct_of_base),
+        "total_pct_variance": _pct_variance(total_baseline, total_compare, pct_of_base),
     }
 
 
@@ -2325,7 +2715,103 @@ def variance_export_csv(baseline: str = "ACTUAL", compare: str = "",
     for r in v["merged"]:
         w.writerow([r["account_code"], r["account_name"], r["path"],
                    r["baseline_net"], r["variance"], r["compare_net"]])
-    return csv_response(buf, f"postwarden-variance-{baseline}-vs-{compare}.csv")
+    return csv_response(buf, _variance_export_filename(baseline, compare, as_of, "csv"))
+
+
+def _variance_export_filename(baseline: str, compare: str, as_of: str, ext: str) -> str:
+    name = f"postwarden-variance-{baseline}-vs-{compare}"
+    if as_of:
+        name += f"_{as_of}"
+    return f"{name}.{ext}"
+
+
+@app.get("/export/variance.xlsx")
+def variance_export_xlsx(baseline: str = "ACTUAL", compare: str = "",
+                         level_id: str = "", as_of: str = None, zeros: int = 0,
+                         pct_of_base: int = 0):
+    """XLSX counterpart to variance_export_csv() above — same
+    _compute_variance() data, but built from v["grouped"] (one section
+    per account type, same as Trial Balance) rather than the CSV's flat
+    v["merged"] list, so it can add the section headers, the per-type
+    subtotal, and a real % Variance column the CSV leaves out (the
+    figure's already computed either way — _pct_variance() — CSV just
+    never had a use for it without a companion section structure).
+
+    Native mode (no rollup level) builds a real account tree, same as
+    every other tree-shaped report here — a section's own depth-1 row
+    gets the "group" bold+ruled treatment, and an explicit subtotal row
+    only when a section actually has more than one top-level account
+    (Trial Balance's own show_type_total reasoning). Rolled-up mode
+    (`level_id` set) has no tree at all — v["merged"]'s rows are already
+    one flat pooled figure per account at that level, so every row stays
+    "line" style and every section always gets its own subtotal row,
+    since no single row in a rolled-up section is ever "the" total the
+    way a tree's own root row is.
+
+    Variance and % Variance are live formulas (_xlsx_variance_formulas),
+    same as Income Statement's own xlsx export — each one only
+    references its own row's baseline/compare cells, never a range, so
+    it's safe regardless of whether that row's own baseline/compare
+    figures are a leaf balance, a rolled-up root, or a section subtotal."""
+    v = _compute_variance(baseline, compare, level_id, as_of, zeros, bool(pct_of_base))
+    compare = v["compare"]
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Variance"
+
+    subtitle = f"{baseline} vs. {compare}"
+    subtitle += f" · {'As of ' + as_of if as_of else 'Through today'}"
+    if v["rolled_up"]:
+        subtitle += " · rolled up"
+    ws.cell(row=1, column=1, value="Variance").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    headers = ["Code", "Account", baseline, "Variance", "% Variance", compare]
+    n_cols = len(headers)
+    header_row, data_start = 4, 5
+    _xlsx_header_row(ws, header_row, headers)
+
+    def row(r: int, code, name, depth, base, variance, pct, comp, style="line"):
+        # variance/pct unused — Variance/% Variance are live formulas
+        # instead (_xlsx_variance_formulas), same as Income Statement's
+        # own xlsx export — C (base/baseline), then F (compare), same
+        # canonical order _compute_variance's own _variance_amount(base
+        # line_net, compare_net, ...) calls use.
+        var_f, pct_f = _xlsx_variance_formulas(f"C{r}", f"F{r}", bool(pct_of_base))
+        value_cols = [(3, base, _XLSX_MONEY_FMT), (4, var_f, _XLSX_MONEY_FMT),
+                      (5, pct_f, _XLSX_PCT_FMT), (6, comp, _XLSX_MONEY_FMT)]
+        _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
+
+    r = data_start
+    for g in v["grouped"]:
+        _xlsx_data_row(ws, r, [(1, ""), (2, g["label"])], [], style="group")
+        r += 1
+        top_level_count = sum(1 for line in g["rows"] if not v["rolled_up"] and line.get("depth") == 1)
+        for line in g["rows"]:
+            is_root = not v["rolled_up"] and line.get("depth") == 1
+            row(r, line["account_code"], line["account_name"], line.get("depth", 1),
+                line["baseline_net"], line["variance"], line["pct_variance"], line["compare_net"],
+                style="group" if is_root else "line")
+            r += 1
+        if v["rolled_up"] or top_level_count > 1:
+            row(r, "", f"{g['label']} subtotal", 1, g["sub_baseline"], g["sub_variance"],
+                g["sub_pct_variance"], g["sub_compare"], style="subtotal")
+            r += 1
+    row(r, "", "Total", 1, v["total_baseline"], v["total_variance"], v["total_pct_variance"],
+        v["total_compare"], style="grand")
+    last_row = r
+    _xlsx_variance_coloring(ws, 4, data_start, last_row)  # Variance
+    _xlsx_variance_coloring(ws, 5, data_start, last_row)  # % Variance
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 44
+    for col in range(3, n_cols + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 14
+    ws.freeze_panes = f"C{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, _variance_export_filename(baseline, compare, as_of, "xlsx"))
 
 
 # ---------------------------------------------------------------------------

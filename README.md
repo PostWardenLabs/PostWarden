@@ -36,11 +36,17 @@ instance.
   moment you change a scenario, date, or any other dropdown — no
   separate Refresh click. Income Statement's **Split** turns a single
   date range into a month/quarter/year-by-period matrix — see this year
-  broken into 12 columns instead of running the report 12 times. Income
-  Statement also has an **Export XLSX** button alongside Export CSV — a
-  formatted workbook (section headers, indented accounts, banded rows,
-  frozen header) rather than plain rows, for anyone who wants the report
-  to actually look like a report once it's out of the browser.
+  broken into 12 columns instead of running the report 12 times. Every
+  report — Trial Balance, Income Statement, Balance Sheet, Cash Flow,
+  Variance — has an **Export XLSX** button alongside Export CSV: a
+  formatted workbook (section headers, indented accounts, banded and
+  gridded rows, a double-ruled grand total, frozen header) rather than
+  plain rows, for anyone who wants the report to actually look like a
+  report once it's out of the browser. Income Statement and Variance's
+  Variance/% Variance columns are colored red/green by real conditional-
+  formatting rules, not a color baked in at export time; Income
+  Statement's Split view also draws a divider between each period's own
+  block of columns.
 - **A Cash Flow Statement** — mark which accounts count as cash
   (checking, savings, physical cash — one checkbox on `/accounts`) and
   every inflow/outflow for a date range groups by where it actually

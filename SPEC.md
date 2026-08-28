@@ -899,6 +899,60 @@ already produces them. The reducible-income rule only ever *folds
 toward* an unambiguous income leg; it has no mechanism that drops a leg
 from the report outright, in this shape or any other.
 
+### 21. `pct_of_base`'s two variance formulas: one consistent `base`/`compare_val` role everywhere, not "whichever argument order made a report's own default read right"
+
+Income Statement, Variance, and Budget Grid all show a Variance and %
+Variance column and share one toggle (`pct_of_base`, the "Flip variance
+direction" checkbox) that swaps which of the two scenarios being
+compared is measured *from* — the standard percent-change reading,
+`(new - old) / old`. `_variance_amount()`/`_pct_variance()` are the one
+shared implementation every call site uses.
+
+Before this decision, every call site passed its own report's primary
+figure and reference figure as `base`/`compare_val` in whichever order
+made that report's *default* (unchecked) state divide by what felt like
+the natural denominator for that report specifically. Income
+Statement's and Budget Grid's calls put the primary figure first
+(`scenario`/`actual`) and the reference second (`compare`/`budgeted`),
+so the unchecked default divided by the reference — "actual came in 12%
+under budget." Variance's own calls put the two in the *opposite*
+order (`compare` first, `baseline` second) so that its unchecked
+default divided by `baseline` instead — a deliberate choice at the
+time: `baseline` is the one figure Variance always calls a report
+"about" (you pick a baseline, then compare other things to it), so
+having it always land in the denominator position regardless of which
+report you were on read as the more useful invariant than argument-order
+consistency between reports would have.
+
+That asymmetry is gone. Every call site now passes `base` = that
+report's own primary figure and `compare_val` = whatever it's measured
+against, in the same positional order everywhere — Income Statement's
+`scenario` then `compare`, Variance's `baseline` then `compare`, Budget
+Grid's `actual` then `budgeted` — full stop, no per-report exception.
+The default reading is now `(base - compare_val) / abs(compare_val)`
+everywhere ("actual came in 12% *ahead* of budget" — note the sign is
+also flipped from the old default's "12% under," a second, independent
+change bundled into the same pass since both came from the same
+concrete request); checked swaps to `(compare_val - base) /
+abs(base)`. The XLSX export's own live formulas
+(`_xlsx_variance_formulas`, `docs/ARCHITECTURE.md`'s XLSX export
+section) mirror this exactly, cell-for-cell, rather than reimplementing
+either convention independently — the same reasoning decision 19's own
+"thin wrapper, not a parallel calculation" choice already established
+for Split.
+
+The `pct_of_base` query parameter itself keeps its name — it's a public,
+bookmarkable query string on four routes plus their exports, and
+renaming it would have meant a much larger, riskier diff for a name
+that's an internal identifier most people who bookmark a report URL
+never actually read. Only the checkbox's own visible label changed, to
+"Flip variance direction" — the old "% variance of actual" label
+happened to still be *technically* accurate under the new formula for
+its checked state (checked still divides by whatever's playing `base`),
+but the old wording was written to describe a report-specific
+denominator choice that no longer differs report to report, so keeping
+it risked implying a subtlety that isn't there anymore.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries
