@@ -205,7 +205,6 @@ CREATE TABLE accounts (
     -- explicitly opted in from /accounts, rather than silently guessing.
     is_cashflow  BOOLEAN NOT NULL DEFAULT FALSE,
     currency     CHAR(3) NOT NULL DEFAULT 'MXN',
-    description  TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (parent_id IS NULL OR parent_id <> id)
 );
