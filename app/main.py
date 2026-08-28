@@ -21,6 +21,9 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from . import auth
 from .db import q, q1, tx
@@ -253,6 +256,117 @@ def csv_response(buf: io.StringIO, filename: str) -> Response:
     round-tripped export reads back in fine."""
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ---------------------------------------------------------------------------
+# XLSX export styling — shared by every /export/*.xlsx route, not just
+# Income Statement's. Colors come from style.css's default "Slate" theme
+# (`--ink`/`--paper-deep`) rather than whatever theme the browser has
+# active — the export is generated server-side with no idea which of the
+# nine themes Settings has picked, and a report someone opens in Excel a
+# year later shouldn't depend on that anyway. Kept as one small palette
+# here rather than a full port of style.css's theme system: this only
+# ever needs to look like "a PostWarden document," not match the live
+# page pixel-for-pixel.
+_XLSX_FONT = "Arial"
+# Explicit "FF" alpha on every ARGB string below, not just the bare RGB —
+# openpyxl silently zero-pads a 6-digit color to "00RRGGBB" (fully
+# transparent alpha) rather than "FFRRGGBB" (opaque) if you don't. Excel
+# itself ignores that byte for a solid fill and renders it opaque either
+# way, but other readers (LibreOffice, Google Sheets) don't all make the
+# same forgiving choice, so relying on Excel's leniency isn't worth it.
+_XLSX_HEADER_FILL = PatternFill("solid", fgColor="FF1B2430")   # --ink
+_XLSX_HEADER_FONT = Font(name=_XLSX_FONT, size=10, bold=True, color="FFFFFFFF")
+_XLSX_GROUP_FONT = Font(name=_XLSX_FONT, size=10, bold=True)
+_XLSX_LINE_FONT = Font(name=_XLSX_FONT, size=10)
+_XLSX_RUNNING_FONT = Font(name=_XLSX_FONT, size=10, italic=True)
+_XLSX_TITLE_FONT = Font(name=_XLSX_FONT, size=14, bold=True, color="FF1B2430")
+_XLSX_SUBTITLE_FONT = Font(name=_XLSX_FONT, size=9, italic=True, color="FF5B6B7C")  # --ink-soft
+_XLSX_LINE_FILL = PatternFill("solid", fgColor="FFEEF0F3")     # a shade off --paper-deep
+_XLSX_BOTTOM_BORDER = Border(bottom=Side(style="thin", color="FFAEBBC7"))  # --rule-strong
+_XLSX_RULE = Side(style="thin", color="FFAEBBC7")  # --rule-strong
+_XLSX_LINE_BORDER = Border(left=_XLSX_RULE, right=_XLSX_RULE, top=_XLSX_RULE, bottom=_XLSX_RULE)
+# No currency symbol — matches money()'s own plain-text convention above
+# (the app never bakes a symbol into a stored/exported figure; display-only
+# formatting is a client-side concern there, and there's no client here).
+# Parens for negatives, a bare dash for zero, same shape as money()'s
+# comment on negative-zero applies to here too.
+_XLSX_MONEY_FMT = '#,##0.00;(#,##0.00);"-"'
+# _pct_variance() already returns the percentage figure itself (12.3
+# meaning "12.3%"), not a 0-1 fraction, so this appends a literal "%"
+# rather than using Excel's built-in 0.0% format, which would multiply
+# the already-multiplied number by 100 again.
+_XLSX_PCT_FMT = '0.0"%";(0.0"%");"-"'
+
+
+def _xlsx_header_row(ws, row: int, headers: list[str], start_col: int = 1):
+    for col, text in enumerate(headers, start=start_col):
+        cell = ws.cell(row=row, column=col, value=text)
+        cell.font = _XLSX_HEADER_FONT
+        cell.fill = _XLSX_HEADER_FILL
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _xlsx_merged_header(ws, r1: int, c1: int, r2: int, c2: int, text: str):
+    """One header cell spanning r1:r2 × c1:c2, merged and centered —
+    Split's per-period date ("2026-01") sitting above that period's own
+    ACTUAL/Variance/%/compare columns, or (c1==c2 spanning both header
+    rows) the Code/Account label sitting beside them. Only the anchor
+    cell (top-left of the merge) needs the header styling — Excel and
+    every reader that respects merges renders a merged range entirely
+    from that cell, ignoring whatever the covered-but-hidden cells carry,
+    so styling those individually would be dead work."""
+    ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+    cell = ws.cell(row=r1, column=c1, value=text)
+    cell.font = _XLSX_HEADER_FONT
+    cell.fill = _XLSX_HEADER_FILL
+    cell.alignment = Alignment(horizontal="center", vertical="center")
+
+
+def _xlsx_data_row(ws, row: int, label_cols: list, value_cols: list, style: str, depth: int = 0):
+    """Write one report row. `label_cols` is [(col, text), ...] for the
+    leading text columns (code, account name); `value_cols` is
+    [(col, value, number_format), ...] for the money/percent columns.
+    `style` picks the same three treatments the reference workbook used:
+    "group" (a section's own top-level account — bold, ruled underneath;
+    that row's figure already *is* the section's total, since it's the
+    root of the rolled-up tree — see the route's own docstring on why
+    this replaced a separate "Total X" row), "line" (a plain account row
+    — normal weight, its value cells shaded *and* fully gridded, matching
+    the reference workbook's own "these are the numbers you'd read down
+    a column" treatment), or "running" (a running-total row like "Net
+    income after Taxes" — italic, unshaded, unruled). `depth` indents an
+    account name under its parent, same meaning as the HTML report's own
+    chevrons."""
+    font = {"group": _XLSX_GROUP_FONT, "line": _XLSX_LINE_FONT, "running": _XLSX_RUNNING_FONT}[style]
+    for col, text in label_cols:
+        cell = ws.cell(row=row, column=col, value=text)
+        cell.font = font
+        if depth and col != label_cols[0][0]:
+            cell.alignment = Alignment(indent=depth)
+        if style == "group":
+            cell.border = _XLSX_BOTTOM_BORDER
+    for col, value, number_format in value_cols:
+        cell = ws.cell(row=row, column=col, value=value)
+        cell.font = font
+        cell.number_format = number_format
+        if style == "group":
+            cell.border = _XLSX_BOTTOM_BORDER
+        elif style == "line":
+            cell.fill = _XLSX_LINE_FILL
+            cell.border = _XLSX_LINE_BORDER
+
+
+def xlsx_response(wb: Workbook, filename: str) -> Response:
+    """Wrap a finished Workbook as a download — the XLSX counterpart to
+    csv_response() above. No BOM/codepage concerns here (XLSX is a real
+    zip container, not a bare text stream), so this is just a stream and
+    a content type."""
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 # ---------------------------------------------------------------------------
@@ -1281,6 +1395,171 @@ def income_statement_export_csv(scenario: str = "ACTUAL", compare: str = "",
               "variance": pt["net_income_variance_amount"], "pct": pt["net_income_variance"]}
              for pt in result["periods_totals"]])
     return csv_response(buf, f"postwarden-income-statement-{scenario}.csv")
+
+
+@app.get("/export/income-statement.xlsx")
+def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
+                                 date_from: str = "", date_to: str = "", zeros: int = 0,
+                                 pct_of_base: int = 0, split: str = ""):
+    """XLSX counterpart to income_statement_export_csv() above — same
+    _income_statement_rows()/_income_statement_matrix() data, same overall
+    shape (income rows, then each expense group with its own running "Net
+    income after X" row), styled with the helpers above instead of
+    written as plain CSV rows. `depth` (from _build_account_tree) drives
+    indentation the way the HTML report's own chevrons do, standing in
+    for the CSV's separate Path/breadcrumb column — not carried over here
+    since a sighted spreadsheet reader gets the same hierarchy from
+    indentation, and dropping it keeps the sheet's column count matched
+    to the CSV's data columns instead of growing it.
+
+    No separate "Total income"/"Total {group}" row the way the CSV export
+    has one — a group's own top-level account (its rows[0], always first
+    since _flatten_tree puts a node ahead of its children) already *is*
+    that rolled-up total; see _build_account_tree's "subtotal" comment.
+    Writing it again a few rows down was the same number twice under two
+    different labels. Instead, that first row gets the bold/ruled "group"
+    treatment directly, in place — one real total per section, not two.
+
+    Every figure is a literal, not a formula, for the same reason: this
+    is a rolled-up multi-root account tree, so a plain SUM() over a
+    visible row range would double-count wherever a group is more than
+    one level deep. What's written is exactly the same number the HTML
+    report and the CSV export already show for that row; only Variance/%
+    Variance formulas would have been safe to derive live, and a mixed
+    sheet (some cells formulas, most not) wasn't worth the inconsistency
+    for what is fundamentally a point-in-time report snapshot, not an
+    editable model."""
+    periods = _split_periods(date_from, date_to, split)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Income Statement"
+
+    subtitle = scenario
+    if compare:
+        subtitle += f" vs. {compare}"
+    if date_from and date_to:
+        subtitle += f" · {date_from} to {date_to}"
+    elif date_from:
+        subtitle += f" · from {date_from}"
+    elif date_to:
+        subtitle += f" · through {date_to}"
+    if split:
+        subtitle += f" · split {split}"
+    ws.cell(row=1, column=1, value="Income Statement").font = _XLSX_TITLE_FONT
+    ws.cell(row=2, column=1, value=subtitle).font = _XLSX_SUBTITLE_FONT
+
+    if not periods:
+        result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
+        headers = ["Code", "Account", scenario or "Amount"]
+        if compare:
+            headers += ["Variance", "% Variance", compare]
+        n_cols = len(headers)
+        header_row, data_start = 4, 5
+        _xlsx_header_row(ws, header_row, headers)
+
+        def row(r: int, code, name, depth, base, comp=None, variance=None, pct=None, style="line"):
+            value_cols = [(3, base, _XLSX_MONEY_FMT)]
+            if compare:
+                value_cols += [(4, variance, _XLSX_MONEY_FMT), (5, pct, _XLSX_PCT_FMT), (6, comp, _XLSX_MONEY_FMT)]
+            _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
+
+        r = data_start
+        for g in result["income_groups"]:
+            for i, line in enumerate(g["rows"]):
+                row(r, line["account_code"], line["account_name"], line["depth"],
+                    line["base_net"], line["compare_net"], line["variance"], line["pct_variance"],
+                    style="group" if i == 0 else "line")
+                r += 1
+        for i, g in enumerate(result["expense_groups"]):
+            r += 1  # blank separator row — same breathing room the CSV gives with w.writerow([])
+            for j, line in enumerate(g["rows"]):
+                row(r, line["account_code"], line["account_name"], line["depth"],
+                    line["base_net"], line["compare_net"], line["variance"], line["pct_variance"],
+                    style="group" if j == 0 else "line")
+                r += 1
+            is_last = i == len(result["expense_groups"]) - 1
+            label = "Net income" if is_last else f"Net income after {g['name']}"
+            row(r, "", label, 1, g["base_running_after"], g["compare_running_after"],
+                g["running_variance"], g["running_pct_variance"], style="running")
+            r += 1
+        if not result["expense_groups"]:
+            row(r, "", "Net income", 1, result["net_income"], result["compare_net_income"],
+                result["net_income_variance_amount"], result["net_income_variance"], style="running")
+            r += 1
+    else:
+        result = _income_statement_matrix(scenario, periods, date_from, date_to, compare, zeros, bool(pct_of_base))
+        cols_per_period = 4 if compare else 1
+        field_labels = [scenario] + (["Variance", "% Var.", compare] if compare else [])
+        n_cols = 2 + cols_per_period * len(result["periods"])
+        header_row, field_row, data_start = 4, 5, 6
+
+        # Two-row header: the date ("2026-01", "Total", "Average") merged
+        # and centered across that period's own field columns, with the
+        # field names (ACTUAL/Variance/%/compare) on their own row right
+        # below instead of repeated into every column header — the split
+        # CSV export prefixes every column with its period's label
+        # because a bare CSV has no merged cells to lean on; XLSX does.
+        _xlsx_merged_header(ws, header_row, 1, field_row, 1, "Code")
+        _xlsx_merged_header(ws, header_row, 2, field_row, 2, "Account")
+        for i, p in enumerate(result["periods"]):
+            start_col = 3 + i * cols_per_period
+            _xlsx_merged_header(ws, header_row, start_col, header_row, start_col + cols_per_period - 1, p["label"])
+            _xlsx_header_row(ws, field_row, field_labels, start_col=start_col)
+
+        def row(r: int, code, name, depth, period_vals, style="line"):
+            value_cols, col = [], 3
+            for v in period_vals:
+                value_cols.append((col, v.get("base"), _XLSX_MONEY_FMT))
+                col += 1
+                if compare:
+                    value_cols += [(col, v.get("variance"), _XLSX_MONEY_FMT),
+                                   (col + 1, v.get("pct"), _XLSX_PCT_FMT),
+                                   (col + 2, v.get("comp"), _XLSX_MONEY_FMT)]
+                    col += 3
+            _xlsx_data_row(ws, r, [(1, code), (2, name)], value_cols, style, max(depth - 1, 0))
+
+        def totals_period_vals(periods_totals, base_key, comp_key, var_key, pct_key):
+            return [{"base": p[base_key], "comp": p[comp_key], "variance": p[var_key], "pct": p[pct_key]}
+                    for p in periods_totals]
+
+        r = data_start
+        for g in result["income_groups"]:
+            for i, line in enumerate(g["rows"]):
+                row(r, line["account_code"], line["account_name"], line["depth"],
+                    [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
+                      "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in line["periods"]],
+                    style="group" if i == 0 else "line")
+                r += 1
+        for i, g in enumerate(result["expense_groups"]):
+            r += 1
+            for j, line in enumerate(g["rows"]):
+                row(r, line["account_code"], line["account_name"], line["depth"],
+                    [{"base": rp.get("base_net"), "comp": rp.get("compare_net"),
+                      "variance": rp.get("variance"), "pct": rp.get("pct_variance")} for rp in line["periods"]],
+                    style="group" if j == 0 else "line")
+                r += 1
+            is_last = i == len(result["expense_groups"]) - 1
+            label = "Net income" if is_last else f"Net income after {g['name']}"
+            row(r, "", label, 1,
+                [{"base": gp["base_running_after"], "comp": gp["compare_running_after"],
+                  "variance": gp["running_variance"], "pct": gp["running_pct_variance"]} for gp in g["periods"]],
+                style="running")
+            r += 1
+        if not result["expense_groups"]:
+            row(r, "", "Net income", 1,
+                totals_period_vals(result["periods_totals"], "net_income", "compare_net_income",
+                                   "net_income_variance_amount", "net_income_variance"), style="running")
+            r += 1
+
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 44
+    for col in range(3, n_cols + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 14
+    ws.freeze_panes = f"C{data_start}"
+    ws.sheet_view.showGridLines = False
+    return xlsx_response(wb, f"postwarden-income-statement-{scenario}.xlsx")
 
 
 # ---------------------------------------------------------------------------

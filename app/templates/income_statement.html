@@ -62,7 +62,10 @@
       <label class="checkline"><input type="checkbox" name="pct_of_base" value="1" {{ 'checked' if pct_of_base }}> % variance of actual</label>
       {% endif %}
     </span>
-    <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}&split={{ split }}">Export CSV</a>
+    <span class="bar" style="align-items: center; margin-bottom: 0;">
+      <a class="quiet-link" href="/export/income-statement.csv?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}&split={{ split }}">Export CSV</a>
+      <a class="quiet-link" href="/export/income-statement.xlsx?scenario={{ scenario }}&compare={{ compare }}&date_from={{ date_from }}&date_to={{ date_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}&split={{ split }}">Export XLSX</a>
+    </span>
   </p>
 </form>
 

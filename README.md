@@ -36,7 +36,11 @@ instance.
   moment you change a scenario, date, or any other dropdown — no
   separate Refresh click. Income Statement's **Split** turns a single
   date range into a month/quarter/year-by-period matrix — see this year
-  broken into 12 columns instead of running the report 12 times.
+  broken into 12 columns instead of running the report 12 times. Income
+  Statement also has an **Export XLSX** button alongside Export CSV — a
+  formatted workbook (section headers, indented accounts, banded rows,
+  frozen header) rather than plain rows, for anyone who wants the report
+  to actually look like a report once it's out of the browser.
 - **A Cash Flow Statement** — mark which accounts count as cash
   (checking, savings, physical cash — one checkbox on `/accounts`) and
   every inflow/outflow for a date range groups by where it actually
