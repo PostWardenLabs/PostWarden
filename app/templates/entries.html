@@ -25,16 +25,22 @@
   <input type="hidden" name="back" value="{{ back }}">
   <div class="bar">
   <label class="field">Scenario
-    {# No "All" option: the Journal never shows Staging (see
-       _entries_filter's unconditional NOT s.is_staging), and an
-       all-inclusive choice next to specific scenario names read as
-       confusing rather than useful. `scenarios` here is already
-       Staging-filtered (see entries_page) and ACTUAL sorts first
-       (scenario_type enum order), so it's what shows selected on an
-       unfiltered page load. #}
+    {# A real "All" option, genuinely selected when `scenario` is blank —
+       not ACTUAL faked into looking selected because it happened to sort
+       first (scenario_type enum order). That was the previous shape here,
+       and it was actively misleading: an unfiltered Journal shows entries
+       from every non-staging scenario mixed together (ACTUAL, any
+       forecast/what-if), but the dropdown looked like "just ACTUAL" is
+       showing — and anything reading the current filter state off this
+       page (the XLSX export's own title/subtitle among them) inherited
+       that same wrong impression. `scenarios` here is already
+       Staging-filtered (see entries_page) — the Journal never shows
+       Staging regardless of this dropdown (_entries_filter's
+       unconditional NOT s.is_staging). #}
     <select name="scenario">
+      <option value="" {{ 'selected' if not scenario }}>All</option>
       {% for s in scenarios %}
-      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario or (not scenario and loop.first) }}>{{ s.code }}</option>
+      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }}</option>
       {% endfor %}
     </select>
   </label>
