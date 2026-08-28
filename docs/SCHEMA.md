@@ -89,6 +89,7 @@ erDiagram
         bigint parent_id FK
         boolean is_postable
         boolean is_active
+        boolean is_cashflow "Cash Flow Statement's cash boundary"
     }
     PAYEES {
         bigint id PK
@@ -312,12 +313,14 @@ every one is callable identically from the app, `psql`, or a BI tool.
 | `fn_trial_balance(scenario, as_of, from)` | function | Every postable account with activity in the window — the literal Trial Balance report's data source, filtered (unlike `fn_account_balances` below). |
 | `fn_account_balances(scenario, as_of, from)` | function | Every *active* account's own direct balance, unconditionally — no postable/has-activity filtering. The base the app's Python-side account-tree rollup (Trial Balance, Balance Sheet, the Budget grid's Actual column) builds subtotals from; a summary account needs a row here even at $0 so it can be positioned in the tree. |
 | `fn_rollup_balance(scenario, depth, as_of)` | function | Balances rolled up to a common `account_levels` depth — lets a scenario posted straight to "Bank" line up against one that split Checking/Savings. Backs the Variance page; its `path` column is `v_dim_account.parent_path` (own name excluded), since Variance always renders it beside `account_name`. |
+| `fn_cash_flow_lines(scenario, from, to)` | function | One row per (transaction, contra-account): every `is_cashflow` leg's transaction attributed to whichever non-cash account(s) it actually moved money to/from — each non-cash leg's own posted amount, sign-flipped, which sums back to the transaction's net cash movement exactly by the balanced-entry identity alone (no proportional weighting or rounding pass needed). Pure cash-to-cash transfers excluded outright. The Cash Flow Statement's entire data source — see SPEC.md decision 20 for the attribution rule (and the gross-to-net payroll bug an earlier, proportional version of this function had) and why it's one function, not three. |
 
 **`postwarden_bi`** is a dedicated Postgres role (added directly in `db/schema.sql`,
 SPEC.md decision 14) for BI tools connecting straight to Postgres instead of
 through the app: `SELECT` on `v_dim_account`/`v_fact_lines`/`v_dim_date`/
-`v_monthly_activity` and `EXECUTE` on `fn_trial_balance`, nothing else — no
-base table, so it can't write a journal line or read `users.password_hash`.
+`v_monthly_activity` and `EXECUTE` on `fn_trial_balance`/`fn_cash_flow_lines`,
+nothing else — no base table, so it can't write a journal line or read
+`users.password_hash`.
 Fixed default password (`postwarden_bi`), same tradeoff as the app's own
 `postwarden`/`postwarden` login; the app's Settings → Connect Power BI / Excel page
 surfaces it for a self-hoster rather than making them find it in `psql`.
@@ -349,8 +352,11 @@ Grouped the way `db/schema.sql` groups them.
 - **`accounts`** — `code` (3–8 digits, unique — the natural key used in
   every URL/filter/CSV, not the surrogate `id`), `account_type`,
   `parent_id` (self-referencing tree), `is_postable` (leaf vs. summary),
-  `is_active`, `currency` (defaulted, not yet used for conversion — see
-  SPEC's extension roadmap).
+  `is_active`, `is_cashflow` (opts an account into the Cash Flow
+  Statement's cash boundary — checking/savings/physical cash, never a
+  credit card, loan, or investment account by default; see SPEC.md
+  decision 20), `currency` (defaulted, not yet used for conversion —
+  see SPEC's extension roadmap).
 
 ### Scenarios
 - **`scenarios`** — see [the table above](#two-shapes-of-scenario-side-by-side)

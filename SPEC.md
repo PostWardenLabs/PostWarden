@@ -618,6 +618,287 @@ change (e.g., "(avg)" appended to the label) — was available but
 formatting was what was actually asked for, and reads faster at a
 glance than parsing extra text in an already-dense header.
 
+### 20. Cash Flow Statement: cash is a per-account flag, exclusion is "all legs cash-tagged," and attribution needs no guessing
+
+`accounts.is_cashflow` marks which leaf accounts are spendable cash
+(checking, savings, physical cash) rather than deriving it from
+`account_type` — several `asset` accounts (Brokerage, Retirement) are
+deliberately *not* cash, and the boundary is genuinely a personal
+editorial choice (does a brokerage sweep account count?), not something
+`account_type: asset` can answer on its own. Default `FALSE`; `db/seed.sql`
+opts in exactly the three liquid-cash leaves it ships.
+
+**Exclusion is "every leg on the transaction is cash-tagged," not "legs
+net to zero."** A pairwise-zero check is the natural first instinct and
+is wrong on a 3+-leg entry that's still a pure internal reallocation —
+checking splitting into savings *and* physical cash in one entry has no
+pair that nets to zero, only the whole entry does. `fn_cash_flow_lines`
+(`db/schema.sql`) computes `n_noncash` per transaction and excludes
+anything where it's zero; `tests/test_cashflow.py` has a dedicated test
+for the 3-leg case specifically, not just the 2-leg one a pairwise
+implementation would already pass.
+
+**Attribution is one formula, not three branches keyed on leg count —
+and it's each leg's own signed amount, not a proportional share.**
+The feature request described three shapes (1 cash/1 non-cash, 1
+cash/N non-cash, N cash/N non-cash) as needing different handling, and
+its own wording for the split case ("attribute proportionally by each
+non-cash leg's share of the total non-cash amount") reads as literal
+proportional redistribution. An early implementation built exactly
+that: `cash_net * ABS(leg amount) / total_noncash_abs`, plus a
+largest-remainder rounding pass so a split's shares always summed back
+to `cash_net` exactly. It shipped, passed every test written against
+it, and was wrong — caught in manual review against the demo seed data,
+on the one shape that formula quietly mishandles: a transaction whose
+non-cash legs don't all share one sign. Gross-to-net payroll is the
+real instance (`Dr Cash 16,500.00, Dr Income Tax Expense 3,000.00, Dr
+Payroll Tax Expense 1,500.00, Cr Salary Income 21,000.00`) — the
+proportional formula bled part of the salary inflow onto the tax legs
+by weight, showing withheld tax as if it were separate cash that had
+arrived, and Salary itself as a blended net-ish figure that was neither
+gross nor net.
+
+The actual, much simpler rule: **each non-cash leg's contribution to
+the cash change is its own posted amount, sign-flipped — no weighting,
+no division, no rounding step at all.** A balanced entry means
+`SUM(all legs) = 0`, so `SUM(cash legs) = -SUM(non-cash legs)` always,
+for every leg-count shape alike; each non-cash leg's own amount is
+already that identity's exact, already-two-decimal contribution. This
+coincides exactly with the proportional formula's output whenever every
+non-cash leg shares one sign (the common "split one purchase two ways"
+case the request was written around — that's *why* the bug shipped
+past that formula's own tests unnoticed), which is also why it took a
+mixed-sign real transaction, not a synthetic split, to surface it.
+Under the fixed rule the payroll entry reads Salary Income `+21,000.00`
+(gross, its own true amount), Income Tax `-3,000.00`, Payroll Tax
+`-1,500.00` — three honest lines that sum to the real `+16,500.00` cash
+effect, rather than three numbers each a little wrong in a way that
+happened to cancel out in aggregate.
+
+A second, tempting fix was floated and rejected: attribute the *entire*
+cash leg to the one non-cash leg whose sign differs from the others
+(Salary, here) and drop every same-signed leg (the taxes) from the
+statement outright, on the theory that money withheld before it became
+cash was never really a "flow" in either direction. That collapses
+cleanly for payroll, but breaks on a structurally identical shape: a
+purchase partly covered by store credit or a same-entry refund —
+`Dr Shopping 100.00, Cr Store Credit 33.33, Cr Checking 66.67`. The
+same rule would show `Shopping: -66.67` and silently drop the $33.33
+credit, hiding that $100 was actually spent and a third of it came from
+credit rather than cash — a real loss of information, not a
+simplification. There is no mechanical signal (leg count, sign,
+`account_type`) that tells "this leg is a real destination" apart from
+"this leg is a pre-cash reduction" in general; that's a judgment about
+what the *account itself* means, which the ledger doesn't encode, and
+the sign-flip rule sidesteps needing to make that judgment at all by
+never discarding a leg. It also matches this project's own stated
+intent for the Taxes accounts specifically — `db/seed.sql`'s comment on
+account `7000` says they're "isolated so 'actual spendable income' is a
+real number instead of buried in a paycheck," i.e. visible on their own,
+not folded back into Salary.
+
+One consequence worth being explicit about: **the "N cash legs, N
+non-cash legs" case the request flagged as needing manual review isn't
+actually a guess**, and neither is `N` cash legs/`1` non-cash leg (a
+shape the request's own three-way split didn't name at all, and needed
+no special case here). The balanced-entry identity above is exact
+regardless of how many cash legs a transaction has — it only ever
+depends on each non-cash leg's own amount. The request explicitly asked
+for a manual-review flag on multi-cash-leg transactions anyway — that
+ask is honored (`n_cash_legs` rides along on every row so the app can
+flag it), as a "worth a glance" surfacing, not because the number is
+less trustworthy than any other row's.
+
+**The three-way tie-out is a real second (and third) computation, not
+the same number read back three ways.** Statement total and net
+cash-leg activity post-exclusion are mathematically guaranteed equal by
+the sign-flip identity above (trivially now — no rounding algorithm has
+to get it right, it's true by construction) — but the balance-sheet
+roll-forward (ending minus beginning balance across `is_cashflow`
+accounts, via `fn_account_balances`) is independent of
+`fn_cash_flow_lines` entirely, computed straight from account balances
+the way a Balance Sheet run twice would be. A mismatch there means
+something `fn_cash_flow_lines` itself can't see going wrong — schema
+drift, a data problem outside this feature's own code path — which is
+exactly the failure mode the check exists to catch. Worth being
+precise about what it *can't* catch, since it's easy to overstate: it's
+a check on the **net** total (inflows + outflows together), not on
+inflows or outflows individually — the gross-to-net bug above never
+tripped it, in either its broken or fixed form, because misattributing
+which contra-account a dollar belongs to never changes the aggregate
+net change in cash, only how it's broken out. The tie-out catches lost
+or duplicated money; it was never going to catch a same-total
+misattribution between rows, and nothing about fixing that bug changed
+what the check can see. It surfaces as a `.flash-warn` banner (the
+report still renders; this is "look at this," not "something crashed,"
+same posture as every other amber banner in this app) and one
+`logger.error()` call — the first thing in this codebase to use
+Python's `logging` module, since nothing before this needed to log
+anything the app itself didn't already show on screen.
+
+**Date range is inclusive on both ends, not the half-open
+`[start_date, end_date)` the original request specified.** Every other
+report here — Income Statement's `date_from`/`date_to` in particular,
+the closest existing analog (also a range, not a snapshot) — treats
+both ends as inclusive. Introducing a second, differently-shaped date
+convention for one report would be a worse outcome than the mismatch
+with the request's own notation; a user picking "Aug 1" through "Aug
+31" on this report should get the same days a user picking the same
+two dates gets on Income Statement.
+
+**Deferred, per the request's own Open Questions:** whether a brokerage
+sweep/money-market account counts as cash is a per-account editorial
+call, not a rule this feature tries to infer — `/accounts` gets a plain
+toggle (`is_cashflow`, alongside the existing `is_postable`/`is_active`
+ones) so a self-hoster can flip it themselves; nothing here guesses at
+brokerage/retirement accounts either way beyond `db/seed.sql`'s own
+starter chart leaving them off. The `category_id` rollup layer (phase
+2, for trend/forecast views where accounts churn) is untouched — v1 is
+account-level only, matching every other report in this app before any
+of them grew a rollup dimension of their own.
+
+**Addendum — equity-contra legs are a ledger adjustment, not an inflow
+(supersedes the "opening-balance entries are not special-cased"
+conclusion originally reached here).** The original reasoning above
+considered two ways to treat the seed data's opening balance (`Dr
+Checking, Cr Opening Balances Equity`) and rejected both: hardcoding
+awareness of one particular account (fragile — wrong the moment a
+self-hoster renames or restructures their equity accounts), or adding a
+brand-new "this entry isn't real economic activity" flag the schema
+doesn't have. It missed a third option, found later in review: `3100
+Opening Balances` is already typed `account_type = 'equity'`, and that
+column is exactly the "no special cases" mechanical signal the earlier
+option was looking for — not a new flag, not an account-specific check,
+just the same structural column Income Statement already treats as
+authoritative for its own membership. In a *personal* ledger
+specifically, no equity account represents a real transaction with an
+external party the way a business's owner draws/contributions would —
+every equity account in this app's own starter chart
+([`docs/GUIDE.md`](docs/GUIDE.md)) is net-worth bookkeeping (opening
+balances, retained earnings, unrealized gains) by construction, so
+`account_type = 'equity'` cleanly separates "the ledger's own
+continuity" from "something happened in the world this period" with no
+per-account judgment call needed.
+
+The reason this had gone unnoticed until a real seeded book was actually
+loaded and viewed: on the demo/seed data, one opening-balance entry
+($85,000) sits right at the start of ACTUAL's history, dwarfing every
+real inflow/outflow for the same period by 4–5×, and — because the
+report's *default* date range is month-to-date — it's not an edge case
+a user has to go looking for with a wide date range; it's literally the
+first thing every self-hoster sees the first time they open this report
+after following the app's own documented setup flow. `net_change` stays
+correct throughout (equity legs were never mis-summed, just
+mis-*labeled*), so nothing about this was a tie-out failure — the
+three-way check has no way to know "this number is real but
+misleadingly grouped," only "does this number add up."
+
+**Rejected: excluding equity-contra legs outright**, the same way a
+pure cash-to-cash transfer is excluded. Unlike a transfer, the cash
+genuinely left the ledger's "nowhere" and entered a real account — the
+tie-out's `beginning + net_change == ending` identity needs that
+counted *somewhere*, or the statement stops reconciling against the
+balance sheet for any period that includes one. The chosen fix is
+presentation, not deletion: `_cash_flow_rows()` (`app/main.py`) still
+sums every leg's own signed contribution into `net_change` exactly as
+before — equity legs are only ever regrouped into their own **Ledger
+adjustments** section (rendered between Outflows and Net change in
+cash, `cash_flow.html`), never blended into Inflows/Outflows as if they
+were income or spending, and never dropped from the total. The section
+only renders when non-empty, since most periods — including every
+period after the one where a self-hoster's books started — have no
+equity-contra activity at all.
+
+One further consequence, purely as a side effect of always computing a
+beginning balance now (see the next addendum): **Beginning cash balance
+and Ending cash balance render on every load**, not only inside the
+tie-out failure banner where they were previously computed but never
+shown. `_cash_flow_tie_out()` already calculated both for the
+reconciliation check; they just weren't surfaced on a passing report,
+so there was no way to sanity-check "net change from *what*" without
+digging into a CSV export or the Balance Sheet separately.
+
+**Addendum — a single income leg absorbs its own expense-typed
+deductions ("reducible income"), while asset/liability legs never do.**
+A second, distinct question surfaced independently of the equity fix
+above: gross-to-net payroll (`Dr Cash 100, Dr Income Tax Expense 10, Cr
+Wage Income 110`) is correctly *attributed* by the sign-flip rule this
+decision already establishes — `Salary +110`, `Income Tax -10`, both
+exactly right, nothing left to fix about the arithmetic. But two honest,
+correct numbers can still be the wrong altitude for what a reader of
+this specific report needs: withheld tax was never disposable cash the
+account holder had and then spent — it left before the money was ever
+theirs to control, mandated by law, with nothing received in exchange —
+which is a materially different situation than a 401(k) contribution on
+the very same paycheck (an *allocation* of cash the account holder
+actually received, into an asset they still hold, just illiquid). Both
+are "automatic" in the sense that neither is a discretionary purchase
+decision, but only one of them represents gross income the reader never
+actually realized as cash.
+
+The mechanical signal that separates the two turns out to be the same
+one the equity addendum above uses — `account_type` — applied to a
+narrower, well-defined shape: **an entry with exactly one income-typed
+non-cash leg and one or more expense-typed non-cash legs collapses into
+a single row, under the income leg's own account, valued at their
+signed sum** (exact by the same balanced-entry identity the rest of
+this decision already relies on — nothing estimated). Asset and
+liability legs on that same entry — a 401(k) contribution, a loan
+payment, a credit card charge — are never folded in, regardless of what
+else is on the entry; they itemize exactly as before. `_cash_flow_rows()`
+implements this in Python, on top of `fn_cash_flow_lines`' unchanged
+output — the SQL layer still returns one row per (entry, non-cash leg)
+at full face value, since that's still the right shape for a BI tool
+connecting directly to Postgres (decision 6's "the number should be
+computable by SQL alone" is about the underlying figures, not about how
+one particular report chooses to group them for display).
+
+Two rejected alternatives, both raised and set aside during design:
+
+- **Deleting the folded-away legs outright**, showing only the net
+  figure with nothing else. Rejected for the same reason the "tempting
+  fix" earlier in this decision was rejected for the store-credit
+  counter-example: it destroys traceability, and — worse here — it
+  would make the Cash Flow Statement's own "Salary" line disagree with
+  Income Statement's, which pulls the same account's real ledger
+  balance (the full gross figure) for the same transaction, with
+  nothing on either report explaining why. The shipped version instead
+  demotes the folded legs to a `netted_from` annotation on the row (a
+  dim "net of Income Tax -10.00" sub-line, still linking through to the
+  real entry) — nothing is deleted, only de-prioritized from a peer
+  report line to supporting detail.
+- **Netting whenever a cash-touching entry has more than one non-cash
+  leg**, regardless of account type — the simplest possible rule, and
+  wrong: it would swallow the 401(k) leg into the paycheck too, hiding
+  exactly the kind of allocation a personal-finance user most wants
+  visible. `account_type` is what makes the distinction principled
+  instead of ad hoc — it's the same structural column every account
+  already carries, not a new per-account opt-in the way `is_cashflow`
+  is, so it requires no extra editorial effort from a self-hoster and
+  works identically regardless of how they've named or organized their
+  own chart of accounts.
+
+**Two or more income legs on one entry are deliberately left
+un-netted.** If a shared deduction rides alongside two income legs (a
+combined salary-plus-bonus paycheck with one tax line covering both),
+there is no principled way to decide which income leg the deduction
+belongs to — any split would be invented, not derived, the same
+objection this decision already raises against the earlier-rejected
+proportional-weighting formula. Rather than guess, the entry backs off
+to full itemization, exactly as if the netting rule didn't exist for
+it — same posture as the multi-cash-leg flag: surface ambiguity, never
+silently resolve it with a plausible-looking number.
+
+This also does not reopen the hazard the "second, tempting fix" earlier
+in this decision warned about (dropping the store-credit leg of `Dr
+Shopping 100.00, Cr Store Credit 33.33, Cr Checking 66.67` would hide
+that $100 was spent). That entry has no income leg at all, so the
+netting rule never fires for it regardless of how `Store Credit` is
+typed — Shopping and Store Credit itemize exactly as the sign-flip rule
+already produces them. The reducible-income rule only ever *folds
+toward* an unambiguous income leg; it has no mechanism that drops a leg
+from the report outright, in this shape or any other.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

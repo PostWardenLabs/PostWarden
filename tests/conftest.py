@@ -84,13 +84,13 @@ def rand_scenario_code() -> str:
 
 
 def mk_account(cur, account_type="asset", parent_id=None, postable=True,
-               active=True, code=None) -> dict:
+               active=True, code=None, cashflow=False) -> dict:
     code = code or rand_account_code()
     cur.execute(
         """INSERT INTO accounts (code, name, account_type, parent_id,
-                                  is_postable, is_active)
-           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, code""",
-        (code, f"Test account {code}", account_type, parent_id, postable, active))
+                                  is_postable, is_active, is_cashflow)
+           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id, code""",
+        (code, f"Test account {code}", account_type, parent_id, postable, active, cashflow))
     return cur.fetchone()
 
 

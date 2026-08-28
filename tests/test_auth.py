@@ -1226,15 +1226,23 @@ def _mk_balanced_book(conn):
 
 
 def _account_row_value(html: str, code: str) -> str:
-    """The money-fmt data-value from a specific account's own table row.
-    Anchored on that account's code rather than a bare data-value search:
+    """The money-fmt data-value from a specific account's own table row —
+    specifically its money-first cell (the row's actual reported figure),
+    not just the first data-value after the code. Those are the same
+    thing on every report except Cash Flow: a netted row's own annotation
+    (SPEC.md decision 20) also renders its folded-away amounts through
+    the `money` filter, which emits its own data-value *before* the row's
+    real one in source order — a bare "first data-value after the code"
+    search would grab the annotation's figure instead of the row's own.
+    Anchored on the account's code rather than a bare data-value search:
     the test database is shared across the *whole* pytest run (see
     conftest.py — one disposable DB per run, not per test), so ACTUAL
     already carries postings from every other test that touched it by
     the time this one runs. A page-wide total is not isolated; a single
     account's own row still is, since every test uses a fresh randomly-
     coded account no other test ever posts to."""
-    m = re.search(rf'<td class="mono dim">{code}</td>.*?data-value="(-?[\d.]+)"', html, re.S)
+    m = re.search(rf'<td class="mono dim">{code}</td>.*?class="[^"]*money-first[^"]*"[^>]*>'
+                  r'.*?data-value="(-?[\d.]+)"', html, re.S)
     assert m, f"no row found for account {code}"
     return m.group(1)
 
@@ -2930,6 +2938,32 @@ def test_balance_sheet_amounts_link_to_filtered_journal(conn):
         assert back_path == "/balance-sheet"
 
 
+def test_cash_flow_amounts_link_to_filtered_journal(conn):
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur)
+        cash = mk_account(cur, account_type="asset", cashflow=True)
+        rent = mk_account(cur, account_type="expense")
+        eid = mk_entry(cur, scen["id"])
+        mk_line(cur, eid, rent["id"], 100, line_no=1)
+        mk_line(cur, eid, cash["id"], -100, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        today = date.today().isoformat()
+        r = c.get(f"/cash-flow?scenario={scen['code']}&date_from={today}&date_to={today}")
+        assert r.status_code == 200
+        m = re.search(r'<a class="amount-link" href="([^"]+)">', r.text)
+        assert m, "no amount-link found"
+        qs = parse_qs(urlparse(m.group(1).replace("&amp;", "&")).query)
+        assert qs["scenario"] == [scen["code"]]
+        assert qs["date_from"] == [today]
+        assert qs["date_to"] == [today]
+        assert qs["account"] == [rent["code"]]
+        back_path = urlparse(unquote(qs["back"][0])).path
+        assert back_path == "/cash-flow"
+
+
 def test_trial_balance_rolls_up_a_subdivided_summary_account(conn):
     with conn.cursor() as cur:
         user = mk_user(cur)
@@ -3271,3 +3305,134 @@ def test_demo_banner_shows_and_prefills_credentials_when_enabled():
     finally:
         for k, v in originals.items():
             templates.env.globals[k] = v
+
+
+# ---------------------------------------------------------------------------
+# Cash flow statement — app-layer presentation rules on top of
+# fn_cash_flow_lines' raw per-leg attribution (which test_cashflow.py
+# already covers directly against Postgres and is untouched by any of
+# this). These exercise _cash_flow_rows()'s own three routing rules — see
+# its docstring and SPEC.md decision 20's addenda for the full reasoning.
+# ---------------------------------------------------------------------------
+def test_cash_flow_always_shows_beginning_and_ending_balance(conn):
+    """Previously beginning/ending were computed for the tie-out check but
+    only ever surfaced inside the failure banner — a passing report gave
+    no grounding for what "net change" was a change *from*. Now both
+    render unconditionally."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get("/cash-flow")
+        assert r.status_code == 200
+        assert "Beginning cash balance" in r.text
+        assert "Ending cash balance" in r.text
+
+
+def test_cash_flow_equity_contra_leg_is_a_ledger_adjustment_not_an_inflow(conn):
+    """Opening-balance seeding (or any other equity-contra leg) is real
+    cash movement, but not real economic activity -- it's excluded from
+    Inflows/Outflows and shown in its own Ledger adjustments section
+    instead, per SPEC.md decision 20's addendum. Excluding it outright
+    (rather than re-bucketing) isn't an option: the cash genuinely moved,
+    so the tie-out's beginning+net_change==ending identity needs it
+    counted somewhere."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur)
+        checking = mk_account(cur, cashflow=True)
+        opening_equity = mk_account(cur, account_type="equity")
+        e = mk_entry(cur, scen["id"], "Opening balance")
+        mk_line(cur, e, checking["id"], 500, line_no=1)
+        mk_line(cur, e, opening_equity["id"], -500, line_no=2)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/cash-flow?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert "No inflows in this range." in r.text
+        assert "Ledger adjustments" in r.text
+        assert _account_row_value(r.text, opening_equity["code"]) == "500.00"
+
+
+def test_cash_flow_nets_expense_legs_into_a_single_income_leg(conn):
+    """Gross-to-net payroll: exactly one income leg plus at least one
+    expense leg on the same entry collapses into one row under the
+    income account, valued at their net -- the withheld tax no longer
+    itemizes as its own outflow row. See SPEC.md decision 20's
+    "reducible income" addendum for why this reverses the feature's
+    original gross-and-separate design."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur)
+        checking = mk_account(cur, cashflow=True)
+        salary = mk_account(cur, account_type="income")
+        tax = mk_account(cur, account_type="expense")
+        e = mk_entry(cur, scen["id"], "Paycheck")
+        mk_line(cur, e, checking["id"], 100, line_no=1)
+        mk_line(cur, e, tax["id"], 10, line_no=2)
+        mk_line(cur, e, salary["id"], -110, line_no=3)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/cash-flow?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, salary["code"]) == "100.00"
+        assert not re.search(rf'<td class="mono dim">{tax["code"]}</td>', r.text)
+        assert "net of" in r.text
+        assert f"Test account {tax['code']}" in r.text
+
+
+def test_cash_flow_leaves_asset_legs_itemized_alongside_a_netted_income_row(conn):
+    """The realistic full-paystub shape: tax withholding nets into the
+    salary row (rule 2), but a 401k contribution -- an asset leg, money
+    the account holder still owns just in a less liquid form -- stays its
+    own itemized outflow row (rule 3), on the very same entry."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur)
+        checking = mk_account(cur, cashflow=True)
+        salary = mk_account(cur, account_type="income")
+        tax = mk_account(cur, account_type="expense")
+        retirement = mk_account(cur, account_type="asset")
+        e = mk_entry(cur, scen["id"], "Paycheck")
+        mk_line(cur, e, checking["id"], 95, line_no=1)
+        mk_line(cur, e, tax["id"], 10, line_no=2)
+        mk_line(cur, e, retirement["id"], 5, line_no=3)
+        mk_line(cur, e, salary["id"], -110, line_no=4)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/cash-flow?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, salary["code"]) == "100.00"  # 110 gross - 10 tax
+        assert _account_row_value(r.text, retirement["code"]) == "-5.00"  # untouched by netting
+
+
+def test_cash_flow_does_not_net_when_more_than_one_income_leg(conn):
+    """Two income legs sharing one deduction on the same entry has no
+    principled way to attribute the deduction to one or the other -- per
+    SPEC.md decision 20's addendum, the report backs off to itemizing
+    every leg rather than guessing which income leg "owns" the shared
+    tax withholding."""
+    with conn.cursor() as cur:
+        user = mk_user(cur)
+        scen = mk_scenario(cur)
+        checking = mk_account(cur, cashflow=True)
+        salary = mk_account(cur, account_type="income")
+        bonus = mk_account(cur, account_type="income")
+        tax = mk_account(cur, account_type="expense")
+        e = mk_entry(cur, scen["id"], "Paycheck with bonus")
+        mk_line(cur, e, checking["id"], 190, line_no=1)
+        mk_line(cur, e, tax["id"], 10, line_no=2)
+        mk_line(cur, e, salary["id"], -100, line_no=3)
+        mk_line(cur, e, bonus["id"], -100, line_no=4)
+    conn.commit()
+    with TestClient(app, **client_kwargs) as c:
+        c.post("/login", data={"username": user["username"], "password": user["password"]})
+        r = c.get(f"/cash-flow?scenario={scen['code']}")
+        assert r.status_code == 200
+        assert _account_row_value(r.text, salary["code"]) == "100.00"
+        assert _account_row_value(r.text, bonus["code"]) == "100.00"
+        assert _account_row_value(r.text, tax["code"]) == "-10.00"

@@ -6,6 +6,7 @@ import calendar
 import csv
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -34,6 +35,12 @@ async def lifespan(app: FastAPI):
 
 
 BASE = Path(__file__).parent
+# Used only by the Cash Flow Statement's tie-out check (see
+# _cash_flow_tie_out below) to log a mismatch — nothing else in this app
+# has needed a logger before now. `docker compose logs app` is already
+# how this project verifies a deploy (CLAUDE.md), so a plain module
+# logger writing to stderr, uvicorn's default handler, needs no setup.
+logger = logging.getLogger(__name__)
 app = FastAPI(title="PostWarden", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
@@ -1370,6 +1377,262 @@ def balance_sheet_export_csv(scenario: str = "ACTUAL", as_of: str = None, raw: i
 
 
 # ---------------------------------------------------------------------------
+# Cash flow statement — flat (no operating/investing/financing split, out
+# of scope per SPEC.md decision 20), grouped by the contra-account each
+# cash leg attributes to. fn_cash_flow_lines (db/schema.sql) does the
+# real per-transaction attribution at full granularity (every non-cash
+# leg, its own posted amount, sign-flipped — nothing netted or bucketed
+# at the SQL layer); everything here is presentation on top of that raw
+# truth — grouping rows into inflows/outflows, peeling equity-contra legs
+# into their own "ledger adjustments" section, folding a reducible
+# income entry's deduction legs into its own income row, and running the
+# three-way tie-out the spec calls a hard invariant. See SPEC.md decision
+# 20's addenda for the reasoning behind each of these three presentation
+# rules — the underlying per-leg numbers this all runs on never change.
+# ---------------------------------------------------------------------------
+def _cash_flow_tie_out(scenario: str, date_from_v: str | None, date_to_v: str | None,
+                       statement_total) -> dict:
+    """The three numbers the spec says must agree to the cent: the
+    statement's own total, the net leg activity on is_cashflow accounts
+    for the same (post-exclusion) set of transactions, and the plain
+    balance-sheet roll-forward (ending − beginning) of those same
+    accounts. A mismatch means an untagged/mistagged account, a bad
+    split attribution, or a pure-transfer wrongly included/excluded —
+    surfaced as a warning banner on the report and logged, per the spec,
+    rather than silently shown as if nothing were wrong.
+
+    beginning/ending are returned (not just balance_delta) so the report
+    can show them unconditionally as their own lines — previously they
+    were computed here but only ever surfaced inside the failure banner,
+    so a passing report gave no grounding for what "net change" was a
+    change *from*. Presentation-layer bucketing (ledger adjustments,
+    netting) never touches this function or its inputs: statement_total
+    is still literally the same net_change number it always was, and
+    beginning/ending are still the plain balance-sheet roll-forward,
+    independent of how the statement chooses to group its rows."""
+    cash_leg_net = q1("""
+        SELECT COALESCE(SUM(f.amount), 0) AS net
+          FROM v_fact_lines f JOIN accounts a ON a.id = f.account_id
+         WHERE a.is_cashflow AND f.scenario_code = %s
+           AND f.entry_date <= COALESCE(%s, 'infinity'::date)
+           AND f.entry_date >= COALESCE(%s, '-infinity'::date)
+           AND f.entry_id IN (SELECT DISTINCT entry_id FROM fn_cash_flow_lines(%s, %s, %s))
+    """, (scenario, date_to_v, date_from_v, scenario, date_from_v, date_to_v))["net"]
+
+    # Beginning balance is "as of the day before date_from", cumulative
+    # since inception — the same balance a Balance Sheet run as of that
+    # day would show. No date_from means the range is unbounded at the
+    # start, so there's nothing before it to roll forward from.
+    if date_from_v:
+        begin_as_of = (date.fromisoformat(date_from_v) - timedelta(days=1)).isoformat()
+        beginning = q1("""SELECT COALESCE(SUM(net), 0) AS net FROM fn_account_balances(%s, %s)
+                            WHERE account_id IN (SELECT id FROM accounts WHERE is_cashflow)""",
+                       (scenario, begin_as_of))["net"]
+    else:
+        beginning = 0
+    ending = q1("""SELECT COALESCE(SUM(net), 0) AS net FROM fn_account_balances(%s, %s)
+                     WHERE account_id IN (SELECT id FROM accounts WHERE is_cashflow)""",
+               (scenario, date_to_v))["net"]
+    balance_delta = ending - beginning
+
+    ok = statement_total == cash_leg_net == balance_delta
+    if not ok:
+        logger.error(
+            "Cash flow tie-out mismatch (scenario=%s, %s..%s): "
+            "statement_total=%s cash_leg_net=%s balance_delta=%s",
+            scenario, date_from_v, date_to_v, statement_total, cash_leg_net, balance_delta,
+        )
+    return {"ok": ok, "statement_total": statement_total, "cash_leg_net": cash_leg_net,
+            "balance_delta": balance_delta, "beginning": beginning, "ending": ending}
+
+
+def _cash_flow_rows(scenario: str, date_from: str, date_to: str) -> dict:
+    """Groups fn_cash_flow_lines' raw per-leg rows into the report's three
+    sections. Three routing rules apply, per entry, in this order — see
+    SPEC.md decision 20's addenda for the full reasoning behind each:
+
+      1. Equity-typed contra legs are always their own row, always in
+         ledger_adjustments — never blended into inflows/outflows, and
+         never excluded outright either (excluding them would break the
+         tie-out's beginning+net_change==ending identity, since the cash
+         genuinely did move; the fix is presentation, not deletion).
+         Peeled off first so they can't interact with rule 2.
+
+      2. Among what's left on that same entry: if there is exactly one
+         income-typed leg and at least one expense-typed leg, they
+         collapse into a single row under the income leg's own account —
+         amount is their signed sum, which (the entry balances, so this
+         is exact, not estimated) already equals that leg group's own
+         net cash contribution. The folded-away expense legs ride along
+         as that row's netted_from, so the detail is demoted to an
+         annotation, not deleted — still reachable, just not cluttering
+         the top-level view. Two or more income legs on one entry is
+         deliberately left un-netted: there's no principled way to
+         decide which income leg a shared deduction belongs to, so
+         rather than guess, every leg itemizes on its own, same as if
+         rule 2 had never fired.
+
+      3. Everything else — asset/liability legs always, plus any
+         income/expense leg rule 2 didn't consume — itemizes exactly as
+         fn_cash_flow_lines returned it, unchanged from before this rule
+         existed.
+    """
+    date_from_v = date_from or None
+    date_to_v = date_to or None
+    lines = q("SELECT * FROM fn_cash_flow_lines(%s, %s, %s)", (scenario, date_from_v, date_to_v))
+    accounts_by_id = {a["id"]: a for a in q("SELECT * FROM v_dim_account")}
+
+    by_entry: dict[str, list[dict]] = {}
+    for l in lines:
+        by_entry.setdefault(l["entry_id"], []).append(l)
+
+    def bump(agg: dict, account_id: int, amount, flagged: bool, netted_from: dict | None = None):
+        row = agg.setdefault(account_id, {"amount": 0, "flagged": False, "netted_from": {}})
+        row["amount"] += amount
+        row["flagged"] = row["flagged"] or flagged
+        for nf_id, nf_amount in (netted_from or {}).items():
+            row["netted_from"][nf_id] = row["netted_from"].get(nf_id, 0) + nf_amount
+
+    activity: dict[int, dict] = {}     # real economic activity -> inflows/outflows
+    adjustments: dict[int, dict] = {}  # equity-contra -> ledger adjustments
+    for entry_id, entry_lines in by_entry.items():
+        flagged = any(l["n_cash_legs"] > 1 for l in entry_lines)
+        by_type: dict[str, list[dict]] = {}
+        for l in entry_lines:
+            a = accounts_by_id.get(l["contra_account_id"])
+            if a:
+                by_type.setdefault(a["account_type"], []).append(l)
+
+        # Rule 1 — equity, always its own row, always ledger_adjustments.
+        for l in by_type.pop("equity", []):
+            bump(adjustments, l["contra_account_id"], l["amount"], flagged)
+
+        # Rule 2 — fold expense legs into a single well-defined income leg.
+        income_legs = by_type.pop("income", [])
+        expense_legs = by_type.pop("expense", [])
+        if len(income_legs) == 1 and expense_legs:
+            inc = income_legs[0]
+            total = inc["amount"] + sum(e["amount"] for e in expense_legs)
+            netted_from = {e["contra_account_id"]: e["amount"] for e in expense_legs}
+            bump(activity, inc["contra_account_id"], total, flagged, netted_from)
+        else:
+            for l in income_legs + expense_legs:
+                bump(activity, l["contra_account_id"], l["amount"], flagged)
+
+        # Rule 3 — everything left (asset/liability) itemizes as-is.
+        for l in [x for legs in by_type.values() for x in legs]:
+            bump(activity, l["contra_account_id"], l["amount"], flagged)
+
+    def to_rows(agg: dict) -> list[dict]:
+        out = []
+        for account_id, r in agg.items():
+            a = accounts_by_id.get(account_id)
+            if not a:
+                continue
+            netted_from = sorted((
+                {"account_code": accounts_by_id[nf_id]["code"],
+                 "account_name": accounts_by_id[nf_id]["name"], "amount": nf_amount}
+                for nf_id, nf_amount in r["netted_from"].items() if nf_id in accounts_by_id
+            ), key=lambda n: n["account_code"])
+            out.append({"account_id": account_id, "account_code": a["code"], "account_name": a["name"],
+                        "parent_path": a["parent_path"], "amount": r["amount"],
+                        "flagged": r["flagged"], "netted_from": netted_from})
+        out.sort(key=lambda r: r["account_code"])
+        return out
+
+    activity_rows = to_rows(activity)
+    inflows = [r for r in activity_rows if r["amount"] >= 0]
+    outflows = [r for r in activity_rows if r["amount"] < 0]
+    ledger_adjustments = to_rows(adjustments)
+
+    total_inflows = sum(r["amount"] for r in inflows)
+    total_outflows = sum(r["amount"] for r in outflows)
+    total_adjustments = sum(r["amount"] for r in ledger_adjustments)
+    # Unchanged from before rules 1/2 existed: still every non-cash leg's
+    # own contribution summed once. Rules 1/2 only ever regroup rows that
+    # already summed to the same total, so this, the tie-out, and the
+    # beginning+net_change==ending identity are all exactly as before.
+    net_change = total_inflows + total_outflows + total_adjustments
+
+    # Distinct transactions with more than one cash leg (checking +
+    # savings both funded from one payroll deposit, say) — the
+    # attribution above already divides these correctly (see
+    # fn_cash_flow_lines' own comment: the formula doesn't actually
+    # guess), but the spec asks that they surface for a human glance
+    # anyway rather than blend in silently.
+    flagged_entries = q("""
+        SELECT DISTINCT e.id, e.entry_date, e.description, p.name AS payee
+          FROM journal_entries e
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE e.id IN (SELECT entry_id FROM fn_cash_flow_lines(%s, %s, %s) WHERE n_cash_legs > 1)
+         ORDER BY e.entry_date, e.id
+    """, (scenario, date_from_v, date_to_v))
+
+    return {
+        "inflows": inflows, "outflows": outflows, "ledger_adjustments": ledger_adjustments,
+        "total_inflows": total_inflows, "total_outflows": total_outflows,
+        "total_adjustments": total_adjustments,
+        "net_change": net_change, "flagged_entries": flagged_entries,
+        "tie_out": _cash_flow_tie_out(scenario, date_from_v, date_to_v, net_change),
+    }
+
+
+@app.get("/cash-flow")
+def cash_flow_page(request: Request, scenario: str = "ACTUAL",
+                   date_from: str = "", date_to: str = ""):
+    today = date.today()
+    date_from = date_from or today.replace(day=1).isoformat()
+    date_to = date_to or today.isoformat()
+    result = _cash_flow_rows(scenario, date_from, date_to)
+    return templates.TemplateResponse(request, "cash_flow.html", {
+        "nav": "cash_flow", "scenarios": scenarios_all(), "scenario": scenario,
+        "date_from": date_from, "date_to": date_to, "today": today.isoformat(), **result,
+    })
+
+
+@app.get("/export/cash-flow.csv")
+def cash_flow_export_csv(scenario: str = "ACTUAL", date_from: str = "", date_to: str = ""):
+    # Blank date_from/date_to means "unbounded" here, deliberately not
+    # defaulted to the current month the way the page is — same
+    # already-established split between page and CSV export that
+    # income_statement_export_csv documents on itself.
+    result = _cash_flow_rows(scenario, date_from, date_to)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+
+    def netted_of(r: dict) -> str:
+        return "; ".join(f"{n['account_name']} {n['amount']:.2f}" for n in r["netted_from"])
+
+    w.writerow(["Section", "Code", "Account", "Amount", "Flagged for review", "Net of"])
+    w.writerow(["", "", "Beginning cash balance", result["tie_out"]["beginning"], "", ""])
+    w.writerow([])
+    for r in result["inflows"]:
+        w.writerow(["Inflows", r["account_code"], r["account_name"], r["amount"],
+                    "yes" if r["flagged"] else "", netted_of(r)])
+    w.writerow(["Inflows", "", "Total inflows", result["total_inflows"], "", ""])
+    w.writerow([])
+    for r in result["outflows"]:
+        w.writerow(["Outflows", r["account_code"], r["account_name"], r["amount"],
+                    "yes" if r["flagged"] else "", netted_of(r)])
+    w.writerow(["Outflows", "", "Total outflows", result["total_outflows"], "", ""])
+    w.writerow([])
+    # Only present when non-empty — most periods have no equity-contra
+    # activity at all (opening-balance seeding happens once), so an
+    # always-present empty section would just be noise most exports.
+    if result["ledger_adjustments"]:
+        for r in result["ledger_adjustments"]:
+            w.writerow(["Ledger adjustments", r["account_code"], r["account_name"], r["amount"],
+                        "yes" if r["flagged"] else "", ""])
+        w.writerow(["Ledger adjustments", "", "Total ledger adjustments", result["total_adjustments"], "", ""])
+        w.writerow([])
+    w.writerow(["", "", "Net change in cash", result["net_change"], "", ""])
+    w.writerow(["", "", "Ending cash balance", result["tie_out"]["ending"], "", ""])
+    w.writerow([])
+    w.writerow(["", "", "Tie-out check", "PASS" if result["tie_out"]["ok"] else "FAIL — see app log", "", ""])
+    return csv_response(buf, f"postwarden-cash-flow-{scenario}.csv")
+
+
+# ---------------------------------------------------------------------------
 # Budget grid — the ActualBudget-style grid for an income-statement-only
 # scenario (scenarios.income_statement_only): one month at a time, Actual
 # (this month's real postings), the Variance against Budgeted (columns
@@ -1759,16 +2022,17 @@ def accounts_page(request: Request, level_id: str = "", ok: str = None, err: str
 @app.post("/accounts")
 def create_account(request: Request, code: str = Form(...), name: str = Form(...),
                    account_type: str = Form(...), parent_id: str = Form(""),
-                   is_postable: str = Form(None), csrf_token: str = Form(...)):
+                   is_postable: str = Form(None), is_cashflow: str = Form(None),
+                   csrf_token: str = Form(...)):
     try:
         require_csrf(request, csrf_token)
         with tx() as cur:
             cur.execute(
-                """INSERT INTO accounts (code, name, account_type, parent_id, is_postable)
-                   VALUES (%s, %s, %s, %s, %s)""",
+                """INSERT INTO accounts (code, name, account_type, parent_id, is_postable, is_cashflow)
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (code.strip(), name.strip(), account_type,
                  int(parent_id) if parent_id else None,
-                 is_postable is not None),
+                 is_postable is not None, is_cashflow is not None),
             )
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
@@ -1818,6 +2082,26 @@ def toggle_account(account_id: int, request: Request, csrf_token: str = Form(...
         with tx() as cur:
             cur.execute(
                 "UPDATE accounts SET is_active = NOT is_active WHERE id = %s",
+                (account_id,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/accounts", err=msg)
+    return flash_redirect("/accounts", ok="Account updated")
+
+
+@app.post("/accounts/{account_id}/toggle-cashflow")
+def toggle_account_cashflow(account_id: int, request: Request, csrf_token: str = Form(...)):
+    """Flips accounts.is_cashflow — the Cash Flow Statement's own cash
+    boundary (SPEC.md decision 20). Same shape as toggle-active above;
+    a separate route rather than folding this into a generic "PATCH one
+    boolean column" endpoint since that's not a pattern this app has
+    anywhere else, and two clearly-named routes read better than one
+    parameterized by column name typed into a form."""
+    try:
+        require_csrf(request, csrf_token)
+        with tx() as cur:
+            cur.execute(
+                "UPDATE accounts SET is_cashflow = NOT is_cashflow WHERE id = %s",
                 (account_id,))
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)

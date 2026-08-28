@@ -24,7 +24,7 @@
       depth {{ selected_level.depth }}, wherever it lives in the tree.</p>
     <table class="ledger">
       <thead><tr>
-        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
+        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th>Cash flow</th><th></th>
       </tr></thead>
       <tbody>
         {% for a in display_accounts %}
@@ -33,28 +33,33 @@
           <td>{{ a.name }} {% if a.parent_path %}<span class="dim small">{{ a.parent_path }}</span>{% endif %}</td>
           <td class="dim">{{ type_labels[a.account_type] }}</td>
           <td class="dim">{{ 'leaf' if a.is_postable else 'summary' }}</td>
+          <td class="dim">{{ 'cash' if a.is_cashflow }}</td>
           <td>
             <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
               <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
             </form>
+            <form method="post" action="/accounts/{{ a.id }}/toggle-cashflow" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+              <button type="submit" class="quiet">{{ 'Unmark cash' if a.is_cashflow else 'Mark as cash' }}</button>
+            </form>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="dim">No accounts at this level yet.</td></tr>
+        <tr><td colspan="6" class="dim">No accounts at this level yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
     {% else %}
     <table class="ledger" id="accounts-tree">
       <thead><tr>
-        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th></th>
+        <th>Code</th><th>Account</th><th>Type</th><th>Postable</th><th>Cash flow</th><th></th>
       </tr></thead>
       <tbody id="accounts-body">
         {% for r in rows %}
         {% if r.kind == 'gap' %}
         <tr class="add-gap" data-track="{{ r.track_id or '' }}">
-          <td colspan="5">
+          <td colspan="6">
             <button type="button" class="add-gap-trigger" aria-label="Add account here">+</button>
             <form method="post" action="/accounts/quick-create" class="add-gap-form" hidden>
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
@@ -79,10 +84,15 @@
           <td class="acct-name depth-{{ [r.depth, 6] | min }}"><span class="tree-toggle"></span>{{ r.name }}</td>
           <td class="dim">{{ type_labels[r.account_type] }}</td>
           <td class="dim">{{ 'leaf' if r.is_postable else 'summary' }}</td>
+          <td class="dim">{{ 'cash' if r.is_cashflow }}</td>
           <td>
             <form method="post" action="/accounts/{{ r.id }}/toggle-active" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
               <button type="submit" class="quiet">{{ 'Deactivate' if r.is_active else 'Reactivate' }}</button>
+            </form>
+            <form method="post" action="/accounts/{{ r.id }}/toggle-cashflow" style="display:inline">
+              <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+              <button type="submit" class="quiet">{{ 'Unmark cash' if r.is_cashflow else 'Mark as cash' }}</button>
             </form>
           </td>
         </tr>
@@ -116,6 +126,7 @@
           </select>
         </label>
         <label class="checkline"><input type="checkbox" name="is_postable" checked> postable (leaf)</label>
+        <label class="checkline"><input type="checkbox" name="is_cashflow"> counts as cash (Cash Flow)</label>
         <button type="submit">Create account</button>
       </form>
     </div>

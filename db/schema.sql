@@ -194,6 +194,16 @@ CREATE TABLE accounts (
     parent_id    BIGINT REFERENCES accounts(id) ON DELETE RESTRICT,
     is_postable  BOOLEAN NOT NULL DEFAULT TRUE,
     is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Marks an account as "cash" for the Cash Flow Statement (see
+    -- fn_cash_flow_lines below) — checking/savings/physical cash, not a
+    -- credit card, loan, or investment/brokerage account. A per-account
+    -- editorial choice, not derived from account_type: several asset
+    -- accounts (1310 Brokerage, 1320 Retirement) are deliberately left
+    -- FALSE by db/seed.sql because "spendable cash" and "asset" aren't
+    -- the same boundary. Default FALSE so an existing install's chart
+    -- shows nothing on the Cash Flow Statement until accounts are
+    -- explicitly opted in from /accounts, rather than silently guessing.
+    is_cashflow  BOOLEAN NOT NULL DEFAULT FALSE,
     currency     CHAR(3) NOT NULL DEFAULT 'MXN',
     description  TEXT,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -869,13 +879,13 @@ FOR EACH ROW EXECUTE FUNCTION fn_budget_line_guard();
 CREATE VIEW v_dim_account AS
 WITH RECURSIVE tree AS (
     SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-           currency, name::text AS path, NULL::text AS parent_path, 1 AS depth,
-           code::text AS sort_path
+           currency, is_cashflow, name::text AS path, NULL::text AS parent_path,
+           1 AS depth, code::text AS sort_path
       FROM accounts
      WHERE parent_id IS NULL
     UNION ALL
     SELECT a.id, a.code, a.name, a.account_type, a.parent_id, a.is_postable,
-           a.is_active, a.currency,
+           a.is_active, a.currency, a.is_cashflow,
            tree.path || ' : ' || a.name,
            tree.path,
            tree.depth + 1,
@@ -884,7 +894,7 @@ WITH RECURSIVE tree AS (
       JOIN tree ON a.parent_id = tree.id
 )
 SELECT id, code, name, account_type, parent_id, is_postable, is_active,
-       currency, path, parent_path, depth, sort_path,
+       currency, is_cashflow, path, parent_path, depth, sort_path,
        CASE WHEN account_type IN ('asset', 'expense')
             THEN 'debit' ELSE 'credit' END AS normal_side
   FROM tree;
@@ -1064,6 +1074,101 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Cash Flow Statement — the finest-grained artifact one row per
+-- (transaction, contra account), everything else (the statement itself,
+-- the flagged-for-review list, the three-way tie-out) is built on top of
+-- this by app/main.py's _cash_flow_rows(). Kept as one function rather
+-- than three, per decision 6 ("if a number matters, it should be
+-- computable by SQL alone") — every caller (the report, the flagged
+-- list, the tie-out) needs the same per-entry attribution, just grouped
+-- differently, so there's one source of truth for it instead of three
+-- copies of the same CTEs.
+--
+-- Steps, matching the feature's own spec (SPEC.md decision 20):
+--   1. scoped_lines — every line on a transaction that has at least one
+--      is_cashflow leg, within [p_from, p_to] (both inclusive, same
+--      convention every other report in this app uses).
+--   2. entry_shape  — per transaction, how many cash vs. non-cash legs
+--      it has, and how many non-cash legs (n_noncash = 0 marks a pure
+--      cash-to-cash transfer — checking -> savings, or a 3+-leg split
+--      across only cash accounts — excluded here outright; the
+--      predicate is "every leg is cash-tagged", not "legs pairwise net
+--      to zero", so it still catches a 3+-leg all-cash entry a naive
+--      pairwise check would miss).
+--   3. The final SELECT attributes each surviving non-cash leg its own
+--      amount, sign-flipped — no proportional redistribution by
+--      magnitude, and deliberately so. A balanced entry means
+--      SUM(all legs) = 0, so SUM(cash legs) = -SUM(non-cash legs)
+--      always, for every leg-count shape (1 cash/1 non-cash, 1 cash/N
+--      non-cash, N cash/N non-cash alike) — each non-cash leg's own
+--      posted amount *is* its exact, already-two-decimal contribution
+--      to the cash change; there is nothing to estimate or round. An
+--      earlier version of this function instead weighted each leg by
+--      its share of total non-cash magnitude (cash_net * abs(amount) /
+--      total_noncash_abs) plus a largest-remainder rounding pass to
+--      force the shares back to summing exactly — which happens to
+--      equal -amount whenever every non-cash leg on the entry shares
+--      one sign (the common "split one purchase two ways" case the
+--      original feature request was written around), but silently
+--      breaks on a transaction whose non-cash legs don't all share a
+--      sign: gross-to-net payroll (Dr Cash, Dr Tax Expense × N, Cr
+--      Salary Income) proportionally bled part of the salary inflow
+--      onto the tax legs, showing withheld tax as if it were separate
+--      cash that had arrived. Caught in review against real seed data,
+--      not by the largest-remainder property itself, which was busy
+--      solving a rounding problem that only existed because of the
+--      proportional formula it was patching — see SPEC.md decision 20.
+--
+-- n_cash_legs is returned per row (not collapsed into a boolean here)
+-- so a caller can decide what ">1" means for its own purposes — today
+-- that's "flag this transaction for manual review", per the spec's
+-- explicit ask, even though the attribution above needs no guessing
+-- for that shape either: it's exact by the same balanced-entry identity
+-- regardless of how many cash legs a transaction has.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION fn_cash_flow_lines(
+    p_scenario TEXT DEFAULT 'ACTUAL',
+    p_from     DATE DEFAULT NULL,
+    p_to       DATE DEFAULT NULL
+)
+RETURNS TABLE (
+    entry_id           TEXT,
+    contra_account_id  BIGINT,
+    amount             NUMERIC(18,2),
+    n_cash_legs        INT
+)
+LANGUAGE sql STABLE AS $$
+    WITH scoped_lines AS (
+        SELECT f.entry_id, f.account_id, f.amount, a.is_cashflow
+          FROM v_fact_lines f
+          JOIN accounts a ON a.id = f.account_id
+         WHERE f.scenario_code = p_scenario
+           AND f.entry_date <= COALESCE(p_to, 'infinity'::date)
+           AND f.entry_date >= COALESCE(p_from, '-infinity'::date)
+           AND f.entry_id IN (
+               SELECT f2.entry_id
+                 FROM v_fact_lines f2
+                 JOIN accounts a2 ON a2.id = f2.account_id
+                WHERE a2.is_cashflow
+                  AND f2.scenario_code = p_scenario
+                  AND f2.entry_date <= COALESCE(p_to, 'infinity'::date)
+                  AND f2.entry_date >= COALESCE(p_from, '-infinity'::date)
+           )
+    ),
+    entry_shape AS (
+        SELECT entry_id,
+               COUNT(*) FILTER (WHERE is_cashflow)     AS n_cash,
+               COUNT(*) FILTER (WHERE NOT is_cashflow) AS n_noncash
+          FROM scoped_lines
+         GROUP BY entry_id
+    )
+    SELECT sl.entry_id, sl.account_id, (-sl.amount)::numeric(18,2), es.n_cash
+      FROM scoped_lines sl
+      JOIN entry_shape es ON es.entry_id = sl.entry_id
+     WHERE NOT sl.is_cashflow AND es.n_noncash > 0;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Rolled-up balance per account at a chosen depth — the budget-vs-actual
 -- base. Unlike fn_trial_balance (native depth, own postings only), this
 -- collapses every posting under a common ancestor at p_depth: a leaf's
@@ -1135,5 +1240,6 @@ GRANT CONNECT ON DATABASE postwarden TO postwarden_bi;
 GRANT USAGE ON SCHEMA public TO postwarden_bi;
 GRANT SELECT ON v_dim_account, v_fact_lines, v_dim_date, v_monthly_activity TO postwarden_bi;
 GRANT EXECUTE ON FUNCTION fn_trial_balance(TEXT, DATE, DATE) TO postwarden_bi;
+GRANT EXECUTE ON FUNCTION fn_cash_flow_lines(TEXT, DATE, DATE) TO postwarden_bi;
 
 COMMIT;

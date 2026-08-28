@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Cash Flow{% endblock %}
+{% block content %}
+{% set report_url = "/cash-flow?scenario=" + scenario + "&date_from=" + date_from + "&date_to=" + date_to %}
+{# Same pattern as Balance Sheet's own entry_link: filters the Journal
+   down to this exact account within this exact date range, which is
+   the same account + range this row's own figure was attributed from
+   — see fn_cash_flow_lines. #}
+{% macro entry_link(code, value) %}<a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ date_from }}&date_to={{ date_to }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
+<div class="page-head">
+  <p class="page-sub">{{ date_from }} – {{ date_to }} · scenario <span class="mono">{{ scenario }}</span></p>
+  <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
+
+<form method="get" action="/cash-flow" data-auto-refresh>
+  <div class="bar">
+    <label class="field">Scenario
+      <select name="scenario">
+        {% for s in scenarios %}
+        <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">From
+      <input type="date" name="date_from" value="{{ date_from }}">
+    </label>
+    <label class="field">To
+      <input type="date" name="date_to" value="{{ date_to }}">
+    </label>
+  </div>
+  <p class="bar" style="justify-content: flex-end;">
+    <a class="quiet-link" href="/export/cash-flow.csv?scenario={{ scenario }}&date_from={{ date_from }}&date_to={{ date_to }}">Export CSV</a>
+  </p>
+</form>
+
+{% if not tie_out.ok %}
+{# Amber, not red — the report below is still rendered and still real
+   double-entry data, this is "something needs a human look", the same
+   posture dashboard.html's own pending-approval banner takes. See
+   style.css's .flash-warn. #}
+<div class="flash flash-warn" style="margin-bottom: 1.2rem;">
+  Tie-out check failed: statement total {{ tie_out.statement_total | money }} vs. cash-account leg
+  activity {{ tie_out.cash_leg_net | money }} vs. cash-account balance change {{ tie_out.balance_delta | money }}.
+  These three should always match exactly — an untagged/mistagged account, a mis-attributed split,
+  or a wrongly included/excluded transfer is the likely cause. Logged for the app to catch, too.
+</div>
+{% endif %}
+
+{% if flagged_entries %}
+<div class="flash flash-warn" style="margin-bottom: 1.2rem;">
+  {{ flagged_entries | length }} {{ 'transaction' if flagged_entries | length == 1 else 'transactions' }}
+  in this range post to more than one cash account at once — attributed correctly, but worth a manual
+  glance since the split wasn't a simple one-cash-leg case:
+  <ul style="margin: 0.4rem 0 0 1.1rem; padding: 0;">
+    {% for e in flagged_entries %}
+    <li>
+      <a class="quiet-link" href="/entries?scenario={{ scenario }}&date_from={{ e.entry_date }}&date_to={{ e.entry_date }}">
+        {{ e.entry_date | dateformat }} — {{ e.description }}{% if e.payee %} ({{ e.payee }}){% endif %}
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# Shared by inflow/outflow/ledger-adjustment rows alike: the account
+   cell, its parent path, the existing multi-cash-leg flag, and — new —
+   a netted_from annotation for a row that folded expense legs into its
+   own income leg (SPEC.md decision 20's "reducible income" rule). The
+   folded legs aren't deleted, just demoted from their own peer row to
+   this dim sub-line — still fully named and valued, just not cluttering
+   the top-level total. #}
+{% macro account_cell(r) %}{{ r.account_name }} {% if r.parent_path %}<span class="dim small">{{ r.parent_path }}</span>{% endif %}
+  {% if r.flagged %}<span class="dim small" title="Attributed from a transaction with more than one cash leg">·multi-cash</span>{% endif %}
+  {% if r.netted_from %}<br><span class="dim small">net of {% for n in r.netted_from %}{{ n.account_name }} {{ n.amount | money }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% endmacro %}
+
+<table class="ledger">
+  <thead>
+    <tr><th>Code</th><th>Account</th><th class="num money money-first">Amount</th></tr>
+  </thead>
+  <tbody>
+    <tr class="subtotal">
+      <td></td><td>Beginning cash balance</td>
+      <td class="num money money-first">{{ tie_out.beginning | money }}</td>
+    </tr>
+
+    <tr class="type-head"><td colspan="3">Inflows</td></tr>
+    {% for r in inflows %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ account_cell(r) }}</td>
+      <td class="num money money-first">{{ entry_link(r.account_code, r.amount) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="dim">No inflows in this range.</td></tr>
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total inflows</td>
+      <td class="num money money-first">{{ total_inflows | money }}</td>
+    </tr>
+
+    <tr class="type-head"><td colspan="3">Outflows</td></tr>
+    {% for r in outflows %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ account_cell(r) }}</td>
+      <td class="num money money-first">{{ entry_link(r.account_code, r.amount) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="dim">No outflows in this range.</td></tr>
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total outflows</td>
+      <td class="num money money-first">{{ total_outflows | money }}</td>
+    </tr>
+
+    {% if ledger_adjustments %}
+    {# Equity-contra legs — opening-balance seeding, or any other entry
+       whose non-cash leg posts to net-worth structure rather than real
+       activity. Only rendered when non-empty: most periods have none at
+       all, so an always-present empty section would just be clutter —
+       see SPEC.md decision 20's addendum. Still counted in Net change in
+       cash below (the cash genuinely moved), just never blended into
+       Inflows/Outflows as if it were economic activity. #}
+    <tr class="type-head"><td colspan="3">Ledger adjustments <span class="dim small">(not real cash flow — net-worth setup/correction)</span></td></tr>
+    {% for r in ledger_adjustments %}
+    <tr>
+      <td class="mono dim">{{ r.account_code }}</td>
+      <td>{{ account_cell(r) }}</td>
+      <td class="num money money-first">{{ entry_link(r.account_code, r.amount) }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="subtotal">
+      <td></td><td>Total ledger adjustments</td>
+      <td class="num money money-first">{{ total_adjustments | money }}</td>
+    </tr>
+    {% endif %}
+
+    <tr class="grand {{ '' if tie_out.ok else 'out-of-balance' }}">
+      <td></td>
+      <td>Net change in cash {% if not tie_out.ok %}<span class="small dim">(tie-out failed — see above)</span>{% endif %}</td>
+      <td class="num money money-first">{{ net_change | money }}</td>
+    </tr>
+    <tr class="subtotal">
+      <td></td><td>Ending cash balance</td>
+      <td class="num money money-first">{{ tie_out.ending | money }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endblock %}

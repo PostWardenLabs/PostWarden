@@ -54,6 +54,14 @@ INSERT INTO accounts (code, name, account_type, parent_id) VALUES
     ('1320', 'Retirement (401k/IRA/Pension)','asset',(SELECT id FROM accounts WHERE code = '1300')),
     ('1410', 'Vehicles',                   'asset', (SELECT id FROM accounts WHERE code = '1400'));
 
+-- Cash Flow Statement boundary (accounts.is_cashflow — see SPEC.md
+-- decision 20): the three liquid-cash leaves, nothing else. Deliberately
+-- not 1310 Brokerage/1320 Retirement (investment assets, not spendable
+-- cash) or any liability/loan account — a self-hoster with a brokerage
+-- sweep or money-market account they *do* want counted as cash flips
+-- this per-account from /accounts, same as any other chart edit.
+UPDATE accounts SET is_cashflow = TRUE WHERE code IN ('1110', '1120', '1130');
+
 -- Liabilities
 INSERT INTO accounts (code, name, account_type, is_postable) VALUES
     ('2000', 'Liabilities', 'liability', FALSE);

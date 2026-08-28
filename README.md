@@ -37,6 +37,23 @@ instance.
   separate Refresh click. Income Statement's **Split** turns a single
   date range into a month/quarter/year-by-period matrix — see this year
   broken into 12 columns instead of running the report 12 times.
+- **A Cash Flow Statement** — mark which accounts count as cash
+  (checking, savings, physical cash — one checkbox on `/accounts`) and
+  every inflow/outflow for a date range groups by where it actually
+  went: rent, groceries, a paycheck, a credit card payment. Internal
+  transfers between cash accounts net out automatically; a split
+  purchase (one card swipe, two categories) shows each category and
+  always sums back exactly. A paycheck nets its own tax withholding into
+  one line (still fully itemized in a "net of" annotation, one click
+  from the real entry) while a 401(k) contribution on that same paycheck
+  stays its own visible line — real allocations of cash stay visible,
+  automatic pre-cash deductions don't clutter the total. Opening-balance
+  and other net-worth-only entries show in their own Ledger adjustments
+  section instead of blending in as if they were income. A three-way
+  tie-out — the statement's own total, the cash accounts' own ledger
+  activity, and their plain balance-sheet roll-forward — runs on every
+  load and flags a mismatch instead of silently showing a number that
+  doesn't reconcile.
 - **A Budget grid** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No
