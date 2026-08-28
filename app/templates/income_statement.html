@@ -71,7 +71,7 @@
 </form>
 
 {% if not periods %}
-<table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
+<table class="ledger report-table" data-collapse-key="postwarden-income-statement-collapsed">
   <thead>
     <tr>
       <th>Code</th>
@@ -209,15 +209,18 @@
 
    Wrapped in its own scrolling container, unlike the unsplit table
    above — a year split monthly with a compare scenario is 12 * 4 = 48
-   data columns (plus Total/Average, 20 more), easily wider than
-   `main`'s own 1080px max-width. Scoped to just this table (see
-   .table-scroll in style.css) rather than every table.ledger in the
-   app: every other report stays a handful of fixed columns that never
-   approaches this regardless of window size, so wrapping them too
-   would be unrelated defensive styling this feature doesn't need. #}
+   data columns (plus Total/Average, 20 more), easily wider than even
+   main can stretch to (main relaxes its own default width cap for any
+   page holding a `.report-table` — see style.css's "the ledger table"
+   section — but that's "as wide as the viewport allows," not
+   unlimited). Scoped to just this table (see .table-scroll in
+   style.css) rather than every table.ledger in the app: every other
+   report stays a handful of fixed columns that never approaches this
+   regardless of window size, so wrapping them too would be unrelated
+   defensive styling this feature doesn't need. #}
 {% set multi_period = periods | length > 1 %}
 <div class="table-scroll">
-<table class="ledger" data-collapse-key="postwarden-income-statement-collapsed">
+<table class="ledger report-table" data-collapse-key="postwarden-income-statement-collapsed">
   <thead>
     <tr>
       <th rowspan="2">Code</th>

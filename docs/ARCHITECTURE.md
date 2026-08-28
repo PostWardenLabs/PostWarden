@@ -348,14 +348,15 @@ redesign of its own filter model first.
 
   Wrapped in its own `.table-scroll` (`overflow-x: auto`) — a year split
   monthly with a compare scenario is 12 × 4 = 48 data columns (20 more
-  with Totals/Average), easily wider than `main`'s max-width (driven by
-  `--content-max`, fluid up to a 1680px cap — see "The page title lives
-  in the topbar" below), and
-  without a scoped scroll container the whole page would scroll sideways
-  along with it, dragging the sidebar out of view. Every other
-  `table.ledger` stays a handful of fixed columns that never approaches
-  this regardless of window size, so only this one table gets the
-  wrapper.
+  with Totals/Average), easily wider than even `main` can stretch to on
+  the widest realistic monitor (`main` relaxes its own default width cap
+  for any page holding a `.report-table` — see "Report tables size to
+  their own content" below — but that's "as wide as the viewport
+  allows," not unlimited), and without a scoped scroll container the
+  whole page would scroll sideways along with it, dragging the sidebar
+  out of view. Every other `table.ledger` stays a handful of fixed
+  columns that never approaches this regardless of window size, so only
+  this one table gets the wrapper.
 - **CSV export** (`/export/income-statement.csv?split=...`) gets its own
   wide-format branch for the same reason a two-row HTML `<thead>`
   wouldn't survive a CSV round trip: one row per account, one column per
@@ -430,49 +431,84 @@ needs a top-right "?" help icon keeps a `.page-head` div for it
 a page with neither just starts straight into its content.
 
 `.topbar` itself is pure chrome (full-bleed background/border, no
-horizontal padding) — the title lines up with the page content beneath
-it because `.topbar-inner`, wrapping `.topbar-left`/`.topbar-right`,
-uses the exact same `max-width: var(--content-max); margin: 0 auto;
-padding: 0 1.25rem` box model as `main` itself, including the same
-`html.sidebar-pinned` override (`margin-left: 14rem`, `main`'s own
-`margin-right` stays `auto` so it sits flush after the sidebar rather
-than re-centering in what's left — `.topbar-inner` copies that exact
-behavior too). An earlier version tried to *approximate* main's
-centering with a `calc()` on `.topbar-left` instead of literally sharing
-main's own properties, and got it wrong two ways at once worth
-remembering next time something needs to track another element's layout
-this closely: `100vw` includes the scrollbar where a real containing-
-block percentage (which is what `margin: auto` and `%`-based `padding`
-resolve against) doesn't, and — the one that actually mattered in
-practice — the formula had no idea `html.sidebar-pinned` existed, so
-once a viewer pinned the sidebar open, main stopped centering
-(flush-after-sidebar, not re-centered) while the calc() kept computing
-as if it hadn't, drifting further off the wider the window got. Sharing
-the actual box model instead of reverse-engineering an equivalent
-sidesteps both failure modes at once — there's no formula to keep in
-sync with main's if it ever changes.
+horizontal padding).
 
-`--content-max` (`min(90vw, 1680px)`, one custom property shared by
-`.topbar-inner`, `main`, and `.footer`) replaced a flat `max-width:
-1080px` on all three so the app actually uses the width available on a
-wide or ultrawide monitor instead of stranding content in a fixed
-column — the fixed value made `.topbar-right` (username/log out) read
-as stuck in the middle of the screen well before a genuinely wide
-report table (Income Statement's Split view) had any chance to use the
-same space. Fluid up to 90% of the viewport so normal/wide monitors get
-used fully; capped at 1680px so prose/forms don't stretch into
-unreadably long lines on a very wide (5120px+) display — a report needing
-more than that still falls back to `.table-scroll`'s own horizontal
-scroll, same as it always could.
+`.topbar-inner` (wrapping `.topbar-left`/`.topbar-right`) used to mirror
+`main`'s own `max-width`/`margin: auto` box model exactly, on the theory
+that the title should line up with the page content beneath it — see
+this file's own git history for that version and why it was correct at
+the time. It stopped being correct once `main`'s own width became
+variable per page (see "Report tables size to their own content"
+below): matching `main` would mean `.topbar-right` (username/log out)
+sits a different distance from the true right edge depending on what
+that specific page's content needs, which reads as "stuck in the
+middle" on any page whose `main` doesn't need the full width — the
+original complaint this whole area of the CSS exists to fix, just
+recurring under a new trigger. So `.topbar-inner` is independent of
+`main` entirely now: no `max-width`, no `margin: auto`, just
+`padding: 0 1.25rem` — a plain block box, full-width by default (an
+auto-width block fills its containing block), so `.topbar-right` sits
+near the real right edge on every page, on every monitor, regardless of
+what `main` is doing. `html.sidebar-pinned .topbar-inner` still gets
+`margin-left: 14rem` same as `main`/`.footer` — with no explicit
+`width` set, a block box's `width: auto` absorbs a margin rather than
+overflowing past its container, so this still works with no `calc()`
+needed. `.topbar-left`'s own `padding-left` (2.55rem, clearing the
+fixed hamburger button) is now needed *unconditionally* when unpinned
+(no media query — there's no viewport width any more at which
+`.topbar-inner` naturally clears the button on its own, since it's
+always flush left) and zeroed only when pinned, where the sidebar's own
+opaque background covers that spot regardless.
 
-`.topbar-left`'s own `padding-left` (2.55rem by default, zeroed out via
-media query once `.topbar-inner`'s own margin — centering or pinned —
-already clears it) exists purely to keep the title clear of the fixed
-hamburger button (`.sidebar-toggle`); see the CSS's own comment for the
-exact breakpoints, one for each of unpinned/pinned. The unpinned
-breakpoint (`min-width: 1024px`) is derived from `--content-max`'s own
-formula, not an arbitrary number — see that comment if `--content-max`
-ever changes, since the breakpoint would need recomputing to match.
+An earlier version of the "match main's box model instead of computing
+an equivalent" idea is worth remembering even though `.topbar-inner` has
+since moved past needing it: a version before *that* tried to
+*approximate* `main`'s centering with a `calc()` on `.topbar-left`
+instead of sharing `main`'s own properties, and got it wrong two ways at
+once — `100vw` includes the scrollbar where a real containing-block
+percentage doesn't, and the formula had no idea `html.sidebar-pinned`
+existed, so it drifted further off the wider the window got once a
+viewer pinned the sidebar. The lesson (share the real thing, don't
+reverse-engineer an equivalent) is why `.topbar-inner` today shares
+`main`/`.footer`'s pinned-margin behavior exactly rather than
+approximating *that* too, even though it no longer shares their width.
+
+### Report tables size to their own content
+
+`main`'s default `max-width` is `var(--content-max)`
+(`min(90vw, 1680px)`, shared with `.footer`) — fluid so a wide or
+ultrawide monitor gets used, capped so prose and forms don't stretch
+into unreadably long lines on a very wide (5120px+) display. That's the
+right default for every page *except* a report whose column count the
+viewer controls (Balance Sheet, Income Statement — both its no-split
+and Split views, Cash Flow, Trial Balance, Variance, Budget Grid): a
+fixed cap means a report with only a handful of columns gets stretched
+across it regardless (numbers spaced out, harder to scan across — the
+opposite of legible), while a report the viewer has genuinely widened
+(Income Statement's Split view, a full year monthly) hits the cap and
+falls back to `.table-scroll`'s horizontal scroll well before the
+screen itself ran out of room.
+
+Two rules, marked by one class (`.report-table`, added to exactly those
+report tables' `<table class="ledger ...">` tags — not
+`table.entry-grid`, which deliberately keeps `width: 100%` since an
+editable grid's input fields need the room a read-only report doesn't):
+
+1. `table.ledger.report-table { width: auto; }` — overrides
+   `table.ledger`'s own `width: 100%`, so the table sizes to its actual
+   content (`table-layout: auto`, the browser default, already does
+   this once nothing forces `width: 100%`) instead of stretching to
+   fill `main`.
+2. `main:has(table.report-table) { max-width: none; }` — relaxes
+   `main`'s cap on exactly the pages that might need it.
+
+These don't fight each other: rule 2 gives a report page's `main` more
+width to *offer*, but rule 1 means a table only actually uses it if its
+own content needs it — a 3-column Cash Flow report on a page with
+`max-width: none` still renders at its own natural (narrow) width, it
+just isn't being forced wider by a container cap that no longer applies
+to it. There's no per-page "wide" flag or JS column count involved;
+`:has()` reads the fact directly off the table that's already there.
 
 ### Toggle switch vs checkbox
 

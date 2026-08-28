@@ -75,7 +75,7 @@
   {% if r.flagged %}<span class="dim small" title="Attributed from a transaction with more than one cash leg">·multi-cash</span>{% endif %}
   {% if r.netted_from %}<br><span class="dim small">net of {% for n in r.netted_from %}{{ n.account_name }} {{ n.amount | money }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}{% endmacro %}
 
-<table class="ledger">
+<table class="ledger report-table">
   <thead>
     <tr><th>Code</th><th>Account</th><th class="num money money-first">Amount</th></tr>
   </thead>
