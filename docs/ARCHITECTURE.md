@@ -510,6 +510,34 @@ just isn't being forced wider by a container cap that no longer applies
 to it. There's no per-page "wide" flag or JS column count involved;
 `:has()` reads the fact directly off the table that's already there.
 
+A report table sizing itself independently of `main` created a second
+problem: each report's Export CSV/XLSX links used to live in a flex row
+that spanned the *filter form's* width (effectively `main`'s width), so
+once `main` could be wider than a narrow report's own table, the export
+links drifted out to the right of the table they belong to — the same
+"reads as disconnected from what it's labeling" complaint the topbar
+fix above addresses for `.topbar-right`, just recurring one level down.
+`.report-frame` (a plain `<div>` wrapping just the Export links —
+`.report-export`, a `<p class="bar report-export">` — together with the
+table or `.table-scroll` beneath them, added around each of the six
+`.report-table` templates) fixes it the same way `main`/`.footer`
+already size themselves: `width: fit-content; max-width: 100%`. A block
+child (`.report-export`) fills its parent's width by default, so once
+`.report-frame` itself shrinks to the table's actual width, right-
+aligning the export links within `.report-export` (`justify-content:
+flex-end`, inherited from `.bar`) lands them exactly above the table's
+own upper-right corner — not `main`'s. For Income Statement's Split
+view, `.report-frame`'s `fit-content` sees straight through
+`.table-scroll`'s `overflow-x: auto` to the *table's* true (unclamped)
+max-content size, which is still whatever the split has grown to; when
+that exceeds the available width, `fit-content` clamps back down to it
+exactly like it always did, so `.table-scroll` still fills the
+available width and still scrolls — this case isn't a special branch,
+it falls out of the same one CSS rule. Every filter-only control (the
+scenario/date fields, "show zero balances" and similar checkboxes)
+stays inside `<form>`, outside `.report-frame` entirely — only the
+export links needed this, not the filters.
+
 ### Toggle switch vs checkbox
 
 Settings has both `input[type="checkbox"]` (a hand-drawn square check,

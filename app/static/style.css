@@ -897,6 +897,37 @@ table.ledger {
    read-only report's plain text. */
 table.ledger.report-table { width: auto; }
 main:has(table.report-table) { max-width: none; }
+
+/* .report-frame wraps a report's own Export CSV/XLSX links (.report-export)
+   together with its table (or its .table-scroll, for Income Statement's
+   Split view) so the links right-align to the table's own actual
+   rendered width, not main's — main:has(.report-table) above can make
+   main considerably wider than a report that only has a handful of
+   columns, and without this the exports would drift out past the
+   table's own right edge into that extra space, same disconnect the
+   log-out button had before it moved off main entirely.
+
+   width: fit-content is the same "shrink to content, but never past the
+   available space" sizing table.ledger.report-table already gets for
+   free from table auto-layout — applied one level up, on a plain <div>,
+   so it works the same way regardless of what's inside. Two cases:
+   - A report table narrower than main (the common case, now that main's
+     cap is relaxed): .report-frame shrinks to the table's own width,
+     and .report-export — an ordinary block child, so it fills
+     .report-frame's now-narrower width — right-aligns within *that*,
+     landing exactly above the table's own upper-right corner.
+   - Income Statement's Split view, wide enough to need .table-scroll's
+     horizontal scroll: the table's intrinsic content width (its
+     max-content size, which is what .report-frame's own fit-content
+     calculation sees, overflow clipping or not) still exceeds main's
+     available width, so fit-content clamps .report-frame to that
+     available width same as it always was — .table-scroll still fills
+     it and still scrolls exactly as before. The two rules don't need to
+     know about each other for this to work; fit-content's own clamp is
+     what makes it fall back correctly. */
+.report-frame { width: fit-content; max-width: 100%; }
+.report-export { justify-content: flex-end; margin-bottom: 0.6rem; }
+
 table.ledger th {
   text-align: left; font-weight: 600; font-size: 0.78rem;
   letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft);

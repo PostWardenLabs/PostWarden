@@ -22,18 +22,20 @@
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
   </div>
-  <p class="bar" style="justify-content: space-between; align-items: center;">
-    <span class="bar" style="align-items: center; margin-bottom: 0;">
-      <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-      <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
-    </span>
-    <span class="bar" style="align-items: center; margin-bottom: 0;">
-      <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
-      <a class="quiet-link" href="/export/trial-balance.xlsx?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export XLSX</a>
-    </span>
+  <p class="bar" style="align-items: center;">
+    <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
+    <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
   </p>
 </form>
 
+{# .report-frame wraps the Export links together with the table so the
+   links right-align to the table's own actual width — see style.css's
+   "report frame" section — rather than to main, which can be wider. #}
+<div class="report-frame">
+  <p class="bar report-export">
+    <a class="quiet-link" href="/export/trial-balance.csv?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export CSV</a>
+    <a class="quiet-link" href="/export/trial-balance.xlsx?scenario={{ scenario }}&as_of={{ as_of }}&zeros={{ zeros }}&raw={{ raw }}">Export XLSX</a>
+  </p>
 <table class="ledger report-table" data-collapse-key="postwarden-trial-balance-collapsed">
   <thead>
     <tr>
@@ -76,6 +78,7 @@
     </tr>
   </tbody>
 </table>
+</div>
 {% if not grouped %}<p class="dim">No activity in this scenario yet. Post your first entry from <a href="/entries?new=1">+ New entry</a>.</p>{% endif %}
 {% endblock %}
 

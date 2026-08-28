@@ -22,18 +22,20 @@
     <input type="date" name="as_of" value="{{ as_of }}">
   </label>
   </div>
-  <p class="bar" style="justify-content: space-between; align-items: center;">
-    <span class="bar" style="align-items: center; margin-bottom: 0;">
-      <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
-      <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
-    </span>
-    <span class="bar" style="align-items: center; margin-bottom: 0;">
-      <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export CSV</a>
-      <a class="quiet-link" href="/export/balance-sheet.xlsx?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export XLSX</a>
-    </span>
+  <p class="bar" style="align-items: center;">
+    <label class="checkline"><input type="checkbox" name="raw" value="1" {{ 'checked' if raw }}> show true balances (skip simulated close)</label>
+    <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
   </p>
 </form>
 
+{# .report-frame wraps the Export links together with the table so the
+   links right-align to the table's own actual width — see style.css's
+   "report frame" section — rather than to main, which can be wider. #}
+<div class="report-frame">
+  <p class="bar report-export">
+    <a class="quiet-link" href="/export/balance-sheet.csv?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export CSV</a>
+    <a class="quiet-link" href="/export/balance-sheet.xlsx?scenario={{ scenario }}&as_of={{ as_of }}&raw={{ raw }}&zeros={{ zeros }}">Export XLSX</a>
+  </p>
 <table class="ledger report-table" data-collapse-key="postwarden-balance-sheet-collapsed">
   <thead>
     <tr>
@@ -96,6 +98,7 @@
     </tr>
   </tbody>
 </table>
+</div>
 {% endblock %}
 
 {% block scripts %}<script src="{{ asset('report-tree.js') }}"></script>{% endblock %}
