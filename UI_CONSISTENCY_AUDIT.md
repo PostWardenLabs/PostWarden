@@ -65,7 +65,7 @@ archetype**, not one for the whole app — that's the actual fix for
 | Payee | `<select name="payee">` | Same |
 | Amount | Operator `<select>` + one or two amount inputs | Same |
 | Extra toggle | "hide reversed/reversals" checkbox | *(none — a pending entry can't be a reversal)* |
-| Clear filters | `<a class="button-link">Clear filters</a>` | Same |
+| Clear filters | `<a class="button-link">Clear filters</a>`, inline in the field row | Same markup, but originally sat in a *second* row (grouped with Approve/Reject) — fixed to match Journal's placement, see below |
 | Select mode | "Select" button → reveals checkboxes + "select all" | Same |
 | Bulk actions | Reverse (Alt+R), Edit tags | Approve (Alt+A), Reject (Alt+R) |
 | Export | CSV, XLSX | *(none — nothing here is posted yet)* |
@@ -76,6 +76,21 @@ same shared filter-building code (`_shared_journal_filters`) and mostly
 the same template shape. The differences that remain (hide-reversed,
 bulk-action verbs, export) are real, deliberate differences in what the
 two pages *are*, not accidental drift. Nothing here needs unifying.
+
+**Correction (caught after this audit shipped):** the table above said
+Clear filters was "Same" between the two pages because the *markup* was
+identical — it missed that *where* it lived in the DOM differed. On the
+Journal it's a direct child of the field row, inline with the combo
+boxes. On Staging it lived in the separate Approve/Reject `<p class="bar">`
+below the filter form, so it rendered one line down — and had a second,
+independent copy for the "no rows match" empty state, since the
+Approve/Reject bar (and its Clear filters) don't render at all when
+`pending` is empty. **Shipped**: moved into Staging's filter `<form
+class="bar">` itself, same position as the Journal, which also collapses
+the two conditional copies into one. Lesson for future passes: a
+same-markup, same-wording control can still be a layout inconsistency —
+check *position within the row*, not just the rendered HTML for the
+control itself.
 
 One real sibling, though: **Find Duplicates (`staging_duplicates.html`)**
 is reachable only from Staging and has no "Select" toggle at all — its

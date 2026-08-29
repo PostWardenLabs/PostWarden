@@ -82,6 +82,18 @@
              value="{{ amount_value2 }}" placeholder="Max" style="width: 7rem;" {{ '' if amount_op == 'between' else 'hidden' }}>
     </span>
   </label>
+  {# Same placement as the Journal's own Clear filters — a direct child
+     of this field row, right after Amount, so it lines up inline with
+     the combo boxes instead of a line below them. Used to live down in
+     the Approve/Reject bar; moved up here so it (a) matches the
+     Journal's own archetype shape and (b) always renders regardless of
+     whether any entries are pending — one Clear filters control instead
+     of two conditional ones. #}
+  {% if has_filters %}
+  <a class="button-link" href="/staging">Clear filters</a>
+  {% else %}
+  <a class="button-link disabled" aria-disabled="true">Clear filters</a>
+  {% endif %}
 </form>
 
 {% if pending %}
@@ -99,20 +111,6 @@
     <button type="submit" id="approve-btn" disabled>Approve (Alt+A)</button>
     <button type="submit" class="quiet" id="reject-btn" disabled
             formaction="/staging/reject" formmethod="post">Reject (Alt+R)</button>
-    {# Lives here, not in the filter form above, so it sits next to the
-       actions it's grouped with at a glance — Approve/Reject and Clear
-       filters are all "do something about what's currently pending",
-       one row instead of split across two. Still a plain navigation <a>,
-       not part of this POST form, same as it always was — it only reads
-       as adjacent now, nothing about what it does changed. The empty-
-       results case (has_filters but no pending rows at all) keeps its
-       own Clear filters link in the {% elif has_filters %} branch below,
-       since this form (and this button) don't render at all then. #}
-    {% if has_filters %}
-    <a class="button-link" href="/staging">Clear filters</a>
-    {% else %}
-    <a class="button-link disabled" aria-disabled="true">Clear filters</a>
-    {% endif %}
     {#
       Plain navigation, not part of this form — scans *every* pending
       entry regardless of the current filters/selection (BACKLOG.md's
@@ -289,8 +287,7 @@
   </form>
 </div>
 {% elif has_filters %}
-<p class="dim">No staged entries match these filters. <a class="quiet-link" href="/staging">Clear filters</a>
-  to see everything pending.</p>
+<p class="dim">No staged entries match these filters — use Clear filters above to see everything pending.</p>
 {% else %}
 <p class="dim">No staged entries right now. Once a scheduled entry comes due or a CSV import lands, they'll show
   up here waiting for you to review and approve.</p>
