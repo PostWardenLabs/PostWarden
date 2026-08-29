@@ -1904,11 +1904,12 @@ def test_entries_page_never_shows_staging_entries(conn):
         assert r.status_code == 200
         assert "Staged, should never show" not in r.text
         assert "STAGING" not in r.text
-        # Scenario is the one filter dropdown with no "All" option (Account
-        # and Payee keep theirs) — isolate its <select> before checking.
+        # Scenario's own "All" option (added in b358bfa) means "every
+        # non-staging scenario, mixed together" — Staging must still never
+        # be one of the specific codes offered alongside it.
         m = re.search(r'<select name="scenario">.*?</select>', r.text, re.DOTALL)
         assert m, "scenario select not found"
-        assert ">All</option>" not in m.group(0)
+        assert '>STAGING</option>' not in m.group(0)
 
         # Even a hand-edited query string asking for the Staging scenario
         # by code doesn't leak it in.
