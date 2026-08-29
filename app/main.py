@@ -2939,6 +2939,17 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
         compare_rows = {r["account_id"]: r for r in q(
             "SELECT * FROM fn_rollup_balance(%s, %s, %s)",
             (compare, level_depth, as_of_date))} if compare in codes else {}
+        # fn_rollup_balance's own target account (whatever sits at the
+        # chosen depth) is very often a summary account, not a postable
+        # one — rolling up to "Top Level Accounts" pools everything under
+        # e.g. "1000 Assets" itself, and nothing is ever posted directly
+        # to a branch. Needed so the template's entry_link (BACKLOG.md's
+        # "make amounts clickable") doesn't link a pooled figure to an
+        # exact-account-code Journal filter that can only ever come back
+        # empty — same "not r.has_children" rule the native-depth branch
+        # above already gets from a real tree, reused here via the one
+        # signal rollup mode actually has for it.
+        postable_by_id = {r["id"]: r["is_postable"] for r in q("SELECT id, is_postable FROM accounts")}
 
         merged = []
         for aid in set(baseline_rows) | set(compare_rows):
@@ -2953,7 +2964,7 @@ def _compute_variance(baseline: str, compare: str, level_id: str, as_of: str, ze
                 "baseline_net": b_net, "compare_net": c_net,
                 "variance": _variance_amount(b_net, c_net, pct_of_base),
                 "pct_variance": _pct_variance(b_net, c_net, pct_of_base),
-                "has_children": False,
+                "has_children": not postable_by_id.get(aid, True),
             })
 
         grouped = []

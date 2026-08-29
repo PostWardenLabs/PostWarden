@@ -4,6 +4,23 @@
 {# Same macro as income_statement.html's own — "—" for nothing to
    compare against (a zero baseline) rather than a misleading 0%. #}
 {% macro var(pct) %}{% if pct is none %}<span class="dim">—</span>{% else %}<span class="{{ 'neg' if pct < 0 }}">{{ pct }}%</span>{% endif %}{% endmacro %}
+{% set report_url = "/variance?baseline=" + baseline + "&compare=" + compare + "&level_id=" + (level_id | string) + "&as_of=" + as_of + "&zeros=" + (zeros | string) + "&pct_of_base=" + (pct_of_base | string) %}
+{# Same "leaf amount links through to what produced it" convention every
+   other report's own figures already follow (decision 11, SPEC.md) —
+   BACKLOG.md's own ask, "same behavior as in income statement." Each
+   side of the comparison links into *its own* scenario, not the other
+   one — Baseline's own figure and Compare's own figure are each a real
+   balance in a different scenario, never the same set of postings.
+   date_to only, no date_from: _compute_variance() never applies the
+   simulated-close split _account_balances() supports elsewhere
+   (fn_account_balances is always called with p_from left NULL here),
+   so every account's baseline_net/compare_net is already a full-history
+   balance regardless of type — same shape Balance Sheet's own
+   entry_link uses, not Trial Balance's flow/non-flow split. Variance
+   itself isn't linked (same as every other report): it's a derived
+   difference between two real balances, not a balance in its own
+   right. #}
+{% macro entry_link(scen_code, code, value) %}<a class="amount-link" href="/entries?scenario={{ scen_code }}&date_to={{ as_of }}&account={{ code }}&back={{ report_url | urlencode }}">{{ value | money }}</a>{% endmacro %}
 <div class="page-head">
   <a href="/help#variance" class="help-icon" aria-label="How this works" title="How this works">?</a>
 </div>
@@ -88,10 +105,10 @@
       <tr {% if r.id is defined %}data-id="{{ r.id }}" data-parent="{{ r.parent_id or '' }}" data-has-children="{{ 1 if r.has_children else 0 }}"{% endif %}>
         <td class="mono dim">{{ r.account_code }}</td>
         <td class="acct-name{% if r.depth is defined %} depth-{{ [r.depth, 6] | min }}{% endif %}">{% if r.id is defined %}<span class="tree-toggle"></span>{% endif %}{{ r.account_name }} {% if r.path %}<span class="dim small">{{ r.path }}</span>{% endif %}</td>
-        <td class="num money money-first">{{ r.baseline_net | money }}</td>
+        <td class="num money money-first">{{ entry_link(baseline, r.account_code, r.baseline_net) if not r.has_children else (r.baseline_net | money) }}</td>
         <td class="num money {{ 'neg' if r.variance < 0 }}">{{ r.variance | money }}</td>
         <td class="num">{{ var(r.pct_variance) }}</td>
-        <td class="num money">{{ r.compare_net | money }}</td>
+        <td class="num money">{{ entry_link(compare, r.account_code, r.compare_net) if not r.has_children else (r.compare_net | money) }}</td>
       </tr>
       {% endfor %}
     <tr class="subtotal">
