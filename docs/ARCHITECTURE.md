@@ -600,6 +600,41 @@ Two things about this that aren't obvious from the rule itself:
   a report's occasional plain label row that skips that class (Cash
   Flow's "Beginning cash balance") still gets pinned like every other
   row.
+- **`tr.type-head`'s own section-label row (`colspan`, "Flexible &
+  Lifestyle Expenses") needed a fourth rule, separate from Code/Account.**
+  It was deliberately left out of the `td:first-child` rule above at
+  first — that rule's hard-pinned 4.5rem width would have crushed a
+  `colspan` cell that's supposed to span the whole row — but that also
+  meant the one row a reader most needs pinned while scrolling right
+  ("which section am I even looking at") had no sticky treatment at
+  all. Fixed with `table.ledger.report-table td[colspan]:first-child {
+  position: sticky; left: 0; }` and nothing else — a `colspan` cell's
+  width already comes correctly from the columns it spans; sticky only
+  ever needed to stop its *left edge* sliding out from under the
+  viewport, not an opinion about its width.
+- **Income Statement Split's own `.table-scroll` wrapper (the one
+  report table wide enough to need it) doesn't just add horizontal
+  scroll — the header's vertical stickiness structurally depends on
+  what `.table-scroll` does now.** `position: sticky` sticks relative
+  to the nearest actual scroll container, and per the CSS overflow
+  spec, `overflow-x: auto` on its own silently promotes a `visible`
+  overflow-y to `auto` too — you can't keep one axis genuinely
+  `visible` once the other is scrollable. That promotion made
+  `.table-scroll` a real (if invisible, since it had no bounded height)
+  vertical scroll container, which intercepted the header's sticky
+  positioning before it ever reached the actual page — confirmed via
+  `getBoundingClientRect()` scrolling the header clean off the top of
+  the viewport instead of sticking to it, on this one page only. Since
+  neither axis can honestly stay non-scrolling once the other is,
+  `.table-scroll` now embraces both on purpose: `overflow-x: auto;
+  overflow-y: auto; max-height: 75vh;` — a bounded, independently-
+  scrolling pane (same shape as Google Sheets or GitHub's own diff
+  tables use for a grid too wide and too tall to carry on the page
+  itself), inside which the header correctly sticks to *this pane's*
+  own top edge. Every other `.report-table` has no such wrapper and
+  needs none of this — the header sticks straight to the page, exactly
+  as the section above describes; this pane behavior is specific to
+  whichever report actually needs `.table-scroll`.
 
 No JS at all — every report table here already reads its account name
 straight out of the DOM, and no report needed a *third* sticky column,

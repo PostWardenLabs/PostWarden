@@ -880,10 +880,43 @@ h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600;
    period, up to 48 data columns for a year split monthly with a compare
    scenario. Wide enough that even main's relaxed cap below can run out,
    so that one table scrolls horizontally inside its own box instead of
-   the whole page dragging the sidebar out of view sideways with it.
+   the whole page dragging the sidebar out of view sideways with it — the
+   sidebar itself is `position: fixed` so it's actually immune to that by
+   now, but `.topbar` (deliberately full-bleed/independent of main's own
+   width, see its own comment) isn't, and does visibly drag off to the
+   side without this: confirmed directly, scrolling the bare page left
+   the topbar's own left edge at -279px instead of 0.
    .report-table (below) is what actually needs the room — .table-scroll
-   is the fallback for whatever room even that didn't provide. */
-.table-scroll { overflow-x: auto; }
+   is the fallback for whatever room even that didn't provide.
+
+   `max-height` + `overflow-y: auto` (not just `overflow-x: auto`) is
+   what makes the sticky header row (further down) actually work here,
+   the one report page that needs both a sticky header *and* horizontal
+   scroll at once. The two don't naturally coexist: `position: sticky`
+   sticks relative to the nearest ancestor that's an actual scroll
+   container, and per the CSS overflow spec you cannot keep one axis
+   "visible" once the other is scrollable — `overflow-x: auto` alone
+   silently promotes a `visible` overflow-y to `auto` too, making this
+   box a real (if invisible) vertical scroll container that intercepts
+   the header's own sticky positioning before it ever reaches the page.
+   Confirmed two ways: `overflow-y: clip` (a value chosen specifically
+   *not* to trigger that promotion) still left the header stuck to this
+   box instead of the page — measured via `getBoundingClientRect()`
+   scrolling clean off the top — and forcing `overflow: visible` here
+   entirely (breaking horizontal scroll, just to isolate the cause) made
+   the exact same header stick correctly. Once one axis has to be a real
+   scroll container regardless of which value is picked, the working fix
+   is to make *both* axes deliberately real and give this box its own
+   bounded height — the header then sticks correctly to this pane's own
+   top edge on the way down, exactly the same "spreadsheet-style boxed
+   grid" shape used anywhere a table is both too wide and too tall for
+   the page to carry on its own (Google Sheets, GitHub's own diff
+   tables, ...), not a special case invented for this report. 75vh
+   leaves room for the page's own header/filter bar above it on a normal
+   screen without the box feeling cramped; nothing here is sized to a
+   specific report's row count, so it doesn't need revisiting if Split's
+   own column/row count changes later. */
+.table-scroll { overflow-x: auto; overflow-y: auto; max-height: 75vh; }
 table.ledger {
   width: 100%; border-collapse: collapse; font-size: 0.9rem;
   background: var(--paper);
@@ -1011,6 +1044,23 @@ table.ledger.report-table td:first-child:not([colspan]) {
 table.ledger.report-table thead tr:first-child th:nth-child(2),
 table.ledger.report-table td:nth-child(2) {
   position: sticky; left: 4.5rem; z-index: 1; background: var(--paper);
+}
+/* A `colspan` row (tr.type-head's own section label — "Assets",
+   "Flexible & Lifestyle Expenses") was excluded from the rule above on
+   purpose (a `colspan` cell's width already comes from the columns it
+   spans; forcing it to 4.5rem the same way Code gets pinned would break
+   that), but that left the one row a reader actually needs pinned most
+   — "which section am I even looking at" is exactly the question that
+   matters once scrolled — with no sticky treatment at all. Same `left:
+   0`, no width override this time: the cell's own colspan-derived width
+   is already correct, sticky just has to stop its *left edge* sliding
+   out from under the viewport, which needs no width opinion of its own.
+   tr.type-head's own background is `transparent` (style.css, further
+   down) — fine for a normal cell (the table's own paper background
+   shows through), wrong for a sticky one, which needs to actively mask
+   whatever scrolls underneath it rather than let it show through. */
+table.ledger.report-table td[colspan]:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--paper);
 }
 
 table.ledger th {
