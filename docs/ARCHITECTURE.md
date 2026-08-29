@@ -561,6 +561,50 @@ scenario/date fields, "show zero balances" and similar checkboxes)
 stays inside `<form>`, outside `.report-frame` entirely — only the
 export links needed this, not the filters.
 
+### Sticky header row and leading Code/Account columns
+
+The same six `.report-table` templates (BACKLOG.md: "make header rows
+and columns sticky") keep their header row and their first two columns
+in view while scrolling, via CSS alone — `table.ledger.report-table
+thead { position: sticky; top: 0; }` for the row, and `th:first-child`/
+`:nth-child(2)`/`td:first-child`/`:nth-child(2)` pinned at `left: 0`/
+`left: 4.5rem` for Code/Account.
+
+Two things about this that aren't obvious from the rule itself:
+
+- **The header sticks as one `<thead>`, not per-cell.** Modern browsers
+  support `position: sticky` directly on a table-header-group, and it
+  carries every row inside along together with no per-row offset math —
+  which matters specifically because Income Statement Split's own
+  header is *two* rows (periods, then a `rowspan="2"` Code/Account), not
+  one. The sticky-column rules, by contrast, had to be scoped to
+  `thead tr:first-child` specifically: `:nth-child` counts per row, not
+  per table, and Split's second header row's own first two cells (the
+  first two periods' own "ACTUAL" sub-labels) would otherwise catch the
+  same rule — Code/Account's `rowspan` means they're never actually
+  *in* that second row at all, so naively `thead th:first-child` (no
+  `tr:first-child`) silently sticky-pinned the wrong cells to the left
+  edge, rendering as a stray "ACTUAL" bleeding under "CODE"/"ACCOUNT".
+  Caught by actually scrolling the Split view during this feature's own
+  testing, not by inspection.
+- **Code gets a hard-pinned width (`width`/`min-width`/`max-width` all
+  `4.5rem`), not just a hint.** `.report-table` is `table-layout: auto`
+  (sizes to content, see above) — a plain `width` on one cell there is
+  only ever a suggestion the browser can shrink past, which it did for
+  a short Code value in testing, opening a gap between the Code and
+  Account sticky columns that scrolled content would show through.
+  Account's own sticky `left: 4.5rem` has to assume some fixed width for
+  the column before it to line up against at all, so Code's width has
+  to actually be enforced, not just declared. `:nth-child(2)` (not
+  `.acct-name`) is what's targeted for the second column specifically so
+  a report's occasional plain label row that skips that class (Cash
+  Flow's "Beginning cash balance") still gets pinned like every other
+  row.
+
+No JS at all — every report table here already reads its account name
+straight out of the DOM, and no report needed a *third* sticky column,
+so there was nothing dynamic left to compute.
+
 ### Toggle switch vs checkbox
 
 Settings has both `input[type="checkbox"]` (a hand-drawn square check,

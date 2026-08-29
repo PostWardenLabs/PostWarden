@@ -955,6 +955,64 @@ main:has(table.report-table) { max-width: none; }
 .report-frame { width: fit-content; max-width: 100%; }
 .report-export { justify-content: flex-end; margin-bottom: 0.6rem; }
 
+/* Sticky header row + leading Code/Account columns for reports
+   (BACKLOG.md) — scrolling down a long Trial Balance/Ledger-style
+   report used to lose the header row (which number column is Debit vs
+   Credit?), and scrolling right through Income Statement Split's own
+   monthly columns lost which account a number even belonged to. Two
+   independent techniques, since they don't have the same shape:
+
+   - The header ROW sticks as a whole `<thead>`, not per-cell — modern
+     browsers support `position: sticky` directly on a table-header-
+     group, and it correctly carries every row inside along together
+     with zero per-row offset math, which matters here specifically
+     because Income Statement Split's own header is *two* rows
+     (periods, then a `rowspan`), not one.
+   - Sticky COLUMNS have no row-group equivalent — a column isn't a
+     single box the way `<thead>` is, so Code and Account are two
+     individually-pinned cells instead, side by side. Code gets a fixed
+     width so Account's own `left` can line up against it exactly
+     (`nth-child(2)`, not `.acct-name`, so this still catches a report's
+     occasional plain label row that skips that class — Cash Flow's own
+     "Beginning cash balance" row, for one).
+
+   A cell that's sticky on *both* axes at once (the two header cells in
+   the top-left corner) needs no extra rule — an element can be its own
+   `position: sticky` for one axis while still riding along with an
+   already-sticky ancestor for the other, so `thead th:first-child`
+   picks up top-stickiness from the `<thead>` it's already inside and
+   left-stickiness from the shared `:first-child` rule below, for free.
+
+   Every row in this app's report tables shares one flat background
+   (no zebra striping — `tr.type-head`/`.subtotal`/`.grand` never set
+   their own), so a single `var(--paper)` on every sticky cell is
+   always correct, not just an approximation for the common row. */
+table.ledger.report-table thead { position: sticky; top: 0; z-index: 3; }
+table.ledger.report-table thead th { background: var(--paper); }
+/* thead's own :first-child/:nth-child(2) has to stay scoped to its
+   *first* row specifically — Income Statement Split's header has a
+   second row (an "ACTUAL" sub-label per period), and :nth-child counts
+   per row, not per table: without `tr:first-child` here, the second
+   row's own first two cells (the first two periods' own sub-headers)
+   would wrongly catch this rule too, since Code/Account's rowspan="2"
+   means they never appear as cells in that second row at all. */
+table.ledger.report-table thead tr:first-child th:first-child,
+table.ledger.report-table td:first-child:not([colspan]) {
+  position: sticky; left: 0; z-index: 1; background: var(--paper);
+  /* min/max pinned to the same value as width: table-layout is auto
+     here (report-table's own "size to content" point above), where a
+     plain width on a cell is only ever a hint the browser is free to
+     shrink past — observed doing exactly that for a short Code value,
+     opening a gap between this column and the next sticky one below,
+     whose own `left` has to assume a fixed width to line up at all. */
+  width: 4.5rem; min-width: 4.5rem; max-width: 4.5rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+table.ledger.report-table thead tr:first-child th:nth-child(2),
+table.ledger.report-table td:nth-child(2) {
+  position: sticky; left: 4.5rem; z-index: 1; background: var(--paper);
+}
+
 table.ledger th {
   text-align: left; font-weight: 600; font-size: 0.78rem;
   letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft);
