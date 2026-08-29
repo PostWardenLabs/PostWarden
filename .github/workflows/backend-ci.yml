@@ -1,0 +1,61 @@
+name: Backend CI
+
+# Runs backend/'s test suite against a real Postgres service container.
+# There is no CI at all on `master` (see REBUILD.md §6, Phase 0.5) — this
+# is new, not a port, and lands empty-green: as of Phase 0 there is one
+# smoke test (backend/tests/test_health.py) plus a check that the Alembic
+# baseline actually applies, and every subsequent PR is checked from here
+# on as modules land (Phase 1).
+#
+# Scoped to backend/ paths on purpose: frontend/ doesn't exist yet, and
+# legacy app/ has its own (nonexistent) CI story that this doesn't touch.
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "db/schema.sql"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "db/schema.sql"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postwarden
+          POSTGRES_PASSWORD: postwarden
+          POSTGRES_DB: postwarden
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postwarden -d postwarden"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postwarden:postwarden@localhost:5432/postwarden
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: Apply the Alembic baseline
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: pytest
+        working-directory: backend
+        run: pytest -q

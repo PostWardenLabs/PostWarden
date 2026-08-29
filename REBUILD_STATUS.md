@@ -24,12 +24,14 @@ note in the log.
 
 **Phase 0, in progress.** `backend/` exists as a `src`-layout package with
 the full tree, dependencies pinned, a smoke test proving the pipeline
-(install → import → `TestClient` → assert) works, and an Alembic baseline
-that reproduces `db/schema.sql` exactly. No `frontend/`, no CI workflow
-yet. `master` is untouched and still what's deployed.
+(install → import → `TestClient` → assert) works, an Alembic baseline that
+reproduces `db/schema.sql` exactly, and CI (`.github/workflows/
+backend-ci.yml`) exercising both against a real Postgres service
+container. No `frontend/` yet. `master` is untouched and still what's
+deployed.
 
-**Next step:** 0.5 — GitHub Actions CI workflow (`pytest` against a
-Postgres service container).
+**Next step:** 0.6 — `docker-compose` service for the new backend's own
+database volume.
 
 ---
 
@@ -60,7 +62,7 @@ before any of Phase 1's code does. Pure setup, no product logic.
       current `db/schema.sql` (`REBUILD.md` decision 5). Confirm
       `alembic upgrade head` against a fresh database reproduces
       `schema.sql` with no diff.
-- [ ] **0.5** GitHub Actions CI workflow: `pytest` against a Postgres
+- [x] **0.5** GitHub Actions CI workflow: `pytest` against a Postgres
       service container. The repo has no CI today — this is new, not a
       port. Lands empty-green (no modules yet) so every subsequent PR is
       checked from the start.
@@ -236,6 +238,12 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 0.5 done: `.github/workflows/backend-ci.yml` —
+  `pytest` against a Postgres 16 service container, scoped to
+  `backend/**`/`db/schema.sql` paths. Steps: install `backend/` editable,
+  `alembic upgrade head`, `pytest`. Verified locally by running the same
+  three steps by hand against a throwaway container on 5432 before
+  committing the workflow file itself.
 - **2026-08-29** — Phase 0.4 done: `alembic init` under `backend/`;
   `env.py` reads `DATABASE_URL` (same env var as legacy `app/db.py`, but
   the SQLAlchemy-flavored `postgresql+psycopg://` scheme, not legacy's
