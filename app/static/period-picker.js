@@ -1,8 +1,11 @@
 /* PostWarden — period preset dropdown for date-ranged reports (Income
-   statement). Purely a convenience that fills in the two real date
-   inputs the form actually submits; the backend only ever sees plain
-   date_from/date_to, same as Journal's filters. Picking "Custom range"
-   just leaves whatever's in the two fields for hand-editing.
+   Statement, Cash Flow — UI_CONSISTENCY_AUDIT.md promoted this from
+   Income Statement alone once both pages turned out to be asking the
+   same "what happened in this range" question). Purely a convenience
+   that fills in the two real date inputs the form actually submits;
+   the backend only ever sees plain date_from/date_to, same as
+   Journal's filters. Picking "Custom range" just leaves whatever's in
+   the two fields for hand-editing.
 
    Split view's own trailing "Total" column (see income_statement.html)
    wants to read whatever this dropdown currently says ("This Quarter",
