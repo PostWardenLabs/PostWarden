@@ -36,8 +36,16 @@ untouched and still what's deployed.
 `entry.py` — pure logic ported from `app/main.py`'s module-level
 helpers, zero framework/IO imports, 48 new unit tests, all green.
 
-**Next step:** 1.2 — `config.py` + `db.py`: settings and the
-SQLAlchemy Core engine/session setup.
+**Phase 1.2 done.** `config.py` — a `pydantic-settings` `Settings` class
+centralizing the six env vars the legacy app read ad hoc across
+`app/db.py`/`app/auth.py`/`app/main.py`. `db.py` — a lazily-built,
+cached SQLAlchemy Core `Engine` plus a `get_connection()` FastAPI
+dependency (one connection, one transaction per request, mirroring
+legacy `app/db.py`'s `tx()`). 7 new unit tests, all green, plus a
+one-off manual smoke test against a real `docker compose up -d db` to
+confirm the engine actually connects (not just that it constructs).
+
+**Next step:** 1.3 — a central `Decimal`/`date` JSON encoder.
 
 ---
 
@@ -91,7 +99,7 @@ directly.
 - [x] **1.1** `domain/money.py`, `periods.py`, `accounts.py`, `entry.py`
       — pure logic, zero framework/IO imports. Unit tests only, no DB,
       no FastAPI.
-- [ ] **1.2** `config.py` + `db.py` — settings and the SQLAlchemy Core
+- [x] **1.2** `config.py` + `db.py` — settings and the SQLAlchemy Core
       engine/session setup.
 - [ ] **1.3** Central `Decimal`/`date` JSON encoder, fixed once here
       rather than per-route. Documented gap, not theoretical — the
@@ -244,6 +252,46 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.2 done: `config.py` — a `pydantic-settings`
+  `Settings` class + cached `get_settings()` centralizing the six env
+  vars the legacy app read ad hoc across three files (`app/db.py`'s
+  `DATABASE_URL`; `app/auth.py`'s `POSTWARDEN_COOKIE_SECURE`;
+  `app/main.py`'s `POSTWARDEN_ADMIN_USER`/`POSTWARDEN_ADMIN_PASSWORD`/
+  `POSTWARDEN_DEMO_MODE`/`POSTWARDEN_BI_PORT`). `db.py` — a lazily-built,
+  `lru_cache`d SQLAlchemy Core `Engine` plus a `get_connection()`
+  generator FastAPI dependency yielding one `Connection` per request
+  inside one transaction (commit on clean return, rollback on
+  exception) — mirrors legacy `app/db.py`'s `tx()` contextmanager,
+  including the reliance on Postgres's *deferred* constraint triggers
+  firing at COMMIT rather than at the individual INSERT (SPEC.md
+  decision 2). `database_url`'s default already carries the
+  SQLAlchemy-flavored `postgresql+psycopg://` scheme rather than
+  legacy's plain `postgresql://` — not a new decision, just matching
+  the convention Phase 0.4's `alembic/env.py` and Phase 0.6's
+  `backend/docker-compose.yml` already established, so `db.py` passes
+  `database_url` straight to `create_engine` with no second rewrite.
+  One real behavior fix caught by the test suite itself: pydantic's
+  default bool coercion rejects `""` outright and is looser than
+  legacy's truthy set (also accepts `"on"`/`"off"`/`"t"`/`"f"`), so
+  `POSTWARDEN_COOKIE_SECURE`/`POSTWARDEN_DEMO_MODE` get a `field_validator`
+  that reproduces legacy's exact `.lower() in ("1", "true", "yes")`
+  check — otherwise a blank-but-set env var (a common shape in `.env`
+  files) would be a startup crash instead of the harmless no-op it was
+  before. The engine is built lazily on first call rather than at
+  import time like legacy's pool, specifically so `DATABASE_URL` only
+  has to be set before first use (e.g. in a pytest fixture) rather than
+  before pytest collection, the way `tests/conftest.py`'s comment says
+  legacy requires. 7 new unit tests under `backend/tests/` (all
+  no-database — `create_engine` doesn't open a connection until
+  something queries through it), plus a one-off manual check outside
+  the suite: `docker compose up -d db`, then a real `get_connection()` →
+  `SELECT 1` round trip against it, confirming the engine and
+  transaction wiring actually work against Postgres and not just that
+  they construct — torn down afterward (`docker compose down -v`), not
+  left running. `pytest` — 56 passed (49 prior + 7 new), nothing else
+  touched. `main.py` still doesn't import either module: no route needs
+  the database yet, so wiring it in stays deferred to whichever module
+  first needs it (reports, 1.4, is next).
 - **2026-08-29** — Phase 1.1 done: `domain/money.py` (variance/percentage
   math), `periods.py` (date-shift and calendar-split helpers),
   `accounts.py` (tree rollup/flatten, P&L-net sign correction),

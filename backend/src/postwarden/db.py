@@ -1,6 +1,59 @@
-"""Database engine/session setup — placeholder.
+"""Database engine/connection setup — SQLAlchemy Core, not the ORM.
 
-Real content (the SQLAlchemy Core engine, matching legacy app/db.py's role
-but on Core instead of raw psycopg) lands in Phase 1.2 (REBUILD_STATUS.md).
-Left empty deliberately in Phase 0.
+`db/schema.sql` is still the source of truth (REBUILD.md decision 3): Core
+gives typed, composable query-building for the CRUD modules, but the ORM's
+identity map and unit-of-work would fight a schema whose real invariants
+(double-entry balance, immutability, hierarchy integrity) live in Postgres
+triggers, not in application objects. Reports go further still and call the
+existing set-returning functions (`fn_trial_balance`, `fn_cash_flow_lines`,
+...) as raw SQL through the same connection — see REBUILD.md §6's "do not
+model those through SQLAlchemy Core" note. This module only hands out the
+connection; it has no opinion on what runs through it.
+
+`config.Settings.database_url` already carries the SQLAlchemy-flavored
+"postgresql+psycopg://" scheme (see config.py's own comment, and
+alembic/env.py which established the convention in Phase 0.4) — this
+module passes it to `create_engine` unmodified rather than rewriting it a
+second way.
 """
+from collections.abc import Iterator
+from functools import lru_cache
+
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.engine import Connection
+
+from .config import get_settings
+
+
+@lru_cache
+def get_engine() -> Engine:
+    """The process-wide Engine — lazily built and cached on first use.
+
+    Lazy on purpose, unlike legacy app/db.py's pool (opened at import time):
+    that eagerness is *why* tests/conftest.py has to set DATABASE_URL before
+    pytest even collects test modules. Building the engine lazily, on first
+    call, means DATABASE_URL only has to be set before that first call —
+    e.g. inside a fixture — which is the more usual pytest shape.
+    `pool_pre_ping` guards against the connection going stale between
+    requests (a reaped idle connection, a Postgres restart) rather than
+    surfacing as an opaque `OperationalError` mid-request.
+    """
+    settings = get_settings()
+    return create_engine(settings.database_url, pool_pre_ping=True)
+
+
+def get_connection() -> Iterator[Connection]:
+    """FastAPI dependency: one Connection per request, one transaction.
+
+    Commits on a clean return, rolls back on any raised exception — mirrors
+    legacy app/db.py's `tx()` contextmanager, including the same reliance on
+    Postgres's *deferred* constraint triggers: they fire at COMMIT, not at
+    the individual INSERT, so an unbalanced journal entry raises here and
+    takes the whole entry (header + lines) down with it atomically (see
+    db/schema.sql and SPEC.md decision 2). Read-only routes pay for an
+    always-open transaction too, rather than branching read vs. write paths
+    — the cost is negligible and it keeps this dependency uniform.
+    """
+    with get_engine().connect() as conn:
+        with conn.begin():
+            yield conn

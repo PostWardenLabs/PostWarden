@@ -1,11 +1,11 @@
 """App entrypoint.
 
-Phase 0 scaffolding only: enough to prove the container builds, installs,
-and serves a request. config.py/db.py wiring and real router mounting land
-in Phase 1.2 and 1.14 respectively (REBUILD_STATUS.md) — this file is cut
-down to "app factory + router mounting only" at that point, per REBUILD.md
-§6's tree comment. It does not import config.py or db.py yet, on purpose:
-those are still empty stubs too.
+config.py and db.py got real content in Phase 1.2; this file still hasn't
+— real router mounting is Phase 1.14 (REBUILD_STATUS.md), once there are
+routers under modules/ to mount. It stays "app factory only" until then,
+per REBUILD.md §6's tree comment. /healthz deliberately still doesn't touch
+the database (see its own docstring); a DB-touching readiness check can be
+added alongside the first real module if one turns out to be needed.
 """
 from fastapi import FastAPI
 
