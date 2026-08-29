@@ -2560,6 +2560,35 @@ def _budget_rows(scenario: str, month: str, pct_of_base: bool = False) -> dict:
         "SELECT * FROM fn_account_balances(%s, %s, %s)",
         ("ACTUAL", month_end.isoformat(), month_start.isoformat()))}
 
+    # BACKLOG.md's own chevron menu ("Set to ACTUAL value of last month",
+    # "Set to 3 month average of ACTUAL", ...) needs last month's own
+    # figures and a 3-calendar-month average, for both ACTUAL and
+    # whatever scenario is currently open — computed once here, per
+    # account, rather than a second round trip when a chevron is clicked.
+    # Average is a plain sum-over-3 (zero for a quiet month, not excluded
+    # from the denominator), same convention Income Statement Split's own
+    # Average column already uses (SPEC.md decision 19's addendum).
+    prev_month_start = date.fromisoformat(_shift_month(month, -1))
+    prev_month_end = date(prev_month_start.year, prev_month_start.month,
+                          calendar.monthrange(prev_month_start.year, prev_month_start.month)[1])
+    three_month_start = date.fromisoformat(_shift_month(month, -3))
+    prev_actual_by_id = {r["account_id"]: r["net"] for r in q(
+        "SELECT * FROM fn_account_balances(%s, %s, %s)",
+        ("ACTUAL", prev_month_end.isoformat(), prev_month_start.isoformat()))}
+    avg3_actual_by_id = {r["account_id"]: r["net"] / 3 for r in q(
+        "SELECT * FROM fn_account_balances(%s, %s, %s)",
+        ("ACTUAL", prev_month_end.isoformat(), three_month_start.isoformat()))}
+    prev_budget_by_id, avg3_budget_by_id = {}, {}
+    if scen:
+        prev_budget_by_id = {r["account_id"]: r["amount"] for r in q(
+            "SELECT account_id, amount FROM budget_lines WHERE scenario_id = %s AND period_month = %s",
+            (scen["id"], prev_month_start))}
+        avg3_budget_by_id = {r["account_id"]: r["total"] / 3 for r in q(
+            """SELECT account_id, SUM(amount) AS total FROM budget_lines
+                WHERE scenario_id = %s AND period_month >= %s AND period_month < %s
+                GROUP BY account_id""",
+            (scen["id"], three_month_start, month_start))}
+
     budget_roots = _build_account_tree(accounts, budgeted_by_id)
     actual_by_node_id = {}
 
@@ -2578,12 +2607,31 @@ def _budget_rows(scenario: str, month: str, pct_of_base: bool = False) -> dict:
             # for income so both columns read as a positive "how much",
             # same as Income Statement already does for income rows.
             sign = -1 if n["account_type"] == "income" else 1
+            # sign * 0 is a genuine negative zero in Python/IEEE-754 for
+            # an income account, which '%.2f' % formatting renders as a
+            # confusing "-0.00" — same normalize-at-the-source fix
+            # _income_statement_groups' own signed() helper already
+            # applies for the identical reason.
+            def signed(x):
+                v = sign * x
+                return abs(v) if v == 0 else v
             budgeted = n["subtotal"]
-            actual = sign * actual_by_node_id[n["id"]]["subtotal"]
+            actual = signed(actual_by_node_id[n["id"]]["subtotal"])
             out.append({
                 **n, "budgeted": budgeted, "actual": actual,
                 "variance": _variance_amount(actual, budgeted, pct_of_base),
                 "pct_variance": _pct_variance(actual, budgeted, pct_of_base),
+                # Only meaningful on a leaf's own editable cell — computed
+                # uniformly here regardless, since a summary node's copy
+                # is simply never rendered (see budget.html's has_children
+                # branch), and branching here would just be extra code for
+                # no benefit.
+                "quickfill": {
+                    "last_actual": signed(prev_actual_by_id.get(n["id"], 0)),
+                    "last_scenario": prev_budget_by_id.get(n["id"], 0),
+                    "avg3_actual": signed(avg3_actual_by_id.get(n["id"], 0)),
+                    "avg3_scenario": avg3_budget_by_id.get(n["id"], 0),
+                },
                 "children": merge(n["children"]),
             })
         return out

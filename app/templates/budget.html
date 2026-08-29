@@ -42,7 +42,19 @@
 <p class="dim">Scenario <span class="mono">{{ scenario }}</span> not found or isn't income-statement-only.</p>
 {% else %}
 
-<table class="ledger report-table" data-collapse-key="postwarden-budget-collapsed-{{ scenario }}" data-pct-of-base="{{ 1 if pct_of_base else 0 }}">
+{#
+  BACKLOG.md's own page-level bulk options — "Set ALL VALUES to..." —
+  same two quick-fill sources as each cell's own chevron menu, applied
+  to every leaf cell on the grid at once instead of just one. A real
+  confirm first (budget-grid.js): this overwrites whatever's already
+  typed into every cell, unlike a single cell's own chevron where
+  there's only ever one value to reconsider.
+#}
+<p class="bar" style="align-items: center;">
+  <button type="button" class="quiet" id="set-all-toggle">Set all values<span class="chevron chevron-down" style="margin-left: 0.4rem;"></span></button>
+</p>
+
+<table class="ledger report-table" data-collapse-key="postwarden-budget-collapsed-{{ scenario }}" data-pct-of-base="{{ 1 if pct_of_base else 0 }}" data-scenario-code="{{ scen.code }}">
   <thead>
     <tr>
       <th>Code</th>
@@ -67,11 +79,29 @@
       {% if r.has_children %}
       <td class="num money budgeted-cell">{{ r.budgeted | money }}</td>
       {% else %}
-      <td class="num money">
+      <td class="num money budget-cell-wrap">
         <input type="text" class="amount budget-cell" inputmode="decimal"
                data-scenario-id="{{ scen.id }}" data-account="{{ r.account_code }}"
                data-month="{{ month }}"
+               data-last-actual="{{ '%.2f' % r.quickfill.last_actual }}"
+               data-last-scenario="{{ '%.2f' % r.quickfill.last_scenario }}"
+               data-avg3-actual="{{ '%.2f' % r.quickfill.avg3_actual }}"
+               data-avg3-scenario="{{ '%.2f' % r.quickfill.avg3_scenario }}"
                value="{{ '%.2f' % r.budgeted if r.budgeted else '' }}">
+        {#
+          BACKLOG.md's own "chevron pointing downwards at the far right"
+          of each amount cell — one shared dropdown menu (budget-grid.js
+          builds and repositions it, rather than one per cell) offers the
+          four quick-fill options against *this* cell's own account.
+          tabindex="-1": a bonus shortcut, not the primary way to enter a
+          value — every cell staying keyboard-typeable is what actually
+          matters, and adding a second tab stop per row (dozens on a real
+          chart of accounts) would make keyboard navigation noisier for a
+          convenience feature, not more accessible.
+        #}
+        <button type="button" class="quickfill-toggle" aria-label="Quick fill options" tabindex="-1">
+          <span class="chevron chevron-down"></span>
+        </button>
       </td>
       {% endif %}
     </tr>

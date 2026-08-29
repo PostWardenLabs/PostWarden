@@ -81,7 +81,10 @@ instance.
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No
   journal entries involved — a budget isn't a transaction, so it isn't
-  modeled like one (see `SPEC.md` if you want the full argument).
+  modeled like one (see `SPEC.md` if you want the full argument). Every
+  cell has its own quick-fill chevron ("set to last month's Actual," "set
+  to a 3-month average," ...) and there's a page-level version that fills
+  every cell in the grid the same way at once.
 - **Scenarios** for real forecasting too — a "what if I buy a house"
   scenario is a normal set of journal entries tagged with its own
   scenario code, so it can be a fully projected P&L *and* balance sheet,

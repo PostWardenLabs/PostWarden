@@ -8,7 +8,18 @@
    Each row already carries its own Actual as a static data-actual
    attribute (server-rendered, never touched by this script) — Variance
    is (live) actual - budgeted (or budgeted - actual, if "Flip variance
-   direction" is checked — see pctOfBase below), recomputed alongside it. */
+   direction" is checked — see pctOfBase below), recomputed alongside it.
+
+   Quick fill (bottom of this file): each cell's own chevron offers four
+   "Set to..." options (BACKLOG.md's own ask) — last month's/3-month-
+   average's ACTUAL or this scenario's own value, read off data
+   attributes _budget_rows() already computed server-side, no per-click
+   round trip. "Set all values" (the page-level button above the table)
+   applies the same two scenario/ACTUAL sources to every leaf cell at
+   once, behind a real confirm since it overwrites the whole grid. Both
+   reuse fillAndSave(), which is just recompute() + save() run back to
+   back — exactly what typing into a cell and blurring it already does,
+   just triggered by a menu pick instead of a keystroke. */
 (function () {
   const table = document.querySelector("table[data-collapse-key^='postwarden-budget-collapsed']");
   if (!table) return;
@@ -146,4 +157,100 @@
   table.querySelectorAll(".budget-cell").forEach((input) => {
     input.dataset.saved = input.value.trim();
   });
+
+  // -- Quick fill (BACKLOG.md's own chevron menu) --------------------------
+  // Per-cell: "Set to ACTUAL/<scenario> value of last month" and "...3
+  // month average of ACTUAL/<scenario>", reading each cell's own
+  // data-last-actual/data-last-scenario/data-avg3-actual/data-avg3-scenario
+  // (computed server-side in _budget_rows() — see its own comment) rather
+  // than a second round trip per click. One shared menu, repositioned next
+  // to whichever chevron was clicked, rather than one DOM subtree per row.
+  const scenarioCode = table.dataset.scenarioCode || "the scenario";
+  let menu, menuTarget;
+
+  function buildMenu() {
+    menu = document.createElement("div");
+    menu.className = "combobox-panel quickfill-menu";
+    menu.hidden = true;
+    document.body.appendChild(menu);
+    document.addEventListener("mousedown", (e) => {
+      if (!menu.hidden && e.target !== menuTarget && !menu.contains(e.target)) closeMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (!menu.hidden && e.key === "Escape") closeMenu();
+    });
+    window.addEventListener("scroll", () => { if (!menu.hidden) closeMenu(); }, true);
+  }
+
+  function closeMenu() {
+    if (menu) menu.hidden = true;
+    menuTarget = null;
+  }
+
+  function openMenu(anchor, options) {
+    if (!menu) buildMenu();
+    if (menuTarget === anchor && !menu.hidden) { closeMenu(); return; }
+    menu.innerHTML = "";
+    options.forEach(([label, apply]) => {
+      const opt = document.createElement("div");
+      opt.className = "combobox-option";
+      opt.textContent = label;
+      opt.addEventListener("mousedown", (e) => {
+        e.preventDefault(); // don't steal focus from the input before apply() reads/writes it
+        apply();
+        closeMenu();
+      });
+      menu.appendChild(opt);
+    });
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = `${rect.bottom + 2}px`;
+    menu.style.right = `${window.innerWidth - rect.right}px`;
+    menu.style.left = "auto";
+    menu.hidden = false;
+    menuTarget = anchor;
+  }
+
+  function fillAndSave(input, value) {
+    input.value = value.toFixed(2);
+    recompute();
+    save(input);
+  }
+
+  table.addEventListener("click", (e) => {
+    const toggle = e.target.closest(".quickfill-toggle");
+    if (!toggle) return;
+    const input = toggle.closest(".budget-cell-wrap").querySelector(".budget-cell");
+    openMenu(toggle, [
+      ["Set to ACTUAL value of last month", () => fillAndSave(input, parseFloat(input.dataset.lastActual))],
+      [`Set to ${scenarioCode} value of last month`, () => fillAndSave(input, parseFloat(input.dataset.lastScenario))],
+      ["Set to 3 month average of ACTUAL", () => fillAndSave(input, parseFloat(input.dataset.avg3Actual))],
+      [`Set to 3 month average of ${scenarioCode}`, () => fillAndSave(input, parseFloat(input.dataset.avg3Scenario))],
+    ]);
+  });
+
+  // -- Set all values (page-level, same two quick-fill sources applied to
+  //    every leaf cell at once) — a real confirm first, since this
+  //    overwrites whatever's already typed into every cell on the grid,
+  //    unlike a single cell's own chevron where there's only ever one
+  //    value being reconsidered. ------------------------------------------
+  const setAllToggle = document.getElementById("set-all-toggle");
+  if (setAllToggle) {
+    function setAll(attr, label) {
+      const inputs = Array.from(table.querySelectorAll(".budget-cell"));
+      window.PostWardenConfirm.ask(
+        `Overwrite every budgeted value this month with ${label}? This can't be undone.`
+      ).then((confirmed) => {
+        if (!confirmed) return;
+        inputs.forEach((input) => fillAndSave(input, parseFloat(input.dataset[attr]) || 0));
+      });
+    }
+    setAllToggle.addEventListener("click", () => {
+      openMenu(setAllToggle, [
+        [`Set ALL VALUES to ${scenarioCode} values for last month`,
+         () => setAll("lastScenario", `${scenarioCode}'s own value for last month`)],
+        ["Set ALL VALUES to 3 month average of their ACTUAL values",
+         () => setAll("avg3Actual", "the 3 month average of their ACTUAL values")],
+      ]);
+    });
+  }
 })();
