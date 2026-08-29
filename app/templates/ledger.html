@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}T-Accounts{% endblock %}
+{% block title %}Ledger{% endblock %}
 {% block content %}
 <div class="page-head">
   <p class="page-sub">{{ month_start }} to {{ today }} (month to date) · scenario <span class="mono">{{ scenario }}</span></p>
@@ -13,7 +13,7 @@
   arbitrary period). Scenario and the zeros toggle are the only controls,
   same field-bar shape as every other report here.
 #}
-<form method="get" action="/t-accounts" data-auto-refresh>
+<form method="get" action="/ledger" data-auto-refresh>
   <div class="bar">
     <label class="field">Scenario
       <select name="scenario">
@@ -36,25 +36,44 @@
     {% for a in g.rows %}
     <table class="ledger t-account">
       <caption>
-        <a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start }}&date_to={{ today }}&account={{ a.code }}&back={{ ('/t-accounts?scenario=' + scenario + '&zeros=' + (zeros | string)) | urlencode }}">
+        <a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start }}&date_to={{ today }}&account={{ a.code }}&back={{ ('/ledger?scenario=' + scenario + '&zeros=' + (zeros | string)) | urlencode }}">
           {{ a.code }} · {{ a.name }}
         </a>
       </caption>
+      {#
+        Date columns flank the amounts (Date | Debit | Credit | Date)
+        rather than sitting next to their own side's amount — BACKLOG.md's
+        own example row, |2026-09-21|500|150|2026-09-22|, reads outer-in:
+        dates on the outside, the two amounts meeting in the middle. The
+        strong rule between Debit and Credit (.t-divider, same weight as
+        the caption's own border above) is what actually draws the T —
+        the ordinary .money-first hint border was never meant to read as
+        a structural divider, just a soft "money starts here" cue.
+      #}
       <thead>
-        <tr><th class="num money money-first">Debit</th><th class="num money">Credit</th></tr>
+        <tr>
+          <th class="dim small">Date</th>
+          <th class="num money money-first">Debit</th>
+          <th class="num money t-divider">Credit</th>
+          <th class="dim small">Date</th>
+        </tr>
       </thead>
       <tbody>
         {% for r in a.rows %}
         <tr>
+          <td class="dim small">{{ r.debit_date | dateformat if r.debit_date else '' }}</td>
           <td class="num money money-first">{{ r.debit | money if r.debit else '' }}</td>
-          <td class="num money">{{ r.credit | money if r.credit else '' }}</td>
+          <td class="num money t-divider">{{ r.credit | money if r.credit else '' }}</td>
+          <td class="dim small">{{ r.credit_date | dateformat if r.credit_date else '' }}</td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="grand">
+          <td></td>
           <td class="num money money-first">{{ a.total_debit | money if a.total_debit else '' }}</td>
-          <td class="num money">{{ a.total_credit | money if a.total_credit else '' }}</td>
+          <td class="num money t-divider">{{ a.total_credit | money if a.total_credit else '' }}</td>
+          <td></td>
         </tr>
       </tfoot>
     </table>
@@ -63,6 +82,6 @@
 </section>
 {% endfor %}
 {% else %}
-<p class="dim">No activity in {{ scenario }} this month. <label class="checkline" style="display:inline-flex;"><a href="/t-accounts?scenario={{ scenario }}&zeros=1">Show accounts with no activity</a></label></p>
+<p class="dim">No activity in {{ scenario }} this month. <label class="checkline" style="display:inline-flex;"><a href="/ledger?scenario={{ scenario }}&zeros=1">Show accounts with no activity</a></label></p>
 {% endif %}
 {% endblock %}

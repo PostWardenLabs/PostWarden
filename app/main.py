@@ -1051,20 +1051,24 @@ def trial_balance_export_xlsx(scenario: str = "ACTUAL", as_of: str = None,
 
 
 # ---------------------------------------------------------------------------
-# T-Accounts — the classic two-column ledger box, one per account, grouped
-# by type the same way Trial Balance's own sections are. Deliberately
-# scoped down from what a general-ledger report usually offers: month-to-
-# date only (no as-of/date-range picker), postable accounts only (a T-
-# account is a real account's own ledger card, not a rolled-up summary),
-# and no drill-through on individual lines — this is a teaching aid for
-# double-entry itself (see docs/GUIDE.md), not a working report, so it
-# stays as close to "what a textbook draws on a chalkboard" as a live
-# report reasonably can. The one link this page does offer is the account
-# header itself, through to the Journal filtered to that account for the
-# same month — the same "see what produced this" convention every other
-# report's own summary figures already follow (decision 11, SPEC.md).
+# Ledger — the classic two-column T-account box, one per account, grouped
+# by type the same way Trial Balance's own sections are. Renamed from its
+# original "T-Accounts" (BACKLOG.md) once it shipped — this is the actual
+# paper-bookkeeping term for it: a Journal (already /entries) records
+# transactions in order; a Ledger is each account's own page, which is
+# exactly what this screen draws. Deliberately scoped down from what a
+# general-ledger report usually offers: month-to-date only (no as-of/
+# date-range picker), postable accounts only (a T-account is a real
+# account's own ledger card, not a rolled-up summary), and no drill-
+# through on individual lines — this is a teaching aid for double-entry
+# itself (see docs/GUIDE.md), not a working report, so it stays as close
+# to "what a textbook draws on a chalkboard" as a live report reasonably
+# can. The one link this page does offer is the account header itself,
+# through to the Journal filtered to that account for the same month —
+# the same "see what produced this" convention every other report's own
+# summary figures already follow (decision 11, SPEC.md).
 # ---------------------------------------------------------------------------
-def _t_accounts_rows(scenario: str, zeros: int) -> dict:
+def _ledger_rows(scenario: str, zeros: int) -> dict:
     today = date.today()
     month_start = today.replace(day=1).isoformat()
     today_iso = today.isoformat()
@@ -1089,15 +1093,19 @@ def _t_accounts_rows(scenario: str, zeros: int) -> dict:
         lines = lines_by_account.get(a["id"], [])
         if not lines and not zeros:
             return None
-        debits = [ln["debit"] for ln in lines if ln["debit"]]
-        credits = [ln["credit"] for ln in lines if ln["credit"]]
-        net = sum(debits) - sum(credits)
-        # Paired only for the table's own two-column layout — a debit's
-        # row and the credit sitting beside it are otherwise unrelated,
-        # same as a real T-account, where the two sides are independent
-        # running lists that just happen to share a page.
-        rows = [{"debit": debits[i] if i < len(debits) else None,
-                "credit": credits[i] if i < len(credits) else None}
+        # Each side keeps its own line's date alongside its amount
+        # (BACKLOG.md's own ask) — a debit's date and the credit sitting
+        # beside it are otherwise unrelated, same as a real T-account,
+        # where the two sides are independent running lists that just
+        # happen to share a page; pairing them by index is purely for
+        # this table's own two-column layout, nothing more.
+        debits = [(ln["entry_date"], ln["debit"]) for ln in lines if ln["debit"]]
+        credits = [(ln["entry_date"], ln["credit"]) for ln in lines if ln["credit"]]
+        net = sum(d for _, d in debits) - sum(c for _, c in credits)
+        rows = [{"debit_date": debits[i][0] if i < len(debits) else None,
+                "debit": debits[i][1] if i < len(debits) else None,
+                "credit": credits[i][1] if i < len(credits) else None,
+                "credit_date": credits[i][0] if i < len(credits) else None}
                for i in range(max(len(debits), len(credits)))]
         return {"code": a["code"], "name": a["name"], "rows": rows,
                 # "the total row only writes to the Cr. or Dr. column
@@ -1116,11 +1124,11 @@ def _t_accounts_rows(scenario: str, zeros: int) -> dict:
     return {"grouped": grouped, "month_start": month_start, "today": today_iso}
 
 
-@app.get("/t-accounts")
-def t_accounts_page(request: Request, scenario: str = "ACTUAL", zeros: int = 0):
-    result = _t_accounts_rows(scenario, zeros)
-    return templates.TemplateResponse(request, "t_accounts.html", {
-        "nav": "t_accounts", "scenario": scenario, "zeros": zeros,
+@app.get("/ledger")
+def ledger_page(request: Request, scenario: str = "ACTUAL", zeros: int = 0):
+    result = _ledger_rows(scenario, zeros)
+    return templates.TemplateResponse(request, "ledger.html", {
+        "nav": "ledger", "scenario": scenario, "zeros": zeros,
         "scenarios": scenarios_all(), "grouped": result["grouped"],
         "month_start": result["month_start"], "today": result["today"],
     })

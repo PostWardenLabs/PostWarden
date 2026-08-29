@@ -22,7 +22,17 @@
    two legs "the same line" across duplicate entries. Saving fills in
    the page's real <form> with hidden inputs and submits it for real —
    a flash-redirect round trip, not a fetch, matching every other Merge
-   in this app. */
+   in this app.
+
+   Each group also gets its own "select all in this section" checkbox
+   (live feedback after the on-demand ask shipped) — same tri-state
+   checked/indeterminate/unchecked convention every other select-all in
+   this app already uses, scoped to that one group's own checkboxes only,
+   never the whole page (checking one group's "select all" never touches
+   another group's checks). The Payee field in the merge-detail popup is
+   a real combobox (window.PostWardenCombobox.enhance), not a plain
+   <select> — also live feedback, matching every other payee picker in
+   the app instead of reading as a one-off. */
 (function () {
   const groups = JSON.parse((document.getElementById("duplicates-data") || {}).textContent || "[]");
   const payees = JSON.parse((document.getElementById("payees-data") || {}).textContent || "[]");
@@ -36,8 +46,29 @@
   }
   function sync() {
     mergeBtn.disabled = !sections.some((s) => checksIn(s).filter((c) => c.checked).length >= 2);
+    // Each section's own "select all" reflects that section's checks —
+    // same tri-state (checked/indeterminate/unchecked) convention every
+    // other select-all in this app already uses (Staging's own, the
+    // Journal's "Select entries").
+    sections.forEach((s) => {
+      const groupAll = s.querySelector(".group-check-all");
+      if (!groupAll) return;
+      const checks = checksIn(s);
+      const checkedCount = checks.filter((c) => c.checked).length;
+      groupAll.checked = checkedCount === checks.length && checks.length > 0;
+      groupAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
+    });
   }
-  sections.forEach((s) => checksIn(s).forEach((c) => c.addEventListener("change", sync)));
+  sections.forEach((s) => {
+    checksIn(s).forEach((c) => c.addEventListener("change", sync));
+    const groupAll = s.querySelector(".group-check-all");
+    if (groupAll) {
+      groupAll.addEventListener("change", () => {
+        checksIn(s).forEach((c) => { c.checked = groupAll.checked; });
+        sync();
+      });
+    }
+  });
   sync();
 
   // -- A small overlay, reused for both the three-way dialog and the
@@ -153,10 +184,18 @@
     refInput.value = survivor.reference || "";
     field(modalBody, "Reference", refInput);
 
+    // A real combobox, not a plain <select> — matches every other payee
+    // picker in the app (New entry, Scheduled, Templates), per live
+    // feedback that a plain <select> here read as inconsistent.
+    // enhanceSelect() replaces this element's own rendering in place, so
+    // it has to already be live in the document first — modalBody itself
+    // is always in the DOM (just hidden via overlay.hidden), so this is
+    // safe to call right after field() appends it.
     const payeeSelect = document.createElement("select");
+    payeeSelect.dataset.createUrl = "/payees/quick-create";
     const noneOpt = document.createElement("option");
     noneOpt.value = "";
-    noneOpt.textContent = "(none)";
+    noneOpt.textContent = "None";
     payeeSelect.appendChild(noneOpt);
     payees.forEach((p) => {
       const opt = document.createElement("option");
@@ -166,6 +205,7 @@
       payeeSelect.appendChild(opt);
     });
     field(modalBody, "Payee", payeeSelect);
+    if (window.PostWardenCombobox) window.PostWardenCombobox.enhance(payeeSelect);
 
     const tagsWrap = document.createElement("div");
     tagsWrap.className = "tag-input";

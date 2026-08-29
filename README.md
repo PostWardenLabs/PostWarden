@@ -72,11 +72,11 @@ instance.
   activity, and their plain balance-sheet roll-forward — runs on every
   load and flags a mismatch instead of silently showing a number that
   doesn't reconcile.
-- **T-Accounts** — every account with activity this month, drawn as the
-  classic two-column ledger card (debits left, credits right, a bold
-  total on whichever side the balance actually landed) — a teaching aid
-  for double-entry itself, not another working report, so it's always
-  the current month, nothing to configure beyond scenario.
+- **Ledger** — every account with activity this month, drawn as the
+  classic T-account card (a date next to each debit and each credit, a
+  bold total on whichever side the balance actually landed) — a teaching
+  aid for double-entry itself, not another working report, so it's
+  always the current month, nothing to configure beyond scenario.
 - **A Budget grid** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No

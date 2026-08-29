@@ -25,7 +25,12 @@
 
   {% for g in groups %}
   <section class="duplicate-group" data-group-index="{{ loop.index0 }}">
-    <h2 class="duplicate-group-label">{{ g.label }}</h2>
+    <h2 class="duplicate-group-label">
+      {{ g.label }}
+      <label class="checkline group-select-all" style="display: inline-flex; margin-left: 0.8rem;">
+        <input type="checkbox" class="group-check-all"> select all in this section
+      </label>
+    </h2>
     <table class="ledger">
       <thead><tr>
         <th></th>
