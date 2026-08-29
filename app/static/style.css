@@ -1040,6 +1040,7 @@ table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; 
 .neg { color: var(--red); }
 .dim { color: var(--ink-soft); }
 .small { font-size: 0.8rem; }
+.italic { font-style: italic; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 /* Every server-rendered money amount, anywhere — main.py's money()
    filter always wraps its value in this span, whether it lands inside

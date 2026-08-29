@@ -4425,9 +4425,11 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
     *everything* Staging is holding regardless of which of the two
     producers put it there (a materialized schedule or a CSV import), so
     both joins are LEFT — for the "where's this headed, and where did it
-    come from" display detail (and, now, the Scenario filter), not a
-    filter on their own — and each entry has at most one of the two set,
-    never both."""
+    come from" display detail (the Scenario filter, and each row's own
+    origin line — "Created from schedule 'Rent'"/"Imported from file
+    'march.csv' on 2026-08-26", see staging.html) — not a filter on
+    their own, and each entry has at most one of the two set, never
+    both."""
     where, params, _ = _staging_filter(date_from, date_to, qtext, tags, account, payee,
                                        amount_op, amount_value, amount_value2, target_scenario)
     entries = q(f"""
@@ -4435,7 +4437,13 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
                p.name AS payee_name,
                COALESCE(ts.code, ib_ts.code) AS target_scenario_code,
                COALESCE(ts.name, ib_ts.name) AS target_scenario_name,
+               se.description AS schedule_description,
                ib.filename AS import_filename,
+               -- Cast to plain date: created_at is a TIMESTAMPTZ, but
+               -- dateformat() (see its own comment) expects the pure-date
+               -- shape every other date in this app has, no time
+               -- component to strip or a timezone to reason about.
+               ib.created_at::date AS import_date,
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
                  WHERE l.entry_id = e.id) AS total_debits
           FROM journal_entries e

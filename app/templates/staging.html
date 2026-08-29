@@ -159,9 +159,21 @@
           Rejecting one entry is the top-of-page bulk Reject with just
           this one checked, same as it is for many — no per-entry Reject
           here anymore, one mechanism instead of two.
+
+          Origin text (right side, same row as Edit) — which of Staging's
+          two producers actually created this row. Exactly one of
+          schedule_description/import_filename is ever set (an entry
+          never has both scheduled_entry_id and import_batch_id —
+          fn_staging_manual_entry_guard, SPEC.md decision 9), so this is
+          an if/elif, never a case needing both at once.
         #}
-        <p style="margin-top: 0.6rem;">
+        <p style="margin-top: 0.6rem; display: flex; justify-content: space-between; align-items: baseline;">
           <button type="button" class="quiet staging-edit-btn" data-entry-id="{{ e.id }}">Edit</button>
+          {% if e.schedule_description %}
+          <span class="dim small italic">Created from schedule &lsquo;{{ e.schedule_description }}&rsquo;</span>
+          {% elif e.import_filename %}
+          <span class="dim small italic">Imported from file &lsquo;{{ e.import_filename }}&rsquo; on {{ e.import_date | dateformat }}</span>
+          {% endif %}
         </p>
       </div>
     </div>
