@@ -242,22 +242,37 @@ replaces the hand-rolled 55-line runner in `app/migrate.py`, with the
 current `schema.sql` as the baseline revision. `schema.sql` itself stays
 the source of truth for a fresh install.
 
-### 6. Two instances, separate volumes, identical deterministic seed
+### 6. One instance, not two — `master` is a git fallback, not a running comparison target
 
-Not one shared database. Both instances load
-`schema.sql` + `seed.sql` + `seed_demo.sql`. `db/seed_demo.sql` is 418
+Originally planned as two live instances on separate volumes — the
+existing Jinja app on one, the new backend on the other, both loaded
+with `schema.sql` + `seed.sql` + `seed_demo.sql` — so report figures
+could be diffed screen by screen against identical data.
+
+Dropped. This is a committed, all-in rebuild, not a parallel-track
+migration: `master` stays as a git-level fallback only, in case this
+effort is abandoned, and nobody runs its app again otherwise — that
+includes locally. Standing up and maintaining a second live container
+for the sole purpose of number-diffing is ops overhead the plan no
+longer needs.
+
+`db/seed_demo.sql` stays exactly as useful, for a different reason: 418
 lines, 58 journal entry and line inserts, hardcoded amounts, **zero
-`random()`** — fully deterministic, so both instances produce identical
-numbers on every report while remaining completely isolated.
-
-Separate volumes are better than sharing one: a bug in the new app
-cannot pollute the dataset being compared against, either side resets
-freely, and the two codebases stay entirely decoupled — the backend
-never has to serve two UIs.
+`random()`** — fully deterministic, so it is still the right fixture to
+develop and test the one new instance against. Reproducible numbers on
+every run; just not a second instance to compare them to.
 
 Note that `seed.sql` alone seeds only accounts, scenarios and levels
 with **no entries at all**. `seed_demo.sql` is mandatory here, not
 optional.
+
+If a specific figure ever needs a real cross-check, `master` can still
+be checked out and run locally on demand, once, for that one number —
+that capability costs nothing to keep and stays true. It is a fallback,
+not standing infrastructure. Numeric confidence beyond the 60
+pure-Postgres tests and each module's own tests comes from the
+hand-worked fixture in decision 4 instead, if it's ever actually
+wanted.
 
 Entry ids are random 6-character codes (`SPEC.md` decision 17), so ids
 will differ between instances. **Compare on `(date, description,
@@ -376,8 +391,11 @@ This is where rebuilds overrun. Budget for it explicitly.
 
 - The **60 pure-Postgres tests** stay green throughout, unchanged.
 - Each module's ported tests green in CI.
-- **Per screen:** run both instances side by side on identical seed data
-  and compare figures. Compare on `(date, description, amount)`.
+- **Per screen:** verify against `db/seed_demo.sql`'s deterministic
+  data — its figures are fixed and can be checked directly. Compare on
+  `(date, description, amount)`, never on id, per decision 6. There is
+  no standing second instance to diff against; check out `master`
+  locally on demand if a specific figure ever needs a real cross-check.
 - **Export parity:** byte-compare CSV and XLSX against current output.
   Zero coverage today, and the XLSX files carry live Excel formulas —
   the "Net income after X" rows are deliberately cell-by-cell sums
@@ -393,8 +411,9 @@ This is where rebuilds overrun. Budget for it explicitly.
 Merge `rebuild` into `master`, tag, deploy beta first, and exercise it
 **authenticated**. An unauthenticated `303` sweep proves nothing:
 `auth_gate` redirects before any route body — and therefore any query —
-ever runs. Keep the Jinja instance running until beta has been used in
-anger for a week, then delete.
+ever runs. This is the cutover, not a staged rollout: once beta is
+confirmed good, the new app is what's live — there is no parallel Jinja
+instance being kept running anywhere, per decision 6.
 
 ## 9. What would make us stop
 
@@ -407,6 +426,7 @@ Recorded up front, so it is a decision rather than a rationalization:
   justification is making future features cheaper. If the features stop
   mattering, so does this.
 
-The fallback is cheap and should stay that way: `master` keeps working,
-the database is untouched, and the two instances are independent. That
-is deliberate. Do not take actions that erode it.
+The fallback is cheap and should stay that way: `master` keeps working
+as a git-level fallback, and its database is untouched — nothing about
+this rebuild runs against it or depends on it running anywhere. That is
+deliberate. Do not take actions that erode it.

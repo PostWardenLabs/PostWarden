@@ -37,10 +37,12 @@ Then, as before:
 
 ## Branch discipline
 
-- **`master` stays working and stays untouched.** It is the fallback and
-  the comparison oracle. Do not refactor it, do not "quickly fix" things
-  on it while passing through, and do not merge `rebuild` into it until
-  the cutover in `REBUILD.md` §8.
+- **`master` stays working and stays untouched.** It is a git-level
+  fallback only, in case this effort is abandoned — not a running
+  comparison target; no second live container is maintained for
+  diffing against it (`REBUILD.md` §5.6). Do not refactor it, do not
+  "quickly fix" things on it while passing through, and do not merge
+  `rebuild` into it until the cutover in `REBUILD.md` §8.
 - **Pushing `rebuild` does not deploy anything.**
   `.github/workflows/notify-postwarden-public.yml` fires its
   `repository_dispatch` on pushes to `master` *specifically*, so beta
@@ -92,14 +94,15 @@ considering the task finished.
 
 ## Working conventions
 
-- **Two instances, separate volumes, identical seed.** The whole
-  verification model depends on this — see `REBUILD.md` §5.6. Both load
-  `schema.sql` + `seed.sql` + `seed_demo.sql`. `seed_demo.sql` is
-  **mandatory**, not optional: `seed.sql` alone seeds accounts,
-  scenarios and levels with no journal entries at all, and an empty
-  ledger cannot verify a report. Entry ids are random 6-character codes
-  (`SPEC.md` decision 17), so compare on `(date, description, amount)`,
-  never on id.
+- **One instance, deterministic seed.** This is a committed, all-in
+  rebuild, not a parallel-track migration — `master` is a git fallback
+  only, no second live container is kept running to diff against (see
+  `REBUILD.md` §5.6). The new instance loads `schema.sql` + `seed.sql`
+  + `seed_demo.sql`. `seed_demo.sql` is **mandatory**, not optional:
+  `seed.sql` alone seeds accounts, scenarios and levels with no journal
+  entries at all, and an empty ledger cannot verify a report. Entry ids
+  are random 6-character codes (`SPEC.md` decision 17), so compare on
+  `(date, description, amount)`, never on id.
 - **Local testing before calling anything done.** `docker compose up -d
   --build`; if `db/schema.sql` changed, `docker compose down -v` first
   (init scripts only run on a fresh volume). See the README's "Tests"
