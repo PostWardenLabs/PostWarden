@@ -272,9 +272,14 @@ trigger N" comments — this is that list, in one place:
    has a `base_level_id` and the account sits exactly at that depth, and
    the account must be active.
 3. **`fn_lines_immutable`** (`journal_lines`, BEFORE UPDATE OR DELETE) —
-   UPDATE always raises; DELETE raises unless the line's entry is a
-   still-pending Staging entry (`scenarios.is_staging` and `journal_
-   entries.promoted_entry_id IS NULL` — see SPEC.md decision 15).
+   DELETE raises unless the line's entry is a still-pending Staging
+   entry (`scenarios.is_staging` and `journal_entries.promoted_entry_id
+   IS NULL` — see SPEC.md decision 15). UPDATE raises unless the only
+   thing changing is `memo` — `entry_id`/`line_no`/`account_id`/`amount`
+   must all stay exactly as they were — regardless of the entry's
+   Staging status either way (SPEC.md decision 16's tags reasoning,
+   extended to this one column: organizational, not part of the
+   accounting fact).
    **`fn_entries_guard`** (`journal_entries`, BEFORE UPDATE OR DELETE) —
    DELETE raises under the same condition `fn_lines_immutable` checks;
    UPDATE raises unless only `description`/`reference` changed, or —

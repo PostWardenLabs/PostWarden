@@ -1240,6 +1240,18 @@ button.quiet:disabled {
              font-family: var(--mono); text-transform: uppercase;
              letter-spacing: 0.04em; font-size: 0.7rem; color: var(--ink-soft); }
 
+/* -- Journal line memo, click-to-edit (see memo-edit.js) ------------------
+   Cursor + a faint hover fill are the cell's only "this is clickable"
+   signal — no visible border/underline while not editing, so a filled-in
+   memo still reads as plain text the rest of the time, same instinct as
+   every other click-through in this app (an amount link only says
+   "clickable" via cursor/hover, never a permanent underline). The input
+   that replaces the span while editing matches table.entry-grid's own
+   "full width, --rule border" shape for a cell-sized input. */
+.memo-cell { cursor: pointer; }
+.memo-cell:hover { background: var(--paper-deep); }
+.memo-input { width: 100%; border-color: var(--rule); font: inherit; }
+
 /* -- "select entries" mode (Journal — see entries-select.js) --------------
    Hidden until toggled on: reading the Journal is the common case,
    selecting entries for a bulk action is the deliberate exception, unlike

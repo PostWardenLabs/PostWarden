@@ -3467,7 +3467,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     lines_by_entry = {}
     tags_by_entry = {}
     if ids:
-        for ln in q("""SELECT l.entry_id, l.line_no, l.debit, l.credit,
+        for ln in q("""SELECT l.id, l.entry_id, l.line_no, l.debit, l.credit,
                               l.memo, a.code AS account_code,
                               a.name AS account_name
                          FROM journal_lines l
@@ -3898,6 +3898,32 @@ def edit_entry_description(entry_id: str, request: Request,
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/entries", err=msg)
     return flash_redirect("/entries", ok=f"Entry #{entry_id} updated")
+
+
+@app.post("/entries/lines/{line_id}/edit-memo")
+async def edit_line_memo(line_id: int, request: Request):
+    """Click-to-edit memo on a single journal line (memo-edit.js swaps
+    the cell's text for an input in place) — any entry, posted or still
+    pending in Staging alike, since `fn_lines_immutable`'s own memo-only
+    exception (SPEC.md decision 16's addendum) doesn't condition on
+    Staging status at all, unlike the trigger's other carve-outs. JSON
+    in/out (fetch-driven, no page navigation), same shape as
+    /entries/tags above — no entry_id in the URL because journal_lines.id
+    already identifies exactly one row on its own, and this app has no
+    per-user row ownership to check beyond the session auth every route
+    already requires."""
+    form = await request.form()
+    memo = (form.get("memo") or "").strip() or None
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        with tx() as cur:
+            cur.execute("UPDATE journal_lines SET memo = %s WHERE id = %s", (memo, line_id))
+            if cur.rowcount == 0:
+                raise ValueError(f"Line {line_id} not found")
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "memo": memo or ""})
 
 
 # ---------------------------------------------------------------------------

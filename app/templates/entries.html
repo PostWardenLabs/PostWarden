@@ -269,7 +269,16 @@
           <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
           <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
           <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
-          <td class="dim">{{ l.memo or '' }}</td>
+          {#
+            Click-to-edit (memo-edit.js): clicking this cell swaps its
+            text for an input in place, saved via fetch to
+            /entries/lines/{id}/edit-memo on blur/Enter, Escape to
+            cancel. An empty memo shows a placeholder ("Add memo",
+            .memo-empty) so there's always something to click, and
+            memo-edit.js knows to start that one from a blank input
+            rather than literally editing the word "Add memo".
+          #}
+          <td class="dim memo-cell" data-line-id="{{ l.id }}"><span class="memo-text{{ ' memo-empty italic' if not l.memo }}">{{ l.memo or 'Add memo' }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -306,4 +315,5 @@
 <script src="{{ asset('app.js') }}"></script>
 <script src="{{ asset('entry_templates.js') }}"></script>
 <script src="{{ asset('entries-select.js') }}"></script>
+<script src="{{ asset('memo-edit.js') }}"></script>
 {% endblock %}

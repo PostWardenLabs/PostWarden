@@ -401,6 +401,31 @@ inline edit — a typo fix, same reasoning as a tag: organizational, not
 a fact about the transaction, and equally worth being able to fix on
 something already posted.
 
+**Addendum — `journal_lines.memo` gets the identical carve-out, at the
+trigger level rather than just the app layer.** Before this, a line's
+memo was set once at posting time and then genuinely frozen —
+`fn_lines_immutable` raised on *any* UPDATE, full stop, no exception
+for Staging or anything else. That was tighter than the actual
+rationale justified: a memo is exactly the kind of note-to-self a tag
+is ("annual renewal, not the usual monthly charge"), attached to one
+leg instead of the whole entry, but organizational for the identical
+reason — it doesn't say what happened, only how to remember or file it.
+There was no principled argument for tags being editable everywhere and
+memo being editable nowhere; it just hadn't been asked for yet.
+
+The exception is scoped at `fn_lines_immutable` itself, not merely by
+which routes the app happens to expose: an UPDATE is allowed only when
+`entry_id`, `line_no`, `account_id`, and `amount` all stay exactly
+equal to their old values, `memo` the sole column actually free to
+change — enforced regardless of which client sends the UPDATE, same
+"push it into Postgres, not just app code" philosophy as every other
+integrity rule here (decision 2). Unlike tags, this needed a schema
+change (a trigger-function edit, not a new column) rather than being
+already-shipped scaffolding waiting for a UI — `db/schema.sql`'s own
+comment on integrity trigger 3 has the full before/after. The Journal's
+click-to-edit on each line's memo (`/entries/lines/{id}/edit-memo`,
+`docs/ARCHITECTURE.md`) is the one route that exercises it.
+
 ### 17. Entry ids are a random 6-character code, not a sequential integer
 
 Every other table in this schema uses a plain `BIGINT GENERATED ALWAYS

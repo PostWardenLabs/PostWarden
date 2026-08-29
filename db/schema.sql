@@ -617,13 +617,13 @@ BEFORE INSERT ON journal_lines
 FOR EACH ROW EXECUTE FUNCTION fn_line_account_guard();
 
 -- ---------------------------------------------------------------------------
--- Integrity trigger 3 — immutability, with one deliberate exception.
+-- Integrity trigger 3 — immutability, with two deliberate exceptions.
 --
 -- History is append-only: fix a posted mistake with a reversing entry (the
 -- app has a one-click Reverse), never by editing it. Posted entry headers
 -- allow editing only description/reference.
 --
--- The exception: an entry still sitting in Staging, awaiting approval
+-- The first exception: an entry still sitting in Staging, awaiting approval
 -- (scenarios.is_staging, journal_entries.promoted_entry_id IS NULL) isn't
 -- history yet — it's a draft a schedule or an import proposed, nobody has
 -- approved it into real books, and "you can't rewrite it" doesn't actually
@@ -642,6 +642,17 @@ FOR EACH ROW EXECUTE FUNCTION fn_line_account_guard();
 -- The instant an entry is approved (promoted_entry_id gets set), both
 -- exceptions vanish — it's real history from that point on, exactly like
 -- anything posted directly.
+--
+-- The second exception, added later and orthogonal to Staging status
+-- entirely: a line's own memo may always be UPDATEd, posted or pending
+-- alike, same reasoning decision 16 already gave tags — a memo is
+-- organizational metadata about a leg ("annual, not monthly" scribbled
+-- next to a subscription charge), not a fact about the transaction the
+-- append-only rule exists to protect. Scoped tightly at the trigger
+-- level, not just in the app: the UPDATE must leave entry_id, line_no,
+-- account_id, and amount all unchanged — anything touching the actual
+-- accounting fact still goes through the ordinary "immutable" path below,
+-- regardless of which client sends the UPDATE.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_lines_immutable() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -655,6 +666,11 @@ BEGIN
         IF v_deletable THEN
             RETURN OLD;
         END IF;
+    END IF;
+    IF TG_OP = 'UPDATE'
+       AND NEW.entry_id = OLD.entry_id AND NEW.line_no = OLD.line_no
+       AND NEW.account_id = OLD.account_id AND NEW.amount = OLD.amount THEN
+        RETURN NEW;
     END IF;
     RAISE EXCEPTION
         'Journal lines are immutable. Post a reversing entry instead (entry %)',

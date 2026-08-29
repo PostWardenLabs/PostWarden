@@ -559,6 +559,53 @@ def test_journal_line_update_rejected(conn, actual_scenario_id):
                 (eid,))
 
 
+def test_journal_line_memo_can_be_updated_on_a_posted_entry(conn, actual_scenario_id):
+    # SPEC.md decision 16's addendum: memo is organizational metadata,
+    # not part of the accounting fact, so it's the one column exempt
+    # from the immutability trigger — on any line, posted included, not
+    # just a still-pending Staging one.
+    with conn.cursor() as cur:
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        eid = mk_entry(cur, actual_scenario_id)
+        mk_line(cur, eid, acct1["id"], 50, line_no=1)
+        mk_line(cur, eid, acct2["id"], -50, line_no=2)
+    conn.commit()
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE journal_lines SET memo = %s WHERE entry_id = %s AND line_no = 1",
+            ("annual, not the usual monthly charge", eid))
+    conn.commit()  # must not raise
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT memo FROM journal_lines WHERE entry_id = %s AND line_no = 1", (eid,))
+        assert cur.fetchone()["memo"] == "annual, not the usual monthly charge"
+
+
+def test_journal_line_memo_update_still_rejects_a_smuggled_amount_change(conn, actual_scenario_id):
+    # The exception checks every other column stays exactly equal, not
+    # just "memo is one of the columns in this UPDATE" — combining a
+    # memo change with an amount change in the same statement must still
+    # raise, or the memo carve-out would double as a backdoor around the
+    # actual accounting-fact immutability this trigger exists to enforce.
+    with conn.cursor() as cur:
+        acct1 = mk_account(cur)
+        acct2 = mk_account(cur)
+        eid = mk_entry(cur, actual_scenario_id)
+        mk_line(cur, eid, acct1["id"], 50, line_no=1)
+        mk_line(cur, eid, acct2["id"], -50, line_no=2)
+    conn.commit()
+
+    with expect_error(conn, match="immutable"):
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE journal_lines SET memo = 'nice try', amount = 999 "
+                "WHERE entry_id = %s AND line_no = 1",
+                (eid,))
+
+
 def test_journal_line_delete_rejected(conn, actual_scenario_id):
     with conn.cursor() as cur:
         acct1 = mk_account(cur)
