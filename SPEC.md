@@ -1061,6 +1061,79 @@ revisiting only if Staging's pending count ever grows large enough for
 the scan itself to be the slow part, which nothing about today's usage
 patterns suggests.
 
+### 23. Importing single-entry files is a per-import mapping, not a persistent rules table
+
+Some export formats never had double entry in the first place — one
+row per transaction, an Account column and a Category column, no debit/
+credit of their own (ActualBudget's own CSV export is the concrete
+example this was built against). `/import` already expects a file that
+*is* double-entry shaped (`Entry #`/`Account code`/`Debit`/`Credit`
+columns); this needed a second importer that builds the double entry
+first, from a file that never had it.
+
+**A "rule" is two mapping tables scoped to one file, not a saved,
+named, reusable ruleset.** `/import/mapped` reads the uploaded file's
+own distinct Account and Category values and asks, once per distinct
+value: which real PostWarden account is this? Account values map to
+the "money" leg (the checking account, the credit card); Category
+values map to the "other" leg (an expense/income account, or a single
+chosen catch-all for whatever the export left blank). That mapping
+never touches the database — it round-trips as ordinary form fields on
+the review page, alongside the file's own content (base64, in a hidden
+field), so there is nothing to name, save, version, or clean up between
+"here's my file" and "here's how to read it." This is the literal
+reading of the feature's own ask: a screen to add rules for *this*
+import, not a rules-library feature — and it means no new table, which
+a persistent named-ruleset version would have needed (one for the
+ruleset, one for its conditions/actions).
+
+**Sign convention is fixed, not configurable per rule**: a negative
+`Amount` debits the Category account and credits the Account (money
+out increases an expense, decreases the money account); positive is
+the mirror image. A `Flip Amount's sign` checkbox handles the export
+whose convention runs the other way, rather than exposing sign logic
+per mapping row — every row in one file follows the same convention, so
+per-row control would be a knob nobody needs to turn twice.
+
+**Deliberately not a conditional rule engine.** The feature's own
+original example (`BACKLOG.md`) included a second rule shaped
+differently from the first — "IF account is X AND Notes contains
+'withdrawal' THEN debit Cash / credit Savings," an override that has
+nothing to do with Category at all, for the transfers and cash
+withdrawals a personal-finance export usually leaves uncategorized.
+Building that would mean a real condition/action structure (match on
+Account, Notes-contains, arbitrary boolean combinations) — a
+meaningfully bigger feature than "map each distinct value to an
+account" once actually scoped out, and the two don't obviously share
+much implementation once you have both. `/import/mapped` instead folds
+every blank-Category row into one bucket the user maps to a single
+account of their choosing; a file whose blank-Category rows are *all*
+one kind of transaction (all withdrawals, say) maps correctly by
+picking that account. A file mixing several kinds under one blank
+Category (a transfer next to an uncategorized refund, as in this
+feature's own manual testing) doesn't — those rows land against
+whichever single account got chosen for "no category," silently wrong
+rather than flagged, and need a manual reclass in the Journal
+afterward. Documented here rather than quietly shipped as if it covered
+every case; a real conditional layer is the natural v2 if this gap
+turns out to matter in practice, built as its own feature rather than
+bolted onto the mapping model above.
+
+**No validation beyond "is this a real, postable account" until the
+transform step.** `/import/mapped/preview` never touches the database
+except to list postable accounts for the picker — it doesn't check
+dates, amounts, or balance anything, since at that point there's still
+only single-entry rows, nothing to balance yet. Every actual check
+(numeric `Amount`, ISO `Date`, a mapping chosen for every value a row
+actually uses) happens once, in `_transform_mapped_rows()`, at the
+point where a row is about to become a real two-line group — the exact
+same "validate everything before touching the database, report bad
+rows by number, never partially commit" shape `_parse_csv_import`
+already established for the plain importer (decision 9's own
+`import_batches` conventions), reused via one shared
+`_stage_import_groups()` helper so both importers insert through
+identical code.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries
@@ -1100,9 +1173,12 @@ record of what was originally proposed and how it actually landed.
   approval layover through STAGING that wasn't part of the original
   proposal, added because posting straight to the target on the due
   date turned out to be the wrong default for a personal ledger.
-- **Import** — CSV/CAMT bank import posting suggested entries to a staging
-  scenario for review before promotion to ACTUAL. The staging-and-approve
-  mechanism this describes now already exists (decision 9) for a
-  different producer (schedules, not an importer) — a CSV importer could
-  likely reuse `materialize_due_schedules()`'s pattern (or the STAGING
-  scenario itself) directly rather than inventing a second approval flow.
+- ~~**Import** — CSV/CAMT bank import posting suggested entries to a
+  staging scenario for review before promotion to ACTUAL.~~ Shipped,
+  landing in the STAGING scenario itself exactly as this predicted
+  rather than a second approval mechanism: `/import` for files that
+  already carry real debits and credits, `/import/mapped` (decision 23)
+  for single-entry exports that don't, both through one shared
+  `_stage_import_groups()` insert path. CAMT specifically was never
+  built — every real request for this has been CSV-shaped exports
+  (bank statements, ActualBudget) rather than CAMT XML.

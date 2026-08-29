@@ -2,6 +2,7 @@
 
 HTML screens for humans, /api/* JSON for machines, PostgreSQL for the truth.
 """
+import base64
 import calendar
 import csv
 import io
@@ -5305,6 +5306,50 @@ def import_page(request: Request, ok: str = None, err: str = None):
     })
 
 
+def _stage_import_groups(groups: list[dict], filename: str, target_scenario_id: int,
+                         user_id: int) -> int:
+    """Shared by both importers (the raw double-entry CSV and the mapped
+    single-entry one below): one `import_batches` row, then one
+    `journal_entries` + its `journal_lines` per group, all landing in
+    Staging (decision 15) regardless of which parser produced `groups` —
+    same shape either way: entry_date/description/reference/payee_name/
+    lines[{code, amount, memo}]. Returns the new batch id."""
+    staging = q1("SELECT id FROM scenarios WHERE is_staging")
+    if not staging:
+        raise ValueError("No Staging scenario configured")
+    with tx() as cur:
+        cur.execute(
+            """INSERT INTO import_batches
+                   (filename, target_scenario_id, imported_by_user_id, row_count)
+               VALUES (%s, %s, %s, %s) RETURNING id""",
+            (filename, target_scenario_id, user_id, len(groups)))
+        batch_id = cur.fetchone()["id"]
+        for g in groups:
+            payee_id = None
+            if g["payee_name"]:
+                cur.execute(
+                    """INSERT INTO payees (name) VALUES (%s)
+                       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                       RETURNING id""",
+                    (g["payee_name"],))
+                payee_id = cur.fetchone()["id"]
+            cur.execute(
+                """INSERT INTO journal_entries
+                       (scenario_id, entry_date, description, reference,
+                        payee_id, import_batch_id)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (staging["id"], g["entry_date"], g["description"],
+                 g["reference"], payee_id, batch_id))
+            entry_id = cur.fetchone()["id"]
+            for n, ln in enumerate(g["lines"], start=1):
+                cur.execute(
+                    """INSERT INTO journal_lines
+                           (entry_id, line_no, account_id, amount, memo)
+                       VALUES (%s, %s, (SELECT id FROM accounts WHERE code = %s), %s, %s)""",
+                    (entry_id, n, ln["code"], ln["amount"], ln["memo"]))
+    return batch_id
+
+
 @app.post("/import")
 async def import_csv(request: Request, target_scenario_id: str = Form(...),
                      csrf_token: str = Form(...), file: UploadFile = File(...)):
@@ -5320,41 +5365,8 @@ async def import_csv(request: Request, target_scenario_id: str = Form(...),
         if not groups:
             raise ValueError("; ".join(errors[:IMPORT_MAX_ERRORS_SHOWN]) or "No valid entries found in the file")
 
-        staging = q1("SELECT id FROM scenarios WHERE is_staging")
-        if not staging:
-            raise ValueError("No Staging scenario configured")
-
-        with tx() as cur:
-            cur.execute(
-                """INSERT INTO import_batches
-                       (filename, target_scenario_id, imported_by_user_id, row_count)
-                   VALUES (%s, %s, %s, %s) RETURNING id""",
-                (file.filename or "import.csv", int(target_scenario_id),
-                 auth.current_user(request)["user_id"], len(groups)))
-            batch_id = cur.fetchone()["id"]
-            for g in groups:
-                payee_id = None
-                if g["payee_name"]:
-                    cur.execute(
-                        """INSERT INTO payees (name) VALUES (%s)
-                           ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-                           RETURNING id""",
-                        (g["payee_name"],))
-                    payee_id = cur.fetchone()["id"]
-                cur.execute(
-                    """INSERT INTO journal_entries
-                           (scenario_id, entry_date, description, reference,
-                            payee_id, import_batch_id)
-                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (staging["id"], g["entry_date"], g["description"],
-                     g["reference"], payee_id, batch_id))
-                entry_id = cur.fetchone()["id"]
-                for n, ln in enumerate(g["lines"], start=1):
-                    cur.execute(
-                        """INSERT INTO journal_lines
-                               (entry_id, line_no, account_id, amount, memo)
-                           VALUES (%s, %s, (SELECT id FROM accounts WHERE code = %s), %s, %s)""",
-                        (entry_id, n, ln["code"], ln["amount"], ln["memo"]))
+        _stage_import_groups(groups, file.filename or "import.csv",
+                             int(target_scenario_id), auth.current_user(request)["user_id"])
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
         return flash_redirect("/import", err=msg)
@@ -5366,6 +5378,207 @@ async def import_csv(request: Request, target_scenario_id: str = Form(...),
         if len(errors) > len(shown):
             shown.append(f"...and {len(errors) - len(shown)} more")
         err_msg = f"{len(errors)} row(s) skipped: " + "; ".join(shown)
+    return flash_redirect("/import", ok=ok_msg, err=err_msg)
+
+
+# ---------------------------------------------------------------------------
+# Import with rules — single-entry files (ActualBudget-style: one row per
+# transaction, an Account column and a Category column, no built-in double
+# entry) mapped into real double-entry postings.
+#
+# BACKLOG.md's own framing: "I don't see why this would require a new
+# table... a screen allows the user to add rules... the file is loaded,
+# Python does a transform, the output fits right into the existing
+# schema." Taken literally — there's no persistent "saved ruleset" table
+# here. A "rule" for v1 is just two mapping tables built fresh from
+# whatever distinct Account/Category values this *specific* file
+# contains: Account -> which real PostWarden account is the money side
+# of the transaction (checking, a credit card, ...), Category -> which
+# real account is the other side (an expense/income category, or a
+# manually-chosen account for the "(no category)" bucket most exports
+# use for transfers/withdrawals). The mapping never leaves the browser
+# between the two steps below — it round-trips as hidden form fields
+# alongside the file's own content (base64), so there's nothing to save,
+# expire, or clean up server-side between "here's my file" and "here's
+# how to read it."
+#
+# Deliberately NOT a full conditional rule engine (the backlog's own
+# Rule 2 example — "Notes contains 'withdrawal'" as an override — needs
+# one). Every row with the same Category maps to the same account, full
+# stop; a transfer/withdrawal that shares its (blank) Category with an
+# ordinary transaction can't be told apart from it here. Documented as a
+# known v1 limitation (SPEC.md decision 23) rather than silently
+# ignored — the condition-based version is a real, separate feature to
+# build if this shape turns out not to be enough in practice.
+# ---------------------------------------------------------------------------
+IMPORT_MAPPED_COLUMNS = ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
+IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
+
+
+def _parse_mapped_import_file(content: str) -> tuple[list[dict], list[str]]:
+    """(rows, errors). Unlike _parse_csv_import, this never validates
+    account codes or balances — there's no double entry yet at this
+    point, just raw single-entry rows waiting on the mapping step."""
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        return [], ["The file is empty"]
+    missing = [c for c in IMPORT_MAPPED_COLUMNS if c not in reader.fieldnames]
+    if missing:
+        return [], [f"Missing required column(s): {', '.join(missing)} — this importer "
+                     f"expects an ActualBudget-style export (Account, Date, Payee, Notes, "
+                     f"Category, Amount)"]
+    rows = []
+    for i, row in enumerate(reader, start=2):  # header is row 1
+        rows.append({
+            "row_no": i,
+            "account": (row.get("Account") or "").strip(),
+            "date": (row.get("Date") or "").strip(),
+            "payee": (row.get("Payee") or "").strip(),
+            "notes": (row.get("Notes") or "").strip(),
+            "category": (row.get("Category") or "").strip(),
+            "amount": (row.get("Amount") or "").strip(),
+        })
+    return rows, []
+
+
+def _transform_mapped_rows(rows: list[dict], account_map: dict[str, str],
+                           category_map: dict[str, str], flip_sign: bool
+                           ) -> tuple[list[dict], list[str]]:
+    """Applies the two mappings row by row, producing the same
+    (groups, errors) shape _parse_csv_import returns — every group
+    already balanced by construction (two legs, one the negation of the
+    other), so it can go straight into _stage_import_groups(). A zero-
+    amount row (some exports include these for a pending/cleared marker
+    row) is silently skipped, not an error — there's nothing to post."""
+    groups, errors = [], []
+    for r in rows:
+        money_code = account_map.get(r["account"])
+        if not money_code:
+            errors.append(f"Row {r['row_no']}: no mapping chosen for account {r['account']!r}")
+            continue
+        cat_key = r["category"] or IMPORT_MAPPED_NO_CATEGORY
+        other_code = category_map.get(cat_key)
+        if not other_code:
+            label = r["category"] or "(no category)"
+            errors.append(f"Row {r['row_no']}: no mapping chosen for category {label!r}")
+            continue
+        try:
+            amount = float(r["amount"].replace(",", ""))
+        except ValueError:
+            errors.append(f"Row {r['row_no']}: Amount {r['amount']!r} isn't numeric")
+            continue
+        if flip_sign:
+            amount = -amount
+        if amount == 0:
+            continue
+        try:
+            entry_date = date.fromisoformat(r["date"])
+        except ValueError:
+            errors.append(f"Row {r['row_no']}: invalid Date {r['date']!r} — expected YYYY-MM-DD")
+            continue
+        memo = r["notes"] or None
+        # Standard expense-tracker sign convention (negative = money out):
+        # debit whichever side increases, credit whichever side decreases.
+        # An expense (amount < 0) increases the category/expense account
+        # and decreases the money account; income/a refund (amount > 0)
+        # is the mirror image. Same "debit-positive" amount convention
+        # journal_lines.amount already uses everywhere else in the app.
+        if amount < 0:
+            lines = [{"code": other_code, "amount": round(-amount, 2), "memo": memo},
+                     {"code": money_code, "amount": round(amount, 2), "memo": memo}]
+        else:
+            lines = [{"code": money_code, "amount": round(amount, 2), "memo": memo},
+                     {"code": other_code, "amount": round(-amount, 2), "memo": memo}]
+        groups.append({
+            "entry_date": entry_date.isoformat(),
+            "description": r["payee"] or r["category"] or "Imported transaction",
+            "reference": None, "payee_name": r["payee"] or None, "lines": lines,
+        })
+    return groups, errors
+
+
+@app.get("/import/mapped")
+def import_mapped_page(request: Request, ok: str = None, err: str = None):
+    scen = [s for s in scenarios_all()
+           if not s["is_locked"] and not s["income_statement_only"] and not s["is_staging"]]
+    return templates.TemplateResponse(request, "import_mapped.html", {
+        "nav": "import", "scenarios": scen, "ok": ok, "err": err,
+    })
+
+
+@app.post("/import/mapped/preview")
+async def import_mapped_preview(request: Request, target_scenario_id: str = Form(...),
+                                csrf_token: str = Form(...), file: UploadFile = File(...)):
+    try:
+        require_csrf(request, csrf_token)
+        raw = await file.read()
+        try:
+            content = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValueError("Could not read the file as UTF-8 text")
+        rows, errors = _parse_mapped_import_file(content)
+        if errors:
+            raise ValueError("; ".join(errors))
+        if not rows:
+            raise ValueError("No rows found in the file")
+    except ValueError as e:
+        return flash_redirect("/import/mapped", err=str(e))
+
+    accounts_found = sorted({r["account"] for r in rows if r["account"]})
+    categories_found = sorted({r["category"] for r in rows if r["category"]})
+    has_no_category_rows = any(not r["category"] for r in rows)
+    return templates.TemplateResponse(request, "import_mapped_review.html", {
+        "nav": "import",
+        "accounts_found": accounts_found, "categories_found": categories_found,
+        "has_no_category_rows": has_no_category_rows,
+        "postable": postable_accounts_for_pickers(),
+        "target_scenario_id": target_scenario_id,
+        "filename": file.filename or "import.csv",
+        "file_b64": base64.b64encode(raw).decode("ascii"),
+        "row_count": len(rows),
+    })
+
+
+@app.post("/import/mapped")
+async def import_mapped_commit(request: Request):
+    try:
+        form = await request.form()
+        require_csrf(request, form.get("csrf_token"))
+        filename = form.get("filename") or "import.csv"
+        target_scenario_id = int(form.get("target_scenario_id"))
+        content = base64.b64decode(form.get("file_b64") or "").decode("utf-8-sig")
+        rows, errors = _parse_mapped_import_file(content)
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        account_map, category_map = {}, {}
+        for key, value in form.multi_items():
+            if not value:
+                continue
+            if key.startswith("account_map__"):
+                account_map[key[len("account_map__"):]] = value
+            elif key.startswith("category_map__"):
+                category_map[key[len("category_map__"):]] = value
+
+        groups, row_errors = _transform_mapped_rows(
+            rows, account_map, category_map, bool(form.get("flip_sign")))
+        if not groups:
+            raise ValueError("; ".join(row_errors[:IMPORT_MAX_ERRORS_SHOWN])
+                             or "No valid entries produced — check the mapping")
+
+        _stage_import_groups(groups, filename, target_scenario_id,
+                             auth.current_user(request)["user_id"])
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/import/mapped", err=msg)
+
+    ok_msg = f"Staged {len(groups)} entr{'y' if len(groups) == 1 else 'ies'} for review in Staging"
+    err_msg = None
+    if row_errors:
+        shown = row_errors[:IMPORT_MAX_ERRORS_SHOWN]
+        if len(row_errors) > len(shown):
+            shown.append(f"...and {len(row_errors) - len(shown)} more")
+        err_msg = f"{len(row_errors)} row(s) skipped: " + "; ".join(shown)
     return flash_redirect("/import", ok=ok_msg, err=err_msg)
 
 

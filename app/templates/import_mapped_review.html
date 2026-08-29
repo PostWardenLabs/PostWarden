@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Map accounts &amp; categories{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="page-sub">{{ filename }} — {{ row_count }} row{{ '' if row_count == 1 else 's' }} found.
+    Map each value below to a real PostWarden account, then Stage — every row becomes one
+    balanced double-entry posting in <a class="quiet-link" href="/staging">Staging</a>.
+    Leave a value unmapped to skip every row that uses it (reported, not silently dropped).</p>
+  <a href="/help#import" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
+
+<form method="post" action="/import/mapped" class="grid-form" style="grid-template-columns: 1fr;">
+  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
+  <input type="hidden" name="target_scenario_id" value="{{ target_scenario_id }}">
+  <input type="hidden" name="filename" value="{{ filename }}">
+  {#
+    The uploaded file's own bytes, round-tripped through this one hidden
+    field rather than kept server-side between the two steps — nothing to
+    store, expire, or clean up, and it means this whole flow needs no new
+    table (BACKLOG.md's own framing). Sized fine for a personal export;
+    see SPEC.md decision 23 for why this doesn't try to scale further.
+  #}
+  <input type="hidden" name="file_b64" value="{{ file_b64 }}">
+
+  <div class="panel">
+    <h2>Account — which is the money side?</h2>
+    <p class="dim small">Whichever real bank/credit-card account each of these represents.</p>
+    <table class="ledger">
+      <thead><tr><th>Found in file</th><th>Maps to</th></tr></thead>
+      <tbody>
+        {% for a in accounts_found %}
+        <tr>
+          <td class="mono">{{ a }}</td>
+          <td>
+            <select name="account_map__{{ a }}">
+              <option value="">— choose —</option>
+              {% for p in postable %}
+              <option value="{{ p.code }}">{{ p.code }} · {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Category — which account is the other side?</h2>
+    <p class="dim small">The expense/income account each category represents. "(no
+      category)" covers transfers/withdrawals and anything else this export left
+      blank — map it to whichever single account fits most of those rows, or leave
+      it unmapped to skip them all.</p>
+    <table class="ledger">
+      <thead><tr><th>Found in file</th><th>Maps to</th></tr></thead>
+      <tbody>
+        {% if has_no_category_rows %}
+        <tr>
+          <td class="dim italic">(no category)</td>
+          <td>
+            <select name="category_map__">
+              <option value="">— choose —</option>
+              {% for p in postable %}
+              <option value="{{ p.code }}">{{ p.code }} · {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endif %}
+        {% for c in categories_found %}
+        <tr>
+          <td class="mono">{{ c }}</td>
+          <td>
+            <select name="category_map__{{ c }}">
+              <option value="">— choose —</option>
+              {% for p in postable %}
+              <option value="{{ p.code }}">{{ p.code }} · {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <label class="checkline">
+      <input type="checkbox" name="flip_sign" value="1">
+      Flip Amount's sign (check this if a normal expense shows as a positive number in
+      your file instead of negative)
+    </label>
+    <button type="submit" style="margin-top: 0.8rem;">Stage {{ row_count }} row{{ '' if row_count == 1 else 's' }}</button>
+    <a class="button-link quiet" href="/import/mapped" style="margin-left: 0.5rem;">Start over</a>
+  </div>
+</form>
+{% endblock %}
