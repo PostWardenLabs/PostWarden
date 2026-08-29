@@ -2,9 +2,10 @@
 {% block title %}Import with rules{% endblock %}
 {% block content %}
 <div class="page-head">
-  <p class="page-sub">For single-entry exports (one row per transaction, no
-    debit/credit of their own) — an export from ActualBudget is the
-    example this was built for. Map each Account and Category value to a
+  <p class="page-sub">For single-entry exports — one row per transaction, no
+    debit/credit of their own — from whatever budgeting app or bank export
+    produces that shape; ActualBudget's own CSV export is the one this was
+    built and tested against. Map each Account and Category value to a
     real PostWarden account once, and every row gets turned into a proper
     double-entry posting, staged in <a class="quiet-link" href="/staging">Staging</a>
     for review same as any other import.</p>
@@ -14,8 +15,9 @@
 <div class="panel">
   <h2>Upload a single-entry CSV</h2>
   <p class="dim small">Expected columns: <span class="mono">Account, Date, Payee, Notes,
-    Category, Amount</span> — exactly what ActualBudget's own CSV export produces.
-    <span class="mono">Date</span> must be <span class="mono">YYYY-MM-DD</span>.</p>
+    Category, Amount</span> — exactly what ActualBudget's own CSV export produces,
+    but any file with those same column names works the same way, whatever
+    produced it. <span class="mono">Date</span> must be <span class="mono">YYYY-MM-DD</span>.</p>
   <form method="post" action="/import/mapped/preview" enctype="multipart/form-data" class="grid-form">
     <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
     <label class="field">Target scenario
