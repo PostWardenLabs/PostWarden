@@ -45,7 +45,24 @@ legacy `app/db.py`'s `tx()`). 7 new unit tests, all green, plus a
 one-off manual smoke test against a real `docker compose up -d db` to
 confirm the engine actually connects (not just that it constructs).
 
-**Next step:** 1.3 — a central `Decimal`/`date` JSON encoder.
+**Phase 1.3 done.** `json.py` — closes the "documented gap" REBUILD.md §6
+flags: a route's `Decimal`/`date` values need fixing in two genuinely
+different response paths, both covered now instead of per-route.
+`configure_decimal_encoding()` fixes FastAPI's own `jsonable_encoder`
+(used on an implicit `return {...}`), which otherwise silently downgrades
+`Decimal` to lossy `float`; `date`/`datetime` needed no fix there,
+verified rather than assumed. `JSONResponse` (same name/constructor as
+`fastapi.responses.JSONResponse`) fixes the explicit
+`JSONResponse({"ok": ...})` idiom legacy uses throughout, which Starlette
+renders via plain `json.dumps` and which raises outright on a bare
+`Decimal` *or* `date`/`datetime` with no fallback. 9 new unit tests
+(direct + end-to-end `TestClient` for both paths), all green. Wired into
+`main.py`'s app factory: `configure_decimal_encoding()` called at import
+time, `app`'s `default_response_class` set to the new `JSONResponse`.
+Verified with a real `docker compose up -d --build`: clean startup log,
+`/healthz` still 200.
+
+**Next step:** 1.4 — `modules/reports/`, the ~450 "genuinely hard" lines.
 
 ---
 
@@ -101,7 +118,7 @@ directly.
       no FastAPI.
 - [x] **1.2** `config.py` + `db.py` — settings and the SQLAlchemy Core
       engine/session setup.
-- [ ] **1.3** Central `Decimal`/`date` JSON encoder, fixed once here
+- [x] **1.3** Central `Decimal`/`date` JSON encoder, fixed once here
       rather than per-route. Documented gap, not theoretical — the
       current app hand-rolls workarounds twice (`staging_duplicates_page`'s
       `groups_json`, `templates_full()`).
@@ -252,6 +269,48 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.3 done: `json.py`, closing the `REBUILD.md`
+  §6 "documented gap" — a route's `Decimal`/`date` values, fixed once
+  centrally instead of per-route (legacy's own fix, `str()`-ing
+  debit/credit before building a JSON blob, is duplicated in
+  `staging_duplicates_page`'s `groups_json` and `templates_full()`).
+  Turned out to be two genuinely different bugs, not one, discovered by
+  actually testing both rather than assuming a single fix would cover
+  both: (1) a route that just `return`s a dict/Pydantic model goes
+  through FastAPI's own `jsonable_encoder`, whose built-in `Decimal`
+  handling silently downgrades to `float` — reintroducing on the way
+  *out* exactly the precision-loss risk `domain/money.py`'s Phase-1.1
+  switch to `Decimal` closed on the way in (confirmed with a real
+  example: `jsonable_encoder({"amount": Decimal("19.99")})` returns
+  `19.99` as a `float`, not the string a `NUMERIC(18,2)` value should
+  round-trip as). `date`/`datetime` needed no fix on this path —
+  verified, not assumed (`jsonable_encoder` already isoformats them
+  correctly). Fixed via `configure_decimal_encoding()`, which registers
+  a `str` encoder in FastAPI's own `ENCODERS_BY_TYPE` registry — a
+  supported extension point, not a private hack, since `jsonable_
+  encoder` looks up `type(obj)` there directly. (2) A route that
+  explicitly builds `JSONResponse({...})` — legacy's own idiom for the
+  `{"ok": True/False, ...}` action-toast responses scattered throughout
+  `app/main.py`, which the ported modules keep rather than inventing a
+  new shape — never goes through `jsonable_encoder` at all (it's a
+  FastAPI-only helper that never runs on an already-constructed
+  `Response`); Starlette's own `JSONResponse.render()` calls plain
+  `json.dumps`, which raises `TypeError` outright on a bare `Decimal`
+  *or* a bare `date`/`datetime`, no fallback. Fixed with a same-name,
+  same-constructor `JSONResponse` in `json.py` whose `render()` supplies
+  a `default=` callback handling both — a ported route only has to
+  change its import (`from postwarden.json import JSONResponse` instead
+  of `from fastapi.responses import JSONResponse`), nothing else at the
+  call site. Wired into `main.py`: `configure_decimal_encoding()` runs
+  at import time (process-wide, once, idempotent), and `app`'s
+  `default_response_class` is now the new `JSONResponse`. 9 new unit
+  tests under `backend/tests/test_json.py` — the two bugs above verified
+  directly, plus two end-to-end `TestClient` requests (one implicit
+  dict-return, one explicit `JSONResponse`) proving both paths actually
+  produce `"19.99"`, not `19.99`, over real HTTP. `pytest` — 65 passed
+  (56 prior + 9 new). Also verified with a real `docker compose up -d
+  --build`: clean startup log (no tracebacks), `/healthz` still 200 —
+  torn down after (`down -v`), not left running.
 - **2026-08-29** — Phase 1.2 done: `config.py` — a `pydantic-settings`
   `Settings` class + cached `get_settings()` centralizing the six env
   vars the legacy app read ad hoc across three files (`app/db.py`'s
