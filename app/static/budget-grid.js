@@ -187,7 +187,7 @@
     menuTarget = null;
   }
 
-  function openMenu(anchor, options) {
+  function openMenu(anchor, options, { align = "below-right" } = {}) {
     if (!menu) buildMenu();
     if (menuTarget === anchor && !menu.hidden) { closeMenu(); return; }
     menu.innerHTML = "";
@@ -204,8 +204,19 @@
     });
     const rect = anchor.getBoundingClientRect();
     menu.style.top = `${rect.bottom + 2}px`;
-    menu.style.right = `${window.innerWidth - rect.right}px`;
-    menu.style.left = "auto";
+    if (align === "below-left") {
+      // Set all values only — that button sits near the sidebar's own
+      // left edge, where the default right-aligned-below (the per-cell
+      // chevron's own direction, fine deep inside a wide table) pulled
+      // the menu's left edge further left still, back toward the
+      // sidebar. Left-aligned instead keeps the menu's own left edge at
+      // the button's left edge, opening rightward across the page.
+      menu.style.left = `${rect.left}px`;
+      menu.style.right = "auto";
+    } else {
+      menu.style.right = `${window.innerWidth - rect.right}px`;
+      menu.style.left = "auto";
+    }
     menu.hidden = false;
     menuTarget = anchor;
   }
@@ -245,12 +256,19 @@
       });
     }
     setAllToggle.addEventListener("click", () => {
+      // Same four sources as a single cell's own chevron menu (just
+      // above) — user-reported: this used to offer only two of the
+      // four, with no principled reason for which pair.
       openMenu(setAllToggle, [
-        [`Set ALL VALUES to ${scenarioCode} values for last month`,
+        ["SET ALL VALUES to ACTUAL values for last month",
+         () => setAll("lastActual", "their ACTUAL value for last month")],
+        [`SET ALL VALUES to ${scenarioCode} values for last month`,
          () => setAll("lastScenario", `${scenarioCode}'s own value for last month`)],
-        ["Set ALL VALUES to 3 month average of their ACTUAL values",
+        ["SET ALL VALUES to 3 month average of their ACTUAL values",
          () => setAll("avg3Actual", "the 3 month average of their ACTUAL values")],
-      ]);
+        [`SET ALL VALUES to 3 month average of their ${scenarioCode} values`,
+         () => setAll("avg3Scenario", `the 3 month average of their ${scenarioCode} values`)],
+      ], { align: "below-left" });
     });
   }
 })();

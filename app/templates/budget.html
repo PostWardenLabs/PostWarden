@@ -23,12 +23,24 @@
         </select>
       </label>
       <label class="field">Month
-        {# No Go button — data-auto-refresh (auto-refresh.js) already
+        {# A real <select>, not <input type="month"> — BACKLOG.md:
+           typing an out-of-range month (2026-13) reached
+           date.fromisoformat() as a raw ValueError and 500'd, because
+           an out-of-range <input type="month"> isn't reliably rejected
+           by every browser before it's submitted. A <select> can't
+           submit a value that isn't one of its own options, closing
+           that off entirely rather than just narrowing it — see
+           _month_options()'s own comment for the generated range.
+           No Go button — data-auto-refresh (auto-refresh.js) already
            submits on scenario/month change, same as every other report's
            filter bar; this was the only one that still had a leftover
            explicit submit doing nothing the auto-refresh didn't already
            cover (UI_CONSISTENCY_AUDIT.md). #}
-        <input type="month" name="month" value="{{ month[:7] }}">
+        <select name="month">
+          {% for m in month_options %}
+          <option value="{{ m }}" {{ 'selected' if m == month[:7] }}>{{ m }}</option>
+          {% endfor %}
+        </select>
       </label>
     </span>
     <span class="bar" style="margin-bottom: 0;">
@@ -55,7 +67,30 @@
   there's only ever one value to reconsider.
 #}
 <p class="bar" style="align-items: center;">
-  <button type="button" class="quiet" id="set-all-toggle">Set all values<span class="chevron chevron-down" style="margin-left: 0.4rem;"></span></button>
+  {# display: inline-flex + align-items: center on the button itself —
+     .chevron defaults to inline-block's own baseline alignment, which
+     every other use of it either doesn't care about (icon-only buttons,
+     flex-centered) or sidesteps entirely (.sidebar-chevron is position:
+     absolute). This is the one place a bare .chevron sits inline next
+     to real button text; vertical-align: middle (tried first) lines up
+     against the text's font metrics, which still read slightly off —
+     flexing the button itself and centering both children on the cross
+     axis is what actually guarantees it regardless of font/line-height,
+     without touching the base `button` rule every other button here
+     also uses. A further small nudge up on top of that (user-reported,
+     after confirming true geometric centering measured 0 — the
+     rotated-corner chevron shape's own visual weight sits low within
+     its bounding box, so a box-centered position still reads as
+     slightly low), via position: relative rather than transform, which
+     the chevron-down class already uses for its rotation and an inline
+     transform would silently replace rather than combine with. -1.5px:
+     the user's own final value, set directly in DevTools — two earlier
+     computed attempts (canvas text-metrics aimed at "chevron tip at the
+     text's own lowest point" landed on -4.5px, a smaller eyeballed -2px
+     after that read as overcorrected too) both missed what actually
+     looked right here, so this is the number that survived actually
+     being looked at rather than measured. #}
+  <button type="button" class="quiet" id="set-all-toggle" style="display: inline-flex; align-items: center;">Set all values<span class="chevron chevron-down" style="margin-left: 0.4rem; position: relative; top: -1.5px;"></span></button>
 </p>
 
 <table class="ledger report-table" data-collapse-key="postwarden-budget-collapsed-{{ scenario }}" data-pct-of-base="{{ 1 if pct_of_base else 0 }}" data-scenario-code="{{ scen.code }}">

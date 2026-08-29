@@ -2630,6 +2630,21 @@ def _shift_month(month: str, delta_months: int) -> str:
     return date(d.year + total // 12, total % 12 + 1, 1).isoformat()
 
 
+def _month_options(span: int = 36) -> list[str]:
+    """Options for the Month combo box (BACKLOG.md: typing a month let an
+    invalid one like "2026-13" reach date.fromisoformat() and 500 —
+    <input type="month"> only *usually* rejects that server-side, and
+    apparently doesn't in every browser). A real <select> can't submit a
+    value that isn't one of its own options, which closes that off
+    entirely, not just narrows it. -span..+span months around *today*,
+    not the currently selected month — so the option list itself doesn't
+    shift around as paging through prev/next moves the selection near
+    either edge of it; span=36 (six years) comfortably covers a personal
+    budget's realistic planning/lookback horizon either direction."""
+    today_month = date.today().replace(day=1).isoformat()
+    return [_shift_month(today_month, d)[:7] for d in range(-span, span + 1)]
+
+
 def _budget_rows(scenario: str, month: str, pct_of_base: bool = False) -> dict:
     month_start = date.fromisoformat(month)
     month_end = date(month_start.year, month_start.month,
@@ -2764,16 +2779,32 @@ def budget_page(request: Request, scenario: str = "", month: str = "",
     scenario = scenario or (scens[0]["code"] if scens else "")
     scen = next((s for s in scens if s["code"] == scenario), None)
     month_in = month or date.today().isoformat()
-    if len(month_in) == 7:  # "YYYY-MM" — what <input type="month"> and the prev/next links send
+    if len(month_in) == 7:  # "YYYY-MM" — what the Month select and prev/next links send
         month_in += "-01"
-    month = date.fromisoformat(month_in).replace(day=1).isoformat()
+    try:
+        month = date.fromisoformat(month_in).replace(day=1).isoformat()
+    except ValueError:
+        # A stale/hand-edited link (or a browser that let an out-of-range
+        # <input type="month"> through, back when this was one — see
+        # _month_options' own comment) used to reach this as a raw
+        # ValueError and 500. Falls back to the current month instead,
+        # same "don't crash on a bad filter value" leniency every other
+        # report's own date parsing already gets.
+        month = date.today().replace(day=1).isoformat()
+    month_options = _month_options()
+    if month[:7] not in month_options:
+        # Reachable via prev/next paging past the generated window's own
+        # edge, or a bookmarked/hand-typed link — keep it selectable
+        # rather than silently falling back to nothing matching.
+        month_options = sorted(set(month_options) | {month[:7]})
 
     data = (_budget_rows(scenario, month, bool(pct_of_base)) if scen else
            {"grouped": [], "net_budgeted": 0, "net_actual": 0, "net_variance": 0,
             "net_pct_variance": None, "month_start": month, "month_end": month})
     return templates.TemplateResponse(request, "budget.html", {
         "nav": "budget", "scenarios": scens, "scenario": scenario, "scen": scen,
-        "month": month, "prev_month": _shift_month(month, -1),
+        "month": month, "month_options": month_options,
+        "prev_month": _shift_month(month, -1),
         "next_month": _shift_month(month, 1), "pct_of_base": pct_of_base, **data,
         "ok": ok, "err": err,
     })

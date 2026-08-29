@@ -1768,7 +1768,13 @@ table.entry-grid .col-amount  { width: 15%; }
    anywhere in a tall, independently-scrolling report table, and fixed
    positioning (computed fresh on each open) sidesteps needing an
    offset-parent relationship with a cell buried in a scroll container. */
-.quickfill-menu { position: fixed; z-index: 20; min-width: 15rem; }
+/* z-index 65, not the standard combobox-panel 20 — this menu is
+   `position: fixed` and can open near the page's left edge (Budget
+   Grid's own page-level "Set all values" button sits right next to the
+   sidebar boundary), where z-index 20 rendered it behind the sidebar
+   (z-index 55) instead of on top of it. 65 clears both the sidebar and
+   its own toggle button (60), still under confirm-overlay's 100. */
+.quickfill-menu { position: fixed; z-index: 65; min-width: 15rem; }
 .quickfill-menu.combobox-panel { max-height: none; }
 .balance-bar {
   display: flex; gap: 2rem; align-items: baseline; flex-wrap: wrap;
