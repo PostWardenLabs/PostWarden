@@ -3053,11 +3053,25 @@ def accounts_page(request: Request, level_id: str = "", ok: str = None, err: str
     else:
         display_accounts = accounts
         rows = _accounts_with_gaps(accounts)
+    # BACKLOG.md's "are Assets/Liabilities/Equity/Income fixed top-level
+    # accounts?" — confirmed not enforced anywhere (create_account and
+    # quick_create_account both accept parent_id="" with any type). Left
+    # as a UI guardrail (accounts.js warns via confirm.js before
+    # submitting a second top-level Asset/Liability/Equity/Income
+    # account), not a DB constraint — a second top-level bucket of one of
+    # those four is a legitimate pattern for a power user (e.g. splitting
+    # "Personal Assets" from "Business Assets"), unlike Expense, which is
+    # *meant* to have several top-level roots (see db/seed.sql's own
+    # 5000-9000). This just needs to know which of the four already have
+    # one, computed from the same `accounts` list already fetched above.
+    top_level_types_taken = sorted({
+        a["account_type"] for a in accounts if not a["parent_id"]})
     return templates.TemplateResponse(request, "accounts.html", {
         "nav": "accounts", "accounts": accounts, "rows": rows,
         "display_accounts": display_accounts,
         "levels": account_levels_all(), "selected_level": selected_level,
         "account_types": ACCOUNT_TYPES, "type_labels": TYPE_LABELS,
+        "top_level_types_taken": top_level_types_taken,
         "ok": ok, "err": err,
     })
 

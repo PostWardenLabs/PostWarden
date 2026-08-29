@@ -13,8 +13,63 @@
 
    Also wires the "+" gap rows between account rows (see accounts.html) —
    an Actual Budget-style "hover between two rows to add a category here"
-   affordance, alternative to the form at the bottom of the page. */
+   affordance, alternative to the form at the bottom of the page.
+
+   Top-level guardrail (BACKLOG.md): PostWarden expects exactly one
+   top-level Asset/Liability/Equity/Income account each (Expense is the
+   deliberate exception — see db/seed.sql's own 5000-9000). Nothing in
+   the schema actually enforces that, on purpose — a second top-level
+   bucket of one of those four is a legitimate power-user pattern (e.g.
+   splitting "Personal Assets" from "Business Assets"), so this warns via
+   confirm.js rather than blocking outright. Wired into both places a
+   top-level account can be created: the "New account" panel at the
+   bottom of the page (works on every level-filtered view, not just "All
+   levels" — see below) and the tree view's own per-gap quick-add form. */
 (function () {
+  let topLevelTaken = new Set();
+  try {
+    const el = document.getElementById("top-level-types-data");
+    topLevelTaken = new Set(JSON.parse((el || {}).textContent || "[]"));
+  } catch (e) { /* no data blob (shouldn't happen) — warn on nothing */ }
+
+  function typeLabel(select, value) {
+    const opt = Array.from(select.options).find((o) => o.value === value);
+    return opt ? opt.textContent.trim() : value;
+  }
+
+  // Resolves true (go ahead and submit) unless this is a second top-level
+  // Asset/Liability/Equity/Income account, in which case it asks first.
+  function confirmIfDuplicateTopLevel(parentValue, typeSelect) {
+    const type = typeSelect.value;
+    if (parentValue || type === "expense" || !topLevelTaken.has(type)) {
+      return Promise.resolve(true);
+    }
+    const label = typeLabel(typeSelect, type);
+    return window.PostWardenConfirm.ask(
+      `PostWarden expects one top-level ${label} account, and you already ` +
+      `have one. Add another top-level ${label} account anyway?`);
+  }
+
+  function guardTopLevelSubmit(form, parentField, typeField) {
+    form.addEventListener("submit", (e) => {
+      if (form.dataset.topLevelConfirmed) { delete form.dataset.topLevelConfirmed; return; }
+      e.preventDefault();
+      confirmIfDuplicateTopLevel(parentField.value, typeField).then((ok) => {
+        if (!ok) return;
+        form.dataset.topLevelConfirmed = "1";
+        form.requestSubmit ? form.requestSubmit() : form.submit();
+      });
+    });
+  }
+
+  const newAccountForm = document.getElementById("new-account-form");
+  if (newAccountForm) {
+    guardTopLevelSubmit(
+      newAccountForm,
+      newAccountForm.querySelector('select[name="parent_id"]'),
+      newAccountForm.querySelector('select[name="account_type"]'));
+  }
+
   const body = document.getElementById("accounts-body");
   if (!body) return;
 
@@ -100,6 +155,7 @@
     const parentField = form && form.querySelector('input[name="parent_id"]');
     const typeField = form && form.querySelector(".add-gap-type");
     if (!trigger || !form) return;
+    guardTopLevelSubmit(form, parentField, typeField);
     trigger.addEventListener("click", () => {
       gapRows.forEach((other) => other.classList.remove("open"));
 

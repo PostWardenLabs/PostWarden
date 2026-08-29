@@ -104,7 +104,7 @@
 
     <div class="panel">
       <h2>New account</h2>
-      <form method="post" action="/accounts" class="grid-form">
+      <form method="post" action="/accounts" class="grid-form" id="new-account-form">
         <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
         <label class="field">Code
           <input type="text" name="code" required pattern="[0-9]{3,8}" placeholder="e.g. 5510">
@@ -132,6 +132,14 @@
     </div>
   </div>
 </div>
+{#
+  Which of Asset/Liability/Equity/Income already have their one
+  top-level account — accounts.js reads this to warn (not block) before
+  a second one gets created; Expense is deliberately excluded from the
+  check server-side already (see accounts_page's own comment), never
+  even reaches this list.
+#}
+<script type="application/json" id="top-level-types-data">{{ top_level_types_taken | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}<script src="{{ asset('accounts.js') }}"></script>{% endblock %}
