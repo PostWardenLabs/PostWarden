@@ -5078,7 +5078,10 @@ def staging_duplicates_page(request: Request, ok: str = None, err: str = None):
     before."""
     groups = _find_staging_duplicate_groups()
     if not groups:
-        return flash_redirect("/staging", err="No duplicate entries found")
+        # ok, not err (BACKLOG.md) — nothing matching is a clean bill of
+        # health, not a failure; the red .flash-err banner was reading as
+        # "something went wrong" for a message that's actually good news.
+        return flash_redirect("/staging", ok="No duplicate entries found")
     # `groups` itself keeps raw Decimal/date values — the template's own
     # Jinja rendering (money filter, selectattr/sum) needs those as real
     # numbers, not strings. The JSON blob staging-duplicates.js reads
