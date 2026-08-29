@@ -62,15 +62,17 @@
     Its own row, not squeezed into the field row above the way Budget
     Grid/the point-in-time reports do it — this filter bar already runs
     to six fields and wraps on a normal-width screen, so a seventh pair
-    of links there would just wrap worse. Labeled "Previous/Next
-    period," not the raw shifted dates — an arbitrary custom range can
-    span many months, where printing the actual dates inline would read
-    as noise rather than the short, scannable label Budget Grid's own
-    single month affords.
+    of links there would just wrap worse. Labeled with the shifted
+    range's own starting month (prev_from/next_from's YYYY-MM, same
+    slice Budget Grid's month field already shows), matching Variance's
+    own prev/next showing the actual shifted date rather than a generic
+    "Previous/Next period" — an arbitrary custom range can still span
+    many months, but a single scannable month token reads better than
+    no date at all, even if it's not a full description of the range.
   #}
   <p class="bar" style="align-items: center;">
-    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ prev_from }}&date_to={{ prev_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">&larr; Previous period</a>
-    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ next_from }}&date_to={{ next_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Next period &rarr;</a>
+    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ prev_from }}&date_to={{ prev_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_from[:7] }}</a>
+    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ next_from }}&date_to={{ next_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">{{ next_from[:7] }} &rarr;</a>
   </p>
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
