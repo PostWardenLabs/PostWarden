@@ -8,10 +8,14 @@ forecasts and budgets as you want) that never have to be reconciled
 against each other because they're all just rows in the same tables.
 
 PostgreSQL holds the truth and enforces every accounting rule itself,
-at the database level, regardless of what wrote the data. A small
-FastAPI app sits on top and gives you something pleasant to actually
-use day to day. Power BI and Excel can connect straight to the database
-through purpose-built reporting views, no export step required.
+at the database level, regardless of what wrote the data. A FastAPI app
+sits on top and gives you something pleasant to actually use day to
+day — no ORM, no build step, no SPA, a thin layer over what the
+database is already guaranteeing (not the same thing as a small
+codebase; the app itself has grown a lot of reports and pages on top of
+that thin layer). Power BI and Excel can connect straight to the
+database through purpose-built reporting views, no export step
+required.
 
 **[postwarden.org](https://postwarden.org)** · **[Try the demo →](https://demo.postwarden.org)**
 (resets nightly, login shown on the page) · **[docs.postwarden.org](https://docs.postwarden.org)**
@@ -27,8 +31,10 @@ instance.
 - **A keyboard-first journal** — Tab through account → debit/credit →
   memo, a live balance bar, searchable account/tag/payee pickers,
   reusable entry templates, and one-click Reverse (history is
-  append-only; you never edit a posted line).
-- **Trial Balance, Income Statement, and Balance Sheet**, each with a
+  append-only; once an entry is posted — to ACTUAL or any other
+  scenario — you never edit or delete it, only reverse it).
+- **Trial Balance, Income Statement, and Balance Sheet** (Cash Flow gets
+  its own bullet below), each with a
   real collapsible account hierarchy — a summary account like "Current
   Assets" shows the roll-up of everything beneath it, and every leaf
   amount is a link straight through to the exact journal postings
