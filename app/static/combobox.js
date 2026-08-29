@@ -207,18 +207,44 @@
     }
 
     input.addEventListener("focus", () => {
-      // BACKLOG.md bug: typing right after focusing landed as e.g.
-      // "Noneabc" instead of "abc" — select() right in the same tick as
-      // focus() is a known no-op on some WebKit builds (the selection
-      // highlight needs the platform's own text-input machinery to have
-      // actually finished wiring up first, which hasn't happened yet
-      // synchronously inside the focus handler); the very next keystroke
-      // then inserts at the cursor into the still-unselected "None"
-      // instead of replacing it. Deferring one tick is the standard
-      // cross-browser fix and costs nothing on browsers that never had
-      // the problem — select() still runs before the user can physically
-      // type anything.
-      setTimeout(() => input.select(), 0);
+      // BACKLOG.md bug, round 1: typing right after focusing landed as
+      // e.g. "Noneabc" instead of "abc" — select() right in the same
+      // tick as focus() is a known no-op on some WebKit builds (the
+      // selection highlight needs the platform's own text-input
+      // machinery to have actually finished wiring up first, which
+      // hasn't happened yet synchronously inside the focus handler); the
+      // very next keystroke then inserts at the cursor into the still-
+      // unselected placeholder instead of replacing it. Deferring one
+      // tick is the standard cross-browser fix and costs nothing on
+      // browsers that never had the problem — select() still runs well
+      // before a human can physically type anything.
+      //
+      // Round 2 (BACKLOG.md, reported again on the Import-with-rules
+      // mapping page's own "— choose —" comboboxes): re-tested the round
+      // 1 fix directly — both a mouse click and a Tab-key focus into an
+      // untouched combobox correctly replace the placeholder on the very
+      // next keystroke, so the timing fix above is doing its job on
+      // whatever ran that check. iOS Safari is the one platform where
+      // that check couldn't be run here (no real iOS browser in this
+      // environment) and where the underlying gap is well documented
+      // regardless: input.select() there requires an explicit user
+      // gesture and can silently no-op on a script-driven call, timing
+      // aside — no amount of setTimeout tuning fixes that, since it's
+      // not a timing problem on that platform. Sidestepped instead of
+      // chased further: when the select's own value is still unset (the
+      // field is genuinely showing the placeholder, nothing typed over
+      // it yet), just clear the input outright rather than trying to
+      // select it — there's nothing meaningful to preserve, so "replace
+      // on next keystroke" no longer depends on selection actually
+      // taking effect on any platform. A field that already holds a
+      // real value keeps the original select()-and-overtype behavior,
+      // where highlighting the existing value to type over it actually
+      // matters.
+      if (!select.value) {
+        input.value = "";
+      } else {
+        setTimeout(() => input.select(), 0);
+      }
       open();
     });
     input.addEventListener("click", () => open());
