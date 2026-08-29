@@ -32,8 +32,12 @@ exercising both against a real Postgres service container, and its own
 `seed_demo.sql`'s entries loaded. No `frontend/` yet. `master` is
 untouched and still what's deployed.
 
-**Next step:** 1.1 — `domain/money.py`, `periods.py`, `accounts.py`,
-`entry.py`: pure logic, zero framework/IO imports, unit tests only.
+**Phase 1.1 done.** `domain/money.py`, `periods.py`, `accounts.py`,
+`entry.py` — pure logic ported from `app/main.py`'s module-level
+helpers, zero framework/IO imports, 48 new unit tests, all green.
+
+**Next step:** 1.2 — `config.py` + `db.py`: settings and the
+SQLAlchemy Core engine/session setup.
 
 ---
 
@@ -84,7 +88,7 @@ lives), then the mechanical CRUD bulk. See `REBUILD.md` §4's "Genuinely
 hard / Mechanical / Effectively free" table — this ordering follows it
 directly.
 
-- [ ] **1.1** `domain/money.py`, `periods.py`, `accounts.py`, `entry.py`
+- [x] **1.1** `domain/money.py`, `periods.py`, `accounts.py`, `entry.py`
       — pure logic, zero framework/IO imports. Unit tests only, no DB,
       no FastAPI.
 - [ ] **1.2** `config.py` + `db.py` — settings and the SQLAlchemy Core
@@ -240,6 +244,33 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.1 done: `domain/money.py` (variance/percentage
+  math), `periods.py` (date-shift and calendar-split helpers),
+  `accounts.py` (tree rollup/flatten, P&L-net sign correction),
+  `entry.py` (journal-line parsing, tag-name validation) — ported from
+  `app/main.py`'s module-level `_`-prefixed helpers (`_pct_variance`,
+  `_build_account_tree`, `_flatten_tree`, `_parse_lines`, etc.),
+  docstrings kept close to verbatim per the "read it, don't rewrite it"
+  guidance in `REBUILD.md` §4. Two deliberate deviations from a pure
+  rename, both recorded in the modules' own docstrings: (1) money
+  amounts are `Decimal` throughout, not the legacy `float(d)`/`float(c)`
+  in `_parse_lines` — `db/schema.sql` already stores every amount as
+  `NUMERIC`, which psycopg hands back as `Decimal`, so `float` was only
+  ever a latent-imprecision risk introduced by one conversion on user
+  input, with no upside; (2) `entry.parse_lines` takes four plain
+  parallel lists instead of a Starlette `FormData` object, so the
+  domain layer stays free of any FastAPI/Starlette import — the router
+  (module 1.5) will call `form.getlist(...)` itself and pass the lists
+  in. 48 new unit tests under `backend/tests/domain/`, exercising the
+  behavior each docstring documents (day-clamping across month/year
+  boundaries, split-period clipping and the `partial` flag, tree
+  rollup and the zero-hide-unless-both-sides-zero rule, every
+  `parse_lines`/`parse_tags` validation branch) — new tests, not a
+  port, since these were file-private helpers with no direct test
+  coverage of their own before (only indirect, through route-level HTML
+  assertions). Verified for real: `pip install -e ".[dev]"` +
+  `pytest` — 49 passed (48 new + the Phase 0 health smoke test),
+  nothing else touched.
 - **2026-08-29** — Phase 0.6 done, closing out Phase 0: `backend/
   docker-compose.yml` + `backend/Dockerfile`, self-contained (its own
   `db` service, its own named volume, default ports 5433/8001 so it can
