@@ -21,7 +21,7 @@
   <a class="quiet-link" href="/entries?{{ clear_payee_qs }}">clear</a></p>
 {% endif %}
 
-<form method="get" action="/entries" data-auto-refresh>
+<form method="get" action="/entries" id="entries-filter-form" data-auto-refresh>
   <input type="hidden" name="back" value="{{ back }}">
   <div class="bar">
   <label class="field">Scenario
@@ -103,18 +103,6 @@
   <a class="button-link disabled" aria-disabled="true">Clear filters</a>
   {% endif %}
   </div>
-  {# A second row, not more of the field bar above: "hide reversed" narrows
-     *this* view same as Clear filters (now up in the field row itself);
-     the two exports are a different kind of action (getting data out, not
-     changing what's shown) and sit set apart on the right via
-     space-between. #}
-  <p class="bar" style="justify-content: space-between; align-items: center;">
-    <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
-    <span>
-      <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
-      <a class="quiet-link" href="/entries/export.xlsx?{{ export_qs }}">Export XLSX</a>
-    </span>
-  </p>
 </form>
 
 {#
@@ -136,16 +124,43 @@
   though, via the form="" attribute rather than DOM nesting — the
   standard way to associate a form control with a form it doesn't live
   inside, which is exactly the situation here.
+
+  Sits in its own flex row alongside Export CSV/XLSX (a plain <span>,
+  not part of this form — export_qs is just a precomputed query string,
+  no dependency on being inside any particular <form>) via
+  justify-content: space-between on the wrapping <div> — two sibling
+  <form>/<span> elements, not one form nested in another, but styled to
+  read as a single row: Select/Edit tags/Reverse on the left, Export on
+  the right.
 #}
-<form method="post" action="/entries/reverse" id="entries-select-form">
-  <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-  <p class="bar" style="align-items: center;">
+<div class="bar" style="justify-content: space-between; align-items: center;">
+  <form method="post" action="/entries/reverse" id="entries-select-form" class="bar" style="margin-bottom: 0;">
+    <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
     <button type="button" class="quiet" id="select-toggle">Select</button>
     <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
     <button type="button" class="quiet" id="edit-tags-btn" disabled>Edit tags</button>
     <button type="submit" id="reverse-btn" disabled>Reverse (Alt+R)</button>
-  </p>
-</form>
+  </form>
+  <span class="bar" style="margin-bottom: 0;">
+    <a class="quiet-link" href="/entries/export.csv?{{ export_qs }}">Export CSV</a>
+    <a class="quiet-link" href="/entries/export.xlsx?{{ export_qs }}">Export XLSX</a>
+  </span>
+</div>
+{# hide reversed narrows the filter form's own results, same as Clear
+   filters above it — sits below the Select/Edit tags/Reverse + Export
+   row rather than inside the filter form itself. Associated with that
+   form via form="entries-filter-form" (same technique #entries-select-
+   form's own checkboxes use, just the other direction — a control
+   outside a form's DOM subtree, still submitting with it) rather than
+   nesting, which is what actually makes this renderable after a
+   different <form> in between. auto-refresh.js's own delegated listener
+   resolves that association through the input's own .form property, the
+   same way native submission already does, so auto-refresh still fires
+   on toggle despite the field no longer being a DOM descendant of the
+   form it submits with. #}
+<p class="bar" style="align-items: center;">
+  <label class="checkline"><input type="checkbox" name="hide_reversed" value="1" form="entries-filter-form" {{ 'checked' if hide_reversed }}> hide reversed/reversals</label>
+</p>
 
 <details class="entry entry-new" id="new-entry-panel" {{ 'open' if request.query_params.get('new') }}>
   <summary>+ New entry (Alt+E)</summary>

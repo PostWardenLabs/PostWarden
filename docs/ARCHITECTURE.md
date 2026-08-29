@@ -104,7 +104,7 @@ through the template context explicitly.
 | File | Enhances |
 |---|---|
 | `app.js` | The journal-entry line grid, shared by New entry, Scheduled, Entry templates, and Staging's inline Edit panel — keyboard flow (Tab moves account → debit → credit → memo → next row; Enter/Shift+Enter move vertically instead, same column, next/previous row, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). Global shortcuts via `e.code` rather than `e.key` (Option+letter types an accented character on a Mac, so `e.key` never matches there): Alt+N adds a line, Alt+D triggers Distribute, Alt+E toggles New entry's `<details>` open/closed, focusing the first line on open (Journal page only). Clear (Journal only, no keyboard shortcut on purpose — see entries.html's own comment on why) resets every field back to its page-load default: description/reference/tags empty, payee unset, date/scenario back to their original `defaultValue`/`selectedIndex`, grid back to two blank rows — same shape as `entry_templates.js`'s "Load template" (loading the blank template, in effect). |
-| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>`, date/month field, checkbox, or the tag picker's hidden value field changes (tags.js dispatches `change` on it exactly once per add/remove, not per keystroke) — so a report or the Journal's filters refresh without a separate button. Free-typed text (Search, Amount) stays out of this on purpose; Search has its own submit icon, Amount just needs Enter. |
+| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>`, date/month field, checkbox, or the tag picker's hidden value field changes (tags.js dispatches `change` on it exactly once per add/remove, not per keystroke) — so a report or the Journal's filters refresh without a separate button. Free-typed text (Search, Amount) stays out of this on purpose; Search has its own submit icon, Amount just needs Enter. One listener on `document`, not one per form (see its own comment) — resolves each field's form via `element.form`, which follows a `form="id"` association exactly like native submission does, not just DOM nesting; needed once the Journal's own "hide reversed/reversals" moved below a different `<form>` visually while still submitting with the filter form. |
 | `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. Quick fill (BACKLOG.md's own ask): each cell's own chevron opens a shared, repositioned-per-click menu (`.combobox-panel`/`.combobox-option`, the same popover look `combobox.js` uses, reused wholesale rather than a parallel style) offering "Set to ACTUAL/`<scenario>` value of last month" and "...3 month average of ACTUAL/`<scenario>`", reading the cell's own `data-last-actual`/`data-last-scenario`/`data-avg3-actual`/`data-avg3-scenario` attributes (`_budget_rows()`'s own `quickfill` dict, computed server-side). The page-level "Set all values" button now offers the same four sources (user-reported: it used to offer only two of the four, with no principled reason for which pair), via `openMenu()`'s new `align` option (`"below-left"`, left-aligned under the button rather than the per-cell chevron's own right-aligned-below default) — that button sits near the sidebar's own left edge, where the default right-aligned-below pulled the menu further left, back toward the sidebar; `.quickfill-menu`'s own `z-index` also had to move from the shared combobox-panel default (20) to 65, clearing the sidebar (55) and its toggle (60), for the same reason. Both this button and the per-cell chevron end at `fillAndSave()` — set the value, `recompute()`, `save()` — the identical sequence typing into a cell and blurring it already triggers, just invoked from a menu pick instead of a keystroke, behind a real `confirm.js` `ask()` first for the page-level version since it overwrites the whole grid. |
 | `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. |
 | `confirm.js` | Replaces the browser's own `confirm()` with a styled modal matching the app (`window.PostWardenConfirm.ask(message, opts) → Promise<boolean>`). Also wires up `<form data-confirm="...">` / `<button data-confirm="...">` generically: intercepts the submit, awaits the modal, and — only if confirmed — resubmits via `form.requestSubmit(submitter)` (preserves a button's own `formaction`/`formmethod` override, if it has one). A message computed at click time (Staging's "Approve N entries" and its bulk Reject) calls `ask()` directly instead of using the attribute — see `staging.js`. `opts.danger` renders OK in red, reserved for something that actually deletes data (Delete template/level, Reject); Reverse and Approve stay the default color. |
@@ -799,20 +799,31 @@ a nested `<div class="bar">` and carry `data-auto-refresh` on the
 `<form>` itself instead of `class="bar"` (putting `.bar` on the form
 too would flex its own children — the fields div and the second row —
 side by side instead of stacking them; see auto-refresh.js's own
-comment). `auto-refresh.js` is one delegated `change` listener per such
-form (found by `form.bar, form[data-auto-refresh]`, no opt-in markup
-needed on individual fields) that calls `form.requestSubmit()` the
-moment a `<select>`, date/month field, or checkbox changes (Trial
-Balance's "show zero balances"/"show true balances", Balance Sheet's
-"show true balances"). It's a `change` listener on the *form*, not on
-each field, so it needs no re-binding when combobox.js/datepicker.js
-swap a plain `<select>`/`<input type="date">` for their own enhanced
-markup — both of those already dispatch a real bubbling `change` on the
-original element when a value is picked (see their own files), which is
-all a bubble-phase listener on an ancestor ever needed. Deliberately
-excludes text fields (Search, the Amount value) and the tag picker:
-those are typed into, not picked from, so including them would turn
-every keystroke into a mid-word navigation.
+comment). `auto-refresh.js` is one delegated `change` listener on
+`document` (found by `form.bar, form[data-auto-refresh]` for which
+forms count, no opt-in markup needed on individual fields) that calls
+`form.requestSubmit()` the moment a `<select>`, date/month field, or
+checkbox changes (Trial Balance's "show zero balances"/"show true
+balances", Balance Sheet's "show true balances"). Resolving each
+field's own form via `event.target.form` (not a per-form listener
+scoped to that form's own DOM subtree) means a field doesn't need to be
+a descendant of the form it submits with, only associated with it via
+`form="id"` — the Journal's own "hide reversed/reversals" checkbox uses
+exactly this to sit below a different `<form>` (the Select/Edit tags/
+Reverse toolbar) visually while still submitting with the filter form
+above it, same technique its own select-only checkboxes already used in
+the other direction (a form wrapping only the toolbar, its checkboxes
+living elsewhere in the DOM). combobox.js/datepicker.js swapping a
+plain `<select>`/`<input type="date">` for their own enhanced markup
+needs no special handling either way — both already dispatch a real
+bubbling `change` on the original element when a value is picked (see
+their own files), which resolves through `.form` the same as any native
+change would. Deliberately excludes text fields (Search, the Amount
+value) — typed into, not picked from, so including them would turn
+every keystroke into a mid-word navigation — but not the tag picker's
+own hidden value field, which behaves like a `<select>` here despite
+being an `<input type="hidden">`: tags.js dispatches `change` on it
+exactly once per chip add/remove, never while just typing toward one.
 
 ### Flash messages
 

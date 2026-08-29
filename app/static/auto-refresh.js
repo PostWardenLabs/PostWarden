@@ -19,10 +19,12 @@
 
    Deliberately scoped to selects, date fields, checkboxes, and the tag
    picker's own hidden value field — never a free-typed text field — via
-   a single delegated "change" listener on the form rather than one per
-   field: combobox.js and datepicker.js both dispatch a real bubbling
-   "change" on their underlying <select>/<input> when a value is picked,
-   so this fires the same way whether a person used the fancy widget or
+   a single delegated "change" listener on document (not one per form —
+   see enhanceAll()'s own comment on why: a field can be form="id"-
+   associated with a filter form without being its DOM descendant):
+   combobox.js and datepicker.js both dispatch a real bubbling "change"
+   on their underlying <select>/<input> when a value is picked, so this
+   fires the same way whether a person used the fancy widget or
    (with JS disabled, or just habit) typed straight into the plain field
    underneath. A checkbox (Trial Balance's "show zero balances"/"show
    true balances", Balance Sheet's "show true balances") is a discrete
@@ -47,17 +49,25 @@
     return false;
   }
 
-  function enhance(form) {
-    if (form.dataset.autoRefreshBound) return;
-    form.dataset.autoRefreshBound = "1";
-    form.addEventListener("change", (e) => {
-      if (isAutoRefreshField(e.target)) form.requestSubmit();
-    });
-  }
+  // One delegated listener on document, not one per form — needed once a
+  // field can be *associated* with a form via its own form="id" attribute
+  // (e.g. Journal's "hide reversed/reversals", moved below a different
+  // <form> visually but still submitting with the filter form) rather
+  // than living inside it in the DOM. `el.form` resolves that
+  // association exactly the same way native submission does — walking
+  // up the DOM tree for an ordinary nested field, or following form="id"
+  // for one that isn't — so this one listener still catches every
+  // DOM-nested field exactly as before, no behavior change for those.
+  let enhancedForms = null;
 
   function enhanceAll() {
+    enhancedForms = new Set();
     document.querySelectorAll("form.bar, form[data-auto-refresh]").forEach((form) => {
-      if (form.method.toLowerCase() === "get") enhance(form);
+      if (form.method.toLowerCase() === "get") enhancedForms.add(form);
+    });
+    document.addEventListener("change", (e) => {
+      const form = e.target.form;
+      if (form && enhancedForms.has(form) && isAutoRefreshField(e.target)) form.requestSubmit();
     });
   }
 
