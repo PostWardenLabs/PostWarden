@@ -33,8 +33,23 @@
   <div class="sidebar-group">
     <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Dashboard</a>
   </div>
-  <div class="sidebar-group">
-    <div class="sidebar-label">Ledger</div>
+  {#
+    Each labeled group is collapsible (sidebar-collapse.js) — the label
+    itself is a real <button>, not a styled <div>, so it's keyboard-
+    reachable and activates on Enter/Space the way any other button in
+    this app does. Collapsed state persists per browser in localStorage,
+    same pattern as the sidebar's own pin state and every report's tree
+    (report-tree.js) — keyed by data-sidebar-key, one entry per group,
+    not one shared key, so collapsing Reports doesn't touch Ledger's own
+    state. Deliberately doesn't auto-expand a group just because the
+    current page lives inside it — a collapsed section stays collapsed
+    across navigation, same as it would in any other app with this
+    pattern (a repo sidebar, an IDE's file tree); the active-page
+    highlight simply isn't visible until that group is reopened, which
+    is the same tradeoff those tools accept too.
+  #}
+  <div class="sidebar-group" data-sidebar-key="ledger">
+    <button type="button" class="sidebar-label">Ledger<span class="chevron chevron-down sidebar-chevron"></span></button>
     <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
     <a href="/staging" class="{{ 'active' if nav == 'staging' }}">Staging</a>
     <a href="/scheduled" class="{{ 'active' if nav == 'scheduled' }}">Scheduled Entries</a>
@@ -42,8 +57,8 @@
     <a href="/templates" class="{{ 'active' if nav == 'templates' }}">Templates</a>
     <a href="/budget" class="{{ 'active' if nav == 'budget' }}">Budget Grid</a>
   </div>
-  <div class="sidebar-group">
-    <div class="sidebar-label">Reports</div>
+  <div class="sidebar-group" data-sidebar-key="reports">
+    <button type="button" class="sidebar-label">Reports<span class="chevron chevron-down sidebar-chevron"></span></button>
     <a href="/balance-sheet" class="{{ 'active' if nav == 'balance_sheet' }}">Balance Sheet</a>
     <a href="/income-statement" class="{{ 'active' if nav == 'income_statement' }}">Income Statement</a>
     <a href="/cash-flow" class="{{ 'active' if nav == 'cash_flow' }}">Cash Flow</a>
@@ -51,8 +66,8 @@
     <a href="/trial-balance" class="{{ 'active' if nav == 'tb' }}">Trial Balance</a>
     <a href="/t-accounts" class="{{ 'active' if nav == 't_accounts' }}">T-Accounts</a>
   </div>
-  <div class="sidebar-group">
-    <div class="sidebar-label">Setup</div>
+  <div class="sidebar-group" data-sidebar-key="setup">
+    <button type="button" class="sidebar-label">Setup<span class="chevron chevron-down sidebar-chevron"></span></button>
     <a href="/accounts" class="{{ 'active' if nav == 'accounts' }}">Accounts</a>
     <a href="/account-levels" class="{{ 'active' if nav == 'account_levels' }}">Levels</a>
     <a href="/scenarios" class="{{ 'active' if nav == 'scenarios' }}">Scenarios</a>
@@ -91,6 +106,7 @@
 <footer class="footer">PostWarden v{{ version }}</footer>
 {% endblock %}
 <script src="{{ asset('sidebar.js') }}"></script>
+<script src="{{ asset('sidebar-collapse.js') }}"></script>
 <script src="{{ asset('combobox.js') }}"></script>
 <script src="{{ asset('datepicker.js') }}"></script>
 <script src="{{ asset('number-stepper.js') }}"></script>

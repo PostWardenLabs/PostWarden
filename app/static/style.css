@@ -656,10 +656,37 @@ html.sidebar-pinned .sidebar-toggle span { background: var(--ink); }
 html.sidebar-pinned .sidebar { box-shadow: none; }
 
 .sidebar-group { padding: 0 0.4rem 1.2rem 1.5rem; }
+/* A real <button>, not a styled <div> (sidebar-collapse.js) — reset to
+   plain text since every other button in this app has its own strong
+   filled look, wrong for a section label sitting quietly above a list
+   of links. Negative margins claw back the same left/right space the
+   equivalent <div> used to sit flush with, since a <button> carries
+   default padding/border a <div> never did. */
 .sidebar-label {
-  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
-  color: var(--ink-soft); margin-bottom: 0.35rem;
+  display: flex; align-items: center; gap: 0.3rem; width: 100%;
+  font: inherit; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-soft); margin: 0 0 0.35rem -0.1rem; padding: 0;
+  background: none; border: none; cursor: pointer;
 }
+.sidebar-label:hover { color: var(--ink); }
+/* Chevron points down (expanded, the default) or right (collapsed) —
+   same rotation convention report-tree.js's own tree-toggle already
+   uses, including that shape's own known centering quirk (see
+   .tree-toggle::before's comment): a corner built from the top+right
+   border edges carries its visual weight low-and-right within its own
+   box, so the *down*-pointing 135deg rotation reads as sitting low
+   against the text beside it unless nudged — the 45deg (right,
+   collapsed) rotation needs no such correction, since that's the
+   shape's own unrotated resting position. Links inside a collapsed
+   group are removed from layout entirely, not just visually hidden, so
+   a collapsed section actually shrinks the sidebar instead of leaving
+   blank space. */
+.sidebar-chevron {
+  color: var(--ink-soft); transition: transform 120ms ease;
+  position: relative; top: -0.1rem; left: -0.08rem;
+}
+.sidebar-group.collapsed .sidebar-chevron { transform: rotate(45deg); top: 0; left: 0; }
+.sidebar-group.collapsed a { display: none; }
 .sidebar a {
   display: block; padding: 0.3rem 0 0.3rem 0.6rem; margin-left: -0.6rem;
   color: var(--ink-soft); text-decoration: none; font-size: 0.92rem;
