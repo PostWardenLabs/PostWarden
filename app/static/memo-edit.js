@@ -41,8 +41,8 @@
   const AUTOSAVE_DEBOUNCE_MS = 600;
 
   // Any hidden csrf_token input already on the page carries the same
-  // session-wide value — the Journal renders one per entry's own Edit
-  // description form, so there's always at least one to read from
+  // session-wide value — the New entry form and the bulk Select-entries
+  // form both render one, so there's always at least one to read from
   // without this file needing its own.
   const csrfInput = document.querySelector('input[name="csrf_token"]');
   const csrfToken = () => (csrfInput ? csrfInput.value : "");

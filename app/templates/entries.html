@@ -244,7 +244,16 @@
     </label>
     <span class="mono dim">{{ e.entry_date | dateformat }}</span>
     <span class="mono dim">#{{ e.id }}</span>
-    <span>{{ e.description }}
+    <span>
+      {#
+        Click-to-edit (description-edit.js — memo-edit.js's own shape,
+        applied to the entry's description instead of a line's memo).
+        Nested inside this outer <span>, not a sibling of it, so the
+        payee/reference/badges/tags below stay outside the editable
+        cell and the summary's own grid-template-columns (one column
+        per direct child, see style.css) never sees an extra one.
+      #}
+      <span class="description-cell" data-entry-id="{{ e.id }}">{{ e.description }}</span>
       {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
       {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
       {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
@@ -283,18 +292,6 @@
         {% endfor %}
       </tbody>
     </table>
-    {#
-      Description is the one thing about an already-posted entry
-      that's actually editable — see SPEC.md decision 16.
-    #}
-    <form method="post" action="/entries/{{ e.id }}/edit-description" class="bar"
-          style="margin-top: 0.6rem;">
-      <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-      <label class="field" style="flex: 1; min-width: 16rem;">Description
-        <input type="text" name="description" value="{{ e.description }}" required>
-      </label>
-      <button type="submit" class="quiet">Save</button>
-    </form>
   </div>
 </details>
 {% else %}
@@ -316,4 +313,5 @@
 <script src="{{ asset('entry_templates.js') }}"></script>
 <script src="{{ asset('entries-select.js') }}"></script>
 <script src="{{ asset('memo-edit.js') }}"></script>
+<script src="{{ asset('description-edit.js') }}"></script>
 {% endblock %}

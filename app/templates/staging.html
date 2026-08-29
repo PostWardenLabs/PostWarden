@@ -129,7 +129,14 @@
         <input type="checkbox" name="entry_id" value="{{ e.id }}" class="staging-check">
       </label>
       <span class="mono dim">{{ e.entry_date | dateformat }}</span>
-      <span>{{ e.description }}
+      <span>
+        {#
+          Click-to-edit (description-edit.js — same shape memo-edit.js
+          already uses for a line's own memo, see entries.html for the
+          identical structural note about why this is nested inside the
+          outer <span> rather than a sibling of it).
+        #}
+        <span class="description-cell" data-entry-id="{{ e.id }}">{{ e.description }}</span>
         {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
         <span class="badge">→ {{ e.target_scenario_code or 'ACTUAL' }}</span>
       </span>
@@ -158,7 +165,14 @@
               <td><span class="mono dim">{{ l.account_code }}</span> {{ l.account_name }}</td>
               <td class="num money money-first">{{ l.debit | money if l.debit else '' }}</td>
               <td class="num money">{{ l.credit | money if l.credit else '' }}</td>
-              <td class="dim">{{ l.memo or '' }}</td>
+              {#
+                Click-to-edit (memo-edit.js) — same as the Journal's own
+                lines table; the route it posts to already works on any
+                line, posted or still pending in Staging alike (SPEC.md
+                decision 16's addendum doesn't condition on Staging
+                status at all).
+              #}
+              <td class="dim memo-cell" data-line-id="{{ l.id }}"><span class="memo-text{{ ' memo-empty italic' if not l.memo }}">{{ l.memo or 'Add memo' }}</span></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -288,4 +302,6 @@
 <script src="{{ asset('app.js') }}"></script>
 <script src="{{ asset('staging-inline-edit.js') }}"></script>
 <script src="{{ asset('staging.js') }}"></script>
+<script src="{{ asset('memo-edit.js') }}"></script>
+<script src="{{ asset('description-edit.js') }}"></script>
 {% endblock %}

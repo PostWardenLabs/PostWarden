@@ -2213,8 +2213,8 @@ def test_entries_edit_description_updates_a_posted_entry(conn):
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post(f"/entries/{eid}/edit-description",
                    data={"description": "Original, fixed", "csrf_token": csrf_token})
-        assert r.status_code == 303
-        assert "ok=" in r.headers["location"]
+        assert r.status_code == 200
+        assert r.json() == {"ok": True, "description": "Original, fixed"}
 
     with conn.cursor() as cur:
         cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
@@ -2237,24 +2237,25 @@ def test_entries_edit_description_rejects_an_empty_description(conn):
             csrf_token = cur.fetchone()["csrf_token"]
         r = c.post(f"/entries/{eid}/edit-description",
                    data={"description": "   ", "csrf_token": csrf_token})
-        assert "err=" in r.headers["location"]
+        assert r.status_code == 400
+        assert r.json()["ok"] is False
 
     with conn.cursor() as cur:
         cur.execute("SELECT description FROM journal_entries WHERE id = %s", (eid,))
         assert cur.fetchone()["description"] == "Keep me"
 
 
-def test_entries_page_description_edit_form_is_not_nested_inside_the_select_form(conn):
-    # A <form> can't nest inside another <form> — the browser's parser
-    # silently drops a nested one, leaving its inputs/button as loose
-    # children with no form at all, so the "Save" button would do
-    # nothing. The Journal's outer #entries-select-form (Reverse/Edit
-    # tags) wraps only the toolbar, not the entries below it, precisely
-    # to avoid that — each entry's own checkbox joins that form via
-    # form="entries-select-form" instead of DOM nesting. Checked here as
-    # a literal string match on the real opening <form ...> tag, not
-    # just its inner fields, since that's exactly what a silently-
-    # dropped nested form would still contain.
+def test_entries_page_description_is_click_to_edit_not_nested_in_a_form(conn):
+    # Description used to be a plain, always-visible <form> per entry —
+    # replaced by click-to-edit (description-edit.js, BACKLOG.md's
+    # Journal/Staging homologation pass) specifically because a <form>
+    # POST+redirect would collapse every open <details> panel just to
+    # save one entry's description. Checked here as a literal string
+    # match: the old <form ...edit-description> markup must be gone
+    # entirely (no form to accidentally nest inside #entries-select-form
+    # either — see the checkbox's own form= attribute below, still the
+    # real mechanism that avoids nesting), and .description-cell must be
+    # the click target description-edit.js actually wires up.
     with conn.cursor() as cur:
         user = mk_user(cur)
         scen = mk_scenario(cur, enforce_balance=False)
@@ -2265,7 +2266,8 @@ def test_entries_page_description_edit_form_is_not_nested_inside_the_select_form
     with TestClient(app, **client_kwargs) as c:
         c.post("/login", data={"username": user["username"], "password": user["password"]})
         r = c.get(f"/entries?scenario={scen['code']}")
-        assert f'<form method="post" action="/entries/{eid}/edit-description"' in r.text
+        assert f'action="/entries/{eid}/edit-description"' not in r.text
+        assert f'<span class="description-cell" data-entry-id="{eid}">Nesting check</span>' in r.text
         assert f'value="{eid}" class="entry-check" form="entries-select-form"' in r.text
 
 

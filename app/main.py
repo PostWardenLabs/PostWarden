@@ -3943,21 +3943,28 @@ async def edit_entries_tags(request: Request):
 
 
 @app.post("/entries/{entry_id}/edit-description")
-def edit_entry_description(entry_id: str, request: Request,
-                           description: str = Form(...), csrf_token: str = Form(...)):
-    """A typo in a posted entry's description is exactly the kind of
-    mistake decision 4's append-only rule was never meant to trap
+async def edit_entry_description(entry_id: str, request: Request):
+    """Click-to-edit (description-edit.js swaps the summary line's own
+    description for an input in place) — JSON in/out, same shape as
+    /entries/lines/{id}/edit-memo, for the identical reason: a full-page
+    POST+redirect would silently collapse every <details> panel the user
+    had open (this used to be a plain visible <form>, before BACKLOG.md's
+    Journal/Staging homologation pass replaced it with click-to-edit on
+    both pages). A typo in a posted entry's description is exactly the
+    kind of mistake decision 4's append-only rule was never meant to trap
     someone with — same reasoning as tags (SPEC.md decision 16):
     organizational, not a fact about the transaction, so it's fair game
     to fix on something already posted. fn_entries_guard already allowed
     changing description/reference on a posted entry from the day it was
-    written (only scenario/date/reverses_entry_id are actually blocked);
-    this is the first route that exercises that door. Amounts, accounts,
-    and every journal_lines row stay exactly as immutable as ever — this
-    touches journal_entries.description and nothing else."""
-    description = description.strip()
+    written (only scenario/date/reverses_entry_id are actually blocked).
+    Amounts, accounts, and every journal_lines row stay exactly as
+    immutable as ever — this touches journal_entries.description and
+    nothing else. Works on any entry, posted or still pending in
+    Staging, same as the memo route it mirrors."""
+    form = await request.form()
+    description = (form.get("description") or "").strip()
     try:
-        require_csrf(request, csrf_token)
+        require_csrf(request, form.get("csrf_token"))
         if not description:
             raise ValueError("Description can't be empty")
         with tx() as cur:
@@ -3967,8 +3974,8 @@ def edit_entry_description(entry_id: str, request: Request,
                 raise ValueError(f"Entry #{entry_id} not found")
     except (ValueError, psycopg.Error) as e:
         msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
-        return flash_redirect("/entries", err=msg)
-    return flash_redirect("/entries", ok=f"Entry #{entry_id} updated")
+        return JSONResponse({"ok": False, "error": msg}, status_code=400)
+    return JSONResponse({"ok": True, "description": description})
 
 
 @app.post("/entries/lines/{line_id}/edit-memo")
@@ -4555,7 +4562,7 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
     if ids:
-        for ln in q("""SELECT l.entry_id, l.debit, l.credit, l.memo,
+        for ln in q("""SELECT l.id, l.entry_id, l.debit, l.credit, l.memo,
                               a.code AS account_code, a.name AS account_name
                          FROM journal_lines l
                          JOIN accounts a ON a.id = l.account_id
