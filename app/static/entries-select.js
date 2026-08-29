@@ -7,8 +7,8 @@
    pattern as Staging's Approve/Reject) before actually submitting.
    Edit tags opens a popup styled like that same confirm dialog (same
    .confirm-overlay/.confirm-modal), but holding the tag-picker pill box
-   from New entry instead of a message and buttons — see the bottom of
-   this file. */
+   from New entry instead of a message and buttons — the popup itself is
+   tags-bulk-edit.js, shared with Staging's own Edit tags button. */
 (function () {
   const form = document.getElementById("entries-select-form");
   if (!form) return;
@@ -91,118 +91,18 @@
   });
 
   // -- Edit tags (bulk) ----------------------------------------------------
-  // Adding a chip here adds that tag to every checked entry that doesn't
-  // already have it; removing one drops it from every checked entry that
-  // does — never a full replace, since different selected entries can
-  // have different existing tags and this should only ever touch the one
-  // tag actually being changed. Applies live, one fetch per chip add/
-  // remove, since the popup has no Save button of its own to batch a set
-  // of changes behind (see the module comment up top). Tag badges next
-  // to each entry only reflect that after a reload, which is what
-  // closing the popup does if anything actually changed.
+  // Popup itself lives in tags-bulk-edit.js, shared with Staging's own
+  // Edit tags button — this just supplies the Journal-specific bits:
+  // which checkboxes count as "checked" and where the CSRF token lives.
   if (editTagsBtn) {
     const entryTagsData = JSON.parse(
       (document.getElementById("entry-tags-data") || {}).textContent || "{}");
     const csrfInput = form.querySelector('input[name="csrf_token"]');
-    const csrfToken = () => (csrfInput ? csrfInput.value : "");
-
-    let overlay, modalBody, activeEntryIds = [], previousTags = new Set(), changed = false;
-
-    function buildOverlay() {
-      overlay = document.createElement("div");
-      overlay.className = "confirm-overlay";
-      overlay.hidden = true;
-      const modal = document.createElement("div");
-      modal.className = "confirm-modal";
-      modal.setAttribute("role", "dialog");
-      modal.setAttribute("aria-label", "Edit tags");
-      modalBody = document.createElement("div");
-      modal.appendChild(modalBody);
-      overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-      overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) closePopup(); });
-      document.addEventListener("keydown", (e) => {
-        if (!overlay.hidden && e.key === "Escape") closePopup();
-      });
-    }
-
-    function postTagChange(entryIds, tag, action) {
-      const body = new URLSearchParams();
-      body.set("tag", tag);
-      body.set("action", action);
-      body.set("csrf_token", csrfToken());
-      entryIds.forEach((id) => body.append("entry_id", id));
-      return fetch("/entries/tags", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-      })
-        .then((r) => r.json())
-        .then((data) => { if (!data.ok) console.error("Edit tags:", data.error); })
-        .catch((err) => console.error("Edit tags:", err));
-    }
-
-    function openPopup() {
-      if (!overlay) buildOverlay();
-      activeEntryIds = checks.filter((c) => c.checked).map((c) => c.value);
-      const union = new Set();
-      activeEntryIds.forEach((id) => (entryTagsData[id] || []).forEach((t) => union.add(t)));
-      previousTags = union;
-      changed = false;
-
-      modalBody.innerHTML = "";
-      const heading = document.createElement("h3");
-      heading.textContent = "Edit Tags";
-      modalBody.appendChild(heading);
-
-      const wrap = document.createElement("div");
-      wrap.className = "tag-input";
-      wrap.dataset.placeholder = "Add a tag…";
-      const hidden = document.createElement("input");
-      hidden.type = "hidden";
-      hidden.value = Array.from(union).join(",");
-      wrap.appendChild(hidden);
-      modalBody.appendChild(wrap);
-      window.PostWardenTags.enhance(wrap);
-
-      hidden.addEventListener("change", () => {
-        const current = new Set((hidden.value || "").split(",").map((s) => s.trim()).filter(Boolean));
-        const added = Array.from(current).filter((t) => !previousTags.has(t));
-        const removed = Array.from(previousTags).filter((t) => !current.has(t));
-        added.forEach((t) => postTagChange(activeEntryIds, t, "add"));
-        removed.forEach((t) => postTagChange(activeEntryIds, t, "remove"));
-        previousTags = current;
-        changed = true;
-      });
-
-      // Same .confirm-actions row the message-and-buttons dialog uses
-      // (already flex-start, so this sits at the lower-left of the
-      // modal) — just a single Done button here, since every change
-      // already applies live as soon as a chip is added or removed.
-      const actions = document.createElement("div");
-      actions.className = "confirm-actions";
-      actions.style.marginTop = "1.1rem";
-      const doneBtn = document.createElement("button");
-      doneBtn.type = "button";
-      doneBtn.className = "confirm-ok";
-      doneBtn.textContent = "Done";
-      doneBtn.addEventListener("click", closePopup);
-      actions.appendChild(doneBtn);
-      modalBody.appendChild(actions);
-
-      overlay.hidden = false;
-      const input = wrap.querySelector('input[type="text"]');
-      if (input) input.focus();
-    }
-
-    function closePopup() {
-      if (!overlay || overlay.hidden) return;
-      overlay.hidden = true;
-      // Tag badges next to each entry are server-rendered — a reload is
-      // the simplest way to make them catch up with whatever changed.
-      if (changed) location.reload();
-    }
-
-    editTagsBtn.addEventListener("click", openPopup);
+    window.PostWardenBulkTags.attach({
+      button: editTagsBtn,
+      csrfToken: () => (csrfInput ? csrfInput.value : ""),
+      getEntryIds: () => checks.filter((c) => c.checked).map((c) => c.value),
+      entryTagsData,
+    });
   }
 })();

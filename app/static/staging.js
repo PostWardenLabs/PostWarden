@@ -1,14 +1,15 @@
 /* PostWarden — Staging approval page. "Select" reveals a checkbox per
    entry plus "select all" (body.select-mode/.select-only — same
    mechanism as the Journal's own "Select entries", entries-select.js);
-   Approve and the top-of-page bulk Reject stay visible throughout,
-   just disabled until at least one entry is checked, so there's no
+   Approve, Reject, and Edit tags all stay visible throughout, just
+   disabled until at least one entry is checked, so there's no
    accidental empty submit and no need to discover Select first to see
    what they do. Alt+A approves whatever's checked, Alt+R rejects it —
    both no-op while disabled, same as clicking by hand. Reject used to
    also have a per-entry button inside each expanded row; removed in
    favor of this one mechanism for both a single entry (check just that
-   one) and many. */
+   one) and many. Edit tags opens the same bulk-tag popup as the
+   Journal's own (tags-bulk-edit.js) — see that file's own comment. */
 (function () {
   const form = document.getElementById("staging-form");
   if (!form) return;
@@ -17,7 +18,8 @@
   const checks = Array.from(form.querySelectorAll(".staging-check"));
   const approveBtn = document.getElementById("approve-btn");
   const rejectBtn = document.getElementById("reject-btn");
-  const buttons = [approveBtn, rejectBtn];
+  const editTagsBtn = document.getElementById("edit-tags-btn");
+  const buttons = [approveBtn, rejectBtn, editTagsBtn];
 
   function sync() {
     const checkedCount = checks.filter((c) => c.checked).length;
@@ -99,4 +101,21 @@
       form.requestSubmit(submitter || undefined);
     });
   });
+
+  // -- Edit tags (bulk) ----------------------------------------------------
+  // Popup itself lives in tags-bulk-edit.js, shared with the Journal's own
+  // Edit tags button — this just supplies the Staging-specific bits: which
+  // checkboxes count as "checked" and where the CSRF token lives (the same
+  // hidden input Approve/Reject already submit).
+  if (editTagsBtn) {
+    const entryTagsData = JSON.parse(
+      (document.getElementById("entry-tags-data") || {}).textContent || "{}");
+    const csrfInput = form.querySelector('input[name="csrf_token"]');
+    window.PostWardenBulkTags.attach({
+      button: editTagsBtn,
+      csrfToken: () => (csrfInput ? csrfInput.value : ""),
+      getEntryIds: () => checks.filter((c) => c.checked).map((c) => c.value),
+      entryTagsData,
+    });
+  }
 })();

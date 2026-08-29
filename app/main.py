@@ -782,7 +782,7 @@ def dashboard(request: Request):
         credits = credit_names2.get(r["id"], set())
         r["flow"] = Markup("{} → {}").format(flow_side(credits), flow_side(debits))
 
-    pending, _ = pending_staging_entries()
+    pending, _, _ = pending_staging_entries()
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "nav": "dashboard", "net_worth": net_worth,
@@ -4584,7 +4584,11 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
     origin line — "Created from schedule 'Rent'"/"Imported from file
     'march.csv' on 2026-08-26", see staging.html) — not a filter on
     their own, and each entry has at most one of the two set, never
-    both."""
+    both. Returns (entries, lines_by_entry, tags_by_entry) — the third,
+    same shape as the Journal's own entries_page, feeds Staging's Edit
+    tags popup (tags-bulk-edit.js) each entry's existing tags; each
+    entry in `entries` also carries its own `.tags` list directly, same
+    as _find_staging_duplicate_groups already does for Find Duplicates."""
     where, params, _ = _staging_filter(date_from, date_to, qtext, tags, account, payee,
                                        amount_op, amount_value, amount_value2, target_scenario)
     entries = q(f"""
@@ -4612,6 +4616,7 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
          ORDER BY e.entry_date, e.seq""", params)
     ids = [e["id"] for e in entries]
     lines_by_entry = {}
+    tags_by_entry: dict[str, list] = {}
     if ids:
         for ln in q("""SELECT l.id, l.entry_id, l.debit, l.credit, l.memo,
                               a.code AS account_code, a.name AS account_name
@@ -4620,7 +4625,19 @@ def pending_staging_entries(date_from: str = "", date_to: str = "", qtext: str =
                         WHERE l.entry_id = ANY(%s)
                         ORDER BY l.entry_id, l.line_no""", (ids,)):
             lines_by_entry.setdefault(ln["entry_id"], []).append(ln)
-    return entries, lines_by_entry
+        # Same shape as the Journal's own entries_page — feeds Staging's
+        # Edit tags popup (tags-bulk-edit.js) the existing tags for
+        # whatever's checked, so adding/removing a chip starts from each
+        # entry's real current set rather than assuming it's empty.
+        for tg in q("""SELECT jet.entry_id, tg.name
+                         FROM journal_entry_tags jet
+                         JOIN tags tg ON tg.id = jet.tag_id
+                        WHERE jet.entry_id = ANY(%s)
+                        ORDER BY tg.name""", (ids,)):
+            tags_by_entry.setdefault(tg["entry_id"], []).append(tg["name"])
+    for e in entries:
+        e["tags"] = tags_by_entry.get(e["id"], [])
+    return entries, lines_by_entry, tags_by_entry
 
 
 def materialize_due_schedules() -> None:
@@ -4677,7 +4694,7 @@ def scheduled_page(request: Request, ok: str = None, err: str = None):
     by_scenario = postable_accounts_by_scenario()
     postable = by_scenario.get(scen[0]["id"], []) if scen else []
     active_payees = q("SELECT id, name FROM payees WHERE is_active ORDER BY name")
-    pending, _ = pending_staging_entries()
+    pending, _, _ = pending_staging_entries()
     return templates.TemplateResponse(request, "scheduled.html", {
         "nav": "scheduled", "schedules": scheduled_all(),
         "accounts": postable, "accounts_by_scenario": by_scenario,
@@ -4769,7 +4786,7 @@ def staging_page(request: Request, date_from: str = "", date_to: str = "", qtext
                  tags: str = "", account: str = "", payee: str = "", amount_op: str = "",
                  amount_value: str = "", amount_value2: str = "", target_scenario: str = "",
                  ok: str = None, err: str = None):
-    pending, pending_lines = pending_staging_entries(
+    pending, pending_lines, tags_by_entry = pending_staging_entries(
         date_from, date_to, qtext, tags, account, payee,
         amount_op, amount_value, amount_value2, target_scenario)
     # Same idea as the Journal's own has_filters — no point showing
@@ -4780,6 +4797,7 @@ def staging_page(request: Request, date_from: str = "", date_to: str = "", qtext
                        or amount_op or target_scenario)
     return templates.TemplateResponse(request, "staging.html", {
         "nav": "staging", "pending": pending, "pending_lines": pending_lines,
+        "tags_by_entry": tags_by_entry,
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "tags": tags, "all_tags": all_tags(),
         "account": account, "payee": payee,

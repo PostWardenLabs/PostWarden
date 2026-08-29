@@ -67,7 +67,7 @@ archetype**, not one for the whole app — that's the actual fix for
 | Extra toggle | "hide reversed/reversals" checkbox | *(none — a pending entry can't be a reversal)* |
 | Clear filters | `<a class="button-link">Clear filters</a>`, inline in the field row | Same markup, but originally sat in a *second* row (grouped with Approve/Reject) — fixed to match Journal's placement, see below |
 | Select mode | "Select" button → reveals checkboxes + "select all" | Same |
-| Bulk actions | Reverse (Alt+R), Edit tags | Approve (Alt+A), Reject (Alt+R) |
+| Bulk actions | Edit tags, Reverse (Alt+R) | Edit tags, Approve (Alt+A), Reject (Alt+R) — Edit tags added after this audit shipped, same shared popup (`tags-bulk-edit.js`) as the Journal's |
 | Export | CSV, XLSX | *(none — nothing here is posted yet)* |
 | Row-level edit | description/memo click-to-edit | description/memo click-to-edit (added this session) |
 

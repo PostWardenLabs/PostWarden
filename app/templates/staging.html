@@ -6,6 +6,10 @@
 </div>
 
 <script type="application/json" id="tags-data">{{ all_tags | tojson }}</script>
+{# Feeds the Edit tags popup (tags-bulk-edit.js, shared with the
+   Journal's own) each checked entry's existing tags — same shape as
+   entries.html's own entry-tags-data. #}
+<script type="application/json" id="entry-tags-data">{{ tags_by_entry | tojson }}</script>
 {#
   Both empty at page load, same shape app.js always expects — Staging
   never shows a scenario picker of its own, so nothing here fills
@@ -108,6 +112,7 @@
        Reverse/Edit tags there. #}
     <button type="button" class="quiet" id="select-toggle">Select</button>
     <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
+    <button type="button" class="quiet" id="edit-tags-btn" disabled>Edit tags</button>
     <button type="submit" id="approve-btn" disabled>Approve (Alt+A)</button>
     <button type="submit" class="quiet" id="reject-btn" disabled
             formaction="/staging/reject" formmethod="post">Reject (Alt+R)</button>
@@ -298,6 +303,7 @@
 <script src="{{ asset('tags.js') }}"></script>
 <script src="{{ asset('app.js') }}"></script>
 <script src="{{ asset('staging-inline-edit.js') }}"></script>
+<script src="{{ asset('tags-bulk-edit.js') }}"></script>
 <script src="{{ asset('staging.js') }}"></script>
 <script src="{{ asset('memo-edit.js') }}"></script>
 <script src="{{ asset('description-edit.js') }}"></script>
