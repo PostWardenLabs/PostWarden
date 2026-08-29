@@ -23,12 +23,13 @@ note in the log.
 ## Current status
 
 **Phase 0, in progress.** `backend/` exists as a `src`-layout package with
-the full tree, dependencies pinned, and a smoke test proving the pipeline
-(install → import → `TestClient` → assert) works. No `frontend/`, no CI
-workflow, no Alembic baseline yet. `master` is untouched and still what's
-deployed.
+the full tree, dependencies pinned, a smoke test proving the pipeline
+(install → import → `TestClient` → assert) works, and an Alembic baseline
+that reproduces `db/schema.sql` exactly. No `frontend/`, no CI workflow
+yet. `master` is untouched and still what's deployed.
 
-**Next step:** 0.4 — `alembic init` and the baseline revision.
+**Next step:** 0.5 — GitHub Actions CI workflow (`pytest` against a
+Postgres service container).
 
 ---
 
@@ -55,7 +56,7 @@ before any of Phase 1's code does. Pure setup, no product logic.
       reversed: `master`'s app isn't run anywhere during this rebuild,
       including locally, so there's no drift to manage between two live
       dependency sets — just one frozen file and one active one.
-- [ ] **0.4** `alembic init`, baseline revision generated from the
+- [x] **0.4** `alembic init`, baseline revision generated from the
       current `db/schema.sql` (`REBUILD.md` decision 5). Confirm
       `alembic upgrade head` against a fresh database reproduces
       `schema.sql` with no diff.
@@ -235,6 +236,18 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 0.4 done: `alembic init` under `backend/`;
+  `env.py` reads `DATABASE_URL` (same env var as legacy `app/db.py`, but
+  the SQLAlchemy-flavored `postgresql+psycopg://` scheme, not legacy's
+  plain `postgresql://`). The baseline revision applies `db/schema.sql`
+  verbatim via the raw DBAPI cursor inside `autocommit_block()` — not
+  `op.execute(text(...))`, which chokes on literal `%` in the file before
+  it reaches Postgres, and not nested inside Alembic's own transaction,
+  which would let the file's own `COMMIT` close that transaction out from
+  under it. Verified for real: `alembic upgrade head` against a fresh
+  Postgres 16 container, `pg_dump --schema-only` diffed against a second
+  fresh container loaded with `psql -f schema.sql` directly — identical
+  except for Alembic's own `alembic_version` bookkeeping table.
 - **2026-08-29** — Phase 0.1–0.3 done: `backend/` scaffolded as a
   `src`-layout package (`backend/src/postwarden/`, empty sub-packages per
   module, `main.py`/`config.py`/`db.py` stubs), dependencies pinned in
