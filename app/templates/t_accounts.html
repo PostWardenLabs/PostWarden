@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}T-Accounts{% endblock %}
+{% block content %}
+<div class="page-head">
+  <p class="page-sub">{{ month_start }} to {{ today }} (month to date) · scenario <span class="mono">{{ scenario }}</span></p>
+  <a href="/help#reports" class="help-icon" aria-label="How this works" title="How this works">?</a>
+</div>
+
+{#
+  Deliberately no As-of/date-range picker — this page is always the
+  current month, full stop (see the route's own comment: a teaching aid
+  for double-entry, not a working report someone runs against an
+  arbitrary period). Scenario and the zeros toggle are the only controls,
+  same field-bar shape as every other report here.
+#}
+<form method="get" action="/t-accounts" data-auto-refresh>
+  <div class="bar">
+    <label class="field">Scenario
+      <select name="scenario">
+        {% for s in scenarios %}
+        <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <p class="bar" style="align-items: center;">
+    <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show accounts with no activity this month</label>
+  </p>
+</form>
+
+{% if grouped %}
+{% for g in grouped %}
+<section class="t-account-section">
+  <h2 class="t-section-label">{{ g.label }}</h2>
+  <div class="t-account-grid">
+    {% for a in g.rows %}
+    <table class="ledger t-account">
+      <caption>
+        <a class="amount-link" href="/entries?scenario={{ scenario }}&date_from={{ month_start }}&date_to={{ today }}&account={{ a.code }}&back={{ ('/t-accounts?scenario=' + scenario + '&zeros=' + (zeros | string)) | urlencode }}">
+          {{ a.code }} · {{ a.name }}
+        </a>
+      </caption>
+      <thead>
+        <tr><th class="num money money-first">Debit</th><th class="num money">Credit</th></tr>
+      </thead>
+      <tbody>
+        {% for r in a.rows %}
+        <tr>
+          <td class="num money money-first">{{ r.debit | money if r.debit else '' }}</td>
+          <td class="num money">{{ r.credit | money if r.credit else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="grand">
+          <td class="num money money-first">{{ a.total_debit | money if a.total_debit else '' }}</td>
+          <td class="num money">{{ a.total_credit | money if a.total_credit else '' }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% else %}
+<p class="dim">No activity in {{ scenario }} this month. <label class="checkline" style="display:inline-flex;"><a href="/t-accounts?scenario={{ scenario }}&zeros=1">Show accounts with no activity</a></label></p>
+{% endif %}
+{% endblock %}

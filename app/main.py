@@ -1051,6 +1051,82 @@ def trial_balance_export_xlsx(scenario: str = "ACTUAL", as_of: str = None,
 
 
 # ---------------------------------------------------------------------------
+# T-Accounts — the classic two-column ledger box, one per account, grouped
+# by type the same way Trial Balance's own sections are. Deliberately
+# scoped down from what a general-ledger report usually offers: month-to-
+# date only (no as-of/date-range picker), postable accounts only (a T-
+# account is a real account's own ledger card, not a rolled-up summary),
+# and no drill-through on individual lines — this is a teaching aid for
+# double-entry itself (see docs/GUIDE.md), not a working report, so it
+# stays as close to "what a textbook draws on a chalkboard" as a live
+# report reasonably can. The one link this page does offer is the account
+# header itself, through to the Journal filtered to that account for the
+# same month — the same "see what produced this" convention every other
+# report's own summary figures already follow (decision 11, SPEC.md).
+# ---------------------------------------------------------------------------
+def _t_accounts_rows(scenario: str, zeros: int) -> dict:
+    today = date.today()
+    month_start = today.replace(day=1).isoformat()
+    today_iso = today.isoformat()
+
+    accounts = q("""SELECT id, code, name, account_type FROM accounts
+                     WHERE is_postable AND is_active
+                     ORDER BY account_type, code""")
+
+    lines_by_account: dict[int, list[dict]] = {}
+    if accounts:
+        for ln in q("""SELECT l.account_id, l.debit, l.credit, e.entry_date
+                         FROM journal_lines l
+                         JOIN journal_entries e ON e.id = l.entry_id
+                         JOIN scenarios s ON s.id = e.scenario_id
+                        WHERE s.code = %s
+                          AND e.entry_date BETWEEN %s AND %s
+                        ORDER BY l.account_id, e.entry_date, l.line_no""",
+                      (scenario, month_start, today_iso)):
+            lines_by_account.setdefault(ln["account_id"], []).append(ln)
+
+    def t_account(a: dict) -> dict | None:
+        lines = lines_by_account.get(a["id"], [])
+        if not lines and not zeros:
+            return None
+        debits = [ln["debit"] for ln in lines if ln["debit"]]
+        credits = [ln["credit"] for ln in lines if ln["credit"]]
+        net = sum(debits) - sum(credits)
+        # Paired only for the table's own two-column layout — a debit's
+        # row and the credit sitting beside it are otherwise unrelated,
+        # same as a real T-account, where the two sides are independent
+        # running lists that just happen to share a page.
+        rows = [{"debit": debits[i] if i < len(debits) else None,
+                "credit": credits[i] if i < len(credits) else None}
+               for i in range(max(len(debits), len(credits)))]
+        return {"code": a["code"], "name": a["name"], "rows": rows,
+                # "the total row only writes to the Cr. or Dr. column
+                # depending on the balance" — a net debit balance shows
+                # in Debit, a net credit balance in Credit, never both,
+                # and neither at all for an exact wash (net == 0).
+                "total_debit": net if net > 0 else None,
+                "total_credit": -net if net < 0 else None}
+
+    grouped = []
+    for t in ACCOUNT_TYPES:
+        rows = [ta for a in accounts if a["account_type"] == t
+               for ta in [t_account(a)] if ta is not None]
+        if rows:
+            grouped.append({"label": TYPE_LABELS[t], "rows": rows})
+    return {"grouped": grouped, "month_start": month_start, "today": today_iso}
+
+
+@app.get("/t-accounts")
+def t_accounts_page(request: Request, scenario: str = "ACTUAL", zeros: int = 0):
+    result = _t_accounts_rows(scenario, zeros)
+    return templates.TemplateResponse(request, "t_accounts.html", {
+        "nav": "t_accounts", "scenario": scenario, "zeros": zeros,
+        "scenarios": scenarios_all(), "grouped": result["grouped"],
+        "month_start": result["month_start"], "today": result["today"],
+    })
+
+
+# ---------------------------------------------------------------------------
 # Income statement (P&L) — Income and Expense only, always period-ranged:
 # these are flow accounts, so "as of a date" doesn't mean anything for them
 # the way it does for Assets/Liabilities/Equity. Defaults to month-to-date.

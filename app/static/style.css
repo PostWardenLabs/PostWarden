@@ -1013,6 +1013,30 @@ tr.grand td { font-weight: 700; border-bottom: none; padding-top: 0.7rem; }
 tr.grand td.num { border-bottom: 3.5px double var(--ink); }
 tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: var(--red); }
 
+/* T-Accounts (/t-accounts) — a wrapped grid of small, fixed-width
+   two-column ledger cards, one per account, instead of the one wide
+   table.ledger.report-table every other report renders. Each card is
+   still a real table.ledger (same money/grand treatment, so a total row
+   reads identically to every other report's own grand row), just capped
+   to a width that reads as "a card" rather than stretching full-bleed
+   like a report table would. */
+.t-account-section { margin-top: 1.5rem; }
+.t-section-label {
+  font-family: var(--serif); font-weight: 600; font-size: 1rem;
+  margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule-strong);
+}
+.t-account-grid { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+table.ledger.t-account {
+  width: 15rem; flex: none; border: 1px solid var(--rule-strong); border-radius: 4px;
+  overflow: hidden;
+}
+table.ledger.t-account caption {
+  caption-side: top; text-align: left; padding: 0.5rem 0.7rem;
+  font-weight: 600; border-bottom: 1px solid var(--rule-strong);
+  background: var(--paper-deep);
+}
+table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; }
+
 .neg { color: var(--red); }
 .dim { color: var(--ink-soft); }
 .small { font-size: 0.8rem; }
