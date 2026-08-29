@@ -22,12 +22,13 @@ note in the log.
 
 ## Current status
 
-**Phase 0, not yet started.** `REBUILD.md` and `CLAUDE.md` (refitted for
-this branch) are the only things that exist on `rebuild` so far — no
-`backend/`, no `frontend/`, no CI workflow. `master` is untouched and
-still what's deployed.
+**Phase 0, in progress.** `backend/` exists as a `src`-layout package with
+the full tree, dependencies pinned, and a smoke test proving the pipeline
+(install → import → `TestClient` → assert) works. No `frontend/`, no CI
+workflow, no Alembic baseline yet. `master` is untouched and still what's
+deployed.
 
-**Next step:** 0.1 — scaffold the `backend/` tree.
+**Next step:** 0.4 — `alembic init` and the baseline revision.
 
 ---
 
@@ -36,18 +37,24 @@ still what's deployed.
 Not one of `REBUILD.md` §6's five numbered phases, but has to happen
 before any of Phase 1's code does. Pure setup, no product logic.
 
-- [ ] **0.1** Create the `backend/src/postwarden/` tree per `REBUILD.md`
+- [x] **0.1** Create the `backend/src/postwarden/` tree per `REBUILD.md`
       §6 (`domain/`, `modules/`, `export/`, `analytics/`, `main.py`,
       `config.py`, `db.py`) — empty packages first, so the directory
-      shape is settled before anything fills it in.
-- [ ] **0.2** Pick and pin backend dependencies (FastAPI, SQLAlchemy
+      shape is settled before anything fills it in. `main.py` carries a
+      trivial `/healthz` route (no DB touch) as the one bit of real code,
+      to prove the container actually boots; `config.py`/`db.py` are
+      still docstring-only stubs, deferred to 1.2.
+- [x] **0.2** Pick and pin backend dependencies (FastAPI, SQLAlchemy
       Core, Alembic, Pydantic v2, pytest, psycopg driver, uvicorn) —
-      record versions in `backend/`'s own dependency file.
-- [ ] **0.3** Decide: one shared Python dependency file for legacy
-      `app/` + new `backend/`, or fully separate. They'll run as two
-      containers side by side for a while (decision 6), which argues
-      for separate; but duplicated pins drift. Decide once, record the
-      reasoning here.
+      recorded in `backend/pyproject.toml` (`src`-layout package, `dev`
+      extra for pytest/httpx). Same major versions as legacy
+      `requirements.txt` where the tool carries over.
+- [x] **0.3** Decided: **fully separate** dependency files — see log
+      below. The premise for a shared file ("they'll run as two
+      containers side by side") no longer holds now that decision 6 was
+      reversed: `master`'s app isn't run anywhere during this rebuild,
+      including locally, so there's no drift to manage between two live
+      dependency sets — just one frozen file and one active one.
 - [ ] **0.4** `alembic init`, baseline revision generated from the
       current `db/schema.sql` (`REBUILD.md` decision 5). Confirm
       `alembic upgrade head` against a fresh database reproduces
@@ -228,6 +235,13 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 0.1–0.3 done: `backend/` scaffolded as a
+  `src`-layout package (`backend/src/postwarden/`, empty sub-packages per
+  module, `main.py`/`config.py`/`db.py` stubs), dependencies pinned in
+  `backend/pyproject.toml`, and open question 0.3 resolved — separate
+  dependency files, not shared. Verified with a real install: `pip
+  install -e ".[dev]"` + `pytest` inside `backend/` passes (one smoke
+  test, `backend/tests/test_health.py`, hitting `/healthz`).
 - **2026-08-29** — Decision 6 in `REBUILD.md` reversed: no second live
   instance of `master`'s app is maintained anywhere, locally or in
   prod, for comparison purposes. This is a committed, all-in rebuild —
@@ -240,5 +254,4 @@ that level get a line of their own.
 
 Carried forward until answered; move to the log once resolved.
 
-- 0.3: shared vs. separate dependency files between `app/` (legacy) and
-  `backend/` (new).
+None currently open.

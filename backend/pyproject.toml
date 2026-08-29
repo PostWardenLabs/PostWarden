@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postwarden"
+version = "0.1.0"
+description = "PostWarden backend — rebuilt app layer (FastAPI, SQLAlchemy Core, Alembic) over the unchanged db/schema.sql."
+requires-python = ">=3.12"
+dependencies = [
+    # Same major-version choices as legacy app/requirements.txt where the
+    # tool carries over (FastAPI, uvicorn, psycopg) — no reason to relitigate
+    # those. New here: SQLAlchemy Core, Alembic, pydantic-settings.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-multipart>=0.0.9",
+    "bcrypt>=4.1",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -3,6 +3,12 @@ __pycache__/
 .pytest_cache/
 .env
 
+# backend/ (the rebuild branch's new app, see REBUILD.md) is a proper
+# src-layout package — pip installs it editable, which means a local venv
+# and an egg-info dir, neither of which belong in git.
+backend/.venv/
+backend/**/*.egg-info/
+
 # mkdocs build output (docs.postwarden.org) — built fresh on deploy, see
 # mkdocs.yml and docs/ (this is not the source, just what `mkdocs build`
 # produces from it).
