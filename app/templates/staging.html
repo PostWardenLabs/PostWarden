@@ -113,6 +113,14 @@
     {% else %}
     <a class="button-link disabled" aria-disabled="true">Clear filters</a>
     {% endif %}
+    {#
+      Plain navigation, not part of this form — scans *every* pending
+      entry regardless of the current filters/selection (BACKLOG.md's
+      "Option 2": no selection needed up front). /staging/duplicates
+      itself redirects back here with "No duplicate entries found" when
+      nothing matches, rather than landing on an empty results page.
+    #}
+    <a class="button-link" href="/staging/duplicates" style="margin-left: auto;">Find duplicates</a>
   </p>
   {% for e in pending %}
   <details class="entry entry-staging">

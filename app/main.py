@@ -4938,6 +4938,183 @@ async def reject_staging_entries(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Find duplicates — BACKLOG.md's "Option 2": no selection needed up front,
+# a global FIND DUPLICATES button scans every pending Staging entry at
+# once, groups whatever it finds, and hands the result to a dedicated
+# review page rather than a merge decision made blind from the plain list.
+#
+# Matching rule, exactly BACKLOG.md's own wording: "the same credit and
+# debit accounts, with the same amounts, AND the date matches." Two
+# entries are duplicates of each other only if their full leg sets are
+# identical as a *set* — same (account, amount) pairs, same count, same
+# date — not merely overlapping; a 2-leg entry and a 3-leg entry can
+# never match regardless of what their first two legs look like, since a
+# duplicate is "the same transaction posted twice," not "a similar one."
+# ---------------------------------------------------------------------------
+def _find_staging_duplicate_groups() -> list[dict]:
+    entries = q("""SELECT e.id, e.entry_date, e.description, e.reference, e.payee_id,
+                          p.name AS payee_name
+                     FROM journal_entries e
+                     JOIN scenarios s ON s.id = e.scenario_id AND s.is_staging
+                     LEFT JOIN payees p ON p.id = e.payee_id
+                    ORDER BY e.entry_date, e.seq""")
+    if not entries:
+        return []
+    ids = [e["id"] for e in entries]
+    lines_by_entry: dict[str, list] = {}
+    for ln in q("""SELECT l.id, l.entry_id, l.account_id, l.amount, l.memo,
+                          a.code AS account_code, a.name AS account_name
+                     FROM journal_lines l
+                     JOIN accounts a ON a.id = l.account_id
+                    WHERE l.entry_id = ANY(%s)
+                    ORDER BY l.entry_id, l.line_no""", (ids,)):
+        lines_by_entry.setdefault(ln["entry_id"], []).append(ln)
+    tags_by_entry: dict[str, list] = {}
+    for tg in q("""SELECT jet.entry_id, tg.name FROM journal_entry_tags jet
+                     JOIN tags tg ON tg.id = jet.tag_id
+                    WHERE jet.entry_id = ANY(%s) ORDER BY tg.name""", (ids,)):
+        tags_by_entry.setdefault(tg["entry_id"], []).append(tg["name"])
+
+    # credit/debit here mirrors the Dashboard's own "Salary Income →
+    # Checking" flow label (see dashboard()'s flow_side) — a section
+    # header names the transaction, not any one entry's own description,
+    # since the whole point of grouping is that every entry in it *is*
+    # the same transaction. Collapses to "multiple" on either side for a
+    # 3+-leg group the same way the Dashboard's own version does, rather
+    # than trying to name every account on a wide split.
+    def flow_label(lines: list) -> str:
+        credit_names = sorted({l["account_name"] for l in lines if l["amount"] < 0})
+        debit_names = sorted({l["account_name"] for l in lines if l["amount"] > 0})
+        credit_side = credit_names[0] if len(credit_names) == 1 else "multiple"
+        debit_side = debit_names[0] if len(debit_names) == 1 else "multiple"
+        return f"{credit_side} → {debit_side}"
+
+    groups: dict[tuple, list] = {}
+    for e in entries:
+        lines = lines_by_entry.get(e["id"], [])
+        fingerprint = (e["entry_date"],
+                      tuple(sorted((l["account_id"], l["amount"]) for l in lines)))
+        e["lines"] = lines
+        e["tags"] = tags_by_entry.get(e["id"], [])
+        groups.setdefault(fingerprint, []).append(e)
+
+    result = []
+    for (entry_date, _legs), group_entries in groups.items():
+        if len(group_entries) < 2:
+            continue  # not a duplicate of anything — the common case
+        result.append({
+            "label": f"{entry_date.isoformat()}: {flow_label(group_entries[0]['lines'])}",
+            "entry_date": entry_date,
+            "entries": group_entries,
+        })
+    result.sort(key=lambda g: g["entry_date"])
+    return result
+
+
+@app.get("/staging/duplicates")
+def staging_duplicates_page(request: Request, ok: str = None, err: str = None):
+    """No client-side loading modal on the FIND DUPLICATES link that gets
+    here — this is one query over data already in memory-sized Staging,
+    not a background job with real progress to report, so a manufactured
+    progress bar would be theater for a page load the browser's own
+    address-bar spinner already covers. If Staging ever grows large
+    enough for this to feel slow, that's the point to revisit, not
+    before."""
+    groups = _find_staging_duplicate_groups()
+    if not groups:
+        return flash_redirect("/staging", err="No duplicate entries found")
+    # `groups` itself keeps raw Decimal/date values — the template's own
+    # Jinja rendering (money filter, selectattr/sum) needs those as real
+    # numbers, not strings. The JSON blob staging-duplicates.js reads
+    # can't take the same values, though: tojson() (see its own comment)
+    # is a plain json.dumps, which has no idea how to serialize a
+    # Decimal or a date — same reason templates_full() already str()s
+    # debit/credit before its own tojson blob. groups_json is that same
+    # conversion, kept separate rather than mutating `groups` in place.
+    groups_json = [{
+        "label": g["label"],
+        "entries": [{
+            "id": e["id"], "description": e["description"], "reference": e["reference"],
+            "payee_id": e["payee_id"], "tags": e["tags"],
+            "lines": [{
+                "id": l["id"], "account_id": l["account_id"], "amount": str(l["amount"]),
+                "memo": l["memo"], "account_code": l["account_code"],
+                "account_name": l["account_name"],
+            } for l in e["lines"]],
+        } for e in g["entries"]],
+    } for g in groups]
+    return templates.TemplateResponse(request, "staging_duplicates.html", {
+        "nav": "staging", "groups": groups, "groups_json": groups_json,
+        "payees": q("SELECT id, name FROM payees WHERE is_active ORDER BY name"),
+        "all_tags": all_tags(),
+        "ok": ok, "err": err,
+    })
+
+
+@app.post("/staging/duplicates/merge")
+async def merge_staging_duplicates(request: Request):
+    """One group's worth of duplicates, collapsed to a single survivor —
+    staging-duplicates.js's merge popup, opened once the user has checked
+    2+ entries in one section and (if some entries in that section were
+    left unchecked) confirmed past the partial-selection warning.
+
+    keep_id survives; every remove_id is discarded outright — a real
+    DELETE, not a reversal, exactly Staging's own Reject (decision 15):
+    none of these were ever approved, so there's nothing to reverse, only
+    a proposal to withdraw. Lines before entries, same safe order Reject
+    already uses, so fn_lines_immutable's own self-lookup (it re-queries
+    journal_entries for the row a line belongs to) never runs against an
+    entry that's already gone.
+
+    The survivor's own description/reference/payee/tags get the values
+    typed into the popup — a plain UPDATE, already legal on a pending
+    entry (decision 15) — and each of the survivor's own *lines* may get
+    a new memo, keyed by that line's own id (memo_<line_id>, same
+    convention /entries/lines/{id}/edit-memo uses) rather than by
+    position: two entries in the same duplicate group aren't guaranteed
+    to have their matching legs in the same line_no order, but the
+    survivor's own line ids are exactly the ones the popup rendered
+    memo inputs for, so there's no ambiguity about which input belongs
+    to which line."""
+    form = await request.form()
+    try:
+        require_csrf(request, form.get("csrf_token"))
+        keep_id = (form.get("keep_id") or "").strip()
+        remove_ids = [v for v in form.getlist("remove_id") if v]
+        if not keep_id or not remove_ids:
+            raise ValueError("Select at least two entries in one group to merge")
+        _pending_staging_entry(keep_id)
+        for rid in remove_ids:
+            _pending_staging_entry(rid)
+        description = (form.get("description") or "").strip()
+        if not description:
+            raise ValueError("Description can't be empty")
+        reference = (form.get("reference") or "").strip() or None
+        payee_raw = (form.get("payee_id") or "").strip()
+        payee_id = int(payee_raw) if payee_raw else None
+        tag_names = _parse_tags(form.get("tags", ""))
+        with tx() as cur:
+            cur.execute(
+                """UPDATE journal_entries SET description = %s, reference = %s, payee_id = %s
+                    WHERE id = %s""",
+                (description, reference, payee_id, keep_id))
+            _sync_entry_tags(cur, keep_id, tag_names)
+            cur.execute("SELECT id FROM journal_lines WHERE entry_id = %s", (keep_id,))
+            for row in cur.fetchall():
+                memo_val = form.get(f"memo_{row['id']}")
+                if memo_val is not None:
+                    cur.execute("UPDATE journal_lines SET memo = %s WHERE id = %s",
+                               (memo_val.strip() or None, row["id"]))
+            cur.execute("DELETE FROM journal_lines WHERE entry_id = ANY(%s)", (remove_ids,))
+            cur.execute("DELETE FROM journal_entries WHERE id = ANY(%s)", (remove_ids,))
+    except (ValueError, psycopg.Error) as e:
+        msg = _pg_msg(e) if isinstance(e, psycopg.Error) else str(e)
+        return flash_redirect("/staging/duplicates", err=msg)
+    n = len(remove_ids) + 1
+    return flash_redirect("/staging/duplicates", ok=f"Merged {n} duplicate entries into #{keep_id}")
+
+
+# ---------------------------------------------------------------------------
 # CSV import — the other producer Staging accepts entries from, alongside
 # Scheduled entries. Deliberately round-trips /entries/export.csv's own
 # column layout ("Entry #" groups rows back into one entry per journal

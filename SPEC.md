@@ -978,6 +978,89 @@ but the old wording was written to describe a report-specific
 denominator choice that no longer differs report to report, so keeping
 it risked implying a subtlety that isn't there anymore.
 
+### 22. Find Duplicates matches on the full leg set, merges by deleting the losers, and resolves one group per click
+
+Staging can end up holding two (or more) journal entries that are
+really the same real-world transaction, proposed twice — a CSV import
+whose date range overlapped an earlier one, or an active schedule that
+also appears in an imported file for the same period. Find Duplicates
+(`/staging/duplicates`) scans every pending entry at once, no selection
+needed first, and groups them for review rather than guessing which
+one to keep automatically.
+
+**The matching rule is the full leg set as a set, not a pairwise or
+partial check.** Two entries are duplicates only if they share the same
+date and the same multiset of (account, amount) pairs across *all*
+their lines — same count, same members. A 2-leg entry and a 3-leg entry
+can never match each other regardless of what their first two legs look
+like; a "duplicate" is specifically "the same transaction proposed
+twice," not "a transaction that resembles another one." This is the
+same identity-not-similarity instinct decision 20's cash-flow
+attribution already leans on elsewhere in this schema — no fuzzy
+scoring, no partial-match threshold to tune.
+
+**A group's own label names the transaction, reusing the Dashboard's
+existing flow-arrow convention** ("Credit Card → Groceries," credit
+side first) rather than inventing a second way to describe a
+transaction's direction — collapsing to "multiple" on either side for a
+3+-leg group the same way the Dashboard's own recent-activity widget
+already does, for the same reason: naming every account on a wide split
+reads worse than admitting there are several.
+
+**Merging deletes the losing entries outright; it does not reverse
+them.** This is decision 15's own append-only exemption, not a new one:
+every entry in a duplicate group is still sitting in Staging, still
+`promoted_entry_id IS NULL`, so none of them were ever approved into
+real books — there is nothing to reverse, only proposals to withdraw,
+exactly the same reasoning Staging's own Reject action already relies
+on. The surviving entry keeps its own row (and so its own id, and its
+own `scheduled_entry_id`/`import_batch_id` provenance, untouched) rather
+than a fresh entry being created to represent the merge; its
+description/reference/payee/tags take whatever was chosen in the merge
+step (already legal on a pending entry per decision 15), and each of
+its own *lines* may get a new memo — legal specifically because of
+decision 16's memo addendum, landing in the same release as this
+feature and used directly here: a duplicate-derived memo edit is no
+different in kind from a Journal click-to-edit one, just applied by a
+merge form instead of a single input.
+
+**Memo candidates come from the matching leg only, never a guess across
+a different one.** When the survivor's own line has no memo yet, the
+merge popup looks for the first non-blank memo on the *same*
+(account, amount) leg among the other checked duplicates — the
+identical reasoning the matching rule itself already establishes: same
+account and amount is what makes two legs "the same line" across
+entries, so borrowing a memo from anywhere else on another entry would
+be attaching a note to a leg it was never actually written about.
+
+**One group merges per click, not a batch across every qualifying
+group at once.** If checking boxes across multiple groups would enable
+Merge for more than one of them simultaneously, clicking it resolves
+only the first (in document order) — same one-atomic-action-per-submit
+shape decision 18's own Payee/Tag Merge already established, for the
+same reason: "which description, which tags, which memos" is a real
+decision with its own popup, and batching several such decisions behind
+one click either forces one set of answers onto every group (wrong,
+the whole reason a review page exists) or means building a queue of
+sequential popups for a feature that doesn't need one. The merge
+route's own flash-redirect already reloads `/staging/duplicates` and
+recomputes groups fresh, so resolving the next group is just clicking
+Merge again — including the case where merging the first group also
+happens to leave zero groups behind, which lands back on `/staging`
+with "No duplicate entries found" the same way an empty scan does.
+
+**No client-side progress indicator on the FIND DUPLICATES link
+itself**, despite the original request describing one — the detection
+query runs over data already sized to fit comfortably in one page load
+(everything currently pending in Staging), so it resolves before a
+manufactured progress bar would have anything real to report. The
+browser's own navigation-loading affordance already covers "something
+is happening"; inventing a fake one on top would be decorating an
+instant operation, not informing anyone about a slow one. Worth
+revisiting only if Staging's pending count ever grows large enough for
+the scan itself to be the slow part, which nothing about today's usage
+patterns suggests.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

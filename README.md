@@ -93,7 +93,12 @@ instance.
   amount, change an account, add a line) or reject it outright before
   it ever becomes a real posting — a draft, not yet history. Import
   round-trips the same column layout Export CSV produces, so export →
-  edit in a spreadsheet → re-import is a real workflow.
+  edit in a spreadsheet → re-import is a real workflow. **Find
+  Duplicates** scans every pending entry at once for the classic
+  overlapping-import mistake — the same transaction proposed twice,
+  same accounts/amounts/date — groups whatever it finds, and merges
+  a group down to one entry with your choice of which description,
+  tags, references, and per-line memos to keep.
 - **CSV export everywhere**, a chart-of-accounts manager, and dedicated
   management pages for payees and tags — rename, delete, archive a payee
   without touching its history, or select several and merge them into

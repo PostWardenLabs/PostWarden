@@ -1037,6 +1037,15 @@ table.ledger.t-account caption {
 }
 table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; }
 
+/* Find Duplicates (/staging/duplicates) — same section-label treatment
+   as T-Accounts' own .t-section-label, one real table.ledger per group
+   rather than per-account cards. */
+.duplicate-group { margin-top: 1.5rem; }
+.duplicate-group-label {
+  font-family: var(--serif); font-weight: 600; font-size: 1rem;
+  margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule-strong);
+}
+
 .neg { color: var(--red); }
 .dim { color: var(--ink-soft); }
 .small { font-size: 0.8rem; }
