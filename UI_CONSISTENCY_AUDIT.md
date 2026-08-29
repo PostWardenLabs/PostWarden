@@ -40,8 +40,8 @@ each other**. Four archetypes, as currently built:
 | Archetype | Pages | What it's answering |
 |---|---|---|
 | **Filterable transaction list** | Journal (`/entries`), Staging (`/staging`) | "show me the entries matching X" |
-| **Point-in-time report** | Balance Sheet, Trial Balance, Variance | "what do balances look like as of a date" |
-| **Range/period report** | Income Statement, Cash Flow, Ledger | "what happened between two dates" (Ledger's range is fixed to MTD, not user-picked, but it's still range-shaped) |
+| **Point-in-time report** | Balance Sheet, Trial Balance, Variance, Ledger | "what do balances look like as of a date" — Ledger reclassified here (was Range/period, see the correction below §2c) once it grew a real "as of" |
+| **Range/period report** | Income Statement, Cash Flow | "what happened between two dates" |
 | **Editable grid** | Budget Grid | "let me change numbers, not just read them" |
 | **Management / CRUD list** | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | "let me create/edit/retire records" — a genuinely different job from the five above, its own section at the end |
 
@@ -143,6 +143,27 @@ elsewhere — it says what it actually means on a report with no date
 picker at all — but it's now a third distinct phrasing for what
 Balance Sheet/Trial Balance/Income Statement/Variance all call "show
 zero balances."
+
+**Correction — Ledger reclassified (user-reported):** the Ledger row
+above describes this page as it originally shipped, fixed to MTD with
+no date picker at all, reasoned as "a teaching aid for double-entry,
+not a working report." On reflection that's not a different kind of
+page from Trial Balance — both show an account's standing as of a
+date, one as a balance figure, the other as the individual postings
+behind it — so it's moved to the Point-in-time archetype instead (§1)
+and picked up the exact same three controls Trial Balance/Balance
+Sheet/Variance already have: **As of**, **show zero balances**
+(rewording resolved as part of the move — one phrasing, not a fourth),
+and **show true balances (skip simulated close)**, plus the same
+prev/next-month links. "Simulated close" means the same thing it does
+on Trial Balance — Income/Expense accounts are simulated-closed each
+month by default (only the as-of month's own lines show), Asset/
+Liability/Equity accounts never are (always full history through
+as-of) — just applied to which individual lines show instead of an
+aggregate balance. Still no export, still postable-accounts-only, still
+no drill-through on individual lines; only the date-scoping changed.
+See `_ledger_rows()`'s own comment in `main.py` for the full reasoning
+and the reversal note.
 
 ### 2d. Editable grid (Budget)
 
@@ -246,26 +267,25 @@ shaped differently underneath despite looking identical on screen.
 |---|---|
 | Record active/inactive toggle | **Archive / Unarchive** everywhere (Payees/Tags' existing word) — replaces Accounts' Deactivate/Reactivate and Scheduled's Pause/Resume. "Archive" already reads correctly for all three: an inactive account, payee, tag, or schedule is exactly "put away, not deleted, can bring back." |
 | "Include rows with a zero balance" | **"Show zero balances"** everywhere, including Ledger — Ledger's own extra context ("...this month") can stay as a `title=` tooltip or a one-line `.page-sub` note instead of changing the checkbox's own label, so the *word* stays identical while the page still explains its own scope. |
-| Scenario picker | Always labeled **"Scenario"** (Journal already does this; Staging's "Scenario" meaning *target* scenario is explained in a comment today — make that explicit on-screen too, e.g. a field hint, not just a code comment) |
+| Scenario picker | Always labeled **"Scenario"** (Journal already does this; Staging's "Scenario" meaning *target* scenario is explained in a comment today — make that explicit on-screen too, e.g. a field hint, not just a code comment). **Shipped** for Variance (user-reported, after §5's own sequencing had already closed out): its primary picker was labeled "Baseline" — matching its own internal param name and report column header, but not Income Statement's "Scenario" for the identical role — relabeled to "Scenario" on-screen only, `name="baseline"` and the column header/CSV output untouched, since "Baseline" is still the correct word for what that picker becomes once it's actually driving a report (a real, distinct concept from Compare). Staging's own "Scenario means target scenario" field-hint is still open. |
 
 ### 4b. Per-archetype canonical control set
 
-**Point-in-time reports** (Balance Sheet, Trial Balance, Variance) — one
-row: Scenario(s) → As of → [Roll up to, Variance only] → checkboxes in
-one fixed order: **zero balances, then true/raw balances, then flip
-variance** (only the ones that actually apply to a given page — Balance
-Sheet has no flip, Variance has no raw). Add **prev/next day or prev/
-next month** shortcuts next to "As of," the same shape Budget Grid
-already proved out — cheap, and every one of these three pages is
-answering a "move the anchor date" question just as often as Budget is.
+**Point-in-time reports** (Balance Sheet, Trial Balance, Variance,
+**Ledger** — see the §2c correction above) — one row: Scenario(s) → As
+of → [Roll up to, Variance only] → checkboxes in one fixed order: **zero
+balances, then true/raw balances, then flip variance** (only the ones
+that actually apply to a given page — Balance Sheet has no flip,
+Variance/Ledger have no flip). Add **prev/next day or prev/next month**
+shortcuts next to "As of," the same shape Budget Grid already proved
+out — cheap, and every one of these pages is answering a "move the
+anchor date" question just as often as Budget is.
 
 **Range reports** (Income Statement, Cash Flow) — Scenario [→ Compare
 to, Income Statement only] → **Period preset** (promote Income
 Statement's own dropdown to both pages — this is the single highest-
 value unification here, since Cash Flow asks the identical question
-with strictly worse tools today) → From/To → checkboxes. Ledger stays
-the deliberate exception (no date picker, by design) but keeps the same
-checkbox wording as everyone else per §4a.
+with strictly worse tools today) → From/To → checkboxes.
 
 **Editable grid** (Budget Grid) — Scenario → Month → prev/next (already
 has this) → **drop the explicit Go button** (auto-refresh already

@@ -9,41 +9,51 @@
 </div>
 
 <form method="get" action="/variance" data-auto-refresh>
-  <div class="bar" style="justify-content: space-between;">
-    <span class="bar" style="margin-bottom: 0;">
-      <label class="field">Baseline
-        <select name="baseline">
-          {% for s in scenarios %}
-          <option value="{{ s.code }}" {{ 'selected' if s.code == baseline }}>{{ s.code }} — {{ s.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="field">Compare to
-        <select name="compare">
-          {% for s in scenarios %}
-          <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="field">Roll up to
-        <select name="level_id">
-          <option value="">No rollup (native depth)</option>
-          {% for lv in levels %}
-          <option value="{{ lv.id }}" {{ 'selected' if level_id == lv.id | string }}>{{ lv.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="field">As of
-        <input type="date" name="as_of" value="{{ as_of }}">
-      </label>
-    </span>
-    {# Prev/next month (UI_CONSISTENCY_AUDIT.md §5.6) — same
-       _shift_date_by_month pattern as Trial Balance/Balance Sheet. #}
-    <span class="bar" style="margin-bottom: 0;">
-      <a class="quiet-link" href="/variance?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ prev_as_of }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_as_of }}</a>
-      <a class="quiet-link" href="/variance?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ next_as_of }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">{{ next_as_of }} &rarr;</a>
-    </span>
+  <div class="bar">
+    {# Labeled "Scenario" (not the internal "baseline" this select still
+       posts as, and still called Baseline in the report's own column
+       header/CSV output, where it's a real distinct concept from
+       Compare) — UI_CONSISTENCY_AUDIT.md §4a's own "Scenario picker
+       always labeled Scenario" rule, same word Income Statement's
+       identical primary-scenario picker already uses. #}
+    <label class="field">Scenario
+      <select name="baseline">
+        {% for s in scenarios %}
+        <option value="{{ s.code }}" {{ 'selected' if s.code == baseline }}>{{ s.code }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">Compare to
+      <select name="compare">
+        {% for s in scenarios %}
+        <option value="{{ s.code }}" {{ 'selected' if s.code == compare }}>{{ s.code }} — {{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">Roll up to
+      <select name="level_id">
+        <option value="">No rollup (native depth)</option>
+        {% for lv in levels %}
+        <option value="{{ lv.id }}" {{ 'selected' if level_id == lv.id | string }}>{{ lv.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">As of
+      <input type="date" name="as_of" value="{{ as_of }}">
+    </label>
   </div>
+  {# Prev/next month (UI_CONSISTENCY_AUDIT.md §5.6) — same
+     _shift_date_by_month pattern as Trial Balance/Balance Sheet/Ledger.
+     Own row below the fields, not flanking them via space-between on
+     the same row — user-reported: with four fields in the row above,
+     space-between left the links floating alone at the far right,
+     disconnected from "As of" rather than reading as a paging control
+     right next to it. Same shape range reports (Income Statement/Cash
+     Flow) already use for their own prev/next row. #}
+  <p class="bar" style="align-items: center;">
+    <a class="quiet-link" href="/variance?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ prev_as_of }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_as_of[:7] }}</a>
+    <a class="quiet-link" href="/variance?baseline={{ baseline }}&compare={{ compare }}&level_id={{ level_id }}&as_of={{ next_as_of }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">{{ next_as_of[:7] }} &rarr;</a>
+  </p>
   <p class="bar" style="align-items: center;">
     <label class="checkline" title="{{ 'Only applies at native depth — a rolled-up row already represents whatever was pooled into it, with no zero-balance rows left to reveal underneath.' if rolled_up }}">
       <input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>

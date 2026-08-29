@@ -1135,6 +1135,16 @@ table.ledger td.money, table.ledger th.money { background: var(--paper-deep); }
 table.ledger td.money-first, table.ledger th.money-first {
   border-left: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
 }
+/* The Ledger's own T-account cards (Date|Debit|Credit|Date) are the one
+   place a money column also has a *trailing* Date column after it, not
+   just a leading one before it — .money-first's red hint only ever
+   covered the leading side (Debit, against the Date before it). Credit
+   had no matching border against the Date after it at all, breaking the
+   "dates on the outside" symmetry the cards are actually going for
+   (user-reported) — mirrors money-first onto the opposite edge. */
+table.ledger td.money-last, table.ledger th.money-last {
+  border-right: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+}
 table.ledger tr.type-head td {
   font-family: var(--serif); font-weight: 600; font-size: 0.95rem;
   padding-top: 0.9rem; border-bottom: 1px solid var(--rule-strong);
@@ -1181,8 +1191,17 @@ table.ledger.t-account caption {
    through the header and every row — .money-first's usual red hint
    border marks "money starts here" everywhere else in the app, which
    isn't the same claim as "this is the T's own vertical stroke," so it
-   gets its own class rather than overloading that one. */
-.t-account td.t-divider, .t-account th.t-divider { border-left: 1px solid var(--rule-strong); }
+   gets its own class rather than overloading that one. 2px, not the
+   caption border's own literal 1px — a vertical rule built from stacked
+   per-row border-lefts reads visibly thinner than a single horizontal
+   one at the same nominal width (browsers snap a fractional border
+   width like 1.5px back down to a single device pixel on a standard-
+   density display, same as its plain 1px sibling would, so a value
+   between the two doesn't reliably render as one — confirmed via
+   getComputedStyle), so matching the number doesn't actually match the
+   perceived weight (user-reported); a full 2px is what actually renders
+   visibly thicker on every display density, not just some. */
+.t-account td.t-divider, .t-account th.t-divider { border-left: 2px solid var(--rule-strong); }
 table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; }
 
 /* Find Duplicates (/staging/duplicates) — same section-label treatment

@@ -217,6 +217,20 @@ alone" (decision 6) — closing the books for real would mean a second
 write path outside the one the balance trigger governs, which is exactly
 what decision 2 exists to prevent.
 
+**Addendum — the same idea, applied to individual lines instead of an
+aggregate:** the Ledger (`/ledger`) reused this exact simulated-close
+split once it grew its own "as of"/raw controls (previously fixed to
+month-to-date with no such toggle at all). `_ledger_rows()` applies the
+same Income/Expense-vs-everything-else distinction at the level of
+which journal lines are even fetched, rather than to a balance already
+computed: Asset/Liability/Equity accounts always show every line from
+inception through `as_of` (never closed, same as Trial Balance's
+`full_balances`); Income/Expense accounts show only the as-of month's
+own lines by default (same as Trial Balance's `merged_balances`), and
+`raw=1` shows their full history too. Still no closing entry, same
+reasoning as above — this is a WHERE-clause distinction on a read, not
+a write path.
+
 ### 11. Hierarchical rollups are built in the app, not SQL, and drill through uniformly
 
 Trial Balance, Balance Sheet, and the Budget grid all show a summary

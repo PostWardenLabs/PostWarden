@@ -1095,22 +1095,45 @@ def trial_balance_export_xlsx(scenario: str = "ACTUAL", as_of: str = None,
 # original "T-Accounts" (BACKLOG.md) once it shipped — this is the actual
 # paper-bookkeeping term for it: a Journal (already /entries) records
 # transactions in order; a Ledger is each account's own page, which is
-# exactly what this screen draws. Deliberately scoped down from what a
-# general-ledger report usually offers: month-to-date only (no as-of/
-# date-range picker), postable accounts only (a T-account is a real
-# account's own ledger card, not a rolled-up summary), and no drill-
-# through on individual lines — this is a teaching aid for double-entry
-# itself (see docs/GUIDE.md), not a working report, so it stays as close
-# to "what a textbook draws on a chalkboard" as a live report reasonably
-# can. The one link this page does offer is the account header itself,
-# through to the Journal filtered to that account for the same month —
-# the same "see what produced this" convention every other report's own
-# summary figures already follow (decision 11, SPEC.md).
+# exactly what this screen draws. Postable accounts only (a T-account is
+# a real account's own ledger card, not a rolled-up summary — no tree, no
+# depth, no children) and no drill-through on individual lines, same as
+# always — but it's genuinely a point-in-time report, same archetype as
+# Trial Balance/Balance Sheet/Variance, not the fixed month-to-date view
+# it shipped as: an "as of" date, "show zero balances", and "show true
+# balances (skip simulated close)" all mean exactly what they mean there.
+#
+# This reverses this page's own original design (worth being explicit
+# about, not silently overwritten): it first shipped deliberately scoped
+# down to month-to-date only, reasoned as "a teaching aid for double-
+# entry itself, not a working report... as close to what a textbook
+# draws on a chalkboard as a live report reasonably can." On reflection
+# that's not actually a different *kind* of page from Trial Balance —
+# both show an account's standing as of a date, one as a single balance
+# figure, the other as the individual postings behind it — so the
+# deliberate restriction was giving up real usefulness (seeing last
+# quarter's postings to an account, say) for a simplicity its sibling
+# report doesn't need either.
+#
+# "Simulated close" means the same thing here it does in
+# _trial_balance_rows: Asset/Liability/Equity accounts are never
+# actually closed, so their ledger always runs from inception through
+# as_of regardless of `raw`. Income/Expense accounts normally would
+# have already been closed to equity at the end of every prior period,
+# so by default only the as-of month's own lines show for those two
+# types — `raw` skips that and shows their full history too, same as
+# Trial Balance's own full_balances vs. merged_balances split. The one
+# link this page offers (the account header itself, through to the
+# Journal filtered to that account) carries the matching date bound —
+# blank date_from (full history) for a balance-sheet account or any
+# account under `raw`, month_start..as_of otherwise — same "see what
+# produced this" convention every other report's own summary figures
+# follow (decision 11, SPEC.md).
 # ---------------------------------------------------------------------------
-def _ledger_rows(scenario: str, zeros: int) -> dict:
-    today = date.today()
-    month_start = today.replace(day=1).isoformat()
-    today_iso = today.isoformat()
+def _ledger_rows(scenario: str, as_of: str, zeros: int, raw: int = 0) -> dict:
+    as_of_date = as_of or date.today().isoformat()
+    as_of_dt = date.fromisoformat(as_of_date)
+    month_start = date(as_of_dt.year, as_of_dt.month, 1)
 
     accounts = q("""SELECT id, code, name, account_type FROM accounts
                      WHERE is_postable AND is_active
@@ -1118,14 +1141,18 @@ def _ledger_rows(scenario: str, zeros: int) -> dict:
 
     lines_by_account: dict[int, list[dict]] = {}
     if accounts:
-        for ln in q("""SELECT l.account_id, l.debit, l.credit, e.entry_date
+        for ln in q("""SELECT l.account_id, l.debit, l.credit, e.entry_date,
+                              a.account_type
                          FROM journal_lines l
                          JOIN journal_entries e ON e.id = l.entry_id
                          JOIN scenarios s ON s.id = e.scenario_id
-                        WHERE s.code = %s
-                          AND e.entry_date BETWEEN %s AND %s
+                         JOIN accounts a ON a.id = l.account_id
+                        WHERE s.code = %s AND e.entry_date <= %s
                         ORDER BY l.account_id, e.entry_date, l.line_no""",
-                      (scenario, month_start, today_iso)):
+                      (scenario, as_of_date)):
+            if (not raw and ln["account_type"] in ("income", "expense")
+                    and ln["entry_date"] < month_start):
+                continue
             lines_by_account.setdefault(ln["account_id"], []).append(ln)
 
     def t_account(a: dict) -> dict | None:
@@ -1146,13 +1173,15 @@ def _ledger_rows(scenario: str, zeros: int) -> dict:
                 "credit": credits[i][1] if i < len(credits) else None,
                 "credit_date": credits[i][0] if i < len(credits) else None}
                for i in range(max(len(debits), len(credits)))]
+        is_flow = a["account_type"] in ("income", "expense")
         return {"code": a["code"], "name": a["name"], "rows": rows,
                 # "the total row only writes to the Cr. or Dr. column
                 # depending on the balance" — a net debit balance shows
                 # in Debit, a net credit balance in Credit, never both,
                 # and neither at all for an exact wash (net == 0).
                 "total_debit": net if net > 0 else None,
-                "total_credit": -net if net < 0 else None}
+                "total_credit": -net if net < 0 else None,
+                "link_date_from": "" if (raw or not is_flow) else month_start.isoformat()}
 
     grouped = []
     for t in ACCOUNT_TYPES:
@@ -1160,16 +1189,19 @@ def _ledger_rows(scenario: str, zeros: int) -> dict:
                for ta in [t_account(a)] if ta is not None]
         if rows:
             grouped.append({"label": TYPE_LABELS[t], "rows": rows})
-    return {"grouped": grouped, "month_start": month_start, "today": today_iso}
+    return {"grouped": grouped, "as_of": as_of_date, "month_start": month_start.isoformat()}
 
 
 @app.get("/ledger")
-def ledger_page(request: Request, scenario: str = "ACTUAL", zeros: int = 0):
-    result = _ledger_rows(scenario, zeros)
+def ledger_page(request: Request, scenario: str = "ACTUAL",
+                as_of: str = None, zeros: int = 0, raw: int = 0):
+    result = _ledger_rows(scenario, as_of, zeros, raw)
+    as_of_date = as_of or date.today().isoformat()
     return templates.TemplateResponse(request, "ledger.html", {
-        "nav": "ledger", "scenario": scenario, "zeros": zeros,
+        "nav": "ledger", "scenario": scenario, "as_of": as_of or "", "zeros": zeros, "raw": raw,
+        "prev_as_of": _shift_date_by_month(as_of_date, -1),
+        "next_as_of": _shift_date_by_month(as_of_date, 1),
         "scenarios": scenarios_all(), "grouped": result["grouped"],
-        "month_start": result["month_start"], "today": result["today"],
     })
 
 
