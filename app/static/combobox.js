@@ -207,7 +207,18 @@
     }
 
     input.addEventListener("focus", () => {
-      input.select();
+      // BACKLOG.md bug: typing right after focusing landed as e.g.
+      // "Noneabc" instead of "abc" — select() right in the same tick as
+      // focus() is a known no-op on some WebKit builds (the selection
+      // highlight needs the platform's own text-input machinery to have
+      // actually finished wiring up first, which hasn't happened yet
+      // synchronously inside the focus handler); the very next keystroke
+      // then inserts at the cursor into the still-unselected "None"
+      // instead of replacing it. Deferring one tick is the standard
+      // cross-browser fix and costs nothing on browsers that never had
+      // the problem — select() still runs before the user can physically
+      // type anything.
+      setTimeout(() => input.select(), 0);
       open();
     });
     input.addEventListener("click", () => open());
