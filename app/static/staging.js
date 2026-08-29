@@ -1,7 +1,10 @@
-/* PostWarden — Staging approval page. "select all" toggles every entry
-   checkbox at once; Approve and the top-of-page bulk Reject both stay
-   disabled until at least one entry is checked, so there's no accidental
-   empty submit. Alt+A approves whatever's checked, Alt+R rejects it —
+/* PostWarden — Staging approval page. "Select" reveals a checkbox per
+   entry plus "select all" (body.select-mode/.select-only — same
+   mechanism as the Journal's own "Select entries", entries-select.js);
+   Approve and the top-of-page bulk Reject stay visible throughout,
+   just disabled until at least one entry is checked, so there's no
+   accidental empty submit and no need to discover Select first to see
+   what they do. Alt+A approves whatever's checked, Alt+R rejects it —
    both no-op while disabled, same as clicking by hand. Reject used to
    also have a per-entry button inside each expanded row; removed in
    favor of this one mechanism for both a single entry (check just that
@@ -9,6 +12,7 @@
 (function () {
   const form = document.getElementById("staging-form");
   if (!form) return;
+  const toggle = document.getElementById("select-toggle");
   const selectAll = document.getElementById("select-all");
   const checks = Array.from(form.querySelectorAll(".staging-check"));
   const approveBtn = document.getElementById("approve-btn");
@@ -22,6 +26,22 @@
       selectAll.checked = checkedCount === checks.length;
       selectAll.indeterminate = checkedCount > 0 && checkedCount < checks.length;
     }
+  }
+
+  // Same shape as entries-select.js's own setSelectMode: turning Select
+  // off clears every checkbox rather than leaving a stale, invisible
+  // selection behind — reopening Select later should always start from
+  // nothing, not silently resume whatever was checked before.
+  function setSelectMode(on) {
+    document.body.classList.toggle("select-mode", on);
+    toggle.textContent = on ? "Deselect" : "Select";
+    if (!on) {
+      checks.forEach((c) => { c.checked = false; });
+      sync();
+    }
+  }
+  if (toggle) {
+    toggle.addEventListener("click", () => setSelectMode(!document.body.classList.contains("select-mode")));
   }
 
   if (selectAll) {

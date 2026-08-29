@@ -88,7 +88,14 @@
 <form method="post" action="/staging/approve" id="staging-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <p class="bar" style="align-items: center;">
-    <label class="checkline"><input type="checkbox" id="select-all"> select all</label>
+    {# Checkboxes hidden until Select mode is on, same mechanism (and the
+       same body.select-mode/.select-only CSS) as the Journal's own
+       "Select entries" — see entries.html's comment on why Approve/
+       Reject themselves aren't select-only too: a person reads what
+       they do without first having to discover Select, same as
+       Reverse/Edit tags there. #}
+    <button type="button" class="quiet" id="select-toggle">Select</button>
+    <label class="checkline select-only"><input type="checkbox" id="select-all"> select all</label>
     <button type="submit" id="approve-btn" disabled>Approve (Alt+A)</button>
     <button type="submit" class="quiet" id="reject-btn" disabled
             formaction="/staging/reject" formmethod="post">Reject (Alt+R)</button>
@@ -110,7 +117,7 @@
   {% for e in pending %}
   <details class="entry entry-staging">
     <summary>
-      <label class="checkline" onclick="event.stopPropagation();">
+      <label class="checkline select-only" onclick="event.stopPropagation();">
         <input type="checkbox" name="entry_id" value="{{ e.id }}" class="staging-check">
       </label>
       <span class="mono dim">{{ e.entry_date | dateformat }}</span>

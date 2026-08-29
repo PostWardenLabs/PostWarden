@@ -1596,9 +1596,9 @@ details.entry summary {
    column for a control barely a quarter that wide, reading as a
    stray gap before the date. Taking it out of grid flow entirely
    means the row's columns never move regardless of whether a
-   checkbox happens to be showing. .entry-staging's checkbox is always
-   visible so its row always reserves the gutter; the Journal's is
-   select-only, so body.select-mode reserves it only while that's on. */
+   checkbox happens to be showing. Both Staging's and the Journal's own
+   checkbox are select-only now (identical mechanism, identical CSS),
+   so both only reserve the gutter while body.select-mode is on. */
 details.entry summary > .checkline {
   position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%);
   margin: 0;
@@ -1610,7 +1610,7 @@ details.entry summary > .checkline {
    despite reading like an override, and silently loses regardless of
    source order. Repeating the `details` element here just ties it, and
    source order (this comes later) settles the tie in this rule's favor. */
-details.entry-staging summary,
+body.select-mode details.entry-staging summary,
 body.select-mode details.entry-journal summary {
   padding-left: 2.3rem;
 }
