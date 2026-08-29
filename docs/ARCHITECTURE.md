@@ -366,6 +366,22 @@ redesign of its own filter model first.
   `"Average ACTUAL"`) so a plain spreadsheet import stays legible with no
   merged header to reconstruct — no bold/italic/tint to carry over, of
   course, since a CSV cell has no such thing.
+- **XLSX export** (`/export/income-statement.xlsx?split=...`), unlike
+  the CSV, *can* carry the bold/tint/italic treatment over — every
+  sub-column of Totals and Average gets `_xlsx_period_agg_font()`
+  (forces bold, plus italic for Average — but never removes a row's own
+  italic, e.g. a "Net income after X" running row stays italic in a
+  Total column too, bold *and* italic together, the same way CSS layers
+  `.period-agg`'s font-weight alongside a running row's own font-style
+  rather than one overriding the other) and a fixed `_XLSX_PERIOD_AGG_FILL`
+  tint — a literal copy of `.period-agg`'s `color-mix()` result against
+  the default Slate theme's own tokens, same reasoning as every other
+  hardcoded `_XLSX_*` color (the export has no idea which of the 22
+  themes Settings has picked). Scoped to the data rows only
+  (`data_start`..`last_row`) — the merged period-label header cell
+  already reads as "Total"/"Average" rather than a date, so the same
+  pale tint underneath the header's own strong dark fill would be
+  invisible at best.
 - **money() normalizes negative zero**: a flipped-sign zero-balance
   income row (`_income_statement_groups`' own `sign = -1 if flip else
   1`, applied to a literal 0) is a genuine Decimal/float negative zero,

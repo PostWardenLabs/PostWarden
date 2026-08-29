@@ -317,6 +317,33 @@ _XLSX_GRAND_FONT = Font(name=_XLSX_FONT, size=10, bold=True)
 _XLSX_GRAND_FONT_BAD = Font(name=_XLSX_FONT, size=10, bold=True, color="FFB3392C")  # --red
 _XLSX_GRAND_BORDER = Border(bottom=Side(style="double", color="FF1B2430"))  # --ink
 _XLSX_GRAND_BORDER_BAD = Border(bottom=Side(style="double", color="FFB3392C"))  # --red
+# Income Statement Split's own Total/Average column-group treatment —
+# style.css's .period-agg/.period-agg-average (see there for the
+# color-mix() this is a fixed-value copy of, same reasoning as every
+# other hardcoded color in this palette: the export is generated
+# server-side with no idea which theme Settings has picked, so it
+# targets the default Slate theme's own colors rather than trying to
+# port the whole theme system). Bold plus this tint on both, italic
+# layered on top for Average only, so Total and Average read as a
+# different *kind* of column at a glance — not just one more period —
+# while staying distinguishable from each other too.
+_XLSX_PERIOD_AGG_FILL = PatternFill("solid", fgColor="FFDCE2E8")  # 22% --rule-strong over --paper-deep
+
+
+def _xlsx_period_agg_font(base_font: Font, force_italic: bool = False) -> Font:
+    """base_font with period-agg's bold layered on top — always forced,
+    same as .period-agg's own font-weight:600 applies regardless of the
+    row's own class — and italic forced on for Average specifically
+    (force_italic), but never off: a running-total row (already italic
+    via _XLSX_RUNNING_FONT) stays italic in a Total column too, exactly
+    as CSS would render it — .period-agg only ever *sets* font-weight,
+    it has no font-style rule to override the row's own, so a running
+    row's italic and a Total column's bold apply simultaneously rather
+    than one replacing the other. Only name/size/color carry over
+    unchanged; bold/italic are the two properties this treatment
+    actually touches."""
+    return Font(name=base_font.name, size=base_font.size, bold=True,
+               italic=(base_font.italic or force_italic), color=base_font.color)
 # No currency symbol — matches money()'s own plain-text convention above
 # (the app never bakes a symbol into a stored/exported figure; display-only
 # formatting is a client-side concern there, and there's no client here).
@@ -1655,7 +1682,12 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
     period's own column group (but the last) — see
     _xlsx_thicken_right_border — since a wide multi-period sheet with
     only the thin per-cell grid to go on is easy to lose your place
-    scanning across."""
+    scanning across. Split's trailing Total/Average column groups also
+    get their own bold-plus-tint treatment (italic layered on for
+    Average) — see _xlsx_period_agg_font — matching the HTML report's
+    .period-agg/.period-agg-average (style.css, SPEC.md decision 19's
+    own addendum on this) so the two aggregate columns stand out from a
+    real period the same way in both places, not just on screen."""
     periods = _split_periods(date_from, date_to, split)
     wb = Workbook()
     ws = wb.active
@@ -1857,6 +1889,26 @@ def income_statement_export_xlsx(scenario: str = "ACTUAL", compare: str = "",
                 start_col = 3 + i * cols_per_period
                 _xlsx_variance_coloring(ws, start_col + 1, data_start, last_row)  # Variance
                 _xlsx_variance_coloring(ws, start_col + 2, data_start, last_row)  # % Variance
+
+        # Total/Average's own "stand out" treatment (bold + tint, italic
+        # layered on for Average) — every data row, not the header rows:
+        # the merged period-label header ("Total"/"Average" instead of a
+        # date) already reads as different from a real period on its own,
+        # so adding the same pale tint underneath the header's own strong
+        # dark fill would be invisible at best and muddy at worst. Scoped
+        # to data_start..last_row only, unconditionally (not inside `if
+        # compare:` above — Total/Average exist whether or not there's a
+        # compare scenario).
+        for i, p in enumerate(result["periods"]):
+            if not (p.get("is_total") or p.get("is_average")):
+                continue
+            force_italic = bool(p.get("is_average"))
+            start_col = 3 + i * cols_per_period
+            for col in range(start_col, start_col + cols_per_period):
+                for rr in range(data_start, last_row + 1):
+                    cell = ws.cell(row=rr, column=col)
+                    cell.font = _xlsx_period_agg_font(cell.font, force_italic=force_italic)
+                    cell.fill = _XLSX_PERIOD_AGG_FILL
 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)

@@ -46,7 +46,9 @@ instance.
   Variance/% Variance columns are colored red/green by real conditional-
   formatting rules, not a color baked in at export time; Income
   Statement's Split view also draws a divider between each period's own
-  block of columns. The Journal has its own Export XLSX too, styled the
+  block of columns, and bolds/tints its trailing Total and Average
+  columns (Average in italic too) so the two aggregates stand out from
+  a real period at a glance. The Journal has its own Export XLSX too, styled the
   way a printed general journal traditionally is rather than as a
   report: each entry's own legs grouped together (debits before credits,
   credits indented underneath), every entry-level column — number, date,
