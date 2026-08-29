@@ -1437,6 +1437,15 @@ body.select-mode button.select-only { display: inline-block; }
    row's checkbox lives in its own <td>, so revealing it needs
    table-cell, not flex/inline-block. */
 body.select-mode td.select-only, body.select-mode th.select-only { display: table-cell; }
+/* Find Duplicates' own group-level "select all in this section" sits
+   inline next to its <h2> group label (not on its own line, the way a
+   page-level "select all" bar item is) — needs `inline-flex`, not the
+   generic rule's plain `flex`, or it drops to a block below the
+   heading instead of sitting beside it. More specific than the generic
+   rule on purpose (label.checkline.select-only alone would still win
+   the cascade otherwise), not because this is a materially different
+   mechanism. */
+body.select-mode label.group-select-all.checkline.select-only { display: inline-flex; }
 
 /* Custom checkbox/radio — accent-color alone still leaves the browser's
    own native shape (rounded, its own font/background/border), which

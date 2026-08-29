@@ -32,7 +32,15 @@
    another group's checks). The Payee field in the merge-detail popup is
    a real combobox (window.PostWardenCombobox.enhance), not a plain
    <select> — also live feedback, matching every other payee picker in
-   the app instead of reading as a one-off. */
+   the app instead of reading as a one-off.
+
+   Every checkbox here — per-entry and each group's own "select all" —
+   sits behind a Select toggle now (UI_CONSISTENCY_AUDIT.md): this used
+   to be the one checkbox-driven list in the app that left them
+   permanently visible instead of hiding them behind body.select-mode
+   the way Journal/Staging/Payees/Tags all do. Merge itself was never
+   part of that — it stays visible throughout, just disabled until
+   enough is checked, same as every other bulk-action button here. */
 (function () {
   const groups = JSON.parse((document.getElementById("duplicates-data") || {}).textContent || "[]");
   const payees = JSON.parse((document.getElementById("payees-data") || {}).textContent || "[]");
@@ -70,6 +78,29 @@
     }
   });
   sync();
+
+  // Select toggle (UI_CONSISTENCY_AUDIT.md) — same body.select-mode
+  // mechanism and same "turning it off clears every checkbox rather
+  // than leaving a stale, invisible selection behind" behavior as
+  // staging.js's own setSelectMode. Merge itself was never select-only
+  // — it stays visible throughout, just disabled until enough is
+  // checked, same as Approve/Reject/Reverse/Merge everywhere else.
+  const selectToggle = document.getElementById("select-toggle");
+  function setSelectMode(on) {
+    document.body.classList.toggle("select-mode", on);
+    selectToggle.textContent = on ? "Deselect" : "Select";
+    if (!on) {
+      sections.forEach((s) => {
+        checksIn(s).forEach((c) => { c.checked = false; });
+        const groupAll = s.querySelector(".group-check-all");
+        if (groupAll) { groupAll.checked = false; groupAll.indeterminate = false; }
+      });
+      sync();
+    }
+  }
+  if (selectToggle) {
+    selectToggle.addEventListener("click", () => setSelectMode(!document.body.classList.contains("select-mode")));
+  }
 
   // -- A small overlay, reused for both the three-way dialog and the
   //    merge-detail form — same .confirm-overlay/.confirm-modal CSS

@@ -37,7 +37,7 @@
           <td>
             <form method="post" action="/accounts/{{ a.id }}/toggle-active" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-              <button type="submit" class="quiet">{{ 'Deactivate' if a.is_active else 'Reactivate' }}</button>
+              <button type="submit" class="quiet">{{ 'Archive' if a.is_active else 'Unarchive' }}</button>
             </form>
             <form method="post" action="/accounts/{{ a.id }}/toggle-cashflow" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
@@ -88,7 +88,7 @@
           <td>
             <form method="post" action="/accounts/{{ r.id }}/toggle-active" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
-              <button type="submit" class="quiet">{{ 'Deactivate' if r.is_active else 'Reactivate' }}</button>
+              <button type="submit" class="quiet">{{ 'Archive' if r.is_active else 'Unarchive' }}</button>
             </form>
             <form method="post" action="/accounts/{{ r.id }}/toggle-cashflow" style="display:inline">
               <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">

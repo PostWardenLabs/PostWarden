@@ -19,6 +19,16 @@
 <form method="post" action="/staging/duplicates/merge" id="duplicates-form">
   <input type="hidden" name="csrf_token" value="{{ request.state.user.csrf_token }}">
   <p class="bar" style="align-items: center;">
+    {#
+      Select toggle (UI_CONSISTENCY_AUDIT.md) — checkboxes used to be
+      permanently visible here, the one checkbox-driven list in the app
+      that didn't hide them behind Select the way Journal/Staging/
+      Payees/Tags all do. Merge itself stays visible throughout either
+      way, same as Approve/Reject/Reverse/Merge elsewhere — only the
+      checkboxes (per-entry and each group's own "select all in this
+      section") are select-only now.
+    #}
+    <button type="button" class="quiet" id="select-toggle">Select</button>
     <button type="button" id="merge-btn" disabled>Merge</button>
     <a class="button-link" href="/staging">Back to Staging</a>
   </p>
@@ -27,13 +37,13 @@
   <section class="duplicate-group" data-group-index="{{ loop.index0 }}">
     <h2 class="duplicate-group-label">
       {{ g.label }}
-      <label class="checkline group-select-all" style="display: inline-flex; margin-left: 0.8rem;">
+      <label class="checkline group-select-all select-only" style="margin-left: 0.8rem;">
         <input type="checkbox" class="group-check-all"> select all in this section
       </label>
     </h2>
     <table class="ledger">
       <thead><tr>
-        <th></th>
+        <th class="select-only"></th>
         <th>Description</th>
         <th>Reference</th>
         <th>Payee</th>
@@ -43,7 +53,7 @@
       <tbody>
         {% for e in g.entries %}
         <tr>
-          <td><input type="checkbox" class="dup-check" data-entry-id="{{ e.id }}"></td>
+          <td class="select-only"><input type="checkbox" class="dup-check" data-entry-id="{{ e.id }}"></td>
           <td>{{ e.description }}</td>
           <td class="dim">{{ e.reference or '' }}</td>
           <td class="dim">{{ e.payee_name or '' }}</td>

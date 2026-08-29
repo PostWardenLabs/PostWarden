@@ -23,9 +23,13 @@
         </select>
       </label>
       <label class="field">Month
+        {# No Go button — data-auto-refresh (auto-refresh.js) already
+           submits on scenario/month change, same as every other report's
+           filter bar; this was the only one that still had a leftover
+           explicit submit doing nothing the auto-refresh didn't already
+           cover (UI_CONSISTENCY_AUDIT.md). #}
         <input type="month" name="month" value="{{ month[:7] }}">
       </label>
-      <button type="submit">Go</button>
     </span>
     <span class="bar" style="margin-bottom: 0;">
       <a class="quiet-link" href="/budget?scenario={{ scenario }}&month={{ prev_month[:7] }}&pct_of_base={{ pct_of_base }}">&larr; {{ prev_month[:7] }}</a>
