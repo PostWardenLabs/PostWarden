@@ -55,6 +55,23 @@
     <input type="date" name="date_to" id="date_to" value="{{ date_to }}">
   </label>
   </div>
+  {#
+    Prev/next period (UI_CONSISTENCY_AUDIT.md §5.6) — slides the whole
+    date_from/date_to window by its own length (_shift_range, shared
+    with Cash Flow — the same range archetype), not a hardcoded month.
+    Its own row, not squeezed into the field row above the way Budget
+    Grid/the point-in-time reports do it — this filter bar already runs
+    to six fields and wraps on a normal-width screen, so a seventh pair
+    of links there would just wrap worse. Labeled "Previous/Next
+    period," not the raw shifted dates — an arbitrary custom range can
+    span many months, where printing the actual dates inline would read
+    as noise rather than the short, scannable label Budget Grid's own
+    single month affords.
+  #}
+  <p class="bar" style="align-items: center;">
+    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ prev_from }}&date_to={{ prev_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">&larr; Previous period</a>
+    <a class="quiet-link" href="/income-statement?scenario={{ scenario }}&compare={{ compare }}&split={{ split }}&date_from={{ next_from }}&date_to={{ next_to }}&zeros={{ zeros }}&pct_of_base={{ pct_of_base }}">Next period &rarr;</a>
+  </p>
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
     {% if compare %}

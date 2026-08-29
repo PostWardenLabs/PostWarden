@@ -10,17 +10,25 @@
 </div>
 
 <form method="get" action="/balance-sheet" data-auto-refresh>
-  <div class="bar">
-  <label class="field">Scenario
-    <select name="scenario">
-      {% for s in scenarios %}
-      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field">As of
-    <input type="date" name="as_of" value="{{ as_of }}">
-  </label>
+  <div class="bar" style="justify-content: space-between;">
+    <span class="bar" style="margin-bottom: 0;">
+      <label class="field">Scenario
+        <select name="scenario">
+          {% for s in scenarios %}
+          <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">As of
+        <input type="date" name="as_of" value="{{ as_of }}">
+      </label>
+    </span>
+    {# Prev/next month (UI_CONSISTENCY_AUDIT.md §5.6) — same
+       _shift_date_by_month pattern as Trial Balance/Variance. #}
+    <span class="bar" style="margin-bottom: 0;">
+      <a class="quiet-link" href="/balance-sheet?scenario={{ scenario }}&as_of={{ prev_as_of }}&raw={{ raw }}&zeros={{ zeros }}">&larr; {{ prev_as_of }}</a>
+      <a class="quiet-link" href="/balance-sheet?scenario={{ scenario }}&as_of={{ next_as_of }}&raw={{ raw }}&zeros={{ zeros }}">{{ next_as_of }} &rarr;</a>
+    </span>
   </div>
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>

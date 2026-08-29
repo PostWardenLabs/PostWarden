@@ -67,6 +67,21 @@ considering the task finished.
   pytest — before considering a UI change done, especially anything
   involving hover states, live client-side recompute, or drag/collapse
   interaction.
+- **Plan a report/list-page UI change against its whole archetype, not
+  just the one page that prompted it.** `UI_CONSISTENCY_AUDIT.md` §1
+  groups every report/list page into one of four shapes (Filterable
+  transaction list, Point-in-time report, Range/period report, Editable
+  grid — Management/CRUD pages are a fifth, separate category) precisely
+  because pages doing the same job kept drifting apart in small ways
+  (three different words for "archive," checkboxes hidden on some
+  checkbox-driven lists and not others, a useful control living on only
+  one of two reports asking the identical question). Before changing a
+  filter bar, a toggle's wording, or adding a new control to one report,
+  check whether every other report in the same archetype needs the
+  identical change — see that file's own §5.6 (prev/next navigation,
+  one pattern per archetype, not one bespoke link pair per report) and
+  `docs/ARCHITECTURE.md`'s "Sticky header row..." and "Prev/next
+  navigation..." sections for what this looks like once actually built.
 - **Deploys.** There is currently no maintainer personal instance —
   `libro-vm` (the dev-era VM the project lived on before it had a real
   deploy story) has been decommissioned. `deploy/gcp/` in *this* repo is

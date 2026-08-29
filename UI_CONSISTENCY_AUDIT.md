@@ -3,10 +3,21 @@
 Written in response to a direct request: go through each page, inventory
 its controls, then propose a streamlined shape so a report doesn't make
 the user re-learn a different set of filters/buttons every time they
-land on a new page. This is a **proposal to review, not a change already
-made** — nothing in `app/` has been touched for this. Once you've picked
-which parts to act on, that's a separate, scoped implementation pass
-(or several).
+land on a new page. All seven proposed changes in §5 have since shipped
+— see each item's own strikethrough note for what actually landed.
+
+**This file is the standing reference for planning any future report
+UI change, not just a historical record of this one pass.** §1's four
+archetypes (Filterable transaction list, Point-in-time report,
+Range/period report, Editable grid, plus Management/CRUD) are the
+actual unit of design from here on — a change to how one report's
+filter bar looks or behaves gets planned against *every other report in
+its archetype* before it's built, the same way §5.6's prev/next
+navigation was designed once per archetype (point-in-time vs. range)
+and applied identically across every report in each, rather than
+invented per page. Also see `docs/ARCHITECTURE.md`'s own "Sticky header
+row..." and "Prev/next navigation..." sections, which document the two
+concrete patterns that came out of thinking this way.
 
 Method: read every page template in `app/templates/`, grepped for every
 `<form>`, `<select>`, `<input>`, `<button>` on each, cross-referenced
@@ -293,17 +304,28 @@ Roughly cheapest-and-safest first, each independently shippable:
    bulk-action button in the app.
 4. ~~Drop Budget Grid's redundant Go button.~~ **Shipped** —
    `data-auto-refresh` already covered scenario/month changes.
-5. Promote Income Statement's period-preset dropdown to Cash Flow.
-6. Prev/next date navigation on Balance Sheet, Trial Balance, Variance,
-   Income Statement, Cash Flow (bigger — five templates, one shared
-   pattern to design once and reuse).
+5. ~~Promote Income Statement's period-preset dropdown to Cash Flow.~~
+   **Shipped** — `period-picker.js` needed zero JS changes, already
+   fully generic against `#period-preset`/`#date_from`/`#date_to`.
+6. ~~Prev/next date navigation on Balance Sheet, Trial Balance,
+   Variance, Income Statement, Cash Flow.~~ **Shipped** — one pattern
+   *per archetype*, not one generic function: point-in-time reports
+   (Trial Balance/Balance Sheet/Variance) shift their single "as of"
+   date by a calendar month (`_shift_date_by_month`, day-clamped);
+   range reports (Income Statement/Cash Flow) slide the whole
+   `date_from`/`date_to` window by its own length (`_shift_range`), so
+   a custom range pages by its own span rather than snapping to a
+   calendar boundary it never had. See `docs/ARCHITECTURE.md`'s own
+   "Prev/next navigation, one pattern per archetype" section for the
+   full writeup.
 7. ~~Decide + implement Budget Grid Export CSV/XLSX~~ **Decided,
    deliberately not built**: Budget Grid is a *working* view of the
    Variance report (editable inputs, not a finished number) — Variance
    itself already has the export. Exporting a still-being-edited grid
    would be exporting a draft, not a report.
 
-Items 1–4 are small enough to bundle into one commit each without much
-risk — done, one commit. 5–6 are real, if modest, feature work — worth
-their own commits and (per this repo's own convention) a doc update
-wherever the "why" isn't already obvious from the diff.
+All seven items done — 1–4 bundled into one commit as planned; 5–6 each
+got their own commit and a doc update, per this repo's own convention;
+7 was a decision recorded on the record, not code. See the note at the
+very top of this file for how §1's archetypes now govern planning any
+future report UI change.

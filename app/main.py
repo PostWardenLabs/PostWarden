@@ -958,12 +958,50 @@ def _trial_balance_rows(scenario: str, as_of: str, zeros: int, raw: int = 0) -> 
             "month_start": month_start}
 
 
+def _shift_date_by_month(date_iso: str, delta_months: int) -> str:
+    """Shifts a full date by whole calendar months, clamping the day to
+    the target month's real length (Jan 31 minus a month is Dec 31, not
+    an invalid Feb 31) — same clamping `dateutil.relativedelta` would do,
+    without the dependency. Shared "as of" prev/next navigation
+    (UI_CONSISTENCY_AUDIT.md §5.6) for every point-in-time report —
+    Trial Balance, Balance Sheet, Variance — same shape `_shift_month()`
+    already uses for Budget Grid's own month field, generalized to a
+    real date instead of always snapping to day 1."""
+    d = date.fromisoformat(date_iso)
+    total = d.month - 1 + delta_months
+    year, month = d.year + total // 12, total % 12 + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day).isoformat()
+
+
+def _shift_range(date_from_iso: str, date_to_iso: str) -> tuple[str, str, str, str]:
+    """Slides a date range by its own inclusive length — (prev_from,
+    prev_to, next_from, next_to). Shared prev/next-period navigation
+    (UI_CONSISTENCY_AUDIT.md §5.6) for every range report — Income
+    Statement, Cash Flow. The window's own length defines what "one
+    period" means rather than a hardcoded month/quarter assumption, so
+    clicking through works the same way whether the range on screen is
+    exactly a calendar month, a quarter, or something a user typed by
+    hand — a 90-day custom range slides by 90 days, not snapped to any
+    calendar boundary it didn't already have."""
+    d_from, d_to = date.fromisoformat(date_from_iso), date.fromisoformat(date_to_iso)
+    span = (d_to - d_from).days + 1
+    prev_to = d_from - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=span - 1)
+    next_from = d_to + timedelta(days=1)
+    next_to = next_from + timedelta(days=span - 1)
+    return prev_from.isoformat(), prev_to.isoformat(), next_from.isoformat(), next_to.isoformat()
+
+
 @app.get("/trial-balance")
 def trial_balance(request: Request, scenario: str = "ACTUAL",
                   as_of: str = None, zeros: int = 0, raw: int = 0):
     result = _trial_balance_rows(scenario, as_of, zeros, raw)
+    as_of_date = as_of or date.today().isoformat()
     return templates.TemplateResponse(request, "trial_balance.html", {
         "nav": "tb", "scenario": scenario, "as_of": as_of or "", "zeros": zeros, "raw": raw,
+        "prev_as_of": _shift_date_by_month(as_of_date, -1),
+        "next_as_of": _shift_date_by_month(as_of_date, 1),
         "scenarios": scenarios_all(), "today": date.today().isoformat(), **result,
     })
 
@@ -1591,10 +1629,13 @@ def income_statement_page(request: Request, scenario: str = "ACTUAL", compare: s
     else:
         result = _income_statement_rows(scenario, date_from, date_to, compare, zeros, bool(pct_of_base))
         result["periods"] = periods
+    prev_from, prev_to, next_from, next_to = _shift_range(date_from, date_to)
     return templates.TemplateResponse(request, "income_statement.html", {
         "nav": "income_statement", "scenarios": scenarios_all(),
         "scenario": scenario, "compare": compare, "date_from": date_from, "date_to": date_to,
-        "zeros": zeros, "pct_of_base": pct_of_base, "split": split, "today": today.isoformat(), **result,
+        "zeros": zeros, "pct_of_base": pct_of_base, "split": split, "today": today.isoformat(),
+        "prev_from": prev_from, "prev_to": prev_to, "next_from": next_from, "next_to": next_to,
+        **result,
     })
 
 
@@ -2073,9 +2114,13 @@ def _balance_sheet_rows(scenario: str, as_of: str, raw: int = 0, zeros: int = 0)
 def balance_sheet_page(request: Request, scenario: str = "ACTUAL", as_of: str = None,
                        raw: int = 0, zeros: int = 0):
     result = _balance_sheet_rows(scenario, as_of, raw, zeros)
+    as_of_date = as_of or date.today().isoformat()
     return templates.TemplateResponse(request, "balance_sheet.html", {
         "nav": "balance_sheet", "scenarios": scenarios_all(), "scenario": scenario,
-        "as_of": as_of or "", "raw": raw, "zeros": zeros, "today": date.today().isoformat(), **result,
+        "as_of": as_of or "", "raw": raw, "zeros": zeros, "today": date.today().isoformat(),
+        "prev_as_of": _shift_date_by_month(as_of_date, -1),
+        "next_as_of": _shift_date_by_month(as_of_date, 1),
+        **result,
     })
 
 
@@ -2383,9 +2428,12 @@ def cash_flow_page(request: Request, scenario: str = "ACTUAL",
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
     result = _cash_flow_rows(scenario, date_from, date_to)
+    prev_from, prev_to, next_from, next_to = _shift_range(date_from, date_to)
     return templates.TemplateResponse(request, "cash_flow.html", {
         "nav": "cash_flow", "scenarios": scenarios_all(), "scenario": scenario,
-        "date_from": date_from, "date_to": date_to, "today": today.isoformat(), **result,
+        "date_from": date_from, "date_to": date_to, "today": today.isoformat(),
+        "prev_from": prev_from, "prev_to": prev_to, "next_from": next_from, "next_to": next_to,
+        **result,
     })
 
 
@@ -2874,6 +2922,7 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
                   level_id: str = "", as_of: str = None, zeros: int = 0,
                   pct_of_base: int = 0):
     v = _compute_variance(baseline, compare, level_id, as_of, zeros, bool(pct_of_base))
+    as_of_date = as_of or date.today().isoformat()
 
     return templates.TemplateResponse(request, "variance.html", {
         "nav": "variance", "grouped": v["grouped"], "scenarios": v["scens"],
@@ -2884,6 +2933,8 @@ def variance_page(request: Request, baseline: str = "ACTUAL", compare: str = "",
         "total_compare": v["total_compare"],
         "total_variance": v["total_variance"],
         "total_pct_variance": v["total_pct_variance"],
+        "prev_as_of": _shift_date_by_month(as_of_date, -1),
+        "next_as_of": _shift_date_by_month(as_of_date, 1),
         "today": date.today().isoformat(),
     })
 

@@ -10,17 +10,31 @@
 </div>
 
 <form method="get" action="/trial-balance" data-auto-refresh>
-  <div class="bar">
-  <label class="field">Scenario
-    <select name="scenario">
-      {% for s in scenarios %}
-      <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label class="field">As of
-    <input type="date" name="as_of" value="{{ as_of }}">
-  </label>
+  <div class="bar" style="justify-content: space-between;">
+    <span class="bar" style="margin-bottom: 0;">
+      <label class="field">Scenario
+        <select name="scenario">
+          {% for s in scenarios %}
+          <option value="{{ s.code }}" {{ 'selected' if s.code == scenario }}>{{ s.code }} — {{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="field">As of
+        <input type="date" name="as_of" value="{{ as_of }}">
+      </label>
+    </span>
+    {#
+      Prev/next month (UI_CONSISTENCY_AUDIT.md §5.6) — same shape Budget
+      Grid's own prev/next already uses, generalized from "shift a month
+      field" to "shift the as-of date by a month" (_shift_date_by_month,
+      shared with Balance Sheet/Variance — the same point-in-time
+      archetype). zeros/raw carry over so paging through months doesn't
+      silently reset either toggle.
+    #}
+    <span class="bar" style="margin-bottom: 0;">
+      <a class="quiet-link" href="/trial-balance?scenario={{ scenario }}&as_of={{ prev_as_of }}&zeros={{ zeros }}&raw={{ raw }}">&larr; {{ prev_as_of }}</a>
+      <a class="quiet-link" href="/trial-balance?scenario={{ scenario }}&as_of={{ next_as_of }}&zeros={{ zeros }}&raw={{ raw }}">{{ next_as_of }} &rarr;</a>
+    </span>
   </div>
   <p class="bar" style="align-items: center;">
     <label class="checkline"><input type="checkbox" name="zeros" value="1" {{ 'checked' if zeros }}> show zero balances</label>
