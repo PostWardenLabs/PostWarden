@@ -22,16 +22,18 @@ note in the log.
 
 ## Current status
 
-**Phase 0, in progress.** `backend/` exists as a `src`-layout package with
-the full tree, dependencies pinned, a smoke test proving the pipeline
-(install → import → `TestClient` → assert) works, an Alembic baseline that
-reproduces `db/schema.sql` exactly, and CI (`.github/workflows/
-backend-ci.yml`) exercising both against a real Postgres service
-container. No `frontend/` yet. `master` is untouched and still what's
-deployed.
+**Phase 0 done.** `backend/` exists as a `src`-layout package with the full
+tree, dependencies pinned, a smoke test proving the pipeline (install →
+import → `TestClient` → assert) works, an Alembic baseline that reproduces
+`db/schema.sql` exactly, CI (`.github/workflows/backend-ci.yml`)
+exercising both against a real Postgres service container, and its own
+`docker-compose.yml` for local dev — confirmed clean from a fresh
+`up -d --build`, serving `/healthz`, correctly stamped to the baseline,
+`seed_demo.sql`'s entries loaded. No `frontend/` yet. `master` is
+untouched and still what's deployed.
 
-**Next step:** 0.6 — `docker-compose` service for the new backend's own
-database volume.
+**Next step:** 1.1 — `domain/money.py`, `periods.py`, `accounts.py`,
+`entry.py`: pure logic, zero framework/IO imports, unit tests only.
 
 ---
 
@@ -66,7 +68,7 @@ before any of Phase 1's code does. Pure setup, no product logic.
       service container. The repo has no CI today — this is new, not a
       port. Lands empty-green (no modules yet) so every subsequent PR is
       checked from the start.
-- [ ] **0.6** `docker-compose` service for the new backend's own
+- [x] **0.6** `docker-compose` service for the new backend's own
       database volume, loaded with `schema.sql` + `seed.sql` +
       `seed_demo.sql`. Confirm it comes up clean from a fresh
       `docker compose up -d --build` after `down -v`. No legacy Jinja
@@ -238,6 +240,21 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 0.6 done, closing out Phase 0: `backend/
+  docker-compose.yml` + `backend/Dockerfile`, self-contained (its own
+  `db` service, its own named volume, default ports 5433/8001 so it can
+  in principle run alongside a `master` checkout on 5432/8000 without a
+  clash — the one case decision 6 keeps open, checking out `master`
+  locally to cross-check a figure). The `backend` service's entrypoint
+  runs `alembic stamp head`, not `upgrade head`: the `db` service's
+  `docker-entrypoint-initdb.d` scripts already load `schema.sql` +
+  `seed.sql` + `seed_demo.sql` directly on first boot, so the freshly
+  -initialized database *is* the baseline already — stamping just
+  records that, matching decision 5's "existing installs get `alembic
+  stamp head`" language. Verified for real: `down -v` then
+  `up -d --build` from scratch, clean logs, `/healthz` responds,
+  `alembic_version` correctly holds the baseline revision, and
+  `seed_demo.sql`'s entries are present (29 rows in `journal_entries`).
 - **2026-08-29** — Phase 0.5 done: `.github/workflows/backend-ci.yml` —
   `pytest` against a Postgres 16 service container, scoped to
   `backend/**`/`db/schema.sql` paths. Steps: install `backend/` editable,
