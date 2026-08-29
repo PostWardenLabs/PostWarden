@@ -3579,7 +3579,7 @@ def _shared_journal_filters(where: list[str], params: list, date_from: str, date
 def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
                     tags: str, account: str = "", payee: str = "",
                     amount_op: str = "", amount_value: str = "", amount_value2: str = "",
-                    hide_reversed: int = 0) -> tuple[list[str], list, list[str]]:
+                    hide_reversed: int = 0, entry_id: str = "") -> tuple[list[str], list, list[str]]:
     """Shared by the paged HTML view and the CSV export — same filters,
     same WHERE clause, so what you see is exactly what you export."""
     try:
@@ -3597,6 +3597,14 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
         params.append(scenario)
     _shared_journal_filters(where, params, date_from, date_to, qtext, tag_list,
                             account, payee, amount_op, amount_value, amount_value2)
+    if entry_id:
+        # Exact-match deep link — BACKLOG.md's "every time an entry's id
+        # is displayed it should be a hyperlink to it" (the reversal
+        # badges' own "reversal of #X"/"reversed by #X" are the first
+        # case of this). Same shape as account/payee's own exact-match
+        # filters above: one specific row, not a search.
+        where.append("e.id = %s")
+        params.append(entry_id)
     if hide_reversed:
         # Excludes both halves of a reversal pair: the reversal itself
         # (reverses_entry_id set) and whatever it reversed (some other
@@ -3613,7 +3621,8 @@ def _entries_filter(scenario: str, date_from: str, date_to: str, qtext: str,
 def entries_page(request: Request, scenario: str = "", date_from: str = "",
                  date_to: str = "", qtext: str = "", tags: str = "", account: str = "",
                  payee: str = "", amount_op: str = "", amount_value: str = "",
-                 amount_value2: str = "", hide_reversed: int = 0, back: str = "", page: int = 1,
+                 amount_value2: str = "", hide_reversed: int = 0, entry_id: str = "",
+                 back: str = "", page: int = 1,
                  ok: str = None, err: str = None):
     page = max(page, 1)
     # Only ever a same-origin relative path — a bare "/x", never "//x"
@@ -3622,7 +3631,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         back = ""
     where, params, tag_list = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                               account, payee, amount_op, amount_value,
-                                              amount_value2, hide_reversed)
+                                              amount_value2, hide_reversed, entry_id)
     # Whether *any* filter is actually narrowing the list right now — not
     # "back"/"page" (navigation state, not a filter). Powers the "Clear
     # filters" link below: no point showing it over a plain, unfiltered
@@ -3630,10 +3639,11 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
     # own scoped "clear" link right above the bar — this is the "reset
     # everything" version of the same idea.
     has_filters = bool(scenario or date_from or date_to or qtext or tag_list
-                       or account or payee or amount_op or hide_reversed)
+                       or account or payee or amount_op or hide_reversed or entry_id)
     clear_filters_qs = urlencode({"back": back}) if back else ""
     account_row = q1("SELECT code, name FROM accounts WHERE code = %s", (account,)) if account else None
     payee_row = q1("SELECT name FROM payees WHERE name = %s", (payee,)) if payee else None
+    entry_row = q1("SELECT id FROM journal_entries WHERE id = %s", (entry_id,)) if entry_id else None
 
     entries = q(f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
@@ -3684,9 +3694,10 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "amount_value2": amount_value2,
         "hide_reversed": hide_reversed, "back": back,
     }
-    export_qs = urlencode({**common_qs, "account": account, "payee": payee})
-    clear_account_qs = urlencode({**common_qs, "payee": payee})
-    clear_payee_qs = urlencode({**common_qs, "account": account})
+    export_qs = urlencode({**common_qs, "account": account, "payee": payee, "entry_id": entry_id})
+    clear_account_qs = urlencode({**common_qs, "payee": payee, "entry_id": entry_id})
+    clear_payee_qs = urlencode({**common_qs, "account": account, "entry_id": entry_id})
+    clear_entry_qs = urlencode({**common_qs, "account": account, "payee": payee})
 
     # For the "+ New entry" panel inline below the filters — same data
     # entry_new.html used to fetch as its own page, since creating an
@@ -3718,6 +3729,7 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
         "date_from": date_from, "date_to": date_to, "qtext": qtext,
         "account": account, "account_row": account_row, "clear_account_qs": clear_account_qs,
         "payee": payee, "payee_row": payee_row, "clear_payee_qs": clear_payee_qs,
+        "entry_id": entry_id, "entry_row": entry_row, "clear_entry_qs": clear_entry_qs,
         "amount_op": amount_op, "amount_value": amount_value, "amount_value2": amount_value2,
         "amount_ops": AMOUNT_OPS, "hide_reversed": hide_reversed,
         "has_filters": has_filters, "clear_filters_qs": clear_filters_qs,
@@ -3736,13 +3748,13 @@ def entries_page(request: Request, scenario: str = "", date_from: str = "",
 def entries_export_csv(scenario: str = "", date_from: str = "", date_to: str = "",
                        qtext: str = "", tags: str = "", account: str = "", payee: str = "",
                        amount_op: str = "", amount_value: str = "", amount_value2: str = "",
-                       hide_reversed: int = 0):
+                       hide_reversed: int = 0, entry_id: str = ""):
     """Every entry matching the current filters (not just the current
     page) — one row per journal line, so it opens straight into a
     spreadsheet without the entry/line grouping the HTML view has."""
     where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                        account, payee, amount_op, amount_value,
-                                       amount_value2, hide_reversed)
+                                       amount_value2, hide_reversed, entry_id)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,
@@ -3785,7 +3797,7 @@ _XLSX_JOURNAL_ACCOUNT_INDENT = Alignment(indent=1)
 def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = "",
                         qtext: str = "", tags: str = "", account: str = "", payee: str = "",
                         amount_op: str = "", amount_value: str = "", amount_value2: str = "",
-                        hide_reversed: int = 0):
+                        hide_reversed: int = 0, entry_id: str = ""):
     """XLSX counterpart to entries_export_csv() above — same filters, same
     rows, same DESC-by-date order, but formatted the way a printed general
     journal traditionally reads rather than as a flat line-per-row dump:
@@ -3814,7 +3826,7 @@ def entries_export_xlsx(scenario: str = "", date_from: str = "", date_to: str = 
     exports rather than a one-off."""
     where, params, _ = _entries_filter(scenario, date_from, date_to, qtext, tags,
                                        account, payee, amount_op, amount_value,
-                                       amount_value2, hide_reversed)
+                                       amount_value2, hide_reversed, entry_id)
     rows = q(f"""
         SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
                e.description, e.reference, p.name AS payee_name,

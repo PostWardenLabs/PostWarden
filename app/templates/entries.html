@@ -20,9 +20,14 @@
 <p class="page-sub">Showing only entries for payee <span class="mono">{{ payee_row.name }}</span> —
   <a class="quiet-link" href="/entries?{{ clear_payee_qs }}">clear</a></p>
 {% endif %}
+{% if entry_row %}
+<p class="page-sub">Showing only entry <span class="mono">#{{ entry_row.id }}</span> —
+  <a class="quiet-link" href="/entries?{{ clear_entry_qs }}">clear</a></p>
+{% endif %}
 
 <form method="get" action="/entries" id="entries-filter-form" data-auto-refresh>
   <input type="hidden" name="back" value="{{ back }}">
+  <input type="hidden" name="entry_id" value="{{ entry_id }}">
   <div class="bar">
   <label class="field">Scenario
     {# A real "All" option, genuinely selected when `scenario` is blank —
@@ -271,8 +276,16 @@
       <span class="description-cell" data-entry-id="{{ e.id }}">{{ e.description }}</span>
       {% if e.payee_name %}<span class="dim small">· {{ e.payee_name }}</span>{% endif %}
       {% if e.reference %}<span class="dim small">[{{ e.reference }}]</span>{% endif %}
-      {% if e.reverses_entry_id %}<span class="badge rev">reversal of #{{ e.reverses_entry_id }}</span>{% endif %}
-      {% if e.reversed_by %}<span class="badge rev">reversed by #{{ e.reversed_by }}</span>{% endif %}
+      {# BACKLOG.md: "every time an entry's id is displayed it should be
+         a hyperlink to it" — these two badges are the first case of
+         that (except for the entry's own id right above, per the same
+         ask's own carve-out). Deep-links to /entries?entry_id=... rather
+         than any account/payee/tag filter, so it lands on that one
+         specific row regardless of what it posted to. No `back=` —
+         same as the tags badges just below, this stays inside the
+         Journal itself, nothing to return to. #}
+      {% if e.reverses_entry_id %}<a class="badge rev" href="/entries?entry_id={{ e.reverses_entry_id }}">reversal of #{{ e.reverses_entry_id }}</a>{% endif %}
+      {% if e.reversed_by %}<a class="badge rev" href="/entries?entry_id={{ e.reversed_by }}">reversed by #{{ e.reversed_by }}</a>{% endif %}
       {% if e.posted_by %}<span class="dim small">— {{ e.posted_by }}</span>{% endif %}
       {% for t in tags_by_entry.get(e.id, []) %}<a href="/entries?tags={{ t | urlencode }}" class="badge tag">{{ t }}</a>{% endfor %}
     </span>

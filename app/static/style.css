@@ -1901,7 +1901,11 @@ details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
   border: 1px solid var(--rule-strong); color: var(--ink-soft);
   border-radius: 2px;
 }
-.badge.rev { border-color: var(--red); color: var(--red); }
+/* .rev is now also a link (BACKLOG.md — "reversal of #X"/"reversed by
+   #X" hyperlink through to that entry) — text-decoration: none and a
+   hover cue for the same reason .tag already needed both below. */
+.badge.rev { border-color: var(--red); color: var(--red); text-decoration: none; }
+.badge.rev:hover { background: var(--paper-deep); }
 .badge.tag {
   border-color: var(--focus); color: var(--focus); text-decoration: none;
 }
