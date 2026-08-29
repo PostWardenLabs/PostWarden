@@ -40,7 +40,7 @@
     this app does. Collapsed state persists per browser in localStorage,
     same pattern as the sidebar's own pin state and every report's tree
     (report-tree.js) — keyed by data-sidebar-key, one entry per group,
-    not one shared key, so collapsing Reports doesn't touch Ledger's own
+    not one shared key, so collapsing Reports doesn't touch Books' own
     state. Deliberately doesn't auto-expand a group just because the
     current page lives inside it — a collapsed section stays collapsed
     across navigation, same as it would in any other app with this
@@ -48,8 +48,23 @@
     highlight simply isn't visible until that group is reopened, which
     is the same tradeoff those tools accept too.
   #}
+  {#
+    "Books" (not "Ledger" — data-sidebar-key stays "ledger" internally,
+    an arbitrary localStorage identifier with no visible-text coupling,
+    left alone so nobody's saved collapse state resets over a rename).
+    This group's own six links (Journal, Staging, Scheduled Entries,
+    Import, Templates, Budget Grid) are the day-to-day recording/working
+    pages — the actual General Ledger report a few rows down, under
+    Reports, is a real, correctly-named accounting term for a specific
+    report and needed to keep that name; this group heading was the one
+    actually colliding with it, sharing one word for two different
+    things in two different parts of the sidebar. "Books" reads
+    naturally alongside its own siblings (Reports, Setup) — "keeping the
+    books" is the working, recording side of accounting, which is
+    exactly what lives in this group.
+  #}
   <div class="sidebar-group" data-sidebar-key="ledger">
-    <button type="button" class="sidebar-label">Ledger<span class="chevron chevron-down sidebar-chevron"></span></button>
+    <button type="button" class="sidebar-label">Books<span class="chevron chevron-down sidebar-chevron"></span></button>
     <a href="/entries" class="{{ 'active' if nav == 'entries' }}">Journal</a>
     <a href="/staging" class="{{ 'active' if nav == 'staging' }}">Staging</a>
     <a href="/scheduled" class="{{ 'active' if nav == 'scheduled' }}">Scheduled Entries</a>

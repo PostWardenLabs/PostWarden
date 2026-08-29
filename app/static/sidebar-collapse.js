@@ -1,8 +1,8 @@
-/* PostWarden — collapsible sidebar sections (Ledger/Reports/Setup).
+/* PostWarden — collapsible sidebar sections (Books/Reports/Setup).
    Clicking a group's own label toggles its "collapsed" class, hiding
    that group's links; state persists per browser in localStorage, one
    key per group (data-sidebar-key) rather than one shared key, so
-   collapsing Reports doesn't touch Ledger's own saved state — same
+   collapsing Reports doesn't touch Books' own saved state — same
    per-thing-not-shared-key convention report-tree.js's own per-table
    data-collapse-key already uses.
 
