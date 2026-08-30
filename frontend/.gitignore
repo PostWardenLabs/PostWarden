@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# The intermediate OpenAPI JSON dump `npm run generate:api` writes before
+# handing it to openapi-typescript (REBUILD_STATUS.md Phase 2.2) — purely
+# derived from backend/'s own route declarations, not itself consumed by
+# anything. src/api/schema.ts, what it's actually generated *into*, is
+# committed (see src/api/client.ts's own comment on why).
+openapi.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

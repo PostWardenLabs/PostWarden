@@ -1058,7 +1058,7 @@ template's own demo content (the counter, the React/Vite logos, the
 docs/social links) down to a placeholder `App.tsx`: a heading and a live
 `/healthz` check, the same "prove the pipeline, not the feature" role
 Phase 0's own trivial `/healthz` route played for the backend. Real UI
-(the shell, the CSS tokens, real screens) is Phase 2.2 onward, not this
+(the shell, the CSS tokens, real screens) is Phase 2.3 onward, not this
 item.
 
 1. **`vite.config.ts`'s own `build.outDir` points straight at `backend/
@@ -1140,9 +1140,96 @@ working local-dev loop on this machine outside this session (per
 machine outside the sandbox (or in CI) to close out** — flagged rather than
 skipped silently; see the Open questions section.
 
-**Next up:** close the Docker verification gap above, then continue
-through Phase 2's remaining items (2.2 typed API client, 2.3 CSS tokens/
-themes, 2.4 shell, 2.5 per-widget decisions).
+**Phase 2.2 done.** A typed API client, generated from the backend's own
+OpenAPI schema rather than hand-written — `backend/scripts/
+dump_openapi_schema.py` (new: imports `postwarden.main` directly and
+calls `app.openapi()`, needing no `DATABASE_URL`/Postgres/Docker at all,
+since `db.get_engine()` is lazy) feeds `openapi-typescript` to produce
+`frontend/src/api/schema.ts` (4553 lines, 72 paths), which `frontend/src/
+api/client.ts` wraps in a single `openapi-fetch` client every screen will
+import instead of hand-rolling its own `fetch(...)` calls. `App.tsx`'s
+placeholder `/healthz` check now goes through `client.GET(...)` instead
+of a bare `fetch`, specifically so the existing pipeline proves the new
+client actually works, not just that it compiles.
+
+1. **`openapi-fetch` + `openapi-typescript`, not a full SDK generator
+   (`openapi-typescript-codegen`, `orval`).** The latter emit one
+   generated function per route plus their own request machinery; the
+   former is types-only codegen (`schema.ts`) plus a ~6&nbsp;kB typed
+   wrapper around the platform `fetch`, in keeping with this rebuild's
+   existing minimalism (no heavy framework adopted without a concrete
+   need for it) and because this project's own request/response shapes
+   are already simple enough (plain dicts, no pagination envelopes, no
+   nested resource expansion) that a generated SDK layer would be
+   ceremony, not value.
+2. **Request bodies come out fully typed; response bodies mostly come out
+   as `{ [key: string]: unknown }`, and that's accepted, not treated as a
+   gap to close here.** `entries/schemas.py`'s own docstring already
+   settled "response shapes stay plain dicts" as a deliberate Phase 1
+   decision — every route returns `-> dict`/`-> list[dict]`, not a
+   Pydantic response model, so there is nothing more specific in the
+   OpenAPI schema for the generator to describe. `--empty-objects-unknown`
+   (in the new `generate:api` script) is what keeps that `unknown` rather
+   than openapi-typescript's default `Record<string, never>`, which would
+   have (incorrectly) typed every response as an object with no keys at
+   all — confirmed by diffing generated output with/without the flag; it
+   only changes one thing, `HTTPValidationError.ctx` (FastAPI's own
+   built-in error detail, not one of this app's routes), the same class of
+   improvement everywhere else too. Giving every route its own real
+   Pydantic response model would be a substantial, separate undertaking
+   spanning every module — explicitly out of scope for "add a client,"
+   the same "don't reach into a mechanism that doesn't exist yet"
+   reasoning this file already applies elsewhere.
+3. **`schema.ts` is committed, not gitignored, even though it's
+   generated.** `backend/Dockerfile`'s frontend-build stage (Phase 2.1)
+   runs on bare `node:22-slim` with no Python at all, so nothing in that
+   build can regenerate it — unlike the built `static/` output itself,
+   which *is* gitignored because every build path (local, Docker)
+   regenerates it fresh. Regenerating `schema.ts` and committing the diff
+   is a deliberate developer step, same spirit as Alembic migrations
+   being explicit rather than automatic (REBUILD.md decision 5). Nothing
+   enforces freshness automatically yet; `openapi-typescript --check`
+   exists for a future CI step if drift turns out to be a real problem in
+   practice, not added preemptively here.
+4. **CSRF-header attachment is deliberately not wired into the client
+   yet.** `modules/auth/deps.py`'s `require_csrf_header` needs an
+   `X-CSRF-Token` header on every write, sourced from the current
+   session — and there is no session/auth state anywhere in the frontend
+   yet (Phase 3's login screen is what will create one).
+   `client.ts`'s own comment names `openapi-fetch`'s `use()` middleware
+   hook as the obvious place to add it once that state exists, rather
+   than improvising a place to read a token from now.
+
+**Verified for real.** `npm run generate:api` ran for real against the
+real backend (no mocked/hand-written schema) and produced real output;
+spot-checked request bodies (`CreateEntryRequest` etc. — full field
+lists, docstrings, the `interval_unit` enum) and response bodies
+(`healthz`'s concrete `dict[str, str]` came out as `{[key: string]:
+string}`; a bare `-> dict` route came out as `{[key: string]: unknown}`)
+by reading the generated file directly, not just trusting the tool ran.
+`npm run build` (`tsc -b && vite build`) passes with zero type errors,
+meaning `client.ts` + `schema.ts` + `App.tsx`'s new `client.GET(...)`
+call all type-check together against the real generated `paths` type. The
+full backend test suite (523 tests) stays green, unaffected, as expected
+for frontend-only work. A real `uvicorn postwarden.main:app` (no Docker,
+same constraint as 2.1) served the rebuilt bundle: `GET /` 200, `GET
+/healthz` 200 with the expected JSON, and the built, minified JS bundle
+itself contains the literal `/healthz` call, confirming the typed client
+actually made it into the shipped bundle. **Not verified**: an actual
+browser rendering the page and showing "Backend: ok" in the live DOM —
+no browser tool is available in this session, the same gap 2.1's own
+verification had (that check has always been curl-level, not
+browser-level, in this environment) — and the Docker build itself, for
+the same sandbox reason already tracked from 2.1 (see Open questions);
+2.2 adds two new npm dependencies (`openapi-fetch`, `openapi-typescript`)
+the Docker build's frontend-build stage would need to `npm ci`, untested
+either way, but this doesn't change the nature of the existing gap since
+that stage already couldn't be exercised at all this session.
+
+**Next up:** continue through Phase 2's remaining items (2.3 CSS tokens/
+themes, 2.4 shell, 2.5 per-widget decisions); close the Docker
+verification gap (both 2.1's and 2.2's share of it) whenever this
+machine's own Docker daemon is reachable again.
 
 ---
 
@@ -1245,8 +1332,9 @@ directly.
       `uvicorn` serving it, full backend suite green); the
       `docker compose up -d --build` confirmation itself is blocked in
       this sandbox — see Current status and Open questions.
-- [ ] **2.2** Typed API client generated from the backend's OpenAPI
-      schema.
+- [x] **2.2** Typed API client generated from the backend's OpenAPI
+      schema — `openapi-typescript` + `openapi-fetch`, see the Current
+      status write-up.
 - [ ] **2.3** Port the 327 CSS custom properties and 21 themes from
       `app/static/style.css`, essentially verbatim.
 - [ ] **2.4** Shell: sidebar (hover-preview + click-to-pin, three
@@ -1355,6 +1443,18 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 2.2 done: a typed API client — `backend/scripts/
+  dump_openapi_schema.py` (new, needs no DB/Docker) feeds
+  `openapi-typescript` to generate `frontend/src/api/schema.ts`
+  (committed, not gitignored — the Docker frontend-build stage has no
+  Python to regenerate it), wrapped by `frontend/src/api/client.ts`'s
+  `openapi-fetch` client. `App.tsx`'s `/healthz` check now goes through
+  it instead of a bare `fetch`. See the Current status section for the
+  full write-up, including why response bodies mostly type as `unknown`
+  (Phase 1's own "responses stay plain dicts" decision, not a gap this
+  phase introduces) and why CSRF-header attachment is deliberately not
+  wired in yet (no session state exists to read a token from until
+  Phase 3's login screen).
 - **2026-08-30** — Phase 2.1 in progress: `frontend/` scaffolded (Vite +
   React + TypeScript), wired into `main.py` via a new `postwarden_
   static_dir` setting and a `StaticFiles` mount registered last (after
@@ -1669,8 +1769,9 @@ that level get a line of their own.
 Carried forward until answered; move to the log once resolved.
 
 - **Phase 2.1's `docker compose up -d --build` verification is still
-  outstanding.** Everything short of the actual Docker build was verified
-  for real this session (see Current status); the build itself couldn't
+  outstanding, and Phase 2.2 adds to the same gap rather than opening a
+  new one.** Everything short of the actual Docker build was verified for
+  real both sessions (see Current status); the build itself couldn't
   complete because this sandbox's Docker daemon can't pull `node:22-slim`
   (or even `hello-world`) — reproducible `DeadlineExceeded` on the
   image-metadata fetch, while already-cached images (`python:3.12-slim`,
@@ -1678,11 +1779,18 @@ Carried forward until answered; move to the log once resolved.
   registry restriction, not a real problem with `backend/Dockerfile` or
   `backend/docker-compose.yml`, since this exact command is this
   project's own established working local-dev loop on this machine
-  outside the sandbox. **Needs**: run `cd backend && docker compose down
-  -v && docker compose up -d --build` for real (outside this session, or
-  once registry access is available), confirm a clean build log, `GET /`
-  serves the built SPA, `/healthz` still 200, and the existing
-  authenticated-flow spot-check (login -> a protected route -> a CSRF-
-  protected write) from Phase 1.14's own write-up still holds. Close this
-  out (move to the log) once that run happens, before treating Phase 2.1
-  as fully done rather than in-progress.
+  outside the sandbox. Phase 2.2 adds two new npm dependencies
+  (`openapi-fetch`, `openapi-typescript`) the frontend-build stage's own
+  `npm ci` would need to fetch — untested either way, since that stage
+  couldn't be reached at all this session, but not a materially different
+  risk than what was already unverified. **Needs**: run `cd backend &&
+  docker compose down -v && docker compose up -d --build` for real
+  (outside this session, or once registry access is available), confirm a
+  clean build log, `GET /` serves the built SPA, `/healthz` still 200,
+  and the existing authenticated-flow spot-check (login -> a protected
+  route -> a CSRF-protected write) from Phase 1.14's own write-up still
+  holds. Close this out (move to the log) once that run happens, before
+  treating Phase 2.1 as fully done rather than in-progress — Phase 2.2
+  itself is marked `[x]` regardless, since nothing about the typed client
+  specifically depends on Docker (see its own "Verified for real"
+  paragraph).
