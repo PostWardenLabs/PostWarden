@@ -341,7 +341,99 @@ phase since 1.4: a full `docker compose up -d --build` (clean log,
 separately the exact CI shape by hand (a bare `postgres:16` container,
 `alembic upgrade head`, `pytest`).
 
-**Next step:** 1.8 — `modules/imports/`.
+**Phase 1.8 done.** `modules/imports/` — both importers (plain CSV,
+mapped/rules): `repository.py`, `service.py`, `schemas.py`, `router.py`
+(four routes: `GET /import` recent-batches list, `POST /import` the plain
+CSV importer, `POST /import/mapped/preview` + `POST /import/mapped` the
+mapped importer's two-step flow). The one module so far to need a real
+file upload, which surfaced its own small set of decisions:
+
+1. **Forks `modules/entries/repository.py`'s `account_ids_by_code`/
+   `check_deferred_constraints` and the "look up the one Staging
+   scenario" query rather than importing them** — the same test every
+   prior write module's own docstring already applies (REBUILD.md
+   decision 3): deleting `modules/entries/` or `modules/staging/` should
+   never break `modules/imports/`, even though staging a CSV row doesn't
+   depend on either.
+2. **One real behavior improvement over a verbatim port, found while
+   porting rather than assumed going in.** Legacy's own `_stage_import_
+   groups` resolves each line's `account_id` via an inline `(SELECT id
+   FROM accounts WHERE code = %s)` subquery — harmless for the plain CSV
+   importer (`_parse_csv_import` already validates every code before a
+   group is ever returned) but a real gap for the mapped importer, whose
+   `account_map`/`category_map` values are caller-supplied and never
+   checked against real accounts: an unmapped-to-nothing code would
+   silently resolve to `NULL` and only fail later on `journal_lines.
+   account_id`'s own `NOT NULL` constraint — a working but unhelpfully
+   generic error. `service.stage_import_groups` resolves every code
+   across every group up front instead, the same explicit "unknown
+   account code" check `modules.entries.service.create_entry` and
+   `modules.staging.service.save_edit` already both do, so a bad mapping
+   value now fails with a clear message before any row is written.
+3. **A second real fix, this one caught only by a test, not by reading
+   the code first.** `repository.recent_batches`'s `ORDER BY ib.
+   created_at DESC` (legacy's own, verbatim) ties whenever two batches
+   land in the same transaction — `now()` returns the *transaction*
+   start time in Postgres, identical for every row one transaction
+   inserts, a real possibility here since `db.get_connection()` gives one
+   request one transaction where legacy's own per-route `tx()` never
+   would have. `test_recent_batches_orders_newest_first_and_respects_
+   limit` (three batches inserted back to back in one test transaction)
+   failed on exactly this before `ib.id DESC` was added as a tiebreaker —
+   the fix is one clause, but nothing short of actually running a test
+   that inserts more than one batch per transaction would have surfaced
+   it, same "this needed a second fix once actually run against
+   Postgres, not just reasoned about" pattern Phase 1.5's `SET
+   CONSTRAINTS` bug already taught.
+4. **Amounts are `Decimal` throughout `parse_csv_import`/`transform_
+   mapped_rows`, not legacy's `float(d)`/`round(..., 2)`.** Same fix
+   `domain.entry.parse_lines` (Phase 1.1) and `modules.budget.service.
+   save_budget_cell` (Phase 1.7) already applied to user-typed money, for
+   the identical reason: every amount lands in a `NUMERIC(18,2)` column.
+5. **The mapped importer's preview/commit round-trip is JSON-shaped, not
+   legacy's hidden-form-fields-plus-base64 shape.** `POST /import/mapped/
+   preview` returns the parsed picker lists *plus* the uploaded file's own
+   content, base64-encoded; the frontend holds that and sends it back
+   verbatim as `schemas.MappedImportCommitRequest.file_content_b64` when
+   the mapping is confirmed — the same round-trip legacy's hidden
+   `file_b64`/`account_map__<key>`/`category_map__<key>` form fields
+   performed, just JSON-shaped instead of form-field-name-shaped, the
+   identical adaptation `modules.staging.schemas.MergeDuplicatesRequest.
+   line_memos` already made for its own prefixed-form-field precursor.
+   Nothing is persisted server-side between the two steps either way,
+   matching legacy's own comment that there's "nothing to save, expire,
+   or clean up."
+6. **No `GET /import/mapped` route at all**, unlike every other GET this
+   module or any prior one built. Legacy's own route renders nothing this
+   module owns — an empty page whose only real content is the target-
+   scenario picker, a `modules/reference/` concern (Phase 1.9) the
+   frontend will fetch separately, same "don't reach into a module that
+   doesn't exist yet" reasoning every prior module already applies. `GET
+   /import`'s own recent-batches listing survives, since that data *is*
+   this module's own.
+
+Other decisions, smaller:
+
+- **No CSRF check, no real `imported_by_user_id` attribution** — both
+  `modules/auth/` (Phase 1.11) concerns, same two documented gaps every
+  prior write module carries; every import runs with `user_id=None`.
+- **`insert_staged_entry` sets no `created_by_user_id`**, matching
+  legacy's own insert exactly — an entry sitting in Staging isn't yet
+  anyone's manual posting; that only gets set on the *approved* copy
+  `modules.staging.service.approve_entry` creates.
+
+38 new tests (7 `repository.py`, 24 `service.py`, 7 `router.py`) — 255
+passed total. `backend/tests/modules/imports/conftest.py`'s own `book`
+fixture is the first to need a *third* postable account (`5100 Rent`,
+expense) alongside the usual Checking/Salary pair, since the mapped
+importer needs a real Category-side account distinct from the
+Account-side (money) one. Verified for real, the same three ways as
+every phase since 1.4: a full `docker compose up -d --build` (clean log,
+`/healthz` 200), a local `docker compose up -d db` + `pytest` run, and
+separately the exact CI shape by hand (a bare `postgres:16` container,
+`alembic upgrade head`, `pytest`).
+
+**Next step:** 1.9 — `modules/reference/`.
 
 ---
 
@@ -414,7 +506,7 @@ directly.
       repository · tests) — the Journal backend.
 - [x] **1.6** `modules/staging/`
 - [x] **1.7** `modules/budget/`
-- [ ] **1.8** `modules/imports/` — both importers (plain CSV and the
+- [x] **1.8** `modules/imports/` — both importers (plain CSV and the
       mapped/rules importer).
 - [ ] **1.9** `modules/reference/` — accounts, payees, tags, scenarios,
       account levels (CRUD).
@@ -548,6 +640,16 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.8 done: `modules/imports/` — see the Current
+  status section above for the full write-up (forking `entries`/
+  `staging`'s account-lookup and constraint-check helpers, resolving
+  every account code up front instead of relying on a `NOT NULL`
+  violation the way legacy's own insert does, an `id DESC` tiebreaker fix
+  in `recent_batches` caught by a same-transaction test, `Decimal`
+  throughout both parsers, the mapped importer's JSON-shaped preview/
+  commit round-trip replacing legacy's hidden-form-fields-plus-base64
+  shape, and no `GET /import/mapped` route since that page has no data of
+  its own to serve outside `modules/reference/`).
 - **2026-08-29** — Phase 1.7 done: `modules/budget/` — see the Current
   status section above for the full write-up (the guard trigger firing
   immediately rather than deferred, forking `reports.repository`'s
