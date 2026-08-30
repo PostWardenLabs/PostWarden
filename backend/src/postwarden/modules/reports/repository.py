@@ -201,13 +201,31 @@ def budget_line_totals(conn: Connection, scenario_id: int, date_from: str | None
     income-statement-only scenario, restricted to whichever months the
     range touches — the only balance source such a scenario has, since
     it never takes a journal entry at all (`fn_income_statement_only_
-    guard` blocks it)."""
+    guard` blocks it).
+
+    A real, previously-undiscovered bug lived here until Phase 4.1's own
+    Income Statement screen was the first caller to ever exercise a
+    Compare-to against an income-statement-only (budget) scenario:
+    `:date_from::date` — a bind param immediately followed by Postgres's
+    `::` cast operator, no space between — reads to SQLAlchemy's `text()`
+    parser as something other than a plain `:date_from` bind param, so
+    the literal string `:date_from::date` reached Postgres unsubstituted
+    and failed with a syntax error. Contrast `cash_leg_net`'s own
+    `COALESCE(:date_to, 'infinity'::date)` a few functions up in this
+    same file — its `::date` casts a literal, never sits directly after
+    a bind param name, so it never tripped this. Fixed with a space
+    before the cast (`:date_from ::date`) — Postgres allows the
+    whitespace, and it's enough for SQLAlchemy to find the param
+    boundary correctly. No test in `backend/tests/` ever called this
+    function with both a real `date_from`/`date_to` and a real
+    Postgres connection until now — `budget_line_totals` had no test of
+    its own at all before this fix's own test."""
     where, params = ["scenario_id = :scenario_id"], {"scenario_id": scenario_id}
     if date_from:
-        where.append("period_month >= date_trunc('month', :date_from::date)")
+        where.append("period_month >= date_trunc('month', :date_from ::date)")
         params["date_from"] = date_from
     if date_to:
-        where.append("period_month <= date_trunc('month', :date_to::date)")
+        where.append("period_month <= date_trunc('month', :date_to ::date)")
         params["date_to"] = date_to
     rows = conn.execute(text(
         f"SELECT account_id, SUM(amount) AS amt FROM budget_lines WHERE {' AND '.join(where)} "

@@ -2208,6 +2208,98 @@ against `seed_demo.sql`'s own data (it ties out clean), so that specific
 banner's real rendering is still unverified in-browser — noted rather
 than silently skipped.
 
+**Phase 4.1, screen 3 of 5 — Income Statement done**, the hardest data
+shape of the five. `frontend/src/reports/IncomeStatementPage.tsx` — rows
+mode (a single range, structurally close to every other report) and
+Split mode (a period-column-group matrix), discriminated by presence of
+`periods_totals` in the response (confirmed by reading
+`service.income_statement_rows`/`income_statement_matrix` directly, not
+assumed — the two branches return genuinely different shapes, not just
+optional fields). No backend changes needed for the screen itself —
+`GET /reports/income-statement` has existed since Phase 1.4/1.14 — though
+a real, previously-undiscovered backend bug surfaced and got fixed in
+this same commit (see below).
+
+**The key simplification**, spelled out in `income_statement.html`'s own
+comment on its split branch and leaned on directly: a row/group's
+`periods` array (matrix mode only) is "the very same shape a single-
+period row/group has." So rather than writing two parallel body-
+rendering branches, this component treats rows mode as a one-period
+matrix — `periodsOf`/`periodsTotalsOf`/`rowPeriod`/`groupPeriod` paper
+over the distinction so `GroupBlock`/`ExpenseGroupBlock`/the "Total
+income"/"Net income" rows are each written once and rendered identically
+in both modes. The two render paths genuinely differ only in header
+shape (a single plain header row vs. Split's two-row period-group
+header with `.table-scroll`) — mirroring how close the Jinja source's
+own two branches already are.
+
+New shared widgets: none — `PeriodPresetPicker` (Cash Flow) covers this
+screen's own Period field too, and every dropdown (Scenario, Compare to,
+Split) is a `Combobox`, never a raw `<select>`, same standing rule every
+screen since the 2026-08-30 QA fix follows. New CSS ported (confirmed
+missing by grep, same "byte-verified range" practice every visual phase
+uses): `.period-label`/`.period-start`/`.period-agg`/`.period-agg-average`
+(Split view's own column-group styling, `app/static/style.css` lines
+~1083–1116) and `.neg` (`app/static/style.css` line 1217, a one-line
+utility never pulled in before this phase needed it for negative-
+variance/negative-net-income figures, same as `.dim`/`.mono`/`.small`
+were each ported individually ahead of their own first caller).
+
+**A real, previously-undiscovered backend bug, found and fixed in this
+same commit**: `modules/reports/repository.py::budget_line_totals` —
+`:date_from::date` (a bind param immediately followed by Postgres's `::`
+cast operator, no space) reads to SQLAlchemy's `text()` parser as
+something other than a plain named param, so the literal string reached
+Postgres unsubstituted and raised a syntax error — but only when *both*
+`date_from` and `date_to` are set, the one shape that hits both of the
+function's conditional `where.append(...)` branches at once. No test in
+`backend/tests/` had ever called this function at all before — it had
+zero coverage of its own since Phase 1.4 — and no route had ever been
+exercised with a real Compare-to against a real income-statement-only
+(budget) scenario across a bounded date range until this screen's own
+manual browser verification hit it live (`compare=BUD2026` in a real
+browser, not a curl script). Fixed with a space before the cast
+(`:date_from ::date`) — Postgres allows the whitespace, and it's enough
+for SQLAlchemy to find the param boundary correctly; contrast
+`cash_leg_net`'s own `COALESCE(:date_to, 'infinity'::date)` a few
+functions up in the same file, whose `::date` casts a literal and so
+never sat directly after a bind param name, which is why it never
+tripped this. One new regression test,
+`test_budget_line_totals_with_both_date_bounds_set` — confirmed to
+actually fail against the pre-fix code (`git stash` the fix, rerun,
+watch it fail with the exact same Postgres syntax error, `git stash
+pop`), not just written and assumed to cover the bug. Same "this needed
+a second fix once actually run against Postgres, not just reasoned
+about" pattern Phase 1.5's `SET CONSTRAINTS` bug and Phase 1.8's
+`ORDER BY` tiebreaker already taught — bundled into this commit rather
+than split out, since the frontend screen genuinely cannot demonstrate
+Compare-to without it (`CLAUDE.md`'s own bundling test: incoherent
+apart).
+
+Wired into `App.tsx`/`nav.ts` (`income_statement` → `/app/income-statement`).
+
+**Verified for real**, same four checks as every screen this phase, plus
+this is the first phase-4.1 screen to touch backend code so it also got
+the exact CI shape by hand (a bare `postgres:16` container, `alembic
+upgrade head`, `pytest` — 533 passed, up from 532). Real browser pass
+covered both modes thoroughly: rows mode with no compare (five expense
+root groups each producing their own cumulative "Net income after X"
+row, hand-verified arithmetic all the way down to the final "Net
+income"); rows mode with Compare to `BUD2026` (six real columns,
+Scenario/Variance/%Variance/Compare, the Flip-variance-direction
+checkbox appearing only once a compare scenario is picked, matching
+legacy exactly) — this is what surfaced the `budget_line_totals` bug
+live; and Split mode (`split=monthly` across a 3-month range with
+Compare still set) — five period-column-groups (three real months plus
+Total plus Average, each 4 sub-columns), the partial-period asterisk and
+footnote on the still-in-progress current month, `.table-scroll`'s
+horizontal scroll and sticky Code/Account columns, Total correctly
+summing the two zero-activity months plus August's real figures,
+Average correctly dividing Total by 3, and the account-tree collapse
+toggle working identically inside the matrix table. Both `.csv`/`.xlsx`
+exports (with `split`+`compare` both set) `200`ing over a real
+authenticated `curl` round trip.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2364,10 +2456,10 @@ Largely configuration once the Phase 3 archetype components exist.
 
 - [~] **4.1** Remaining Range/period + Point-in-time reports:
       income_statement, cash_flow, balance_sheet, variance, ledger.
-      Balance Sheet and Cash Flow done (see Current status);
-      income_statement, variance, ledger remain — ledger also needs new
-      backend work (no `/ledger`-equivalent route exists yet, see its
-      own note when that commit lands).
+      Balance Sheet, Cash Flow, and Income Statement done (see Current
+      status); variance, ledger remain — ledger also needs new backend
+      work (no `/ledger`-equivalent route exists yet, see its own note
+      when that commit lands).
 - [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
       account_levels, scheduled, entry_templates, settings
 - [ ] **4.3** staging (Filterable transaction list, second instance)
@@ -2444,6 +2536,18 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 4.1, screen 3 of 5: Income Statement done,
+  `frontend/src/reports/IncomeStatementPage.tsx` — rows mode and Split
+  mode unified around one body-rendering path (`periodsOf`/
+  `periodsTotalsOf`/`rowPeriod`/`groupPeriod` treat rows mode as a
+  one-period matrix), discriminated only where the header shape and
+  response structure genuinely differ. Also fixed a real,
+  previously-undiscovered bug in `modules/reports/repository.py::
+  budget_line_totals` (a bind-param-immediately-before-a-Postgres-`::`-
+  cast parsing gap, only reachable with both `date_from`/`date_to` set,
+  never covered by any test until this screen's own manual verification
+  hit it live) — one new regression test, confirmed to actually fail
+  pre-fix. See Current status for the full write-up.
 - **2026-08-30** — Phase 4.1, screen 2 of 5: Cash Flow done,
   `frontend/src/reports/CashFlowPage.tsx`, plus the new shared
   `widgets/PeriodPresetPicker.tsx`/`periodPresets.ts` (promoted from

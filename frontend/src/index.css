@@ -1301,6 +1301,13 @@ table.ledger .num, table.ledger th.num {
 
 .dim { color: var(--ink-soft); }
 
+/* Income Statement/Variance's own negative-variance/negative-net-income
+   figures — style.css's ".neg { color: var(--red); }", a single-line
+   utility ported on its own now that this phase's first caller
+   (Income Statement) needs it, same as .dim/.mono/.small were each
+   pulled in individually ahead of it. */
+.neg { color: var(--red); }
+
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 .bar {
@@ -1750,6 +1757,38 @@ table.ledger td.money-first, table.ledger th.money-first {
 table.ledger td.money-last, table.ledger th.money-last {
   border-right: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
 }
+/* Income Statement's Split view only (Phase 4.1). .period-label centers
+   the period super-header ("2026-08", "This Quarter", ...) — it spans
+   every sub-column beneath it (Actual/Variance/%Variance/Compare), so
+   right-aligning it the same as a plain numeric header (table.ledger
+   th.num's own default, same specificity — this rule wins on source
+   order) reads oddly off-center above them. .period-start is the
+   vertical rule between one period's columns and the next (including
+   before the trailing Total column) — same var(--rule-strong) used
+   elsewhere for a structural divider, not the money-first rule's own
+   red — applied to a period's leftmost sub-column only, in both header
+   rows and every body row, never drawn at all with a single column
+   group (nothing to divide from). */
+table.ledger th.period-label { text-align: center; }
+table.ledger th.period-start, table.ledger td.period-start { border-left: 1px solid var(--rule-strong); }
+/* .period-agg marks every sub-column of the trailing Total/Average
+   column groups (not just the leftmost, unlike .period-start above) —
+   bold plus a richer tint than the plain .money background, so the two
+   aggregate columns read as a different *kind* of figure at a glance,
+   not just one more period. .period-agg-average layers italic on top,
+   applied instead of (never alongside) .period-agg, so Total and
+   Average stay visually distinguishable from each other too, not just
+   from the real periods. */
+table.ledger .period-agg {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--rule-strong) 22%, var(--paper-deep));
+}
+table.ledger .period-agg-average {
+  font-weight: 600;
+  font-style: italic;
+  background: color-mix(in srgb, var(--rule-strong) 22%, var(--paper-deep));
+}
+
 table.ledger tr.type-head td {
   font-family: var(--serif); font-weight: 600; font-size: 0.95rem;
   padding-top: 0.9rem; border-bottom: 1px solid var(--rule-strong);

@@ -8,6 +8,7 @@ its own docstring says it does."""
 from decimal import Decimal
 
 from postwarden.modules.reports import repository as repo
+from ...conftest import mk_budget_line, mk_scenario
 
 
 def test_dim_accounts_orders_parent_before_child(book, conn):
@@ -73,3 +74,20 @@ def test_postable_flags_reflects_summary_vs_leaf(book, conn):
     flags = repo.postable_flags(conn)
     assert flags[book["assets"]["id"]] is False  # summary account
     assert flags[book["checking"]["id"]] is True  # leaf
+
+
+def test_budget_line_totals_with_both_date_bounds_set(book, conn):
+    # Regression test for a real bug, only found doing Phase 4.1's Income
+    # Statement screen: `:date_from::date` (a bind param directly
+    # followed by Postgres's `::` cast, no space) reads to SQLAlchemy's
+    # text() parser as something other than a plain named param, so the
+    # literal string reached Postgres unsubstituted and raised a syntax
+    # error — but only when *both* date_from and date_to are set (the
+    # only shape that hits both `where.append(...)` branches at once).
+    # No test exercised this before; `budget_line_totals` had none of its
+    # own at all.
+    budget = mk_scenario(conn, "BUD", scenario_type="budget", income_statement_only=True)
+    mk_budget_line(conn, budget["id"], book["salary"]["id"], -500, "2026-02-01")
+    mk_budget_line(conn, budget["id"], book["salary"]["id"], -500, "2026-03-01")
+    totals = repo.budget_line_totals(conn, budget["id"], "2026-02-01", "2026-02-28")
+    assert totals == {book["salary"]["id"]: Decimal("-500.00")}
