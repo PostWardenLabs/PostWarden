@@ -421,9 +421,9 @@ export default function StagingPage() {
             <button type="button" className="quiet" disabled={select.checkedIds.size === 0} onClick={handleReject}>
               Reject ({altLabel('R')})
             </button>
-            <a className="button-link" href="/staging/duplicates" style={{ marginLeft: 'auto' }}>
+            <Link className="button-link" to="/app/staging/duplicates" style={{ marginLeft: 'auto' }}>
               Find duplicates
-            </a>
+            </Link>
           </p>
 
           {result.entries.map((e) => (

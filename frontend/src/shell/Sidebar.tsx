@@ -25,6 +25,20 @@ function NavAnchor({ link, active }: { link: NavLink; active: boolean }) {
   )
 }
 
+// Staging's "Find Duplicates" sub-page (Phase 4.5, routeKey
+// `staging_duplicates`) keeps the Staging sidebar link highlighted while
+// on it — mirrors legacy's own `nav: "staging"` set on `staging_
+// duplicates_page` (app/main.py) despite that page's own browser title
+// being "Find Duplicates", not "Staging". Same `startsWith` precedent
+// Topbar.tsx's own `current?.startsWith('settings')` check already
+// established for Settings/Settings Account, applied here to the
+// Sidebar's own per-link `active` check instead — `staging` is the only
+// nav key sharing a prefix with another route key, so this is safe
+// without an explicit enumeration.
+function isActive(linkKey: string, current?: string): boolean {
+  return linkKey === current || (linkKey === 'staging' && !!current?.startsWith('staging'))
+}
+
 interface SidebarGroupProps {
   group: NavGroup
   current?: string
@@ -45,7 +59,7 @@ function SidebarGroup({ group, current }: SidebarGroupProps) {
         <span className="chevron chevron-down sidebar-chevron" />
       </button>
       {group.links.map((link) => (
-        <NavAnchor key={link.key} link={link} active={link.key === current} />
+        <NavAnchor key={link.key} link={link} active={isActive(link.key, current)} />
       ))}
     </div>
   )

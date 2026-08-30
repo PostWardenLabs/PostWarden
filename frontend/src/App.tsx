@@ -20,6 +20,7 @@ import ScheduledPage from './setup/ScheduledPage'
 import SettingsAccountPage from './setup/SettingsAccountPage'
 import SettingsPage from './setup/SettingsPage'
 import Shell from './shell/Shell'
+import StagingDuplicatesPage from './staging/StagingDuplicatesPage'
 import StagingPage from './staging/StagingPage'
 import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
@@ -124,6 +125,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/staging') return 'staging'
+  if (pathname === '/app/staging/duplicates') return 'staging_duplicates'
   if (pathname === '/app/budget') return 'budget'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
   if (pathname === '/app/cash-flow') return 'cash_flow'
@@ -151,6 +153,7 @@ const PAGE_TITLES: Record<string, string> = {
   tb: 'Trial Balance',
   entries: 'Journal',
   staging: 'Staging',
+  staging_duplicates: 'Find Duplicates',
   budget: 'Budget Grid',
   balance_sheet: 'Balance Sheet',
   cash_flow: 'Cash Flow',
@@ -222,6 +225,7 @@ function App() {
         <Route path="/app/ledger" element={<LedgerPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
         <Route path="/app/staging" element={<StagingPage />} />
+        <Route path="/app/staging/duplicates" element={<StagingDuplicatesPage />} />
         <Route path="/app/budget" element={<BudgetPage />} />
       </Routes>
     </Shell>

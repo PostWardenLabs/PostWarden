@@ -41,6 +41,15 @@ wrong, turn it into a real fix instead of just unchecking it.
       glance on a real chart of accounts. Only the API round trip was
       checked. See Current status's Phase 4.4 write-up for exactly what
       *was* verified.
+- [ ] Phase 4.5 (staging_duplicates): no browser tool was available to
+      verify `StagingDuplicatesPage.tsx`'s two hand-rolled dialogs — the
+      three-way Proceed/Select-remaining/Cancel ask's own Tab-trap and
+      initial focus, the merge-detail form's own Description
+      focus-and-select on open, Escape-closes-either-dialog, and whether
+      a group's "select all in this section" checkbox actually renders
+      its indeterminate state correctly (a DOM-only property, set
+      imperatively). Only the API round trip was checked. See Current
+      status's Phase 4.5 write-up for exactly what *was* verified.
 
 ---
 
@@ -3003,6 +3012,98 @@ in this session, so hover states and focus management (particularly
 around the quick-fill menu's open/close behavior) were not visually
 exercised — added to "Check when back at your computer" below.
 
+### Phase 4.5 — staging_duplicates
+
+Ported from `app/templates/staging_duplicates.html` +
+`app/static/staging-duplicates.js` (Phase 4.5) — backend already fully
+built and tested back in Phase 1.6 (`modules/staging/service.py::find_
+duplicate_groups`/`merge_duplicates`, `GET /staging/duplicates`, `POST
+/staging/duplicates/merge`); this phase is frontend-only, one new file:
+`staging/StagingDuplicatesPage.tsx`.
+
+**Not a sixth archetype, but not a plain instance of the Filterable
+transaction list one either.** `UI_CONSISTENCY_AUDIT.md` §2a/§4b already
+settled this: Find Duplicates is "one real sibling" of Journal/Staging,
+reachable only from Staging's own "Find duplicates" link (no sidebar
+entry, matching legacy — `nav.ts` gets no new link this phase) and
+sharing that family's per-entry conventions (`useSelectMode`, the same
+`select-only`/`body.select-mode` checkbox mechanism), but there's no
+filter form, no pagination, and rows arrive pre-grouped server-side by
+an exact `(date, account, amount)` fingerprint rather than user-chosen
+criteria — closer in spirit to the Ledger report's own per-account
+grouping (`.duplicate-group` reuses the `t-section-label` heading
+treatment) than to a filterable list.
+
+**Sidebar highlight needed a small, precedented fix.** Legacy sets `nav:
+"staging"` on `staging_duplicates_page` (`app/main.py`) even though the
+page's own browser title is "Find Duplicates" — the sidebar's Staging
+link stays highlighted on this sub-page. The SPA's `routeKey()`/
+`PAGE_TITLES` pair in `App.tsx` ties one `current` string to both the
+active-link check *and* the topbar title (`Shell.tsx`), so matching both
+legacy behaviors at once needed decoupling them: `current` is its own
+key (`staging_duplicates`) with its own title ("Find Duplicates"), and
+`Sidebar.tsx` gained a small `isActive()` helper checking `current?.
+startsWith('staging')` for the Staging link specifically — the exact
+same precedent `Topbar.tsx`'s own `current?.startsWith('settings')`
+check already set for Settings/Settings Account (Phase 3.2).
+
+**Two local, hand-rolled dialogs — not `useConfirm()`, and not a new
+shared widget.** Neither of legacy's own two popups fits `useConfirm()`'s
+plain message+OK/Cancel shape, and nothing else in the app needs either
+shape, so both live as local component state/JSX in
+`StagingDuplicatesPage.tsx` rather than a second provider:
+- A three-way **Proceed / Select remaining entries / Cancel** dialog
+  (`ThreeWayDialog`), shown only when the group being merged has an
+  unchecked entry left over (BACKLOG.md's own spec) — same `.confirm-
+  overlay`/`.confirm-modal` CSS `ConfirmDialog.tsx` already uses, with
+  the same initial-focus-on-Cancel and three-item Tab-trap applied here
+  by hand (`ConfirmDialog.tsx`'s own two-item trap, generalized to
+  three).
+- The merge-detail form itself (Description/Reference/Payee combobox
+  with quick-create/Tags/one memo field per line the survivor keeps) —
+  `.confirm-modal h3` heading style matching `BulkTagsDialog.tsx`'s own
+  "modal that shows a control, not a message" shape. Per-line memo
+  defaults are pre-filled exactly as `openMergeDetail` legacy-side did:
+  the survivor's own memo if it has one, else the first non-blank memo
+  found on the *matching* `(account_id, amount)` leg among the other
+  checked entries — never a guess across a different leg, since matching
+  account+amount is exactly what makes two legs "the same line" across
+  duplicate entries.
+
+**New CSS**: `.duplicate-group`/`.duplicate-group-label` (the section
+heading treatment), plus the group-level "select all in this section"
+checkbox's `inline-flex` override — both ported verbatim from
+`style.css`, same "add it when its first real screen needs it" spirit
+Budget's own new CSS followed last phase.
+
+**Verified the same two ways** as every frontend-only phase since
+Staging: `tsc -b && vite build` and `oxlint` both clean on the first run
+(no findings this time — unlike Budget's one `react(set-state-in-effect)`
+fix). Second, a real `docker compose -f backend/docker-compose.yml up -d
+--build backend` followed by an **authenticated** round trip — logged in
+as `david`/`devpassword`, then: seeded two genuinely duplicate Staging
+entries by hand (same date, same `(account, amount)` leg pair, inserted
+via a dummy `import_batches` row since a bare manual `INSERT` into the
+`STAGING` scenario is rejected outright by `fn_staging_manual_entry_
+guard()`); `GET /staging/duplicates` grouped them correctly and matched
+`StagingDuplicatesPage.tsx`'s own `DuplicatesResult`/`DuplicateGroup`/
+`DuplicateEntry` interfaces field-for-field; `POST /staging/duplicates/
+merge` (survivor's description/reference/tags updated, one line's memo
+set, the other entry actually gone afterward) round-tripped exactly as
+expected, confirmed directly against the database, not just the
+response body; the group correctly disappeared from a follow-up `GET`;
+`GET /app/staging` and `GET /app/staging/duplicates` (authenticated)
+both returned `200`. Cleaned up afterward via the app's own `POST
+/staging/reject` rather than a raw `DELETE`, so the test entry's removal
+exercised a real code path too; the one leftover is a harmless orphan
+`import_batches` row (id 1, `dup-test.csv`), never referenced by
+anything after the reject — same "expected, not a bug" leftover-row
+treatment Budget's own verification note gave its test `budget_lines`
+row last phase. No interactive browser tool was available in this
+session, so the merge flow's own hover/focus behavior (both dialogs'
+button order, the group-level select-all's tri-state rendering) was not
+visually exercised — added to "Check when back at your computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3181,7 +3282,24 @@ Largely configuration once the Phase 3 archetype components exist.
       only Phase 4 screen so far that needed genuinely new component CSS,
       not just reuse of what Phase 2.3/3.x already ported. See Current
       status for the full write-up.
-- [ ] **4.5** staging_duplicates
+- [x] **4.5** staging_duplicates — backend already done (Phase 1.6);
+      frontend-only this phase. `StagingDuplicatesPage.tsx` is the one new
+      component, reachable only from Staging's own "Find duplicates" link
+      (not a sidebar destination, matching legacy) — `UI_CONSISTENCY_AUDIT.
+      md` §2a/§4b calls it "one real sibling" of the Filterable
+      transaction list archetype rather than a sixth archetype of its own,
+      borrowing `useSelectMode` and the select-only checkbox mechanism
+      without being a filter-bar list itself. Two local, non-`useConfirm()`
+      dialogs ported as JSX/state rather than shared widgets (a three-way
+      Proceed/Select-remaining/Cancel ask, and the merge-detail form
+      itself) — nothing else in the app needs either shape. `Sidebar.tsx`
+      gained a `staging`-prefix active-link check so the sub-page keeps
+      the Staging link highlighted, mirroring legacy's own `nav: "staging"`
+      on this route despite its different browser title, same precedent
+      `Topbar.tsx`'s Settings/Settings Account check already set. New CSS
+      (`.duplicate-group`/`.duplicate-group-label`, plus the group-level
+      select-all's `inline-flex` override). See Current status for the
+      full write-up.
 - [ ] **4.6** accounts
 - [ ] **4.7** The rest: dashboard, connect_bi, import, import_mapped,
       import_mapped_review, account, help
