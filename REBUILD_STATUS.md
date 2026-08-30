@@ -1394,6 +1394,122 @@ or a browser tool becomes available.
 
 ---
 
+**Phase 2.5 done.** The decision, per widget: **port the existing JS as a
+React component, not Radix/shadcn** — for all four (combobox, date
+picker, confirm dialog, number stepper). Reasoning is exactly what the
+checklist entry predicted: each one encodes a real, previously-debugged
+browser-quirk fix (the iOS `select()` no-op in `combobox.js`, macOS
+Safari's text-fields-only default Tab order in `datepicker.js`'s explicit
+`tabIndex={0}`s, the roving-tabindex day grid) that an off-the-shelf
+component wouldn't reproduce for free, and re-discovering any of them
+from scratch against a new library would just be paying the same
+debugging cost twice. `frontend/src/widgets/`:
+
+1. **`NumberStepper.tsx`** — the simplest of the four. A controlled
+   component (`value`/`onChange` props, unlike legacy's DOM enhancement
+   of a server-rendered field), but the actual step logic still goes
+   through the native input's own `.stepUp()`/`.stepDown()` via a ref
+   rather than reimplementing step/min/max arithmetic by hand, so the
+   browser's own validation semantics stay authoritative — including
+   `number-stepper.js`'s own try/catch fallback for when stepUp/stepDown
+   throw at a bound.
+2. **`ConfirmDialog.tsx`** (+ `confirmContext.ts`) — a `useConfirm()`
+   hook returning `(message, opts) => Promise<boolean>`, same shape as
+   `confirm.js`'s own `PostWardenConfirm.ask()`, backed by a
+   `ConfirmProvider` mounted once at the true app root (`main.tsx`, above
+   `Shell`, since a confirm dialog is a cross-cutting concern independent
+   of the app chrome). Ports the two-item Tab focus trap, Escape-to-
+   cancel, backdrop-click-to-cancel, and returning focus to whatever had
+   it beforehand. **Deliberately not ported**: `confirm.js`'s
+   `<form data-confirm="...">` auto-wiring — a convention for
+   progressively-enhanced server forms with no SPA equivalent, since
+   every write already goes through a typed API call a component
+   controls directly rather than a bare form submit to intercept. Split
+   into two files (`confirmContext.ts` holding the context/hook,
+   `ConfirmDialog.tsx` holding only the `ConfirmProvider` component)
+   after `oxlint`'s `react(only-export-components)` flagged mixing a hook
+   and a component in one file as a Fast Refresh hazard — a real,
+   self-caught issue, same category as Phase 2.4's own lint fix.
+3. **`DatePicker.tsx`** — the most involved port. Controlled
+   (`value`/`onChange` on an ISO string), otherwise a close behavioral
+   match to `datepicker.js`: month navigation clamped (not wrapped) at
+   month boundaries, the roving-tabindex day grid, full arrow-key/
+   PageUp/PageDown/Home/End navigation once a day cell has focus, the
+   one-tick-deferred outside-Tab-close (`focusout` + `setTimeout`, ported
+   with `datepicker.js`'s own comment explaining why the defer matters —
+   arrow-key re-renders briefly leave nothing focused mid-swap, which
+   reads as "focus left the widget" if checked synchronously), and every
+   explicit `tabIndex={0}` the original sets for the Safari default-Tab-
+   order fix. The one structural difference from the original: legacy's
+   `render()` rebuilds the day-button DOM and re-queries/focuses it
+   inline, synchronously, in the same function; React can't do a same-
+   tick DOM query before paint, so `focusDay()` stages the target day in
+   a ref and a `useEffect` keyed on `[open, viewDate, rovingIso]` does
+   the actual `.focus()` once that render has committed — same visible
+   behavior, different mechanism forced by the framework.
+4. **`Combobox.tsx`** — controlled over a plain `options: {value,
+   label}[]` list instead of enhancing a real `<select>`, since the SPA
+   has no server-rendered fallback markup underneath it to preserve
+   (legacy's own stated reason for keeping the native `<select>` in the
+   DOM doesn't apply once `value`/`onChange` are already the source of
+   truth). Ports the filter-as-you-type panel, arrow-key navigation, the
+   optional "+ Create "<name>"" row, and — deliberately — the exact
+   blur-resolution behavior `combobox.js`'s own comment documents at
+   length (commit the best match on Tab/blur same as Enter would; clear
+   to blank only if the list actually has an unset option to clear to;
+   otherwise revert). `onCreate` is a prop returning
+   `Promise<ComboboxOption | null>` rather than a baked-in `fetch` call:
+   legacy owned the real `<select>` and could append an `<option>` to it
+   directly on a successful create; this component only ever renders
+   whatever `options` prop it's given, so the caller's own state (wherever
+   `options` comes from) has to gain the new entry too, or it disappears
+   again next render even though `value` still points at it — documented
+   in the prop's own comment, not left implicit.
+
+`App.tsx` grew a temporary `WidgetPreview` section exercising all four
+(a Combobox with a working create flow, a DatePicker, a NumberStepper,
+and a button that calls `useConfirm()`) — explicitly marked for deletion
+once Phase 3's real archetype screens give each widget an actual caller;
+it exists so there's something concrete for the build/lint/bundle-content
+verification below to check against, the same reasoning Phase 2.2's
+`/healthz` check and Phase 2.4's `PLACEHOLDER_USER` already established.
+
+**Verified for real, the same way as 2.3/2.4.** A real `npm run build`
+(`tsc -b && vite build`) — one real type error along the way (a
+`ComboRow[]`-vs-`ComboboxOption[]` inference mismatch in `Combobox.tsx`'s
+row-building, fixed with an explicit annotation) — and a real `npm run
+lint` (`oxlint`) both come back clean, the lint pass only after the
+`confirmContext.ts` split described above. A real `uvicorn
+postwarden.main:app` against `backend-db-1` (the same already-running
+`postgres:16` container the last two phases used) served the rebuilt
+bundle end to end: the pre-paint `<script>` still sits ahead of the
+injected stylesheet/module bundle in the served HTML, the served JS
+bundle contains the literal strings `combobox-input`, `date-panel`,
+`number-step`, `confirm-overlay`, `Creating…`, `No matches`, `Couldn't
+reach the server`, and the demo's own `Reverse this entry?` confirm
+message, and the served CSS bundle contains `.combobox-panel`,
+`.date-panel`, `.number-step`, `.confirm-overlay`, and `button.quiet`
+(checked minified, `input,select,textarea` with no spaces after the
+commas — a byte-diff false alarm caught and re-checked against the
+minifier's actual output, not a missing rule). `GET /entries` and `GET
+/reports/trial-balance` still `401`, `GET /favicon.svg` still `200`. The
+full backend test suite — 523 tests, untouched by this phase — stays
+green. **Not verified, same standing gap**: real browser interaction —
+typing into the combobox and watching it filter, opening the date picker
+and arrowing around the grid, tabbing through the confirm dialog's focus
+trap, clicking the number stepper's chevrons — no browser tool exists in
+this session; folded into the same Open Questions entry Phase 2.3/2.4
+already track, now covering every interactive surface built so far.
+
+**Next up:** Phase 3 — one screen per archetype, the go/no-go gate
+(`REBUILD.md` §9): login (3.1), tags (3.2), trial balance (3.3), Journal
+(3.4). Close the Docker `docker compose up -d --build` verification gap
+and the no-browser-tool gap (now covering all of Phase 2) whenever this
+machine's Docker daemon can reach its registry again or a browser tool
+becomes available.
+
+---
+
 ## Phase 0 — Scaffolding
 
 Not one of `REBUILD.md` §6's five numbered phases, but has to happen
@@ -1502,7 +1618,7 @@ directly.
       collapsible groups), topbar, flash banners, and the pre-paint
       theme/font restore script that currently prevents FOUC via an
       inline `<head>` script.
-- [ ] **2.5** Per-widget decision, recorded here as it's made — Radix/
+- [x] **2.5** Per-widget decision, recorded here as it's made — Radix/
       shadcn vs. porting the existing JS — for combobox, datepicker,
       confirm dialog, number-stepper. Each existing widget encodes a
       real fix (`e.code` for Option-remapped keys, explicit `tabIndex`
@@ -1604,6 +1720,22 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 2.5 done: `frontend/src/widgets/` —
+  `NumberStepper.tsx`, `ConfirmDialog.tsx`/`confirmContext.ts`,
+  `DatePicker.tsx`, `Combobox.tsx`. Decision, for all four: port the
+  existing vanilla-JS widget as a React component rather than adopt
+  Radix/shadcn, since each one encodes a real, previously-debugged
+  browser-quirk fix (the iOS `select()` no-op, Safari's default Tab-order
+  gap, the roving-tabindex day grid) an off-the-shelf component wouldn't
+  reproduce for free. `index.css` gained six more byte-for-byte ranges
+  from `style.css` (the foundational button/input/select/textarea base
+  styles plus the four widgets' own rules). See the Current status
+  section for the full write-up, including the scope narrowed relative
+  to each legacy original (no hidden native `<select>` in `Combobox`, no
+  `data-confirm` form auto-wiring in `ConfirmDialog`) and the one real
+  `oxlint` finding fixed along the way (splitting `useConfirm()` into its
+  own file after `react(only-export-components)` flagged mixing a hook
+  and a component together).
 - **2026-08-29** — Phase 2.4 done: `frontend/src/shell/` — `Shell.tsx`/
   `Sidebar.tsx`/`Topbar.tsx`/`FlashBanner.tsx` plus their supporting
   `nav.ts`/`useSidebarPin.ts`/`useSidebarGroupCollapse.ts`, ported from
@@ -2021,3 +2153,15 @@ Carried forward until answered; move to the log once resolved.
   level this session (see Phase 2.4's own "Verified for real" paragraph)
   — real before any of it is treated as behaviorally, not just
   structurally, correct.
+  **Confirmed still true doing Phase 2.5**, scope grown again: the four
+  widgets add the densest keyboard/pointer surface built so far and none
+  of it has been exercised by a real browser — typing into the Combobox
+  and watching the panel filter and the active row track it, the iOS-
+  workaround focus/select() branch, opening the DatePicker and arrow-
+  key/PageUp/PageDown/Home/End-ing around the grid, the roving-tabindex
+  handoff across a month change, the ConfirmDialog's Tab/Shift+Tab focus
+  trap and Escape/backdrop-click cancel, and the NumberStepper's chevron-
+  disable-at-bounds. `App.tsx`'s temporary `WidgetPreview` section (see
+  Phase 2.5's own write-up) exists specifically so this pass has
+  something real to exercise once a browser tool is available, rather
+  than needing a Phase 3 screen to exist first.
