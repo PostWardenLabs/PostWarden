@@ -602,7 +602,104 @@ Verified for real, the same three ways as every phase since 1.4: a full
 shape by hand (a bare `postgres:16` container, `alembic upgrade head`,
 `pytest`).
 
-**Next step:** 1.11 — `modules/auth/`.
+**Phase 1.11 done.** `modules/auth/` — login/logout, the session-cookie
+mechanism, and the account-settings screen (username/password):
+`schemas.py`, `repository.py`, `service.py`, `deps.py`, `router.py` (five
+routes: `POST /login`, `POST /logout`, `GET /me`, `POST /settings/
+username`, `POST /settings/password`). Ported from `app/auth.py` plus
+the Auth/User settings sections of `app/main.py`, same session-cookie
+design as legacy — a random opaque token in `sessions`, looked up per
+request, no JWT/signing secret — REBUILD.md decision 4's "port behavior,
+don't redesign it" holding here same as everywhere else.
+
+1. **Scoped to building the mechanism, not retrofitting every prior
+   write module to use it — a deliberate reading of several earlier
+   modules' own docstrings, not an oversight.** `modules/entries/
+   router.py` (Phase 1.5) says "Phase 1.11 wires a real dependency in
+   here"; `staging`/`imports`/`budget`/`reference`/`scheduling` each
+   carry a softer version of the same pointer. This phase builds
+   `deps.get_current_session`/`require_csrf_header` as real, fully
+   tested FastAPI dependencies any router can `Depends(...)` on — but
+   does not touch entries/staging/imports/budget/reference/scheduling
+   themselves. Precedent for deferring the actual retrofit rather than
+   doing it here: `modules/budget/service.py`'s own Phase 1.7 docstring
+   flagged "no default-scenario selection, since `modules/reference/`
+   doesn't exist yet," and Phase 1.9 — the phase that built `modules/
+   reference/` — did not go back and wire that default in. A module
+   documenting "closeable once X exists" has consistently meant *the
+   mechanism becomes available*, not *X's own phase must immediately
+   retrofit every caller*. Phase 1.14 ("`main.py` cut down to app
+   factory + router mounting only") is where every router is already
+   being touched to be mounted for the first time — the one sensible
+   place to also wire in the one dependency every write route across
+   every module needs identically, rather than scattering five separate
+   half-done retrofits ahead of that.
+2. **The one place so far where a module is meant to be imported
+   directly by its future callers, not forked.** Every prior sibling
+   relationship (`staging` forking `entries`' filter builder,
+   `scheduling`/`imports` forking `check_deferred_constraints`, `budget`
+   forking `reports`' account queries) exists because REBUILD.md
+   decision 3's "deletable on its own" test treats those as genuinely
+   independent siblings. Auth isn't a sibling in that sense — every
+   other module already depends, unconditionally, on there being a
+   logged-in user at all (that's the entire reason `auth_gate` was
+   global middleware in legacy, ahead of every route). Forking
+   session-lookup/CSRF logic five times over would not preserve any real
+   independence, so `deps.py`'s own docstring documents this as a
+   deliberate exception, the same category `db.get_connection`/
+   `errors.pg_message` already sit in: shared infrastructure, imported
+   directly, not forked.
+3. **`RateLimitedError`/`InvalidCredentialsError` (new) let `login`
+   answer 429/401 instead of a uniform 400.** Legacy's `login_submit`
+   treats a bad password and a rate-limited username identically — same
+   flash-redirected login page either way, no room for a status code to
+   differ. A JSON API has status codes to spend; this is a real,
+   low-risk improvement the medium enables (no observable behavior
+   changes for a human at a keyboard, only which numeric code a
+   programmatic caller sees), not something needing its own `REBUILD.md`
+   §5 entry.
+4. **The CSRF token moves from a hidden form field to an `X-CSRF-Token`
+   request header.** Same class of form-shape-to-JSON adaptation
+   `modules.staging.schemas.MergeDuplicatesRequest`/`modules.imports`'s
+   base64 round-trip already made for their own precursors, just for a
+   token that travels out-of-band instead of in the body, since (unlike
+   those two) every other field on a CSRF-protected request here is real
+   payload and the token never was.
+
+Other decisions, smaller:
+
+- **`GET /me` is new, not a port.** The Jinja app never needed an
+  equivalent — `request.state.user` was already in scope for every
+  server-rendered template. A JSON SPA has no equivalent on page load,
+  so this is the minimal "who am I, if anyone" check the architecture
+  change itself requires.
+- **`logout` enforces no CSRF check at all**, matching legacy's own
+  `logout` exactly ("worst case of a bad token here is a no-op logout;
+  just proceed") — idempotent, succeeds with no session cookie at all.
+- **The single-process, in-memory login throttle (`_failed_logins`) is a
+  verbatim port, deliberately, not a "fix while we're here."** Correct
+  only because the deployment runs one uvicorn worker — same as legacy,
+  and nothing about the rebuild changes that deployment shape.
+- **`bootstrap_admin_from_env` takes its username/password as plain
+  arguments, not read from `os.environ` itself** — keeps `service.py`
+  framework/env-decoupled like every other module's; actually reading
+  `Settings.postwarden_admin_user`/`_password` and calling this at
+  startup is `main.py`'s own lifespan hook to wire, Phase 1.14, same as
+  legacy's own call site.
+- **No CLI equivalent to `app/cli.py`'s `create-user`/`reset-password`.**
+  Out of scope for a vertical-slice module — that's a deployment tool
+  invoked outside the running app, not a route; revisit at cutover if a
+  fresh non-Docker install still needs a first-user bootstrap path
+  beyond `POSTWARDEN_ADMIN_USER`/`_PASSWORD`.
+
+51 new tests (10 `repository.py`, 29 `service.py`, 12 `router.py`) — 445
+passed total. Verified for real, the same three ways as every phase
+since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
+200), a local `docker compose up -d db` + `pytest` run, and separately
+the exact CI shape by hand (a bare `postgres:16` container, `alembic
+upgrade head`, `pytest`).
+
+**Next step:** 1.12 — `export/`.
 
 ---
 
@@ -681,7 +778,7 @@ directly.
       account levels (CRUD).
 - [x] **1.10** `modules/scheduling/` — scheduled entries, entry
       templates.
-- [ ] **1.11** `modules/auth/`
+- [x] **1.11** `modules/auth/`
 - [ ] **1.12** `export/` — shared CSV/XLSX writers, consumed by
       `entries`, `reports`, and `imports` alike. XLSX carries live
       Excel formulas (cell-by-cell sums, not ranges) — port that
@@ -809,6 +906,15 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.11 done: `modules/auth/` — see the Current
+  status section above for the full write-up (login/logout/session/
+  CSRF mechanism plus account settings, deliberately scoped to *not*
+  retrofit entries/staging/imports/budget/reference/scheduling to use
+  it — deferred to Phase 1.14 per the `modules/budget`-on-`reference`
+  precedent — `deps.py` being the one module meant to be imported
+  directly rather than forked, `RateLimitedError`/`InvalidCredentialsError`
+  giving `login` real 429/401 status codes, and the CSRF token moving
+  from a hidden form field to an `X-CSRF-Token` header).
 - **2026-08-29** — Phase 1.10 done: `modules/scheduling/` — see the
   Current status section above for the full write-up (`materialize_due_
   schedules` ported and tested but deliberately not wired into anything
