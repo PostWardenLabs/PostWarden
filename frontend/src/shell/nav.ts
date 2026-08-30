@@ -40,7 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'staging', label: 'Staging', href: '/staging' },
       { key: 'scheduled', label: 'Scheduled Entries', href: '/app/scheduled', client: true },
       { key: 'import', label: 'Import', href: '/import' },
-      { key: 'templates', label: 'Templates', href: '/templates' },
+      { key: 'templates', label: 'Templates', href: '/app/templates', client: true },
       { key: 'budget', label: 'Budget Grid', href: '/budget' },
     ],
   },

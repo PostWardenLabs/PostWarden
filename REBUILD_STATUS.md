@@ -2594,6 +2594,36 @@ Confirmed by reading `scheduled_entries` directly in the container's
 Postgres, not assumed. Archived the test schedule afterward. No
 console errors.
 
+**Phase 4.2, screen 5 of 6 — Entry templates done.** `frontend/src/
+setup/EntryTemplatesPage.tsx`, ported from `app/templates/
+entry_templates.html`. Same `EntryGrid.tsx`/`gridLines.ts` reuse
+`ScheduledPage.tsx`'s own write-up already explains, and simpler than
+either that page or `NewEntryPanel.tsx` in one real way: entry templates
+aren't scenario-bound at all, so there's no Scenario field and the
+account picker uses `usePostableAccounts()`'s own `forPickers` (the
+union across every scenario) — exactly the case that field's own Phase
+3.4 docstring names as its reason for existing ("entry_templates.html
+isn't scenario-bound"). Balance is still unconditionally required
+(`create_template`'s own `total != 0` check, identical to
+`create_schedule`'s), and Delete (not archive — `entry_templates` has no
+`is_active` column) is the one row action.
+
+Verified with a real `docker compose up -d --build`: clean `tsc -b &&
+vite build` and `oxlint` on the first pass this time (the `set-state-
+in-effect` fix from Scheduled entries carried over as a pattern rather
+than a mistake repeated); then browser-driven against the running
+container — the account combobox correctly offered every scenario's
+postable accounts unfiltered (typing "Rent" found `5110 · Rent /
+Mortgage Interest`, not scoped to any one scenario), Distribute
+balanced a real two-line template, and it saved end to end. Confirmed
+the actual cross-screen integration this screen exists for, not just
+this screen in isolation: opened the Journal's own New entry panel
+right after, and the just-saved "Monthly Rent" template appeared in its
+"Load template" picker and populated the grid correctly on selection —
+description, both accounts, and both amounts all correct. Delete
+confirm copy matches legacy's own `Delete template {name}?` verbatim.
+Deleted the test template afterward. No console errors.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2757,8 +2787,8 @@ Largely configuration once the Phase 3 archetype components exist.
       already-existing route.
 - [~] **4.2** Remaining Management/CRUD: payees, scenarios,
       account_levels, scheduled, entry_templates, settings. Payees,
-      Scenarios, Account levels, and Scheduled entries done — see
-      Current status.
+      Scenarios, Account levels, Scheduled entries, and Entry templates
+      done — see Current status. Only settings left.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates
