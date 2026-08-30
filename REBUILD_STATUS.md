@@ -990,9 +990,70 @@ login/CSRF/attribution check above), a local `docker compose up -d db` +
 `pytest` run, and separately the exact CI shape by hand (a bare
 `postgres:16` container, `alembic upgrade head`, `pytest`).
 
-**Next step:** 1.15 — the gate: confirm the 60 pure-Postgres tests still
-pass unchanged and every ported module's own tests are green in CI,
-before any frontend work starts.
+**Phase 1.15 done.** The gate: `db/schema.sql` was never touched by
+Phase 1 (REBUILD.md §3's central premise, restated in `REBUILD_STATUS
+.md`'s own header every phase since), so the 60 pure-Postgres tests
+were never expected to need a code change — this phase is about
+actually *confirming* that, and confirming it the way that counts.
+
+- **Ran `tests/test_invariants.py` + `tests/test_cashflow.py` against
+  the current schema — 60 passed, unchanged**, no edits to either file.
+  Run against `backend/docker-compose.yml`'s own `db` service
+  (localhost:5433, same `db/schema.sql` it always loads), with
+  `POSTWARDEN_TEST_ADMIN_URL`/`POSTWARDEN_TEST_URL` pointed at it —
+  `tests/conftest.py` doesn't care which Postgres it talks to, so no new
+  fixture or database was needed.
+- **A real finding, not a formality: `rebuild` had never been pushed to
+  `origin`.** All of Phase 1 (19 commits, 1.5 through 1.14) existed only
+  on this machine — every "verified against CI's exact shape by hand"
+  note in this file's own log through Phase 1.14 was a bare
+  `postgres:16` + `alembic upgrade head` + `pytest` run reproducing
+  CI's *steps*, never an actual GitHub Actions run. "Every ported
+  module's own tests are green in CI" cannot be true of a CI that has
+  never executed, so closing this gate meant pushing the branch for the
+  first time — safe and expected per `CLAUDE.md`'s own branch-discipline
+  section (`notify-postwarden-public.yml` fires on `master` pushes
+  specifically; pushing `rebuild` triggers nothing deploy-shaped, only
+  `backend-ci.yml`).
+- **A second real gap, found by checking rather than assuming: the 60
+  pure-Postgres tests had zero CI coverage at all, on any branch.**
+  `master` has no CI (REBUILD.md §6, Phase 0.5's own framing), and
+  `backend-ci.yml` — added on this branch — was scoped to `backend/`
+  paths only, so it never touched root `tests/`. A safety net that only
+  ever runs by hand isn't continuously gating anything; REBUILD.md §3
+  calls these tests "the safety net" specifically because they're
+  supposed to hold with no code path around them, and "runs when a human
+  remembers to" is exactly the kind of code path around them that
+  framing is meant to rule out. Fixed by adding a second job,
+  `invariants`, to `backend-ci.yml` (own Postgres service container,
+  deliberately not a step in the existing `test` job — these tests apply
+  `db/schema.sql` directly via `tests/conftest.py`'s own raw `CREATE
+  DATABASE` + SQL-file load, not through Alembic like the backend's own
+  migrated database, and one Postgres instance serving two different
+  schema-provisioning paths would be confusing for no benefit). Only
+  `psycopg`/`pytest` installed, not `backend`'s own package or
+  `requirements-dev.txt`'s full legacy-app dependency set — neither test
+  file imports either. `tests/**` added to both workflows' trigger
+  paths, the same reasoning `db/schema.sql` was already there for.
+- **Pushed, and both jobs went green on the first real run** —
+  `invariants`: 60 passed in 1.11s; `test`: 523 passed in 24.98s
+  (`gh run view` on the actual run, not a local reproduction). This is
+  the first GitHub Actions run of any kind this branch has ever had; it
+  passing on the first attempt is confirmation, not luck — the "bare
+  `postgres:16`, `alembic upgrade head`, `pytest`" hand-verification
+  done at the end of every phase since 1.4 was accurately reproducing
+  CI's actual shape all along, it just hadn't been checked against the
+  real thing until now.
+- No module code changed in this phase — this was a verification +
+  CI-coverage gate, not a port. `main.py` and every `modules/*/router.py`
+  are exactly as Phase 1.14 left them.
+
+**Phase 1 is done.** Every module from `domain/` through `main.py` is
+built, tested, mounted, and now provably green in real CI alongside the
+60 pure-Postgres tests it was always supposed to sit beside.
+
+**Next step:** 2.1 — Vite + React + TypeScript scaffold under
+`frontend/`, per Phase 2's own roadmap below.
 
 ---
 
@@ -1081,7 +1142,7 @@ directly.
 - [x] **1.13** `analytics/` — star-schema views + the documented
       `/api/*` contract (the 5 existing routes).
 - [x] **1.14** `main.py` cut down to app factory + router mounting only.
-- [ ] **1.15** **Gate:** the 60 pure-Postgres tests
+- [x] **1.15** **Gate:** the 60 pure-Postgres tests
       (`tests/test_invariants.py`, `tests/test_cashflow.py`) pass
       unchanged, and every ported module's own tests are green in CI.
       Frontend work does not start before this.
@@ -1201,6 +1262,15 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 1.15 done, and Phase 1 as a whole: the gate —
+  see the Current status section above for the full write-up. No module
+  code changed; this phase pushed `rebuild` to `origin` for the first
+  time (19 unpushed commits, Phase 1.5 through 1.14), which surfaced
+  that CI had never actually run for any of this work and that the 60
+  pure-Postgres tests had zero CI coverage on any branch. Fixed the
+  latter with a second `backend-ci.yml` job (`invariants`, its own
+  Postgres service); both jobs went green on the first real run (60
+  passed, 523 passed). Next: Phase 2, the frontend.
 - **2026-08-29** — Phase 1.12 done: `export/` — see the Current status
   section above for the full write-up (the shared CSV/XLSX writer
   package, plus new export routes on `modules/reports/`/`modules/
