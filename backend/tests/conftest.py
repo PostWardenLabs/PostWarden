@@ -127,11 +127,27 @@ def mk_account(conn: Connection, code: str, name: str, account_type: str, *, par
     return dict(row)
 
 
-def mk_entry(conn: Connection, scenario_id: int, entry_date: str, description: str = "Test entry") -> str:
+def mk_entry(conn: Connection, scenario_id: int, entry_date: str, description: str = "Test entry", *,
+             reference: str | None = None, payee_id: int | None = None,
+             scheduled_entry_id: int | None = None, import_batch_id: int | None = None,
+             promoted_entry_id: str | None = None) -> str:
+    """The last four keyword-only params default to `None` (the original
+    four-positional-arg shape every existing caller uses still works
+    unchanged) — added for `modules/staging/`'s own tests, which need a
+    `journal_entries` row that's actually eligible to sit in the Staging
+    scenario: `fn_staging_manual_entry_guard` (`db/schema.sql`) rejects a
+    staging-scenario insert with neither `scheduled_entry_id` nor
+    `import_batch_id` set, so a bare `mk_entry(conn, staging_id, ...)`
+    would fail for those tests without this."""
     row = conn.execute(text("""
-        INSERT INTO journal_entries (scenario_id, entry_date, description)
-        VALUES (:scenario_id, :entry_date, :description) RETURNING id
-    """), {"scenario_id": scenario_id, "entry_date": entry_date, "description": description}).mappings().one()
+        INSERT INTO journal_entries (scenario_id, entry_date, description, reference, payee_id,
+                                      scheduled_entry_id, import_batch_id, promoted_entry_id)
+        VALUES (:scenario_id, :entry_date, :description, :reference, :payee_id,
+                :scheduled_entry_id, :import_batch_id, :promoted_entry_id)
+        RETURNING id
+    """), {"scenario_id": scenario_id, "entry_date": entry_date, "description": description,
+           "reference": reference, "payee_id": payee_id, "scheduled_entry_id": scheduled_entry_id,
+           "import_batch_id": import_batch_id, "promoted_entry_id": promoted_entry_id}).mappings().one()
     return row["id"]
 
 

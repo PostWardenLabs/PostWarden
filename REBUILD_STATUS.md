@@ -191,7 +191,81 @@ which is what actually caught the `SET CONSTRAINTS` bug above, since
 put `create_entry` and `reverse_entry` in the same shared transaction
 the bug depended on.
 
-**Next step:** 1.6 — `modules/staging/`.
+**Phase 1.6 done.** `modules/staging/` — the layover a scheduled entry's
+occurrence or a CSV import row sits in until a human approves it:
+`schemas.py`, `repository.py`, `service.py`, `router.py` (eight routes:
+list/filter pending entries, bulk approve, get/save the inline edit
+panel's data, single reject, bulk reject, find duplicates, merge
+duplicates). Two decisions worth recording:
+
+1. **Forked `modules/entries/`'s shared filter-fragment builder and a
+   handful of small helpers (`account_ids_by_code`, `insert_entry`/
+   `insert_line`-equivalents, `sync_entry_tags`, tag/line lookups)
+   rather than importing them**, closing the question Phase 1.5's own
+   `repository.py` docstring left open. REBUILD.md decision 3's test —
+   "a module should be deletable on its own" — settles it: importing
+   `build_filter` from `modules/entries/` would mean deleting that
+   module breaks this one, even though nothing about approving a staged
+   entry depends on the Journal. The shared fragments (date range,
+   free-text search, tags, account, payee, amount operator — legacy's
+   own `_shared_journal_filters`) are ~25 lines; paying that duplication
+   once here is cheaper than the coupling compounding across every
+   future module that also needs entry filtering (`budget`, `imports`).
+2. **One real consolidation, not just a fork.** Legacy has two near-
+   duplicate versions of "resolve this staged entry's target scenario,
+   default to ACTUAL, validate it's still pending" — the inline block in
+   `approve_staging_entries` (error text "no target scenario to approve
+   into") and the shared `_pending_staging_entry` every other caller
+   (edit/reject/merge) uses (error text "no target scenario"). Both
+   collapse into one function, `service._validate_pending`, called by
+   every write path in this module — one message, not two slightly
+   different ones for the same condition.
+
+Other decisions, smaller:
+
+- **`staged_entry`'s response has no `target_scenario`/`accounts`
+  picker payload**, unlike legacy's `staging_edit_data` (which embedded
+  the full scenario row and that scenario's postable-accounts list).
+  Same "don't reach into a module that doesn't exist yet" reasoning
+  Phase 1.4 and 1.5 both already applied to `modules/reference/` (Phase
+  1.9) — `target_scenario_id` (a fact about *this* staged entry) stays,
+  the reference-data lookups don't.
+- **`repository.all_pending_entries_basic` (backing `find_duplicate_
+  groups`) does not filter on `promoted_entry_id IS NULL`, matching
+  legacy's `_find_staging_duplicate_groups` exactly** — an already-
+  approved staging-origin entry (its `promoted_entry_id` set, but the
+  row itself never moved or got deleted) stays a duplicate-matching
+  candidate. Ported as-is rather than fixed: REBUILD.md decision 4 is
+  explicit that this rebuild ports behavior, not silently corrects it
+  outside the golden-master question, and `staging/duplicates` is one of
+  REBUILD.md §4's own named blind spots (zero test coverage in the
+  current app) — there's no way to tell from here whether this is a bug
+  or deliberate. Documented prominently in `repository.py`'s own
+  docstring and exercised directly by its own test
+  (`test_all_pending_entries_basic_includes_already_promoted_entries`)
+  so a future session doesn't mistake it for an oversight in the port.
+- **`backend/tests/conftest.py`'s `mk_entry` gained four new optional
+  keyword-only params** (`reference`, `payee_id`, `scheduled_entry_id`,
+  `import_batch_id`, `promoted_entry_id`) — needed because `fn_staging_
+  manual_entry_guard` (`db/schema.sql`) rejects a staging-scenario
+  insert with neither `scheduled_entry_id` nor `import_batch_id` set, so
+  this module's own tests need a way to build a legitimately-staged
+  fixture row. Backward compatible: every existing four-positional-arg
+  call site (`modules/entries/`, `modules/reports/`) is unchanged.
+- **`MergeDuplicatesRequest.line_memos` is a `{line_id: memo}` JSON
+  object**, not legacy's parallel `memo_<line_id>` form fields — same
+  "ignore whatever key doesn't belong to a line the survivor actually
+  has" behavior as legacy's own `form.get(f"memo_{row['id']}")` lookup,
+  just JSON-shaped instead of form-field-name-shaped.
+
+52 new tests (16 `repository.py`, 23 `service.py`, 13 `router.py`) — 191
+passed total. Verified for real, the same three ways as every phase
+since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
+200), a local `docker compose up -d db` + `pytest` run, and separately
+the exact CI shape by hand (a bare `postgres:16` container, `alembic
+upgrade head`, `pytest`).
+
+**Next step:** 1.7 — `modules/budget/`.
 
 ---
 
@@ -262,7 +336,7 @@ directly.
       `REBUILD.md` §6).
 - [x] **1.5** `modules/entries/` (router · schemas · service ·
       repository · tests) — the Journal backend.
-- [ ] **1.6** `modules/staging/`
+- [x] **1.6** `modules/staging/`
 - [ ] **1.7** `modules/budget/`
 - [ ] **1.8** `modules/imports/` — both importers (plain CSV and the
       mapped/rules importer).
