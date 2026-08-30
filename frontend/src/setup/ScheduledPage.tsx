@@ -5,6 +5,7 @@ import type { Payee } from '../api/usePayees'
 import { usePayees } from '../api/usePayees'
 import { useScenarios } from '../api/useScenarios'
 import { useTags } from '../api/useTags'
+import { formatDate } from '../format/date'
 import { altLabel } from '../format/shortcut'
 import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
@@ -312,7 +313,7 @@ export default function ScheduledPage() {
                 every {s.interval_count} {s.interval_unit}
                 {s.interval_count !== 1 ? 's' : ''}
               </td>
-              <td className="mono">{s.next_date}</td>
+              <td className="mono">{formatDate(s.next_date)}</td>
               <td className="dim">{s.is_active ? 'active' : 'archived'}</td>
               <td>
                 <button type="button" className="quiet" onClick={() => toggleActive(s)}>

@@ -2624,6 +2624,123 @@ description, both accounts, and both amounts all correct. Delete
 confirm copy matches legacy's own `Delete template {name}?` verbatim.
 Deleted the test template afterward. No console errors.
 
+**Phase 4.2, screen 6 of 6 — Settings done. Phase 4.2 is now fully
+done.** `frontend/src/setup/SettingsPage.tsx` (the hub, ported from
+`app/templates/settings.html`) and `frontend/src/setup/
+SettingsAccountPage.tsx` (the username/password form, ported from
+`app/templates/account.html`, split into its own `/app/settings/account`
+route exactly like legacy's own separate template). Reads differently
+from every other screen this phase built — a hub of small, mostly
+independent panels, not one CRUD entity — and needed two genuinely new
+pieces of infrastructure that nothing before this screen had a caller
+for:
+
+- `frontend/src/format/date.ts` — a `formatDate(iso)` function mirroring
+  `format/money.ts`'s exact contract (reads `postwarden-date-format`
+  fresh on every call, default `iso`), now wired into the five real
+  screens legacy's own `dateformat` Jinja filter actually reached that
+  are already built: Journal, Ledger (both date columns), Cash Flow,
+  and Scheduled entries. Found the authoritative list by grepping
+  legacy's own templates for the filter rather than trusting
+  `settings.html`'s summary blurb, which omitted Ledger and Cash Flow.
+  Report "As of" headers and month-nav links deliberately stay
+  unformatted — confirmed via the same grep that legacy never applied
+  the filter there either.
+- `frontend/src/format/centsEntry.ts` — a verbatim port of
+  `cents-entry.js`'s `document`-level delegated listener (not a
+  DOM-rewrite-to-plain-function port like `date.ts`/`money.ts`; legacy's
+  own shape was already exactly right for a global initializer), wired
+  once from `main.tsx` outside React entirely, the same reasoning
+  `index.html`'s own pre-paint theme/font script already established.
+  `EntryGrid.tsx`'s debit/credit inputs already carried the `amount`
+  className this listens for (Phase 3.4, before this file existed), so
+  it covers Journal/Scheduled/Entry templates' grids for free.
+
+The rest of `SettingsPage.tsx` writes to mechanisms that already
+existed before this screen — `postwarden-theme`/`postwarden-font`
+(`index.html`'s pre-paint script, Phase 2.4) and
+`postwarden-number-format` (`format/money.ts`, Phase 3.3) — this is the
+first thing that ever *writes* any of those three keys rather than only
+reading them.
+
+**Two real bugs found in manual verification, both fixed before
+committing:**
+
+1. `centsEntry.ts`'s `setFromCents` set `field.value` directly, then
+   dispatched a plain `new Event('input', {bubbles: true})`. React DOM
+   installs a value tracker on every `<input>` instance specifically so
+   its change-event plugin can tell a real change from a no-op; a plain
+   assignment through the instance's own overridden setter updates that
+   tracker's recorded value *before* the dispatched event is compared
+   against it, so React never sees a diff and `onChange` never fires.
+   The field visibly showed the shifted digits ("62.00") while
+   `EntryGrid`'s totals bar — driven by React state — stayed stuck at
+   whatever it was before. Fixed by calling the *prototype's* value
+   setter directly (`Object.getOwnPropertyDescriptor(HTMLInputElement
+   .prototype, 'value').set`), the standard workaround: it bypasses
+   React's instance-level override, so the tracker still holds the old
+   value when the event fires and correctly detects the change.
+   Confirmed with real single-keystroke `computer` actions (not the
+   batch `type` action, which turned out to use CDP text insertion that
+   bypasses `keydown` entirely — a testing-tool quirk, not related to
+   this bug) against a live Scheduled entries grid: `6`→`0.06`,
+   `2`→`0.62`, `0`→`6.20`, `0`→`62.00`, then Backspace→`6.20`, with the
+   DEBITS total tracking correctly at every step.
+2. `SettingsAccountPage.tsx`'s username `<input pattern="[a-z0-9_.-]
+   {3,32}">` threw `Invalid regular expression: ...: Invalid character
+   in character class` in the console on every render — current Chrome
+   compiles the `pattern` attribute in unicode-sets (`v`-flag) mode,
+   where a trailing unescaped `-` in a character class is no longer
+   auto-literal the way plain-regex mode always treated it, and the
+   native pattern check silently stops validating anything as a result.
+   `tsc`/`oxlint` see a plain string, so neither caught it. Fixed by
+   escaping the hyphen (`[a-z0-9_.\-]{3,32}`); confirmed the console is
+   clean on a fresh tab and that submitting an invalid username (`AB` —
+   too short, uppercase) is now correctly blocked client-side without a
+   network request. `modules/auth/service.py`'s own `USERNAME_PATTERN`
+   still owns the real validation either way.
+
+Also found, not a bug in this screen's own code but in session state
+management: `SettingsAccountPage.tsx`'s successful username change
+updated only its own local state, so `Topbar.tsx`'s username link (and
+`SettingsPage.tsx`'s own "Signed in as") stayed stale until the next
+full `GET /me` — confirmed by renaming to `davidtest` and watching the
+topbar keep showing `david` until a hard reload. Fixed by adding
+`setUsername` to `SessionValue`/`SessionProvider.tsx` (updates the
+in-memory `user.username` directly, no round trip) and calling it from
+`submitUsername`'s success handler alongside the existing local-state
+update. Confirmed live: the topbar now updates the instant the flash
+message appears, no reload.
+
+Verified with a real `docker compose up -d --build`, twice (once after
+the initial build, once after each bug fix above) — clean `tsc -b &&
+vite build` and `oxlint` every time. Browser-driven against the running
+container: Theme and Font both apply live and persist across reload
+(Font visually confirmed — Classic Serif noticeably changes headings and
+body text); the Amount entry checkbox toggles `postwarden-cents-entry`
+correctly (native-label-click, since `form_input` on a checkbox doesn't
+reliably fire React's `onChange` — a known controlled-checkbox caveat,
+not specific to this screen); Number & date format panel confirmed
+end-to-end against real consumer screens, not just localStorage — set
+Symbol to `$` and Date format to `us`, then loaded Journal (amounts
+showed `$22.50`, dates showed `08/31/2026`) and Ledger (`$25,000.00`,
+`08/01/2026` in both date columns) and confirmed both formats applied;
+reverted all test preferences to defaults afterward. `SettingsAccountPage
+.tsx`'s full password-change round trip run for real against the local
+dev account (with the user's explicit go-ahead first): changed
+`devpassword`→`devpasswordtest`, watched the "Password changed — signing
+you out…" flash and the forced logout land on `LoginPage` after the
+1.5s delay, logged back in with the new password (SPA correctly
+returned to the same `/app/settings/account` route once authenticated),
+then changed the password back to `devpassword` and logged in once more
+— restoring the exact `david`/`devpassword` pair `CLAUDE.md` documents,
+confirmed clean at the end. No console errors on a fresh tab for either
+screen.
+
+Phase 4.2 is now fully done — all six screens (Payees, Scenarios,
+Account levels, Scheduled entries, Entry templates, Settings) built,
+verified, and documented. Next up: Phase 4.3 (Staging).
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2785,10 +2902,15 @@ Largely configuration once the Phase 3 archetype components exist.
       `ledger_accounts`, `service.ledger_rows`, `GET /reports/ledger`),
       the only screen this phase that wasn't just frontend against an
       already-existing route.
-- [~] **4.2** Remaining Management/CRUD: payees, scenarios,
-      account_levels, scheduled, entry_templates, settings. Payees,
-      Scenarios, Account levels, Scheduled entries, and Entry templates
-      done — see Current status. Only settings left.
+- [x] **4.2** Remaining Management/CRUD: payees, scenarios,
+      account_levels, scheduled, entry_templates, settings. All six
+      done — see Current status. Settings needed two new pieces of
+      client-side infrastructure (`format/date.ts`, `format/
+      centsEntry.ts`) and turned up two real bugs (a React value-tracker
+      bypass in the cents-entry mechanism, an unescaped hyphen in a
+      `pattern` regex under Chrome's newer `v`-flag compilation) plus a
+      stale-session-state gap (`SessionValue` gained `setUsername`), all
+      fixed and verified before this phase closed.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates

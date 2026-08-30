@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
+import { formatDate } from '../format/date'
 import { formatMoney } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
@@ -189,10 +190,10 @@ function TAccountCard({ card }: { card: Card }) {
       <tbody>
         {card.rows.map((r, i) => (
           <tr key={i}>
-            <td className="dim small">{r.debit_date ?? ''}</td>
+            <td className="dim small">{r.debit_date ? formatDate(r.debit_date) : ''}</td>
             <td className="num money money-first">{r.debit ? formatMoney(r.debit) : ''}</td>
             <td className="num money money-last t-divider">{r.credit ? formatMoney(r.credit) : ''}</td>
-            <td className="dim small">{r.credit_date ?? ''}</td>
+            <td className="dim small">{r.credit_date ? formatDate(r.credit_date) : ''}</td>
           </tr>
         ))}
       </tbody>

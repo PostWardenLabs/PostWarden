@@ -4,7 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import { SessionProvider } from './auth/SessionProvider'
+import { initCentsEntry } from './format/centsEntry'
 import { ConfirmProvider } from './widgets/ConfirmDialog'
+
+// Global, not a React concern — same reasoning `centsEntry.ts`'s own
+// file comment gives: a `document`-level delegated listener that needs
+// to exist exactly once, independent of which screen or which entry
+// grid is currently mounted, mirroring index.html's own pre-paint
+// theme/font script sitting outside the React tree entirely.
+initCentsEntry()
 
 // All three mounted once, at the true root — above Shell, not inside it,
 // since none is specific to the authenticated chrome: SessionProvider is

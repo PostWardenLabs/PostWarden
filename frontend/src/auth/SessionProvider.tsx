@@ -87,6 +87,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return { ok: true }
   }, [])
 
+  const setUsername = useCallback((username: string) => {
+    setUser((prev) => (prev ? { ...prev, username } : prev))
+  }, [])
+
   const logout = useCallback(async () => {
     // Same forgiving shape router.py's own /logout has: no CSRF check,
     // and this clears local state regardless of whether the request
@@ -97,6 +101,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     becomeAnonymous()
   }, [])
 
-  const value: SessionValue = { status, user, login, logout }
+  const value: SessionValue = { status, user, login, logout, setUsername }
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }

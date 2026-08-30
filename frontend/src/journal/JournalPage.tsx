@@ -7,6 +7,7 @@ import { usePayees } from '../api/usePayees'
 import { useScenarios } from '../api/useScenarios'
 import { useTags } from '../api/useTags'
 import { useTemplates } from '../api/useTemplates'
+import { formatDate } from '../format/date'
 import { formatMoney, isZeroAmount } from '../format/money'
 import { altLabel } from '../format/shortcut'
 import Combobox from '../widgets/Combobox'
@@ -487,7 +488,7 @@ export default function JournalPage() {
                   onClick={(ev) => ev.stopPropagation()}
                 />
               </label>
-              <span className="mono dim">{e.entry_date}</span>
+              <span className="mono dim">{formatDate(e.entry_date)}</span>
               <span className="mono dim">#{e.id}</span>
               <span>
                 <DescriptionCell

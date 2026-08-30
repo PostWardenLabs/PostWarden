@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
+import { formatDate } from '../format/date'
 import { formatMoney } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
@@ -177,7 +178,7 @@ export default function CashFlowPage() {
               <ul style={{ margin: '0.4rem 0 0 1.1rem', padding: 0 }}>
                 {result.flagged_entries.map((e) => (
                   <li key={e.id}>
-                    {e.entry_date} — {e.description}
+                    {formatDate(e.entry_date)} — {e.description}
                     {e.payee && ` (${e.payee})`}
                   </li>
                 ))}

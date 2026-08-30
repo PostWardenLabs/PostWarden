@@ -18,9 +18,13 @@ interface TopbarProps {
 // The wordmark is a React Router `<Link>` as of Phase 3.2, not a plain
 // `<a href="/">` — "/" is now a real client route (App.tsx's own
 // Dashboard), so clicking it should re-render in place rather than force
-// a full page reload. `/settings` stays a plain `<a>`: that screen isn't
-// built yet, same "not this phase's job" reasoning nav.ts's own `client`
-// flag comment gives for every other still-unbuilt sidebar link.
+// a full page reload. The username link is the same kind of `<Link>` as
+// of Phase 4.2 (Settings) — `current` can be either `'settings'` or
+// `'settings_account'` (App.tsx's own `routeKey`, one nav key per real
+// route, the account sub-page split out the same way legacy's own
+// `account.html` is a separate template from `settings.html`), so the
+// active check matches either with `startsWith` rather than gaining a
+// second exact comparison.
 //
 // The username link and "Log out" button only render with a real `user`
 // — matching legacy's own `{% if request.state.user %}` guard around the
@@ -46,14 +50,14 @@ export default function Topbar({ title, current, user, onLogout }: TopbarProps) 
         <div className="topbar-right">
           {user && (
             <>
-              <a
-                href="/settings"
+              <Link
+                to="/app/settings"
                 className={
-                  current === 'settings' ? 'username-link dim small active' : 'username-link dim small'
+                  current?.startsWith('settings') ? 'username-link dim small active' : 'username-link dim small'
                 }
               >
                 {user.username}
-              </a>
+              </Link>
               <button type="button" className="quiet" onClick={onLogout}>
                 Log out
               </button>
