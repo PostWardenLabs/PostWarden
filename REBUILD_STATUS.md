@@ -1812,11 +1812,139 @@ Select-mode checkbox reveal, the Merge dialog's own focus/Escape
 handling, tri-state "select all" — no browser tool exists in this
 session.
 
-**Next up:** Phase 3.3 — trial balance, the Point-in-time report
-archetype. Close the Docker `docker compose up -d --build` verification
-gap and the no-browser-tool gap (now covering all of Phase 2 and Phase
-3.1–3.2) whenever this machine's Docker daemon can reach its registry
-again or a browser tool becomes available.
+**Phase 3.3 done.** Trial Balance — the Point-in-time report archetype,
+and the first screen this rebuild renders a real account tree or a real
+money figure on.
+
+**`frontend/src/reports/TrialBalancePage.tsx`** — ported from
+`app/templates/trial_balance.html` + `report-tree.js`. Same shape as
+legacy: a Scenario/As-of filter bar, prev/next-month links, two
+checkboxes (zero balances, true/raw balances), Export CSV/XLSX, and a
+collapsible account tree ending in a grand total row that reads "In
+balance"/"Out of balance." Two reusable pieces factored out, matching
+Phase 3.2's own "only the genuinely identical parts" scope:
+
+1. **`format/money.ts`** — `formatMoney`/`isZeroAmount`, ported from
+   `money-format.js`'s own `format()`/`prefs()` (same `localStorage` key
+   and defaults, `postwarden-number-format`). Deliberately *not* a port
+   of that file's own DOM-rewrite mechanism (a `<span class="money-fmt"
+   data-value="...">` written once by Jinja, then rewritten client-side
+   after the fact) — that existed only because Jinja renders static HTML
+   once per page load; React re-renders from state, so there's no static
+   HTML to rewrite and no no-JS fallback case to cover. Every screen just
+   calls `formatMoney(value)` and renders the string — same "port the
+   behavior, not a legacy workaround for a rendering model this app no
+   longer has" call `modules/auth/router.py`'s `GET /me` (Phase 1.11)
+   already made for an analogous reason. No Settings screen writes this
+   `localStorage` key yet (out of scope, same as every prior phase's
+   "don't reach into a screen that doesn't exist yet"), so every amount
+   renders with legacy's own defaults until one does.
+2. **`widgets/useCollapsibleTree.ts`** — the collapse/expand mechanics
+   from `report-tree.js`, generic over any `{id, parent_id, has_children}`
+   row list and persisted to `localStorage` under the same
+   `data-collapse-key` value legacy used
+   (`postwarden-trial-balance-collapsed`) — scenario/date-independent,
+   so paging through months doesn't reset what a viewer already
+   collapsed. Reusable unchanged by Balance Sheet/Variance (Phase 4) and,
+   once it exists, Accounts' own level browser (Phase 4.6).
+3. **`api/useScenarios.ts`** — a plain `GET /scenarios` hook, same shape
+   `useAppConfig.ts` already established (Phase 3.1) for a one-shot,
+   no-writer fetch. First real caller of `modules/reference/`'s own
+   `GET /scenarios` (Phase 1.9) from the frontend; every future
+   scenario-picker screen reuses this unchanged.
+
+Smaller decisions:
+
+- **Filter state lives in the URL's own query string
+  (`useSearchParams`), not component state.** The direct equivalent of
+  legacy's `<form method="get" data-auto-refresh>` GET-and-redisplay
+  design — the page stays bookmarkable/shareable/back-button-able, and
+  the prev/next "as of" links can be real `<Link>`s (a genuine history
+  push) instead of onClick handlers, matching legacy's own plain
+  `<a href>`s rather than approximating them with JS. Filter *edits*
+  (scenario/as-of/checkboxes) use `{ replace: true }` instead, though —
+  a deliberate difference, not a blind default: `DatePicker.tsx`'s own
+  text field (Phase 2.5) fires `onChange` per keystroke, unlike a native
+  `<input type="date">`'s single `change` on commit, and pushing a new
+  history entry per keystroke while typing a date would spam "back" far
+  worse than legacy's own single-submit-per-edit GET ever did.
+- **No help-icon.** `trial_balance.html`'s own `.page-head` carries an
+  `<a href="/help#reports" class="help-icon">` alongside `.page-sub`;
+  `/help` doesn't exist anywhere in this SPA yet (Phase 5, the long
+  tail — the whole legacy Jinja app stopped being served the moment this
+  branch's `main.py` took over static serving, so linking there 404s for
+  real, not just "unbuilt"). `.page-head`/`.page-sub` still render (the
+  sub-note is real content), the anchor doesn't. Tags' own `tags.html`
+  carries the identical `.help-icon` and Phase 3.2's `TagsPage.tsx`
+  already silently omitted it too, undocumented at the time — this
+  writes down the reason retroactively rather than reopening that
+  commit.
+- **No drill-through from a balance to a filtered Journal.**
+  `trial_balance.html`'s own `entry_link()` macro turns every non-zero
+  leaf balance into an `a.amount-link` pointing at `/entries?account=...`;
+  `/app/entries` doesn't exist yet (Phase 3.4), same "don't reach into a
+  screen that doesn't exist yet" reasoning Tags' own entry-count column
+  already applied to a narrower case (Phase 3.2) — extended here to
+  something genuinely more central, since it touches every money figure
+  on the page, not one column. `a.amount-link`'s own CSS still shipped
+  this phase, ready for Phase 3.4 to wrap the cell in a real `<Link>`.
+- **A real type gap found via the actual HTTP response, not assumed:**
+  a leaf row's `debit_balance`/`credit_balance` is `string | number`, not
+  always `string`. `domain.accounts.build_account_tree`'s own
+  `max(total, 0)`/`max(-total, 0)` returns the *literal* Python `int 0`
+  (not a `Decimal`) whenever that bare `0` wins the comparison, and
+  `json.py`'s Decimal-to-string encoder only runs on an actual `Decimal`
+  instance — confirmed live: `"credit_balance": 0` (a bare JSON number)
+  came back over real HTTP for exactly this case. `formatMoney`/
+  `isZeroAmount` already branch on `typeof value` for the identical
+  reason `money-format.js` itself always did; this was a type-annotation
+  fix once seen, not a behavior change.
+- **`index.css` gained nine more byte-verified ranges** (`.page-head`/
+  `.page-sub`/`.help-icon`, `.table-scroll` + `.report-table`'s sizing
+  rules, `.report-frame`/`.report-export`, the sticky header/column
+  block, the tinted money-column/type-head/subtotal/grand-total rules,
+  `.quiet-link`/`a.amount-link`, `.acct-name`/`.depth-N`, and
+  `report-tree.js`'s own tree-toggle collapse mechanics — plus one more
+  single-line utility, `.small`) — all still deliberately *not* including
+  `.period-label`/`.period-agg` (Income Statement Split, Phase 4) or
+  `.t-account`/`.two-col`/`.side-nav` (Ledger's card grid, Accounts'
+  level browser — Phase 4.6), per Phase 3.2's own note on both. The
+  `data-postable="0"` half of the tree-toggle rules (Accounts-only) came
+  along anyway, sharing one indivisible comment block in the source with
+  `data-has-children="1"` (this page's own selector) — same "whole
+  coherent block, not surgically trimmed" call Phase 3.2 already made.
+
+**Verified for real.** 532 backend tests still passing, unchanged (no
+backend code needed for this phase — `modules/reports/router.py`'s
+`GET /reports/trial-balance` has existed since Phase 1.4/1.14), the 60
+pure-Postgres tests unaffected. A real `npm run build` and a real
+`npm run lint` both came back clean on the first try — no `oxlint`
+findings this phase, unlike 3.1 and 3.2. A real `uvicorn
+postwarden.main:app` against `backend-db-1` (seeded via `seed_demo.sql`)
+proved the full flow over real HTTP: login, `GET /app/trial-balance` →
+`200` serving the SPA shell while the bare `GET /reports/trial-balance`
+still `401`s with no session; the real report for `ACTUAL` (Assets/
+Liabilities/Equity/Income/Expense sections, a balanced grand total);
+`zeros=1&raw=1` toggled together; a nonexistent scenario code returning
+`200` with an empty report rather than an error (no scenario-existence
+check exists at any layer, matching `fn_trial_balance`'s own behavior —
+not "fixed," per `REBUILD.md` decision 4); both CSV and XLSX export
+routes responding `200` with the right content type. The served bundle's
+CSS contains `report-table`/`tree-toggle`/`acct-name`/`money-first`/
+`quiet-link`; its JS contains "Trial Balance"/"Export CSV"/"show zero
+balances"/"show true balances." **Not verified, same standing gap, now
+covering Trial Balance's own interactive surface too**: real browser
+interaction — the tree collapse/expand click target and its persisted
+state, the DatePicker popup on this page specifically, hover states on
+`.quiet-link`/sticky columns — no browser tool exists in this session.
+
+**Next up:** Phase 3.4 — the Journal. The hardest screen in the app, and
+`REBUILD.md` §9's own go/no-go gate: if it doesn't come out clearly
+better than the Jinja version, stop and reconsider before Phase 4 starts.
+Close the Docker `docker compose up -d --build` verification gap and the
+no-browser-tool gap (now covering all of Phase 2 and Phase 3.1–3.3)
+whenever this machine's Docker daemon can reach its registry again or a
+browser tool becomes available.
 
 ---
 
@@ -1941,7 +2069,7 @@ Ascending risk, per `REBUILD.md` §6:
 
 - [x] **3.1** login — proves the pipeline end to end
 - [x] **3.2** tags — Management/CRUD archetype
-- [ ] **3.3** trial balance — Point-in-time report archetype
+- [x] **3.3** trial balance — Point-in-time report archetype
 - [ ] **3.4** Journal — the hardest screen in the app
 
 **Gate:** if Journal does not come out clearly better than the Jinja
@@ -2030,6 +2158,22 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 3.3 done: `frontend/src/reports/TrialBalancePage.tsx`,
+  the Point-in-time report archetype's first real screen. Filter state
+  lives in the URL's own query string (`useSearchParams`), not component
+  state — the direct equivalent of legacy's own GET-and-redisplay form
+  design, keeping the page bookmarkable and its prev/next links real
+  `<Link>`s. Three reusable pieces factored out: `format/money.ts`
+  (`formatMoney`/`isZeroAmount`, ported from `money-format.js`'s pure
+  formatting logic, deliberately not its DOM-rewrite mechanism — React
+  re-renders from state, so there's no static HTML to rewrite after the
+  fact), `widgets/useCollapsibleTree.ts` (report-tree.js's collapse/
+  expand mechanics, generic over any account-tree row list), and `api/
+  useScenarios.ts` (a plain `GET /scenarios` hook). No backend changes
+  needed — `GET /reports/trial-balance` has existed since Phase 1.4/1.14.
+  See Current status for the full write-up, including a real `debit_
+  balance`/`credit_balance` type gap (`string | number`, not always
+  `string`) found via the actual HTTP response, not assumed.
 - **2026-08-30** — Phase 3.2 done: `frontend/src/tags/TagsPage.tsx`, the
   Management/CRUD archetype's first real screen, plus the client-router-
   vs-API-path decision Phase 3.1 deferred, now resolved: the SPA's own
@@ -2545,3 +2689,14 @@ Carried forward until answered; move to the log once resolved.
   was verified for real over HTTP this phase (see Current status) — same
   split as every phase before it: the network/data layer is real and
   checked, the DOM-level interaction on top of it isn't yet.
+  **Confirmed still true doing Phase 3.3**, scope grown again: the
+  account-tree collapse/expand click (and its `localStorage`-persisted
+  state actually surviving a reload), the DatePicker popup opened from a
+  second real page instead of just login's own, hover states on
+  `.quiet-link`/the sticky header-and-two-columns behavior scrolling a
+  long report, and the prev/next-month `<Link>`s actually navigating
+  without a full page reload. Every real HTTP/data transition behind
+  these (the report for a real scenario, `zeros`/`raw` toggled together,
+  a nonexistent scenario code, both export routes) was verified for real
+  over HTTP this phase (see Current status) — same split as every phase
+  before it.

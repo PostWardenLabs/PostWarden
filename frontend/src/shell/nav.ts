@@ -52,7 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'income_statement', label: 'Income Statement', href: '/income-statement' },
       { key: 'cash_flow', label: 'Cash Flow', href: '/cash-flow' },
       { key: 'variance', label: 'Variance', href: '/variance' },
-      { key: 'tb', label: 'Trial Balance', href: '/trial-balance' },
+      { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance', client: true },
       { key: 'ledger', label: 'Ledger', href: '/ledger' },
     ],
   },

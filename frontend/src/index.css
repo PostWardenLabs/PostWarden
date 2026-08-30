@@ -1471,3 +1471,387 @@ details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
 }
 
 .inactive { opacity: 0.45; }
+
+/* =========================================================================
+   Phase 3.3 — Trial Balance (the Point-in-time report archetype) CSS
+   ported from app/static/style.css, verbatim.
+
+   Nine byte-verified ranges, same "exact line ranges, byte-verified
+   against source" methodology as every prior CSS-porting phase.
+   table.ledger's own base/th/td/.num already landed in Phase 3.2 (Tags),
+   so this batch is everything a report needs on top of that: .page-head/
+   .page-sub/.help-icon (every report page's own header row), .table-scroll
+   + .report-table's width/sizing rules, .report-frame/.report-export
+   (right-aligning Export CSV/XLSX to the table's own width), the sticky
+   header-row-plus-two-columns block, the tinted money-column/type-head/
+   subtotal/grand-total rules, .quiet-link/a.amount-link (the prev/next
+   month links and the Debit/Credit drill-through into a filtered Journal
+   — .amount-link itself has no live target yet, same "don't reach into a
+   screen that doesn't exist yet" reasoning Tags' own entry-count column
+   already applied; it renders, it just isn't clickable-through until
+   Phase 3.4 / /app/entries exists), and report-tree.js's own
+   .acct-name/.depth-N/.tree-toggle collapse mechanics.
+
+   Two things deliberately still NOT ported, staying deferred exactly as
+   Phase 3.2's own note said they would:
+   - .period-label/.period-start/.period-agg (Income Statement Split's
+     own multi-column-group header treatment) and .activity-desc-cell
+     (the Dashboard widget's flow-label styling) — both sit inside the
+     same source stretch as the money-column rules above but belong to
+     screens this phase doesn't touch (Income Statement is Phase 4;
+     Dashboard's real widget is later still), so pulling them in now
+     would be importing UI with no caller, unlike the "+Add tag" panel's
+     whole-block import (Phase 3.2), which *did* have every piece used
+     somewhere on that same page.
+   - .t-account/.two-col/.side-nav and the data-postable half of the
+     tree-toggle rules (Ledger's card grid, Accounts' own level browser)
+     — genuinely different pages (Phase 3.3/4.6 per Phase 3.2's own
+     note), kept out for the same reason. tr[data-postable="0"]'s own
+     selectors are ported anyway, since they share one indivisible
+     comment block with tr[data-has-children="1"] (Trial Balance's own
+     selector) in the source — same "whole coherent block, not
+     surgically trimmed" call Phase 3.2 made for entry-journal/
+     entry-staging's grid columns; Accounts (Phase 4.6) picks them up
+     for free when it gets there. */
+
+.page-sub { color: var(--ink-soft); font-size: 0.88rem; margin: 0 0 1.2rem; }
+
+/* A page's <h1>, plus a small "?" that links to its own section of
+   Help — replaces the "How this works →" sentence every screen used to
+   carry under its title. That line read like a manual taped to the
+   front of the product; a page a newcomer could actually buy shouldn't
+   need a caption explaining itself before it's even been looked at. */
+/* The page's own name now lives in the topbar (see .wordmark-brand) —
+   this just reserves a row for the "?" help icon, right-aligned, above
+   whatever the page actually starts with. A page whose very first line
+   is a short contextual note (Balance Sheet's "As of … scenario …",
+   Import's "land in Staging for review…", the Journal's "back to
+   report") nests that <p class="page-sub"> right inside this div,
+   before the icon — .page-head .page-sub below takes flex: 1 so it
+   fills the row and the icon lands flush right the same as when it's
+   alone, rather than the two of them ending up as separate stacked
+   lines with the icon's own small height making it visibly
+   uncentered against whatever sits just above or below it. Every page
+   without such a note leaves this div holding only the anchor, same as
+   ever. A note that's really an alert (Scheduled Entries' and the
+   Dashboard's own "N entries waiting in Staging…" — see .flash-ok)
+   stays its own full-width banner below this row instead: it needs to
+   read as "something to act on," not a quiet aside, and squeezing an
+   alert-colored box down into a row sized for a 1.35rem icon would
+   undersell it. */
+.page-head { display: flex; justify-content: flex-end; align-items: center; gap: 0.7rem; margin-bottom: 0.6rem; }
+.page-head .page-sub { flex: 1; margin: 0; }
+.help-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  border: 1px solid var(--rule-strong); color: var(--ink-soft);
+  font-family: var(--serif); font-size: 0.8rem; text-decoration: none;
+}
+.help-icon:hover { background: var(--paper-deep); color: var(--ink); border-color: var(--ink-soft); }
+
+/* -- the ledger table ---------------------------------------------------- */
+/* Income Statement's Split view — a period's own column group repeats per
+   period, up to 48 data columns for a year split monthly with a compare
+   scenario. Wide enough that even main's relaxed cap below can run out,
+   so that one table scrolls horizontally inside its own box instead of
+   the whole page dragging the sidebar out of view sideways with it — the
+   sidebar itself is `position: fixed` so it's actually immune to that by
+   now, but `.topbar` (deliberately full-bleed/independent of main's own
+   width, see its own comment) isn't, and does visibly drag off to the
+   side without this: confirmed directly, scrolling the bare page left
+   the topbar's own left edge at -279px instead of 0.
+   .report-table (below) is what actually needs the room — .table-scroll
+   is the fallback for whatever room even that didn't provide.
+
+   `max-height` + `overflow-y: auto` (not just `overflow-x: auto`) is
+   what makes the sticky header row (further down) actually work here,
+   the one report page that needs both a sticky header *and* horizontal
+   scroll at once. The two don't naturally coexist: `position: sticky`
+   sticks relative to the nearest ancestor that's an actual scroll
+   container, and per the CSS overflow spec you cannot keep one axis
+   "visible" once the other is scrollable — `overflow-x: auto` alone
+   silently promotes a `visible` overflow-y to `auto` too, making this
+   box a real (if invisible) vertical scroll container that intercepts
+   the header's own sticky positioning before it ever reaches the page.
+   Confirmed two ways: `overflow-y: clip` (a value chosen specifically
+   *not* to trigger that promotion) still left the header stuck to this
+   box instead of the page — measured via `getBoundingClientRect()`
+   scrolling clean off the top — and forcing `overflow: visible` here
+   entirely (breaking horizontal scroll, just to isolate the cause) made
+   the exact same header stick correctly. Once one axis has to be a real
+   scroll container regardless of which value is picked, the working fix
+   is to make *both* axes deliberately real and give this box its own
+   bounded height — the header then sticks correctly to this pane's own
+   top edge on the way down, exactly the same "spreadsheet-style boxed
+   grid" shape used anywhere a table is both too wide and too tall for
+   the page to carry on its own (Google Sheets, GitHub's own diff
+   tables, ...), not a special case invented for this report. 75vh
+   leaves room for the page's own header/filter bar above it on a normal
+   screen without the box feeling cramped; nothing here is sized to a
+   specific report's row count, so it doesn't need revisiting if Split's
+   own column/row count changes later. */
+.table-scroll { overflow-x: auto; overflow-y: auto; max-height: 75vh; }
+
+/* .report-table marks the read-only report/grid tables whose column
+   count varies by what the viewer selected rather than by how much data
+   exists — Balance Sheet, Income Statement (both its no-split and Split
+   views), Cash Flow, Trial Balance, Variance, Budget Grid. These get two
+   changes, working together:
+
+   1. width: auto here, overriding table.ledger's own width: 100% above —
+      a report with only a handful of columns (the common case: no split,
+      or a fixed-shape report like Cash Flow) sizes to its own content
+      instead of stretching to fill however wide main happens to be. A
+      table forced to span a wide main with only 3-4 columns spaces its
+      numbers out across the row, which is exactly what makes a line
+      harder to follow at a glance — the request this responds to.
+   2. main:has(.report-table) below relaxes main's own --content-max cap
+      on any page holding one of these tables. This is what lets a report
+      that genuinely has a lot of columns (Income Statement's Split view,
+      a full year monthly) actually grow into the width available on a
+      wide monitor instead of hitting --content-max's 1680px ceiling and
+      falling back to .table-scroll's horizontal scroll well before the
+      screen itself ran out of room. It has no visible effect on a
+      small report — main having more theoretical width to offer doesn't
+      make a width: auto table any wider than its own content needs, so
+      the two rules don't fight each other: a small report still reads as
+      small (rule 1), a large one gets to actually use the screen (rule
+      2), on the same --content-max-free main, without a JS column count
+      or a manual "wide" flag on any given page.
+
+   Every other table.ledger (Journal, Payees, Tags, Accounts, ...) is
+   untouched — genuinely a handful of fixed columns regardless of what the
+   viewer does with the page, so there was never a stretching problem to
+   fix there. .entry-grid (Journal/Staging/Scheduled/Templates' editable
+   line tables) doesn't carry .report-table either and deliberately keeps
+   width: 100% — an editable grid's input fields need the room, unlike a
+   read-only report's plain text. */
+table.ledger.report-table { width: auto; }
+main:has(table.report-table) { max-width: none; }
+
+/* .report-frame wraps a report's own Export CSV/XLSX links (.report-export)
+   together with its table (or its .table-scroll, for Income Statement's
+   Split view) so the links right-align to the table's own actual
+   rendered width, not main's — main:has(.report-table) above can make
+   main considerably wider than a report that only has a handful of
+   columns, and without this the exports would drift out past the
+   table's own right edge into that extra space, same disconnect the
+   log-out button had before it moved off main entirely.
+
+   width: fit-content is the same "shrink to content, but never past the
+   available space" sizing table.ledger.report-table already gets for
+   free from table auto-layout — applied one level up, on a plain <div>,
+   so it works the same way regardless of what's inside. Two cases:
+   - A report table narrower than main (the common case, now that main's
+     cap is relaxed): .report-frame shrinks to the table's own width,
+     and .report-export — an ordinary block child, so it fills
+     .report-frame's now-narrower width — right-aligns within *that*,
+     landing exactly above the table's own upper-right corner.
+   - Income Statement's Split view, wide enough to need .table-scroll's
+     horizontal scroll: the table's intrinsic content width (its
+     max-content size, which is what .report-frame's own fit-content
+     calculation sees, overflow clipping or not) still exceeds main's
+     available width, so fit-content clamps .report-frame to that
+     available width same as it always was — .table-scroll still fills
+     it and still scrolls exactly as before. The two rules don't need to
+     know about each other for this to work; fit-content's own clamp is
+     what makes it fall back correctly. */
+.report-frame { width: fit-content; max-width: 100%; }
+.report-export { justify-content: flex-end; margin-bottom: 0.6rem; }
+
+/* Sticky header row + leading Code/Account columns for reports
+   (BACKLOG.md) — scrolling down a long Trial Balance/Ledger-style
+   report used to lose the header row (which number column is Debit vs
+   Credit?), and scrolling right through Income Statement Split's own
+   monthly columns lost which account a number even belonged to. Two
+   independent techniques, since they don't have the same shape:
+
+   - The header ROW sticks as a whole `<thead>`, not per-cell — modern
+     browsers support `position: sticky` directly on a table-header-
+     group, and it correctly carries every row inside along together
+     with zero per-row offset math, which matters here specifically
+     because Income Statement Split's own header is *two* rows
+     (periods, then a `rowspan`), not one.
+   - Sticky COLUMNS have no row-group equivalent — a column isn't a
+     single box the way `<thead>` is, so Code and Account are two
+     individually-pinned cells instead, side by side. Code gets a fixed
+     width so Account's own `left` can line up against it exactly
+     (`nth-child(2)`, not `.acct-name`, so this still catches a report's
+     occasional plain label row that skips that class — Cash Flow's own
+     "Beginning cash balance" row, for one).
+
+   A cell that's sticky on *both* axes at once (the two header cells in
+   the top-left corner) needs no extra rule — an element can be its own
+   `position: sticky` for one axis while still riding along with an
+   already-sticky ancestor for the other, so `thead th:first-child`
+   picks up top-stickiness from the `<thead>` it's already inside and
+   left-stickiness from the shared `:first-child` rule below, for free.
+
+   Every row in this app's report tables shares one flat background
+   (no zebra striping — `tr.type-head`/`.subtotal`/`.grand` never set
+   their own), so a single `var(--paper)` on every sticky cell is
+   always correct, not just an approximation for the common row. */
+table.ledger.report-table thead { position: sticky; top: 0; z-index: 3; }
+table.ledger.report-table thead th { background: var(--paper); }
+/* thead's own :first-child/:nth-child(2) has to stay scoped to its
+   *first* row specifically — Income Statement Split's header has a
+   second row (an "ACTUAL" sub-label per period), and :nth-child counts
+   per row, not per table: without `tr:first-child` here, the second
+   row's own first two cells (the first two periods' own sub-headers)
+   would wrongly catch this rule too, since Code/Account's rowspan="2"
+   means they never appear as cells in that second row at all. */
+table.ledger.report-table thead tr:first-child th:first-child,
+table.ledger.report-table td:first-child:not([colspan]) {
+  position: sticky; left: 0; z-index: 1; background: var(--paper);
+  /* min/max pinned to the same value as width: table-layout is auto
+     here (report-table's own "size to content" point above), where a
+     plain width on a cell is only ever a hint the browser is free to
+     shrink past — observed doing exactly that for a short Code value,
+     opening a gap between this column and the next sticky one below,
+     whose own `left` has to assume a fixed width to line up at all. */
+  width: 4.5rem; min-width: 4.5rem; max-width: 4.5rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+table.ledger.report-table thead tr:first-child th:nth-child(2),
+table.ledger.report-table td:nth-child(2) {
+  position: sticky; left: 4.5rem; z-index: 1; background: var(--paper);
+}
+/* A `colspan` row (tr.type-head's own section label — "Assets",
+   "Flexible & Lifestyle Expenses") was excluded from the rule above on
+   purpose (a `colspan` cell's width already comes from the columns it
+   spans; forcing it to 4.5rem the same way Code gets pinned would break
+   that), but that left the one row a reader actually needs pinned most
+   — "which section am I even looking at" is exactly the question that
+   matters once scrolled — with no sticky treatment at all. Same `left:
+   0`, no width override this time: the cell's own colspan-derived width
+   is already correct, sticky just has to stop its *left edge* sliding
+   out from under the viewport, which needs no width opinion of its own.
+   tr.type-head's own background is `transparent` (style.css, further
+   down) — fine for a normal cell (the table's own paper background
+   shows through), wrong for a sticky one, which needs to actively mask
+   whatever scrolls underneath it rather than let it show through. */
+table.ledger.report-table td[colspan]:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--paper);
+}
+
+/* tinted money columns with the red rule on their left — ledger paper's
+   signature detail */
+table.ledger td.money, table.ledger th.money { background: var(--paper-deep); }
+table.ledger td.money-first, table.ledger th.money-first {
+  border-left: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+}
+/* The Ledger's own T-account cards (Date|Debit|Credit|Date) are the one
+   place a money column also has a *trailing* Date column after it, not
+   just a leading one before it — .money-first's red hint only ever
+   covered the leading side (Debit, against the Date before it). Credit
+   had no matching border against the Date after it at all, breaking the
+   "dates on the outside" symmetry the cards are actually going for
+   (user-reported) — mirrors money-first onto the opposite edge. */
+table.ledger td.money-last, table.ledger th.money-last {
+  border-right: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
+}
+table.ledger tr.type-head td {
+  font-family: var(--serif); font-weight: 600; font-size: 0.95rem;
+  padding-top: 0.9rem; border-bottom: 1px solid var(--rule-strong);
+  background: transparent;
+}
+table.ledger tr.subtotal td {
+  font-weight: 600; color: var(--ink-soft); border-bottom: 1px solid var(--rule-strong);
+}
+/* the accountant's double underline — only under totals that balance */
+tr.grand td { font-weight: 700; border-bottom: none; padding-top: 0.7rem; }
+tr.grand td.num { border-bottom: 3.5px double var(--ink); }
+tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: var(--red); }
+
+/* A same-row link styled to sit quietly next to a button — "Export CSV"
+   beside "Filter"/"Refresh", not competing for primary-action weight. */
+.quiet-link {
+  color: var(--ink-soft); font-size: 0.82rem; padding-bottom: 0.5rem;
+  text-decoration: none; border-bottom: 1px dotted var(--rule-strong);
+}
+.quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
+/* A <button> version of the same look — Staging's inline "Edit" (see
+   staging-inline-edit.js) is a click handler, not a navigation, so it
+   can't be the <a> every other .quiet-link is; this strips the
+   browser's own button chrome (border, background, that ambient
+   padding-block a <button> gets that an <a> never did) back down to
+   plain text with the same dotted underline. */
+button.quiet-link {
+  appearance: none; background: none; border: none;
+  font: inherit; font-family: var(--sans); cursor: pointer;
+}
+button.quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* An amount on a report that drills through to the Journal postings
+   behind it — looks like plain text until hovered, so a report doesn't
+   read like it's full of links at a glance (see Income Statement,
+   Balance Sheet). */
+a.amount-link { color: inherit; text-decoration: none; }
+a.amount-link:hover { text-decoration: underline; }
+
+td.acct-name { font-variant-numeric: tabular-nums; }
+/* table.ledger td's own padding shorthand (below) beats a bare .depth-N
+   on specificity — (1 class, 2 elements) vs (1 class, 0 elements) — so
+   padding-left silently lost to it unless these are qualified the same
+   way. Six levels' worth of headroom, not just four: vertical-dimension
+   trees (accounts.dimension_levels) can go deeper than the old fixed
+   4-level chart ever did. */
+table.ledger td.acct-name.depth-1 { padding-left: 0; font-weight: 600; }
+table.ledger td.acct-name.depth-2 { padding-left: 1.3rem; }
+table.ledger td.acct-name.depth-3 { padding-left: 2.6rem; }
+table.ledger td.acct-name.depth-4 { padding-left: 3.9rem; }
+table.ledger td.acct-name.depth-5 { padding-left: 5.2rem; }
+table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
+
+/* Collapse/expand — see accounts.js. The arrow is reserved space on every
+   row (empty for leaves) so names always line up regardless of hover
+   state; it's only visible (revealed on hover) or interactive on summary
+   rows, and stays visible once a group is collapsed so the state itself
+   is legible without hovering. */
+.tree-toggle {
+  display: inline-block; width: 0.9rem; margin-right: 0.15rem;
+  text-align: center; vertical-align: middle;
+}
+/* Same border-corner recipe as the shared .chevron shape (see above),
+   drawn on ::before rather than a real child element since every
+   template just emits an empty <span class="tree-toggle">. Hidden by
+   default; only rows with children (data-postable="0" /
+   data-has-children="1") turn it on, so leaf rows keep the
+   reserved-but-empty span for alignment. Expanded (default) points
+   down (135deg), collapsed points right (45deg). Nudged up-left of its
+   own box: an unrotated corner sits low-and-right within it (its
+   weight is in the bottom-right, being built from the top+right
+   edges), so centering it against the account name next to it needs a
+   small manual offset rather than pure vertical-align. */
+.tree-toggle::before { content: ""; }
+tr[data-postable="0"] .tree-toggle::before,
+tr[data-has-children="1"] .tree-toggle::before {
+  display: inline-block; width: 0.4rem; height: 0.4rem;
+  border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor;
+  transform: rotate(135deg); /* down */
+  position: relative; top: -0.1rem; left: -0.08rem;
+  transition: transform 120ms ease;
+}
+tr.collapsed .tree-toggle::before {
+  transform: rotate(45deg); /* right */
+}
+tr[data-postable="0"] .acct-name { cursor: pointer; }
+tr[data-postable="0"] .tree-toggle {
+  color: var(--ink-soft); opacity: 0; transition: opacity 120ms ease;
+}
+tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
+tr[data-postable="0"]:hover td { background: var(--paper-deep); }
+tr.collapsed .tree-toggle { opacity: 1; }
+
+/* Same tree on Trial Balance/Balance Sheet (see report-tree.js) — but the
+   toggle stays visible without hovering: scanning a report's numbers is
+   the point, not browsing structure, so which rows expand shouldn't be a
+   secret until you happen to mouse over them. */
+tr[data-has-children="1"] .acct-name { cursor: pointer; }
+tr[data-has-children="1"] .tree-toggle { color: var(--ink-soft); }
+tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
+
+/* .small — one more single-line utility from the same "the ledger table"
+   stretch as everything above, needed for Trial Balance's own account
+   path ("<span class="dim small">...</span>") and out-of-balance note. */
+.small { font-size: 0.8rem; }
