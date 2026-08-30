@@ -7,8 +7,17 @@ docstrings kept close to verbatim. Callers pass plain dicts (what a
 repository layer produces from a `v_dim_account` row and a
 `fn_account_balances()` row) — this module never touches the database
 itself, that's what makes it unit-testable in milliseconds.
+
+`income_statement_groups` joined this file in Phase 1.4 rather than
+staying in `modules/reports/`: it's `_income_statement_groups` from
+`app/main.py`, and despite living next to genuinely hard, DB-calling
+report code there, the function itself never touches the database —
+it's pure tree-signing/grouping on a `build_account_tree` result, the
+same category as `flatten_tree` right above it. `modules/reports/
+service.py` (the impure, DB-calling half of Income Statement) imports
+it from here.
 """
-from .money import normalize_zero
+from .money import normalize_zero, pct_variance, variance_amount
 
 ACCOUNT_TYPES = ["asset", "liability", "equity", "income", "expense"]
 TYPE_LABELS = {
@@ -109,6 +118,46 @@ def flatten_tree(nodes: list[dict], zeros: bool) -> list[dict]:
         kept_children = flatten_tree(node["children"], zeros)
         out.append({**node, "has_children": bool(kept_children)})
         out.extend(kept_children)
+    return out
+
+
+def income_statement_groups(roots: list[dict], t: str, flip: bool, zeros: bool,
+                             pct_of_base: bool = False) -> list[dict]:
+    """One group per top-level account of type `t` — multiple, for a
+    second top-level expense account like "6000 Other" (see module
+    comment). Each group's rows are that root's own flatten_tree()
+    output, so the root itself opens the group as a normal (possibly
+    collapsible) row rather than existing only as the header text above
+    it, and any zero-balance root is dropped entirely unless `zeros` —
+    same "no activity anywhere in this group" hiding the old flat merge
+    gave for free by simply never creating the group. `flip` sign-
+    corrects credit-normal Income rows (net < 0 for real income) so
+    every amount from here on reads as a plain positive figure in its
+    "normal" direction. `pct_of_base` — see pct_variance()'s own
+    comment — is this scenario's own net (base_net/base_subtotal), not
+    the compare scenario's."""
+    sign = -1 if flip else 1
+
+    def signed(x):
+        return normalize_zero(sign * x)
+
+    out = []
+    for root in sorted((r for r in roots if r["account_type"] == t), key=lambda r: r["account_code"]):
+        if not zeros and root["subtotal"] == 0 and root["compare_subtotal"] == 0:
+            continue
+        rows = flatten_tree([root], zeros)
+        for r in rows:
+            r["base_net"] = signed(r["subtotal"])
+            r["compare_net"] = signed(r["compare_subtotal"])
+            r["variance"] = variance_amount(r["base_net"], r["compare_net"], pct_of_base)
+            r["pct_variance"] = pct_variance(r["base_net"], r["compare_net"], pct_of_base)
+        out.append({
+            "name": root["account_name"], "rows": rows,
+            "base_subtotal": signed(root["subtotal"]), "compare_subtotal": signed(root["compare_subtotal"]),
+        })
+    for g in out:
+        g["variance"] = variance_amount(g["base_subtotal"], g["compare_subtotal"], pct_of_base)
+        g["pct_variance"] = pct_variance(g["base_subtotal"], g["compare_subtotal"], pct_of_base)
     return out
 
 

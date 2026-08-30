@@ -4,6 +4,7 @@ from postwarden.domain.accounts import (
     build_account_tree,
     earnings_row,
     flatten_tree,
+    income_statement_groups,
     pnl_net,
 )
 
@@ -108,3 +109,57 @@ def test_accounts_with_gaps_interleaves_a_gap_before_each_row_and_one_trailing()
 def test_accounts_with_gaps_handles_empty_list():
     rows = accounts_with_gaps([])
     assert rows == [{"kind": "gap", "track_id": None}]
+
+
+# Two-root income/expense tree — same shape _income_statement_rows feeds
+# income_statement_groups (a build_account_tree() result restricted to one
+# account_type at a time).
+INCOME_EXPENSE_ACCOUNTS = [
+    {"id": 10, "parent_id": None, "code": "4000", "name": "Income",
+     "parent_path": "", "account_type": "income", "depth": 0},
+    {"id": 11, "parent_id": 10, "code": "4100", "name": "Salary",
+     "parent_path": "Income", "account_type": "income", "depth": 1},
+    {"id": 20, "parent_id": None, "code": "5000", "name": "Expenses",
+     "parent_path": "", "account_type": "expense", "depth": 0},
+    {"id": 21, "parent_id": 20, "code": "5100", "name": "Rent",
+     "parent_path": "Expenses", "account_type": "expense", "depth": 1},
+]
+
+
+def test_income_statement_groups_flips_credit_normal_income_to_positive():
+    # Income posts negative (credit-normal); flip=True makes it read as a
+    # plain positive figure, same as expense (debit-normal) already does.
+    roots = build_account_tree(INCOME_EXPENSE_ACCOUNTS, {11: -1000, 21: 400})
+    income = income_statement_groups(roots, "income", flip=True, zeros=False)
+    expense = income_statement_groups(roots, "expense", flip=False, zeros=False)
+    assert income[0]["base_subtotal"] == 1000
+    assert expense[0]["base_subtotal"] == 400
+
+
+def test_income_statement_groups_computes_variance_against_compare_column():
+    roots = build_account_tree(INCOME_EXPENSE_ACCOUNTS, {11: -1000, 21: 400},
+                                compare_by_id={11: -800, 21: 300})
+    income = income_statement_groups(roots, "income", flip=True, zeros=False)
+    g = income[0]
+    assert g["compare_subtotal"] == 800
+    assert g["variance"] == 200  # 1000 - 800
+    assert g["pct_variance"] == 25.0  # (1000-800)/800 * 100
+    row = g["rows"][0]  # the root row itself (Income has_children in flatten_tree)
+    assert row["base_net"] == 1000
+    assert row["variance"] == 200
+
+
+def test_income_statement_groups_hides_zero_root_unless_zeros():
+    roots = build_account_tree(INCOME_EXPENSE_ACCOUNTS, {21: 400})  # no income activity
+    assert income_statement_groups(roots, "income", flip=True, zeros=False) == []
+    assert len(income_statement_groups(roots, "income", flip=True, zeros=True)) == 1
+
+
+def test_income_statement_groups_sign_never_produces_negative_zero():
+    # A genuinely zero income root, flipped (sign=-1 * 0), must render as
+    # 0 not -0 — normalize_zero's whole reason for existing (see its own
+    # docstring: this was legacy's duplicate inline `signed()` guard).
+    roots = build_account_tree(INCOME_EXPENSE_ACCOUNTS, {11: 0, 21: 400})
+    income = income_statement_groups(roots, "income", flip=True, zeros=True)
+    assert str(income[0]["base_subtotal"]) != "-0"
+    assert income[0]["base_subtotal"] == 0

@@ -62,7 +62,31 @@ time, `app`'s `default_response_class` set to the new `JSONResponse`.
 Verified with a real `docker compose up -d --build`: clean startup log,
 `/healthz` still 200.
 
-**Next step:** 1.4 — `modules/reports/`, the ~450 "genuinely hard" lines.
+**Phase 1.4 done.** `modules/reports/` — `repository.py` (raw SQL/SRF
+access), `service.py` (report assembly, including the ~450 "genuinely
+hard" lines: `income_statement_matrix`/`scale_income_statement_result`,
+`cash_flow_rows`/`cash_flow_tie_out`, `compute_variance`'s dual native-
+depth/rolled-up path, plus the "mechanical" wrapper functions those and
+the routes need — `trial_balance`, `balance_sheet`,
+`income_statement_rows`/`income_statement_balances`), and `router.py`
+(five GET endpoints, one per report). `income_statement_groups` — pure,
+no DB — joined `domain/accounts.py` instead of `service.py`, alongside
+`build_account_tree`/`flatten_tree` from Phase 1.1. Reports still call
+`fn_trial_balance`/`fn_account_balances`/`fn_cash_flow_lines`/
+`fn_rollup_balance` directly through raw SQL, not modeled through
+SQLAlchemy Core, per REBUILD.md §6. Router built but not yet mounted
+into `app` — real mounting is Phase 1.14, once every module has one. 28
+new tests (5 pure `domain/accounts.py` tests, no DB; 23 DB-backed
+`modules/reports/` tests against a real Postgres scratch database this
+phase's own `backend/tests/conftest.py` now creates from `db/schema.sql`
+alone), all green — 93 passed total. Verified with a real `docker
+compose up -d --build`: clean startup log, `/healthz` still 200; also
+verified the exact CI shape by hand (a bare `postgres:16` container,
+`alembic upgrade head`, `pytest`) since this phase's tests are the first
+in `backend/` to actually touch a database.
+
+**Next step:** 1.5 — `modules/entries/` (router · schemas · service ·
+repository · tests), the Journal backend.
 
 ---
 
@@ -122,7 +146,7 @@ directly.
       rather than per-route. Documented gap, not theoretical — the
       current app hand-rolls workarounds twice (`staging_duplicates_page`'s
       `groups_json`, `templates_full()`).
-- [ ] **1.4** `modules/reports/` — the ~450 "genuinely hard" lines,
+- [x] **1.4** `modules/reports/` — the ~450 "genuinely hard" lines,
       ported **with comments and docstrings intact**:
       `_build_account_tree`/`_flatten_tree`, `_income_statement_matrix`/
       `_scale_income_statement_result`, `_cash_flow_rows`/
@@ -269,6 +293,83 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.4 done: `modules/reports/`. Ported from
+  `app/main.py`'s report-building functions with comments/docstrings
+  kept close to verbatim, per REBUILD.md §6's own instruction for this
+  phase specifically. A few implementation decisions worth recording:
+
+  1. **`income_statement_groups` went to `domain/accounts.py`, not
+     `service.py`**, even though REBUILD_STATUS.md's own Phase 1.4
+     checklist only names it implicitly (it's `income_statement_rows`'
+     dependency, not separately called out as one of the "hard"
+     functions). It's pure — no DB, no framework import — the same
+     category as `build_account_tree`/`flatten_tree` right next to it,
+     and its own `signed()` helper turned out to be *exactly* the
+     duplicate `normalize_zero`'s Phase 1.1 docstring already called out
+     as unfixed ("legacy code duplicated this exact guard in two places
+     ... with no shared helper") — `accounts.py` had been quietly
+     importing `normalize_zero` unused since 1.1, waiting for this.
+     `scale_income_statement_result` is *also* pure (plain dict
+     arithmetic, no DB) but stayed in `service.py` next to
+     `income_statement_matrix`, the one function that calls it —
+     REBUILD_STATUS.md's own Phase 1.4 list names the two together, and
+     splitting a function from its one caller across two modules for a
+     purity technicality would cost more than it buys.
+  2. **No `schemas.py`** in this module, unlike `modules/entries/`
+     (REBUILD.md decision 3's own named example). Every route here is a
+     GET with plain query params FastAPI already validates from the
+     function signature — no request body, so no Pydantic model earns
+     its keep. Response bodies stay plain dicts, same shape `domain/`'s
+     own functions already return; `json.py`'s `configure_decimal_
+     encoding()` (Phase 1.3) is what makes a bare dict return serialize
+     correctly with zero extra work here, confirmed rather than assumed
+     (`test_router.py` checks a `Decimal` total renders as `"3000.00"`,
+     a string, over a real `TestClient` request).
+  3. **Router built, not mounted.** `router.py` exists as a standalone
+     `APIRouter`, fully tested via a throwaway `FastAPI()` +
+     `include_router()` (same pattern `test_json.py` established), but
+     `main.py` doesn't import it — real mounting is still Phase 1.14,
+     once every module in `modules/` has built one; `main.py`'s own
+     docstring already said as much before this phase started.
+  4. **A report route doesn't embed `scenarios`/`account_levels` picker
+     lists**, unlike the legacy Jinja routes (which always passed
+     `scenarios_all()`/`account_levels_all()` into the template
+     alongside the report data). Those queries belong to
+     `modules/reference/` (Phase 1.9), which doesn't exist yet — reaching
+     into it now would break the "deletable on its own" test REBUILD.md
+     decision 3 sets for a vertical slice. The frontend will fetch those
+     separately once that module exists.
+  5. **`backend/tests/conftest.py`, new** — the first DB-backed tests in
+     `backend/`. Mirrors the root `tests/conftest.py`'s own scratch-
+     database pattern (`DROP`/`CREATE DATABASE`, load `db/schema.sql`),
+     one level in: a disposable `postwarden_backend_test` database on
+     whatever Postgres server `DATABASE_URL` already points at (so it
+     works unmodified against both `backend-ci.yml`'s bare service
+     container and a local `docker compose up -d db`, which loads the
+     *main* `postwarden` database with seed data this file never
+     touches). Deliberately **schema-only, no `seed.sql`**, unlike the
+     root conftest — every test here builds its own minimal fixture rows
+     (`mk_account`/`mk_scenario`/`mk_entry`/`mk_line`), so there's no
+     risk of a test's own account code colliding with `seed.sql`'s real
+     chart of accounts. The `conn` fixture never commits (rolled back
+     per test), which also means the genuinely `DEFERRABLE INITIALLY
+     DEFERRED` triggers (balance/entry-has-lines, SPEC.md decision 2)
+     never fire in these tests — fine, since these tests exercise report
+     *reads* against fixtures already known to be correct, not those
+     invariants (`tests/test_invariants.py`'s job, unchanged, at the
+     repo root).
+
+  28 new tests (5 pure `domain/accounts.py` tests for
+  `income_statement_groups`, no DB; 9 direct `repository.py` tests; 9
+  DB-backed `service.py` tests including both of `compute_variance`'s
+  paths; 6 end-to-end `router.py` tests via `TestClient`) — 93 passed
+  total. Verified for real: a full `docker compose up -d --build` (clean
+  log, `/healthz` 200), then separately, since this phase is the first
+  to touch a database in `backend/`'s test suite, the exact CI shape by
+  hand — a bare `postgres:16` container with no init scripts, `alembic
+  upgrade head`, `pytest` — to confirm `backend-ci.yml` will actually
+  pass before pushing, not just that a locally-seeded database happens
+  to work.
 - **2026-08-29** — Phase 1.3 done: `json.py`, closing the `REBUILD.md`
   §6 "documented gap" — a route's `Decimal`/`date` values, fixed once
   centrally instead of per-route (legacy's own fix, `str()`-ing
