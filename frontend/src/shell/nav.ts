@@ -2,6 +2,16 @@ export interface NavLink {
   key: string
   label: string
   href: string
+  // True for a link that's now a real client-side route (Sidebar.tsx
+  // renders it as a React Router `<Link>` instead of a plain `<a href>`)
+  // — see main.py's own Phase 3.2 comment on why that's `/app/tags`, not
+  // the bare `/tags` this same link pointed at through Phase 2.4/3.1.
+  // Every other link here still points at its legacy-shaped bare path and
+  // is still a real full-page navigation into what's today a raw JSON
+  // response — unchanged, not yet built, not this phase's job; each
+  // becomes `client: true` with its own `/app/*` href on its own Phase 4
+  // turn.
+  client?: boolean
 }
 
 export interface NavGroup {
@@ -54,7 +64,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'account_levels', label: 'Levels', href: '/account-levels' },
       { key: 'scenarios', label: 'Scenarios', href: '/scenarios' },
       { key: 'payees', label: 'Payees', href: '/payees' },
-      { key: 'tags', label: 'Tags', href: '/tags' },
+      { key: 'tags', label: 'Tags', href: '/app/tags', client: true },
       { key: 'help', label: 'Help', href: '/help' },
     ],
   },

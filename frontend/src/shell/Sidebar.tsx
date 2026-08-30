@@ -1,6 +1,29 @@
-import type { NavGroup } from './nav'
+import { Link } from 'react-router-dom'
+
+import type { NavGroup, NavLink } from './nav'
 import { NAV_GROUPS } from './nav'
 import { useSidebarGroupCollapse } from './useSidebarGroupCollapse'
+
+// A real client-side <Link> for a link whose screen actually exists as a
+// route (Phase 3.2 on: `nav.ts`'s own `client: true` flag), a plain
+// `<a href>` full-page navigation for everything else — see nav.ts's own
+// comment on `NavLink.client` for why the two still coexist here instead
+// of every link moving over at once.
+function NavAnchor({ link, active }: { link: NavLink; active: boolean }) {
+  const className = active ? 'active' : undefined
+  if (link.client) {
+    return (
+      <Link to={link.href} className={className}>
+        {link.label}
+      </Link>
+    )
+  }
+  return (
+    <a href={link.href} className={className}>
+      {link.label}
+    </a>
+  )
+}
 
 interface SidebarGroupProps {
   group: NavGroup
@@ -22,9 +45,7 @@ function SidebarGroup({ group, current }: SidebarGroupProps) {
         <span className="chevron chevron-down sidebar-chevron" />
       </button>
       {group.links.map((link) => (
-        <a key={link.key} href={link.href} className={link.key === current ? 'active' : undefined}>
-          {link.label}
-        </a>
+        <NavAnchor key={link.key} link={link} active={link.key === current} />
       ))}
     </div>
   )
@@ -51,9 +72,9 @@ export default function Sidebar({ current, open, onMouseEnter, onMouseLeave }: S
       onMouseLeave={onMouseLeave}
     >
       <div className="sidebar-group">
-        <a href="/" className={current === 'dashboard' ? 'active' : undefined}>
+        <Link to="/" className={current === 'dashboard' ? 'active' : undefined}>
           Dashboard
-        </a>
+        </Link>
       </div>
       {NAV_GROUPS.map((group) => (
         <SidebarGroup key={group.key} group={group} current={current} />

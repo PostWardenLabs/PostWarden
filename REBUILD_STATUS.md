@@ -1643,13 +1643,180 @@ the demo callout's responsive reflow to `order: -1` at the 720px
 breakpoint, submitting via Enter instead of clicking — no browser tool
 exists in this session.
 
-**Next up:** Phase 3.2 — tags, the Management/CRUD archetype. The first
-screen that actually needs its own URL, which is what forces the
-client-router-vs-API-path decision this phase deferred. Close the
-Docker `docker compose up -d --build` verification gap and the
-no-browser-tool gap (now covering all of Phase 2 and Phase 3.1) whenever
-this machine's Docker daemon can reach its registry again or a browser
-tool becomes available.
+**Phase 3.2 done.** Tags — the Management/CRUD archetype, and the screen
+that finally forced the client-router-vs-API-path decision Phase 3.1
+deliberately left open.
+
+**The router decision, resolved.** The obvious-looking fix — prefix
+every data route with `/api` — turned out to be wrong the moment it was
+actually checked against the routes that exist, not just assumed:
+`analytics/router.py` (Phase 1.13) already owns literal `/api/accounts`,
+`/api/entries`, `/api/trial-balance`, etc. as a real, external, already-
+shipped contract (the Connect BI feature's `.pbids` files point Power BI
+at those exact URLs today). Prefixing `modules/entries/`'s own `/entries`
+the same way would land it at `/api/entries` too — colliding with
+analytics' route of the same name, a genuinely different thing (a flat
+BI-consumer mirror vs. the Journal's own filter/paginate endpoint), not
+a cosmetic clash. Renaming analytics' own paths instead was rejected for
+the same reason: a real, already-saved `.pbids` file isn't internal
+plumbing free to move. **Resolution: the SPA's own client-side routes
+live under `/app/*` instead** — a namespace no backend router has ever
+used (grep-checked, not assumed), so zero routers changed. `main.py`
+gained two new routes, `GET /app` and `GET /app/{path:path}`, registered
+ahead of the static mount and only when `postwarden_static_dir` exists —
+both just serve `index.html` so a direct browser navigation or refresh
+at, say, `/app/tags` actually loads the SPA instead of 404ing (`Static
+Files(html=True)` only resolves `index.html` for a literal directory,
+not an arbitrary client-route path). The actual response-building logic
+is a small module-level `_spa_index_response()`, split out specifically
+so it's unit-testable with no dependency on whether a real frontend
+build exists in whatever environment runs the test — same "only if it
+exists" gap the plain static mount has always had, closed here instead
+of carried forward. `GET /tags` itself is completely untouched: still
+the bare path, still 401-gated, still JSON, never HTML.
+
+On the frontend, `main.tsx` now wraps the whole tree in a react-router-dom
+`BrowserRouter` (real History-API routing, not hash-based — the new
+`/app/*` fallback routes are what make that actually work for a direct
+navigation, so there was no reason to sidestep the problem with a hash
+router instead of solving it). `App.tsx` renders a real `<Routes>` once
+authenticated: `/` is the existing Dashboard placeholder, `/app/tags` is
+the new `TagsPage`. `Sidebar.tsx`/`Topbar.tsx`'s Dashboard/wordmark links
+became real `<Link>`s; `nav.ts` gained a `client?: boolean` flag so
+`Sidebar.tsx` can render a `<Link>` for a link with a real screen behind
+it and a plain `<a href>` for everything else — every other sidebar link
+is untouched, still a full-page navigation into what's still a raw JSON
+response today, same pre-existing rough edge every unbuilt screen
+already had, not worsened, not yet fixed. Each becomes real on its own
+Phase 4 turn.
+
+**`frontend/src/tags/TagsPage.tsx`** — ported from `app/templates/
+tags.html` + `app/static/entity-manage.js`. Same Select/Merge/+Add/table/
+Status/Archive shape as legacy: a collapsible `+ Add tag` panel, a table
+with per-row inline rename (click Edit, Enter to save, Escape to
+revert), Archive/Unarchive, and Delete (behind `useConfirm()`, exact
+legacy message and `danger: true`), plus a Select-mode toolbar with a
+tri-state "select all" and a Merge dialog. Two genuinely reusable pieces
+were factored out, not the whole page — deliberately narrower than
+"build one generic Management/CRUD component now," since legacy's own
+five entities differ enough (Scenarios' Lock vs. Archive, Account
+Levels has no Merge at all) that forcing one abstraction ahead of a
+second real case (Payees, Phase 4.2) risks fighting those differences,
+the same "one module, five sections, only the truly-identical parts
+factored out" call Phase 1.9 already made on the backend for this exact
+group of entities:
+
+1. **`widgets/useSelectMode.ts`** — the select-mode/checked-set/
+   indeterminate-select-all mechanics, generic over any numeric id list.
+   Takes its `selectAllRef` as a parameter rather than creating and
+   returning one — not a style preference: the plainer shape (`useThing()`
+   returns `{ ref, ...state }`, caller does `ref={thing.ref}`) is a
+   confirmed real `oxlint` `react(refs)` false positive, reproduced with
+   the smallest possible repro (a two-line custom hook), that flags every
+   *other* property read off the same returned object too, not just the
+   ref itself. Passing the ref in instead of out is what actually made
+   `npm run lint` clean rather than papering over three warnings.
+2. **`widgets/MergeDialog.tsx`** — the merge popup, reusing
+   `ConfirmDialog.tsx`'s own `.confirm-overlay`/`.confirm-modal`/
+   `.confirm-actions` CSS (already generic per that file's own Phase 2.5
+   comment) but not built on `useConfirm()` itself, since a merge has to
+   hand back a typed survivor name, not just a boolean. Deliberately has
+   no Tab focus trap, unlike `ConfirmDialog.tsx`'s own cancel/OK loop — a
+   real, pre-existing gap in legacy's own `entity-manage.js` (wires
+   Escape but never Tab, unlike `confirm.js`'s dialog), ported as-is per
+   `REBUILD.md` decision 4, not fixed while passing through.
+
+Smaller decisions:
+
+- **A stale legacy CSS comment, found and not trusted over the actual
+  template.** `style.css`'s own "entity manager" comment claims "Tags:
+  Edit/Delete only... see main.py's Tags section for why it carries no
+  Archive" — but `tags.html` itself unambiguously renders an Archive/
+  Unarchive toggle-active form, and `modules/reference/router.py`'s own
+  `POST /tags/{id}/toggle-active` route exists and works. Read as
+  documentation drift in legacy itself (the comment predates Tags
+  gaining Archive and was never updated), not a real asymmetry — ported
+  the CSS comment verbatim anyway (byte-exact porting doesn't rewrite
+  legacy's own prose, even prose this port's own research shows is
+  wrong), but `TagsPage.tsx` renders the real, working Archive/Unarchive
+  button regardless, matching the template and the route, not the
+  comment.
+- **The Merge button is always in the DOM, not `select-only`.** Checked
+  directly against `tags.html`'s own markup: unlike the "select all"
+  checkbox (which does carry `select-only`), Merge only ever gets
+  `disabled` toggled, never hidden outside Select mode. A real, if
+  slightly odd, legacy behavior — ported exactly, not "fixed" to match
+  the more consistent-looking pattern.
+- **Every mutation reloads the full tag list from `GET /tags`** rather
+  than patching local state from each write route's own narrower
+  response — small dataset, and it's what actually matches legacy's own
+  redirect-and-re-render-from-the-server behavior most faithfully, not
+  an approximation of it.
+- **The merge survivor is derived by filtering the page's own sorted
+  tag list against the checked-id `Set`, not insertion/click order** —
+  same "DOM order, not click order" rule `entity-manage.js`'s own
+  `Array.from(table.querySelectorAll(...))` read gave for free, which a
+  plain `Set` can't answer on its own without this extra step.
+- **The Entries count column is plain text, not legacy's `amount-link`
+  through to a filtered Journal.** `/app/entries` doesn't exist yet
+  (Phase 3.4) — same "don't reach into a screen that doesn't exist yet"
+  reasoning every prior backend phase already applied to `modules/
+  reference/`.
+- **`index.css` gained ten more byte-verified ranges** (table.ledger's
+  base/th/td/.num — not the ~260-line report-table/sticky/t-account
+  variants, those wait for Phase 3.3/4.6 — `.dim`, `.mono`, `.bar`,
+  `.select-only`, checkbox/radio custom styling, the whole "entries
+  browser" `details.entry`/`.entry-new` block, and the entity-manager
+  block). The `details.entry` range was imported whole rather than
+  surgically trimmed to only what Tags' own "+ Add tag" panel needs —
+  `entry-journal`/`entry-staging`'s grid columns and the per-row
+  checkbox gutter aren't used here, but belong to the same source
+  comment block and exist to be reused unchanged once Journal/Staging
+  need them, so pre-importing avoids re-opening this file later to add
+  back what would've been surgically excluded the first time.
+- **`react-router-dom@^7` added via `npm install --legacy-peer-deps`** —
+  not new friction this phase introduced: `openapi-typescript@7.13.0`'s
+  own peer range (`typescript@^5.x`) already conflicts with this
+  project's actual `typescript@~6.0.2`, and any *new* dependency install
+  now re-surfaces that pre-existing mismatch as a hard `ERESOLVE` error
+  (the original lockfile predates npm re-checking it strictly). Noted
+  here since it'll bite the next `npm install` too, not just this one.
+
+**Verified for real.** Backend: `_spa_index_response()`'s missing-file/
+present-file branches both have real `pytest` coverage via `tmp_path` +
+`monkeypatch`, plus a real `TestClient` hit against the actual built
+`/app/tags` route (this environment has a real `npm run build` output
+on disk, so that path was exercised for real, not just the extracted
+helper) — 532 passed (529 + 3 new), the 60 pure-Postgres tests untouched.
+A real `npm run build` and a real `npm run lint` both came back clean —
+getting there surfaced one genuine `oxlint` false positive (`react(refs)`
+on a custom hook returning `{ ref, ...state }`, confirmed with a minimal
+repro before working around it, not just suppressed) and one real
+`react(set-state-in-effect)` catch (a bare `useEffect(() => reload())`
+where `reload` was a named async function — restructured to inline the
+initial fetch, matching `useAppConfig.ts`'s own already-clean shape,
+rather than silencing the warning). A real `uvicorn postwarden.main:app`
+against `backend-db-1` proved the full flow over real HTTP: login, then
+`GET /app/tags` → `200` serving the real SPA shell (confirmed `id="root"`
+in the body) while the bare `GET /tags` still `401`s with no session;
+create (`"Groceries"` → stored as `"groceries"`, confirming `parse_tags`'
+lowercasing reaches the API as expected), rename, toggle-active, merge
+(two tags → one survivor, `entries_affected` correct), delete, a bad id
+→ `400` (not a 404 or a 500), and a write with no `X-CSRF-Token` header
+→ `400`, all against the real `tags` table. The served bundle's JS
+contains `entity-table`/`Add tag`/`Merge into`/`Deselect`; the served CSS
+contains `.entity-table`/`.select-only`/`.inactive`. **Not verified, same
+standing gap, now covering Tags' own interactive surface too**: real
+browser interaction — the inline-edit focus/select/Escape behavior, the
+Select-mode checkbox reveal, the Merge dialog's own focus/Escape
+handling, tri-state "select all" — no browser tool exists in this
+session.
+
+**Next up:** Phase 3.3 — trial balance, the Point-in-time report
+archetype. Close the Docker `docker compose up -d --build` verification
+gap and the no-browser-tool gap (now covering all of Phase 2 and Phase
+3.1–3.2) whenever this machine's Docker daemon can reach its registry
+again or a browser tool becomes available.
 
 ---
 
@@ -1773,7 +1940,7 @@ directly.
 Ascending risk, per `REBUILD.md` §6:
 
 - [x] **3.1** login — proves the pipeline end to end
-- [ ] **3.2** tags — Management/CRUD archetype
+- [x] **3.2** tags — Management/CRUD archetype
 - [ ] **3.3** trial balance — Point-in-time report archetype
 - [ ] **3.4** Journal — the hardest screen in the app
 
@@ -1863,6 +2030,22 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 3.2 done: `frontend/src/tags/TagsPage.tsx`, the
+  Management/CRUD archetype's first real screen, plus the client-router-
+  vs-API-path decision Phase 3.1 deferred, now resolved: the SPA's own
+  routes live under a new `/app/*` namespace (`main.py`'s two new
+  `GET /app`/`GET /app/{path:path}` fallback routes), not an `/api`
+  prefix on every data route — rejected once checked for real, since
+  `analytics/router.py`'s own `/api/*` is already a real, external,
+  shipped Connect BI contract that prefixing `modules/entries/`'s
+  `/entries` the same way would collide with. `react-router-dom@^7`
+  added; `main.tsx` now wraps the app in a real `BrowserRouter`. Two
+  reusable pieces factored out of the page itself: `widgets/
+  useSelectMode.ts`, `widgets/MergeDialog.tsx`. See Current status for
+  the full write-up, including a stale legacy CSS comment found (and not
+  trusted over the real template) and a confirmed real `oxlint`
+  `react(refs)` false positive worked around by restructuring rather
+  than suppressed.
 - **2026-08-29** — Phase 3.1 done: `frontend/src/auth/` (`sessionContext.ts`/
   `SessionProvider.tsx`, `LoginPage.tsx`) plus two backend additions this
   phase's own frontend work surfaced the need for: `GET /me` now echoes
@@ -2341,3 +2524,24 @@ Carried forward until answered; move to the log once resolved.
   refresh, logout clearing it) was verified for real over HTTP this
   phase (see Current status) — what's still unexercised is purely the
   DOM-level interaction layered on top of it.
+  **Confirmed still true doing Phase 3.2**, scope grown again, and for
+  the first time including real client-side navigation, not just a
+  single screen's own widgets: clicking the Dashboard/Tags sidebar links
+  and the topbar wordmark and actually observing a client-side
+  transition (no full page reload, `current` highlighting the right
+  link) rather than just trusting `react-router-dom` to do what its own
+  API promises; a hard refresh at `/app/tags` actually reaching the SPA
+  instead of a blank screen; the tag row's inline-edit focus+select-all-
+  text on Edit and revert-on-Escape; Select mode actually revealing the
+  checkbox column and the "select all" checkbox's indeterminate dash
+  rendering (browser-default styling with `appearance: none` stripped —
+  never explicitly styled, in legacy either, so confirming it still
+  renders as *something* legible matters); the Merge dialog's own
+  focus-on-open/select-all-text, Escape-to-cancel, and backdrop-click-
+  to-cancel, deliberately with no Tab trap (a real, ported-as-is legacy
+  gap — see Current status). Every real HTTP/data transition behind
+  these (create/rename/toggle/merge/delete all actually mutating the
+  `tags` table correctly, a bad id or a missing CSRF token both 400ing)
+  was verified for real over HTTP this phase (see Current status) — same
+  split as every phase before it: the network/data layer is real and
+  checked, the DOM-level interaction on top of it isn't yet.

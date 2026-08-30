@@ -36,7 +36,8 @@ the wrong layer for it.
 """
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 
 from .analytics.router import router as analytics_router
@@ -178,21 +179,83 @@ app.include_router(analytics_router)
 # path(s) first, so this only ever answers a request none of them did.
 # That matters concretely here: several of those routers already own a
 # path a client-side route will eventually want too (`GET /entries` is the
-# Journal's own JSON data route today; a future React Router path at the
-# same literal `/entries` would never reach this mount, the API answers
-# first). Deep-link/refresh support for the SPA's own client-side routes is
-# a real gap this phase does not close — there is no router to wire it for
-# yet (`REBUILD_STATUS.md` Phase 2.4/3), and closing it means deciding how
-# the app-shell HTML and the JSON API stop sharing a path at all, not
-# something to improvise here. `html=True` below covers what Phase 2.1
-# actually needs: `/` itself, and every hashed `/assets/...` file Vite's
-# own build produces.
+# Journal's own JSON data route today). `html=True` below covers `/` itself
+# and every hashed `/assets/...` file Vite's own build produces.
 #
 # **Only if it exists**: `postwarden_static_dir` (`config.py`) is not
 # required to be there — a backend-only checkout (CI, any module's own test
 # suite, a developer who hasn't run `npm run build` yet) never had this
 # directory before this phase and stays unaffected; the 523 existing tests
-# assert nothing about `/` or `/assets/*`.
+# (now 529+) assert nothing about `/` or `/assets/*`.
+#
+# **The `/app/*` namespace, new in Phase 3.2.** The deep-link/refresh gap
+# this comment used to describe as unsolved ("deciding how the app-shell
+# HTML and the JSON API stop sharing a path at all") is what Tags — the
+# first screen needing a real URL of its own — forced a real answer to.
+# The obvious-looking fix, prefixing every data route with `/api`, turned
+# out to be wrong once actually checked against the routes that exist:
+# `analytics/router.py` (Phase 1.13) already owns literal `/api/accounts`,
+# `/api/entries`, `/api/trial-balance`, etc. as a real, external, already-
+# documented contract — the Connect BI feature's `.pbids` files point
+# Power BI at those exact URLs. Prefixing `modules/entries/`'s own
+# `/entries` the same way would land it at `/api/entries` too, colliding
+# with analytics' route of the same name, which is a completely different
+# thing (a flat BI-consumer mirror vs. the Journal's own filter/paginate
+# endpoint) — not a cosmetic clash, a real routing conflict. Renaming
+# analytics' own paths instead was rejected too: those are a real, shipped
+# integration point (a `.pbids` file a Power BI user has already saved
+# somewhere points at today's URL), not internal plumbing free to move.
+#
+# So the SPA's own client-side routes live under `/app/*` instead — a
+# namespace no module has ever used (`/app` reads as a substring of
+# `/staging/approve`'s neighbors at a glance, so this was actually
+# grep-checked, not assumed). Zero backend routers changed: every module
+# keeps its own bare path exactly as it already was, `analytics/router.py`
+# included. The frontend's own `main.tsx` wraps everything in a
+# `BrowserRouter`; `Sidebar`'s Tags link points at `/app/tags`, not `/tags`
+# (which stays the JSON API's own path, still 401-gated, still answering
+# a list of tags, never HTML). Every other sidebar link is untouched,
+# still a plain full-page `<a href="/staging">`-style navigation into
+# what's still a raw JSON response today — the same pre-existing rough
+# edge every unbuilt screen already had before this phase, not worsened,
+# not yet fixed; each becomes real once its own Phase 4 turn moves it
+# under `/app/*` too.
+#
+# The two routes below are what actually close the deep-link gap: a direct
+# browser navigation or refresh at `/app/tags` has no `index.html` file at
+# that path for `StaticFiles(html=True)` to find (it only resolves
+# `index.html` for a literal directory, not an arbitrary client-route
+# path), so without them it would 404 instead of loading the SPA that's
+# supposed to then let React Router take over client-side. Registered
+# ahead of the catch-all mount (order matters, per "Last" above) and, like
+# the mount itself, only if `_static_dir` actually has something to serve.
 _static_dir = get_settings().postwarden_static_dir
+_index_html = _static_dir / "index.html"
+
+
+def _spa_index_response() -> FileResponse:
+    """Split out of `spa_shell` below so it's callable directly from a test
+    with no dependency on whether `_static_dir` existed at import time —
+    the same gap the plain `app.mount(...)` below has always had (the 529-
+    test suite asserts nothing about `/` or `/assets/*` either, per this
+    file's own comment above), closed here instead of carried forward,
+    since this one's real branching logic (missing file -> 404, not a
+    500) is cheap to actually cover."""
+    if not _index_html.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(_index_html)
+
+
 if _static_dir.is_dir():
+
+    @app.get("/app")
+    @app.get("/app/{path:path}")
+    def spa_shell(path: str = "") -> FileResponse:
+        """Serves the same `index.html` every other SPA entry point does —
+        `path` itself is never inspected; React Router reads the real
+        browser URL directly once the bundle loads, this route's only job
+        is making sure that bundle actually gets served for a URL no
+        static file on disk matches literally."""
+        return _spa_index_response()
+
     app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

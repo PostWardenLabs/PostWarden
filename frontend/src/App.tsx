@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { Route, Routes, useLocation } from 'react-router-dom'
 
 import { useAppConfig } from './api/useAppConfig'
 import { useSession } from './auth/sessionContext'
 import LoginPage from './auth/LoginPage'
 import Shell from './shell/Shell'
+import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
 import { useConfirm } from './widgets/confirmContext'
 import DatePicker from './widgets/DatePicker'
@@ -73,6 +75,32 @@ function WidgetPreview() {
   )
 }
 
+// Everything the placeholder root route ("/") has shown since Phase 2.1 —
+// unchanged in substance by Phase 3.2's routing, just moved into its own
+// component now that "/" is one of (currently) two real routes rather
+// than the only thing App ever rendered.
+function Dashboard() {
+  return (
+    <>
+      <h1>PostWarden</h1>
+      <p>Frontend scaffold (REBUILD_STATUS.md Phase 2.1–3.2).</p>
+      <WidgetPreview />
+    </>
+  )
+}
+
+// Maps a real browser path to the `current` key Sidebar.tsx/Topbar.tsx
+// use for active-link highlighting — deliberately a plain if-chain, not a
+// lookup shared with nav.ts's own NAV_GROUPS: only two paths are real
+// routes right now, and a link's own `key` (nav.ts) already has to match
+// this independently since neither file imports from the other. Grows by
+// one line per screen as Phase 4 moves each into `/app/*`, same as
+// nav.ts's own `client` flag.
+function routeKey(pathname: string): string {
+  if (pathname === '/app/tags') return 'tags'
+  return 'dashboard'
+}
+
 // Root component. As of Phase 3.1, this is the real end-to-end pipeline
 // proof REBUILD_STATUS.md's own checklist wording asked for — not the
 // placeholder `GET /healthz` check Phase 2.1/2.2 used instead (removed
@@ -85,9 +113,19 @@ function WidgetPreview() {
 // own "redirect to /login, or don't" logic — just without a redirect,
 // since `LoginPage` and the authenticated app are both this one
 // component tree, not two different server-rendered pages.
+//
+// As of Phase 3.2, the authenticated branch also renders a real
+// `<Routes>` — Tags is the first screen with its own URL (`/app/tags`,
+// not the bare `/tags` GET /tags itself already owns; see main.py's own
+// comment on why `/app`, not `/api`). `useLocation()` needs a `<Router>`
+// ancestor, mounted once in main.tsx above everything, including the
+// anonymous/loading branches below — harmless there since neither of
+// those renders anything location-dependent, and it means `<Router>`
+// doesn't have to be conditionally mounted/unmounted across a login.
 function App() {
   const session = useSession()
   const config = useAppConfig()
+  const location = useLocation()
 
   if (session.status === 'loading') {
     // The one real gap a server-rendered app never had: `GET /me`'s own
@@ -103,12 +141,15 @@ function App() {
     return <LoginPage />
   }
 
+  const current = routeKey(location.pathname)
+
   return (
-    <Shell title="Dashboard" current="dashboard" user={session.user} onLogout={session.logout}
-           version={config.version || undefined}>
-      <h1>PostWarden</h1>
-      <p>Frontend scaffold (REBUILD_STATUS.md Phase 2.1–3.1).</p>
-      <WidgetPreview />
+    <Shell title={current === 'tags' ? 'Tags' : 'Dashboard'} current={current}
+           user={session.user} onLogout={session.logout} version={config.version || undefined}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/app/tags" element={<TagsPage />} />
+      </Routes>
     </Shell>
   )
 }

@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export interface TopbarUser {
   username: string
 }
@@ -12,6 +14,13 @@ interface TopbarProps {
 // Ported from base.html's <header class="topbar">. .topbar-inner is
 // deliberately NOT sized off --content-max — see index.css's own comment
 // on that, carried over unchanged with the rest of this section.
+//
+// The wordmark is a React Router `<Link>` as of Phase 3.2, not a plain
+// `<a href="/">` — "/" is now a real client route (App.tsx's own
+// Dashboard), so clicking it should re-render in place rather than force
+// a full page reload. `/settings` stays a plain `<a>`: that screen isn't
+// built yet, same "not this phase's job" reasoning nav.ts's own `client`
+// flag comment gives for every other still-unbuilt sidebar link.
 //
 // The username link and "Log out" button only render with a real `user`
 // — matching legacy's own `{% if request.state.user %}` guard around the
@@ -29,10 +38,10 @@ export default function Topbar({ title, current, user, onLogout }: TopbarProps) 
     <header className="topbar">
       <div className="topbar-inner">
         <div className="topbar-left">
-          <a className="wordmark" href="/">
+          <Link className="wordmark" to="/">
             {title}
             <span className="wordmark-brand"> · PostWarden</span>
-          </a>
+          </Link>
         </div>
         <div className="topbar-right">
           {user && (

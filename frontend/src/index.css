@@ -1254,3 +1254,220 @@ label.field[hidden] { display: none; }
 
 .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
              gap: 0.8rem; align-items: end; }
+
+/* =========================================================================
+   Phase 3.2 — Tags (the Management/CRUD archetype) CSS ported from
+   app/static/style.css, verbatim.
+
+   Ten non-contiguous ranges, same "exact line ranges, byte-verified
+   against source" methodology as every prior CSS-porting phase. The
+   "entries browser" range (details.entry/.entry-new) is imported whole,
+   including entry-journal/entry-staging's own grid-column rules and the
+   absolutely-positioned per-row checkbox gutter — neither is used by
+   Tags' own "+ Add tag" panel (which only needs the base details.entry
+   box/border and .entry-new's dashed-quiet summary), but both belong to
+   this exact same comment block and exist purely to be reused unchanged
+   once Journal/Staging (Phase 3.4/4.3) need them — pre-importing avoids
+   re-opening this same file to add back what was surgically excluded the
+   first time.
+
+   table.ledger only gets its base/th/td/.num rules here, not the whole
+   ~260-line section style.css groups it in — .report-table, sticky
+   headers/columns, the t-account/depth-N variants, and the rest all
+   belong to reports (Phase 3.3+) and Accounts (Phase 4.6), not Tags'
+   own four-column list. */
+table.ledger {
+  width: 100%; border-collapse: collapse; font-size: 0.9rem;
+  background: var(--paper);
+}
+
+table.ledger th {
+  text-align: left; font-weight: 600; font-size: 0.78rem;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-soft);
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1.5px solid var(--rule-strong);
+}
+table.ledger td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: baseline;
+}
+table.ledger .num, table.ledger th.num {
+  text-align: right;
+  font-family: var(--figures);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dim { color: var(--ink-soft); }
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.bar {
+  display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+/* -- "select entries" mode (Journal — see entries-select.js) --------------
+   Hidden until toggled on: reading the Journal is the common case,
+   selecting entries for a bulk action is the deliberate exception, unlike
+   Staging where every row is a candidate for Approve/Reject by default.
+   Per-element display values, not a bare `display: none` override —
+   .checkline and button already set their own (flex, inline-block), and
+   a generic reset would have to guess which one applies to a given
+   .select-only element.
+
+   Gated on body.select-mode, not #entries-select-form.select-mode: the
+   form wraps only the toolbar, not the entries below it (see
+   entries.html's own comment on why — each checkbox belongs to it via
+   form="entries-select-form" rather than DOM nesting), so a selector
+   scoped to the form itself can only ever match .select-only elements
+   that happen to live in the toolbar (the toolbar's own "select all"
+   checkbox) — never the per-entry ones this mode exists for. body is
+   an ancestor of both, so this is the one selector that reaches
+   everything .select-only actually needs to reveal. */
+.select-only { display: none; }
+body.select-mode label.checkline.select-only { display: flex; }
+body.select-mode button.select-only { display: inline-block; }
+/* Payees/Tags' own Select mode (entity-manage.js) reuses this exact
+   body.select-mode hook rather than a second one — same reasoning as
+   above, just table cells instead of a details-summary gutter: each
+   row's checkbox lives in its own <td>, so revealing it needs
+   table-cell, not flex/inline-block. */
+body.select-mode td.select-only, body.select-mode th.select-only { display: table-cell; }
+
+/* Custom checkbox/radio — accent-color alone still leaves the browser's
+   own native shape (rounded, its own font/background/border), which
+   reads as an OS control dropped into a page styled nothing like the
+   rest of the app's square-cornered, --surface/--rule-strong inputs.
+   appearance:none strips that native rendering so these match a select
+   box exactly, and the check/dot is drawn by hand since accent-color has
+   nothing left to paint once appearance is gone. */
+input[type="checkbox"], input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  width: 1rem; height: 1rem; margin: 0; padding: 0; flex: none; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  position: relative;
+}
+input[type="checkbox"] { border-radius: 2px; }
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked, input[type="radio"]:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+input[type="checkbox"]:checked::after {
+  content: ""; position: absolute; left: 3px; top: 0px;
+  width: 4px; height: 8px;
+  border: solid var(--accent-text); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type="radio"]:checked::after {
+  content: ""; position: absolute; left: 3px; top: 3px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent-text);
+}
+
+/* -- entries browser ----------------------------------------------------- */
+details.entry {
+  border: 1px solid var(--rule); border-left: 3px solid var(--rule-strong);
+  margin-bottom: 0.55rem; background: var(--surface);
+}
+details.entry[open] { border-left-color: var(--red); }
+details.entry summary {
+  position: relative;
+  display: grid;
+  gap: 0.9rem; align-items: baseline;
+  padding: 0.5rem 0.8rem; cursor: pointer; list-style: none;
+  font-size: 0.9rem;
+}
+/* Two different column shapes sharing one .entry look: the Journal
+   always renders a #id span the Staging rows never have (Staging
+   entries share one real scenario, so there's nothing an id column
+   would disambiguate there), so each gets its own explicit template
+   rather than trying to force one 5-column grid to fit both. Date is
+   7rem in both (was 5.5rem/6.5rem at different points) — wide enough
+   for the "long" date-format preference (Aug 18, 2026, up to 12
+   characters) without wrapping. */
+.entry-journal summary { grid-template-columns: 7rem 5.5rem 1fr auto auto; }
+.entry-staging summary { grid-template-columns: 7rem 1fr auto auto; }
+/* The per-row checkbox floats in an absolutely-positioned gutter
+   instead of occupying a grid column of its own — it's always the
+   summary's first DOM child (nth-child(2) below still lands on the
+   date span regardless), but display:none/select-only visibility
+   toggling it on and off used to add or remove a real grid item,
+   shifting every column after it: the Journal's Select mode pushed
+   description into what used to be the amount column and forced a
+   second implicit row once there were more visible children than
+   columns, and Staging's always-visible checkbox ate a whole 6.5rem
+   column for a control barely a quarter that wide, reading as a
+   stray gap before the date. Taking it out of grid flow entirely
+   means the row's columns never move regardless of whether a
+   checkbox happens to be showing. Both Staging's and the Journal's own
+   checkbox are select-only now (identical mechanism, identical CSS),
+   so both only reserve the gutter while body.select-mode is on. */
+details.entry summary > .checkline {
+  position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%);
+  margin: 0;
+}
+/* details.entry-staging/-journal, not the bare classes: the base rule
+   above sets padding via the shorthand at (details.entry summary)'s own
+   specificity (two elements, one class) — a bare .entry-staging summary
+   (one element, one class) is actually *lower* specificity than that
+   despite reading like an override, and silently loses regardless of
+   source order. Repeating the `details` element here just ties it, and
+   source order (this comes later) settles the tie in this rule's favor. */
+body.select-mode details.entry-staging summary,
+body.select-mode details.entry-journal summary {
+  padding-left: 2.3rem;
+}
+details.entry summary > .mono.dim:nth-child(2) { white-space: nowrap; }
+details.entry summary::-webkit-details-marker { display: none; }
+details.entry summary:hover { background: var(--paper-deep); }
+details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
+
+/* The "+ New entry" panel reuses .entry's box/border look but isn't a
+   data row — plain text instead of the date/id/description/amount grid,
+   and a dashed border so it reads as an action, not a posted entry. */
+details.entry-new { border-style: dashed; }
+details.entry-new summary {
+  display: block; font-weight: 600; color: var(--accent);
+}
+/* Payees/Tags' own "+ Add payee"/"+ Add tag" bar (payees.html/tags.html)
+   reuses this same dashed-box/details-summary shape, deliberately "less
+   colorful" than New entry's: New entry's dashed bar leads into a whole
+   multi-line grid, so --accent draws the eye to it as *the* primary
+   action on the page; this one leads into a single text field, and reads
+   better as a plain, secondary affordance than a headline. */
+details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
+
+/* -- entity manager (Payees, Tags) ---------------------------------------
+   Both pages share one shape (see entity-manage.js): a Select/Merge bar,
+   a table with a select-only checkbox column, and per-row Edit/Archive/
+   Delete (Tags: Edit/Delete only — see main.py's Tags section for why it
+   carries no Archive). */
+.entity-table td.actions { white-space: nowrap; }
+.entity-table td.actions form { display: inline; }
+.entity-table td.actions > * + * { margin-left: 0.4rem; }
+/* The rename form replaces the plain name text in place, at the same
+   size/weight as everything else in the row — not styled like a
+   standalone field (no border by default) until actually focused, so
+   "click Edit" reads as the label itself turning editable rather than a
+   form appearing next to it. */
+.entity-rename-form { display: inline-block; }
+/* Same reason label.field[hidden] above needs its own override: this
+   rule's own `display: inline-block` (author stylesheet) otherwise beats
+   the browser's built-in `[hidden] { display: none }` default at equal
+   specificity, so the rename form would sit there rendered — right next
+   to the label it's supposed to replace — despite the `hidden` attribute
+   entity-manage.js relies on to keep it out of the way until Edit is
+   clicked. */
+.entity-rename-form[hidden] { display: none; }
+.entity-rename-input {
+  font: inherit; font-family: inherit; color: inherit;
+  padding: 0.1rem 0.3rem; border: 1px solid transparent; border-radius: 2px;
+  background: transparent; min-width: 12rem;
+}
+.entity-rename-input:focus {
+  background: var(--surface); border-color: var(--rule-strong);
+}
+
+.inactive { opacity: 0.45; }

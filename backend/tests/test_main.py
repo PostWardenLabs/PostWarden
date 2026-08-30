@@ -35,6 +35,7 @@ their own real-Postgres tests in `modules/auth/`'s and `modules/
 scheduling/`'s own test suites (Phases 1.11, 1.10).
 """
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from postwarden import main
@@ -149,6 +150,70 @@ def test_config_includes_demo_credentials_when_demo_mode_is_on(tmp_path):
     assert body["demo_banner"] is True
     assert body["demo_user"] == "david"
     assert body["demo_password"] == "secret"
+
+
+# ---------------------------------------------------------------------------
+# The `/app/*` SPA-shell fallback — Phase 3.2's answer to the deep-link gap
+# (see main.py's own comment on why `/app`, not `/api`).
+# ---------------------------------------------------------------------------
+
+def test_spa_index_response_serves_index_html_when_present(monkeypatch, tmp_path):
+    index = tmp_path / "index.html"
+    index.write_text("<html>the SPA shell</html>")
+    monkeypatch.setattr(main, "_index_html", index)
+    resp = main._spa_index_response()
+    assert resp.status_code == 200
+    # starlette's own `FileResponse.path` type has moved between `str` and
+    # `PosixPath` across versions this project has run against — compare
+    # via `str()` on both sides so this test doesn't pin one over the
+    # other.
+    assert str(resp.path) == str(index)
+
+
+def test_spa_index_response_404s_not_500s_when_index_html_is_missing(monkeypatch, tmp_path):
+    # Same tolerant-absence shape as `/config`'s own missing-VERSION-file
+    # case — a backend-only checkout or an image built without a real
+    # `npm run build` shouldn't 500 here, and there's genuinely nothing to
+    # serve, so 404 (not a silent 200 with no body) is the honest answer.
+    monkeypatch.setattr(main, "_index_html", tmp_path / "does-not-exist.html")
+    with pytest.raises(HTTPException) as exc_info:
+        main._spa_index_response()
+    assert exc_info.value.status_code == 404
+
+
+def test_app_routes_are_only_registered_when_the_static_dir_exists():
+    # `main._static_dir` reflects whatever `postwarden_static_dir` resolved
+    # to at import time in *this* environment — this suite runs backend-
+    # only in CI (no `npm run build` has ever happened), so the real,
+    # unpatched state is the one worth asserting: `/app/tags` isn't a
+    # registered route at all here, same as `/` and `/assets/*` never
+    # were (this file's own comment on the plain `app.mount(...)` above).
+    # A real dev/Docker environment with a built frontend is verified by
+    # hand instead, per REBUILD_STATUS.md's own "Verified for real" note —
+    # there is no way to flip `main._static_dir.is_dir()` after import
+    # without reloading the module, and reloading `postwarden.main` mid-
+    # suite would rebuild the real `app` every other test in this file
+    # depends on being a stable singleton.
+    if main._static_dir.is_dir():
+        pytest.skip("a real frontend build exists in this environment — "
+                     "route registration is exercised for real instead")
+    paths = main.app.openapi()["paths"]
+    assert "/app" not in paths
+    assert "/app/{path}" not in paths
+
+
+def test_app_route_serves_the_real_spa_shell_when_a_build_exists():
+    # The inverse of the skip above — exercised for real (not just the
+    # extracted `_spa_index_response` helper) whenever this environment
+    # does have a real `npm run build` output sitting where `config.py`'s
+    # `postwarden_static_dir` looks, same as this file was run against for
+    # this phase's own manual verification.
+    if not main._static_dir.is_dir():
+        pytest.skip("no frontend build in this environment — see the "
+                     "skip above for why this can't be forced")
+    resp = TestClient(main.app).get("/app/tags", follow_redirects=False)
+    assert resp.status_code == 200
+    assert 'id="root"' in resp.text
 
 
 # ---------------------------------------------------------------------------
