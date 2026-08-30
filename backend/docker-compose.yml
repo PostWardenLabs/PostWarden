@@ -42,6 +42,12 @@ services:
       # +psycopg: the SQLAlchemy-flavored URL scheme (see alembic/env.py's
       # own comment) - not legacy app/db.py's plain postgresql://.
       DATABASE_URL: postgresql+psycopg://postwarden:postwarden@db:5432/postwarden
+      # Not a real credential — matches local's own devpassword convention
+      # (see the personal cross-repo notes) so there's one login to
+      # remember. main.py's own startup hook creates this user
+      # automatically whenever both are set, same as it does for beta.
+      POSTWARDEN_ADMIN_USER: david
+      POSTWARDEN_ADMIN_PASSWORD: devpassword
     ports:
       - "${APP_PORT:-8001}:8000"
     depends_on:

@@ -19,7 +19,7 @@ WORKDIR /repo
 # package.json + package-lock.json first, alone, so `npm ci` is cached
 # across rebuilds that only touch src/ — the same layer-ordering reasoning
 # the runtime stage below already applies to pyproject.toml/src.
-COPY frontend/package.json frontend/package-lock.json ./frontend/
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./frontend/
 RUN npm --prefix frontend ci
 COPY frontend/ ./frontend/
 RUN npm --prefix frontend run build
