@@ -8,6 +8,7 @@ import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
 import IncomeStatementPage from './reports/IncomeStatementPage'
+import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
 import Shell from './shell/Shell'
@@ -110,6 +111,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/cash-flow') return 'cash_flow'
   if (pathname === '/app/income-statement') return 'income_statement'
   if (pathname === '/app/variance') return 'variance'
+  if (pathname === '/app/ledger') return 'ledger'
   return 'dashboard'
 }
 
@@ -127,6 +129,7 @@ const PAGE_TITLES: Record<string, string> = {
   cash_flow: 'Cash Flow',
   income_statement: 'Income Statement',
   variance: 'Variance',
+  ledger: 'Ledger',
 }
 
 // Root component. As of Phase 3.1, this is the real end-to-end pipeline
@@ -182,6 +185,7 @@ function App() {
         <Route path="/app/cash-flow" element={<CashFlowPage />} />
         <Route path="/app/income-statement" element={<IncomeStatementPage />} />
         <Route path="/app/variance" element={<VariancePage />} />
+        <Route path="/app/ledger" element={<LedgerPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
       </Routes>
     </Shell>

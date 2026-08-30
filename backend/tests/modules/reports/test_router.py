@@ -127,3 +127,19 @@ def test_variance_csv_and_xlsx_endpoints(book, conn):
     params = {"as_of": "2026-02-28"}
     assert client_for(conn).get("/reports/variance.csv", params=params).status_code == 200
     assert client_for(conn).get("/reports/variance.xlsx", params=params).status_code == 200
+
+
+def test_ledger_endpoint(book, conn):
+    resp = client_for(conn).get("/reports/ledger", params={"as_of": "2026-02-28", "raw": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+    assets = next(g for g in body["grouped"] if g["label"] == "Assets")
+    checking = next(a for a in assets["rows"] if a["code"] == "1100")
+    assert checking["total_debit"] == "2200.00"  # Decimal round-trips as a string, same as every other report
+
+
+def test_ledger_endpoint_has_no_export_siblings(book, conn):
+    # Unlike every other report in this module — legacy's own
+    # ledger.html never had CSV/XLSX links either.
+    assert client_for(conn).get("/reports/ledger.csv").status_code == 404
+    assert client_for(conn).get("/reports/ledger.xlsx").status_code == 404

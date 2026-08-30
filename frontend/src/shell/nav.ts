@@ -53,7 +53,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'cash_flow', label: 'Cash Flow', href: '/app/cash-flow', client: true },
       { key: 'variance', label: 'Variance', href: '/app/variance', client: true },
       { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance', client: true },
-      { key: 'ledger', label: 'Ledger', href: '/ledger' },
+      { key: 'ledger', label: 'Ledger', href: '/app/ledger', client: true },
     ],
   },
   {

@@ -76,6 +76,38 @@ def test_postable_flags_reflects_summary_vs_leaf(book, conn):
     assert flags[book["checking"]["id"]] is True  # leaf
 
 
+def test_ledger_accounts_excludes_summary_accounts(book, conn):
+    accounts = repo.ledger_accounts(conn)
+    codes = {a["code"] for a in accounts}
+    assert book["checking"]["id"] in {a["id"] for a in accounts}
+    assert "1000" not in codes  # Assets — summary, not postable
+
+
+def test_ledger_accounts_orders_by_type_then_code(book, conn):
+    accounts = repo.ledger_accounts(conn)
+    codes = [a["code"] for a in accounts]
+    # asset (1100) < equity (3100) < income (4100) < expense (5100),
+    # same ACCOUNT_TYPES order every other report groups by.
+    assert codes.index("1100") < codes.index("3100") < codes.index("4100") < codes.index("5100")
+
+
+def test_ledger_lines_itemizes_each_line_not_a_balance(book, conn):
+    lines = repo.ledger_lines(conn, "ACTUAL", "2026-02-28")
+    checking_lines = [ln for ln in lines if ln["account_id"] == book["checking"]["id"]]
+    # Three lines actually posted to Checking (Opening balance, Paycheck,
+    # Rent payment) — three separate rows, not one summed balance.
+    assert len(checking_lines) == 3
+    assert {ln["entry_date"].isoformat() for ln in checking_lines} == {"2026-01-15", "2026-02-01", "2026-02-05"}
+
+
+def test_ledger_lines_respects_as_of_upper_bound(book, conn):
+    lines = repo.ledger_lines(conn, "ACTUAL", "2026-01-31")
+    # Only the Jan 15 opening-balance entry is on or before this as_of —
+    # the Feb 1/5 entries are excluded, same "<=" bound every point-in-
+    # time report's own as_of already uses.
+    assert {ln["entry_date"].isoformat() for ln in lines} == {"2026-01-15"}
+
+
 def test_budget_line_totals_with_both_date_bounds_set(book, conn):
     # Regression test for a real bug, only found doing Phase 4.1's Income
     # Statement screen: `:date_from::date` (a bind param directly

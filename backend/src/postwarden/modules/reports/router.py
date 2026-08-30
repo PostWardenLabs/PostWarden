@@ -1,9 +1,9 @@
-"""The reports module's `APIRouter` — five read-only GET endpoints, one
-per report, each a thin wrapper: resolve query params/defaults, call
+"""The reports module's `APIRouter` — six read-only GET endpoints, one per
+report, each a thin wrapper: resolve query params/defaults, call
 `service.py`, add the prev/next date-navigation fields every point-in-
 time or range report shows (`domain.periods`), return the result as a
-plain dict — plus, as of Phase 1.12, a `.csv`/`.xlsx` sibling for each
-one, resolving the identical `service.py` result and handing it to
+plain dict — plus, as of Phase 1.12, a `.csv`/`.xlsx` sibling for five of
+the six, resolving the identical `service.py` result and handing it to
 `export.py` to write. **The CSV/XLSX siblings deliberately do not apply
 the read route's own "default a blank date range to the current month"
 step** — ported from `income_statement_export_csv`/`cash_flow_export_
@@ -12,7 +12,10 @@ blank `date_from`/`date_to` on an export means unbounded, not "this
 month," a real, if easy-to-miss, difference between viewing a report and
 exporting one that predates this rebuild and is preserved rather than
 "fixed" (REBUILD.md decision 4 — port behavior, don't redesign it along
-the way).
+the way). `/ledger` (Phase 4.1, added after the other five) is the one
+exception with no export siblings at all — legacy's own `ledger.html`
+never had them either, and nothing here should invent behavior legacy
+never had.
 
 Mounted into `app` as of Phase 1.14 (`main.py`), with `get_current_session`
 required at the router level for every route below — the direct
@@ -75,6 +78,23 @@ def balance_sheet(scenario: str = "ACTUAL", as_of: str = "", raw: int = 0, zeros
     as_of_date = as_of or date.today().isoformat()
     return {
         **result, "scenario": scenario, "as_of": as_of, "raw": raw, "zeros": zeros,
+        "prev_as_of": shift_date_by_month(as_of_date, -1),
+        "next_as_of": shift_date_by_month(as_of_date, 1),
+        "today": date.today().isoformat(),
+    }
+
+
+@router.get("/ledger")
+def ledger(scenario: str = "ACTUAL", as_of: str = "", zeros: int = 0, raw: int = 0,
+           conn: Connection = Depends(get_connection)) -> dict:
+    # No `.csv`/`.xlsx` export siblings — legacy's own `ledger.html` has
+    # none (it's a card grid meant to be read on screen, not exported),
+    # and nothing here should invent behavior legacy never had
+    # (`REBUILD.md` decision 4).
+    result = service.ledger_rows(conn, scenario, as_of or None, zeros, raw)
+    as_of_date = as_of or date.today().isoformat()
+    return {
+        **result, "scenario": scenario, "as_of": as_of, "zeros": zeros, "raw": raw,
         "prev_as_of": shift_date_by_month(as_of_date, -1),
         "next_as_of": shift_date_by_month(as_of_date, 1),
         "today": date.today().isoformat(),

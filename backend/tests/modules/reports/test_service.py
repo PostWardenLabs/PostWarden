@@ -7,11 +7,12 @@ rollup) already has dedicated, DB-free coverage in tests/domain/ — these
 tests prove the SQL wiring and assembly glue instead: right SRF args,
 right column names, right sign conventions, numbers that actually
 reconcile against each other."""
+from datetime import date
 from decimal import Decimal
 
 from postwarden.modules.reports import service
 
-from ...conftest import mk_account_level, mk_entry, mk_line, mk_scenario
+from ...conftest import mk_account, mk_account_level, mk_entry, mk_line, mk_scenario
 
 
 def test_trial_balance_raw_is_in_balance(book, conn):
@@ -122,3 +123,75 @@ def test_compute_variance_rolled_up_to_a_chosen_level(book, conn):
     # BUDGET posted 600 straight to Assets itself.
     assert assets_row["baseline_net"] == Decimal("2200.00")
     assert assets_row["compare_net"] == Decimal("600.00")
+
+
+def test_ledger_rows_pairs_debits_and_credits_by_index(book, conn):
+    # Checking has three lines: Dr 1000 (Jan 15), Dr 2000 (Feb 1),
+    # Cr 800 (Feb 5) — two debits, one credit, paired by index into two
+    # display rows; net 3000 - 800 = 2200 (a debit balance) shows only in
+    # total_debit, never total_credit.
+    result = service.ledger_rows(conn, "ACTUAL", "2026-02-28", zeros=0, raw=1)
+    assets = next(g for g in result["grouped"] if g["label"] == "Assets")
+    checking = next(a for a in assets["rows"] if a["code"] == "1100")
+    assert len(checking["rows"]) == 2
+    assert checking["rows"][0] == {
+        "debit_date": date(2026, 1, 15), "debit": Decimal("1000.00"),
+        "credit": Decimal("800.00"), "credit_date": date(2026, 2, 5),
+    }
+    assert checking["rows"][1] == {
+        "debit_date": date(2026, 2, 1), "debit": Decimal("2000.00"),
+        "credit": None, "credit_date": None,
+    }
+    assert checking["total_debit"] == Decimal("2200.00")
+    assert checking["total_credit"] is None
+
+
+def test_ledger_rows_hides_accounts_with_no_activity_unless_zeros(book, conn):
+    # Rent (5100) has real activity; a fourth leaf account with none at
+    # all should be absent unless zeros=1.
+    silent = mk_account(conn, "5900", "Unused Expense", "expense", parent_id=book["expenses"]["id"])
+    result = service.ledger_rows(conn, "ACTUAL", "2026-02-28", zeros=0, raw=1)
+    expenses = next(g for g in result["grouped"] if g["label"] == "Expenses")
+    assert silent["code"] not in {a["code"] for a in expenses["rows"]}
+
+    result_zeros = service.ledger_rows(conn, "ACTUAL", "2026-02-28", zeros=1, raw=1)
+    expenses_zeros = next(g for g in result_zeros["grouped"] if g["label"] == "Expenses")
+    silent_card = next(a for a in expenses_zeros["rows"] if a["code"] == silent["code"])
+    assert silent_card["rows"] == []
+    assert silent_card["total_debit"] is None and silent_card["total_credit"] is None
+
+
+def test_ledger_rows_raw_toggle_applies_simulated_close_to_flow_accounts_only(conn):
+    # A fresh scenario, not `book`, specifically to control which month
+    # each line lands in: one Income line in January, one Asset line in
+    # January, as-of end of February. raw=0's month-to-date carve-out
+    # (Trial Balance's own rule, ported unchanged) only ever applies to
+    # Income/Expense accounts — an Asset/Equity line from a prior month
+    # is always real, all-time history, never dropped.
+    scenario = mk_scenario(conn, "ACTUAL2")
+    cash = mk_account(conn, "1100", "Cash", "asset")
+    obe = mk_account(conn, "3100", "Opening Balance Equity", "equity")
+    income = mk_account(conn, "4100", "Salary", "income")
+    e1 = mk_entry(conn, scenario["id"], "2026-01-10", "Opening")
+    mk_line(conn, e1, cash["id"], 500, 1)
+    mk_line(conn, e1, obe["id"], -500, 2)
+    e2 = mk_entry(conn, scenario["id"], "2026-01-20", "January paycheck")
+    mk_line(conn, e2, cash["id"], 300, 1)
+    mk_line(conn, e2, income["id"], -300, 2)
+
+    raw_off = service.ledger_rows(conn, "ACTUAL2", "2026-02-28", zeros=0, raw=0)
+    income_group = next((g for g in raw_off["grouped"] if g["label"] == "Income"), None)
+    assets_group = next(g for g in raw_off["grouped"] if g["label"] == "Assets")
+    # January's income line is dropped (before the as-of month's start) —
+    # the whole Income section has nothing left to show at all.
+    assert income_group is None
+    # January's asset lines are never subject to the carve-out (it only
+    # ever checks income/expense account_type) — both of Cash's own
+    # January postings still show, unlike Salary's.
+    cash_card = next(a for a in assets_group["rows"] if a["code"] == "1100")
+    assert cash_card["total_debit"] == Decimal("800.00")  # 500 (opening) + 300 (paycheck's cash leg)
+
+    raw_on = service.ledger_rows(conn, "ACTUAL2", "2026-02-28", zeros=0, raw=1)
+    income_group_raw = next(g for g in raw_on["grouped"] if g["label"] == "Income")
+    salary_card = next(a for a in income_group_raw["rows"] if a["code"] == "4100")
+    assert salary_card["total_credit"] == Decimal("300.00")

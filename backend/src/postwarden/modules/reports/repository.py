@@ -42,6 +42,44 @@ def dim_accounts(conn: Connection, *, income_expense_only: bool = False) -> list
     return [dict(r) for r in conn.execute(text(sql)).mappings()]
 
 
+def ledger_accounts(conn: Connection) -> list[dict]:
+    """Every postable, active account — `id`/`code`/`name`/`account_type`
+    only, ordered by type then code (same grouping order Trial Balance/
+    Balance Sheet already use). Deliberately narrower than `dim_accounts`
+    above (no parent/depth/path — the Ledger's own T-account cards are a
+    flat grid, one per account, not a tree) and postable-only (a summary
+    account never has its own postings to show a card for)."""
+    rows = conn.execute(text(
+        "SELECT id, code, name, account_type FROM accounts WHERE is_postable AND is_active "
+        "ORDER BY account_type, code"
+    )).mappings()
+    return [dict(r) for r in rows]
+
+
+def ledger_lines(conn: Connection, scenario: str, as_of: str) -> list[dict]:
+    """Every individual debit/credit line posted in `scenario` on or
+    before `as_of` — itemized, not aggregated, the one report in this
+    module that needs real per-line detail rather than a balance.
+    Ported from legacy `_ledger_rows`'s own plain SQL join, not modeled
+    through a Postgres SRF: none of `fn_account_balances`/
+    `fn_trial_balance`/`fn_rollup_balance`/`fn_cash_flow_lines` return
+    itemized lines, and legacy itself never needed one either for what
+    started as "a teaching aid, not a working report" (`ledger.html`'s
+    own comment) — inventing one now would be manufacturing capability
+    this feature never asked for, not porting behavior (`REBUILD.md`
+    decision 4)."""
+    rows = conn.execute(text("""
+        SELECT l.account_id, l.debit, l.credit, e.entry_date, a.account_type
+          FROM journal_lines l
+          JOIN journal_entries e ON e.id = l.entry_id
+          JOIN scenarios s ON s.id = e.scenario_id
+          JOIN accounts a ON a.id = l.account_id
+         WHERE s.code = :scenario AND e.entry_date <= :as_of
+         ORDER BY l.account_id, e.entry_date, l.line_no
+    """), {"scenario": scenario, "as_of": as_of}).mappings()
+    return [dict(r) for r in rows]
+
+
 def account_balances(conn: Connection, scenario: str, as_of: str | None = None,
                       since: str | None = None) -> dict[int, Decimal]:
     """`fn_account_balances(scenario, as_of[, from])` as an

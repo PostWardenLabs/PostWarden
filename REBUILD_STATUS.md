@@ -2364,6 +2364,94 @@ percentage between "—100.0%" and "100.0%" (matching the mathematically
 exact (0−baseline)/baseline swap). Both `.csv`/`.xlsx` exports `200`ing
 over a real authenticated `curl` round trip.
 
+**Phase 4.1, screen 5 of 5 — Ledger done, and with it, Phase 4.1 itself is
+complete.** The one screen this phase that needed real new backend work
+first, not just a frontend screen against an already-existing route —
+confirmed by exploration at the start of this phase: no `/ledger`-
+equivalent, or any itemized-per-account-lines endpoint at all, existed
+anywhere in `backend/`.
+
+**Backend** (`modules/reports/`): `repository.py` gained
+`ledger_accounts` (every postable, active account — `id`/`code`/`name`/
+`account_type` only, ordered by type then code) and `ledger_lines`
+(every individual debit/credit line posted in a scenario on or before
+`as_of` — itemized, not aggregated, a plain SQL join since no Postgres
+SRF returns per-line detail and none should be invented for a feature
+legacy itself never needed one for — `REBUILD.md` decision 4).
+`service.py` gained `ledger_rows`, ported from legacy `_ledger_rows`
+unchanged in shape: one T-account card per account with activity (or
+every account, with `zeros`), pairing debits and credits by index into
+display rows, a running total that writes to only one of Debit/Credit
+per card, and the same raw/simulated-close carve-out Trial Balance
+applies to Income/Expense lines — here applied per *line* rather than to
+an aggregate balance. `router.py` gained `GET /reports/ledger`, matching
+every other point-in-time route's shape (`scenario`/`as_of`/`zeros`/
+`raw`, `prev_as_of`/`next_as_of`/`today`) — **no `.csv`/`.xlsx` export
+siblings**, since legacy's own `ledger.html` never had them and nothing
+here should invent behavior legacy never had. 9 new backend tests (4
+`test_repository.py`, 3 `test_service.py` — including one purpose-built
+fresh-scenario test proving the raw/simulated-close carve-out applies to
+Income/Expense lines but never to Asset/Equity lines from the same prior
+month, which the shared `book` fixture's own dates couldn't exercise — 2
+`test_router.py`, one of which asserts the *absence* of export routes) —
+542 passed total, up from 533.
+
+**Frontend**: `frontend/src/reports/LedgerPage.tsx` — the only screen
+this phase with a genuinely different layout: a wrapped grid of small
+T-account cards (Date | Debit | Credit | Date), one per account, instead
+of one wide report table. No account hierarchy, no `useCollapsibleTree`
+(same reasoning Cash Flow's own flat sections already established).
+Caught and avoided, not repeated, a real bug class from the 2026-08-30
+QA pass: the "Show accounts with no activity" link (shown only on the
+empty-state message) is a real `<Link>`, not a `<button className=
+"button-link">` — `.button-link`'s CSS targets `a.button-link`
+specifically, the exact mismatch that pass already found and fixed
+eight times over for other screens.
+
+New CSS ported: `.t-account-section`/`.t-section-label`/
+`.t-account-grid`/`table.ledger.t-account`/`.t-divider` (the T-account
+card styling, `app/static/style.css` lines ~1161–1205 — confirmed
+missing by grep, same byte-verified-range practice every visual phase
+uses).
+
+Wired into `App.tsx`/`nav.ts` (`ledger` → `/app/ledger`) — the fifth and
+last of Phase 4.1's sidebar links to flip from a legacy bare-path `<a>`
+to a real client-side `<Link>`.
+
+**A mechanical step worth noting for future backend-adding phases**:
+adding a new backend route means `frontend/src/api/schema.ts` (the
+typed OpenAPI client, generated once and committed, not regenerated at
+build time) goes stale — `tsc` catches this immediately and loudly
+(`Argument of type '"/reports/ledger"' is not assignable to parameter of
+type 'PathsWithMethod<paths, "get">'`), so there's no way to silently
+ship a frontend call against a route the generated client doesn't know
+about yet. Regenerated via `frontend/package.json`'s own `generate:api`
+script (`python scripts/dump_openapi_schema.py` from `backend/`, piped
+into `openapi-typescript`, run through the same throwaway
+`node:22-slim` container this session already uses for `oxlint` since
+this machine has no local `node`/`npm`).
+
+**Verified for real**, same checks as every screen this phase, plus the
+exact CI shape by hand (bare `postgres:16`, `alembic upgrade head`,
+`pytest` — 542 passed) since this is the one screen with new backend
+code. Real browser pass: the full T-account card grid rendering
+correctly for every postable account with real activity (Checking's own
+card total-debit, 48,949.51, matching Balance Sheet's own figure for the
+same account and as-of date exactly); no Export CSV/XLSX links anywhere
+on the page (confirmed by search, matching legacy's real absence, not an
+oversight); the empty-state message and its "Show accounts with no
+activity" link correctly carrying `as_of` forward while adding
+`zeros=1`; and that link's target actually rendering every postable
+account as an empty card once followed.
+
+**Phase 4.1 is now fully done** — all five screens shipped, verified,
+and documented. **Next up: Phase 4.2** (remaining Management/CRUD:
+payees, scenarios, account_levels, scheduled, entry_templates,
+settings), which reuses `useSelectMode.ts`/`MergeDialog.tsx` from Tags
+(Phase 3.2), the same reuse Trial Balance/Balance Sheet/Income
+Statement/Variance already proved out for the Point-in-time/Range-report
+archetypes this phase.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2518,12 +2606,13 @@ for free. See Current status for the full write-up.
 
 Largely configuration once the Phase 3 archetype components exist.
 
-- [~] **4.1** Remaining Range/period + Point-in-time reports:
-      income_statement, cash_flow, balance_sheet, variance, ledger.
-      Balance Sheet, Cash Flow, Income Statement, and Variance done (see
-      Current status); only ledger remains — it also needs new backend
-      work (no `/ledger`-equivalent route exists yet, see its own note
-      when that commit lands).
+- [x] **4.1** Remaining Range/period + Point-in-time reports:
+      income_statement, cash_flow, balance_sheet, variance, ledger. All
+      five done — see Current status. Ledger needed real new backend
+      work (`modules/reports/repository.py::ledger_lines`/
+      `ledger_accounts`, `service.ledger_rows`, `GET /reports/ledger`),
+      the only screen this phase that wasn't just frontend against an
+      already-existing route.
 - [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
       account_levels, scheduled, entry_templates, settings
 - [ ] **4.3** staging (Filterable transaction list, second instance)
@@ -2600,6 +2689,15 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 4.1 complete (screen 5 of 5: Ledger),
+  `frontend/src/reports/LedgerPage.tsx` plus new backend
+  (`modules/reports/repository.py::ledger_accounts`/`ledger_lines`,
+  `service.ledger_rows`, `GET /reports/ledger` — no export siblings,
+  matching legacy). The only screen this phase needing real new backend
+  work first; confirmed no itemized-per-account-lines endpoint existed
+  anywhere before this. 9 new backend tests (542 total). See Current
+  status for the full write-up, including the typed-client
+  regeneration step every future backend-adding phase will need too.
 - **2026-08-30** — Phase 4.1, screen 4 of 5: Variance done,
   `frontend/src/reports/VariancePage.tsx` — native-depth vs. rolled-up
   discriminated by `result.rolled_up`, both rendered by the same

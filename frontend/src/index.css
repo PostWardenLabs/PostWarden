@@ -1802,6 +1802,45 @@ tr.grand td { font-weight: 700; border-bottom: none; padding-top: 0.7rem; }
 tr.grand td.num { border-bottom: 3.5px double var(--ink); }
 tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: var(--red); }
 
+/* Ledger (Phase 4.1) — a wrapped grid of small, fixed-width four-column
+   ledger cards (Date/Debit/Credit/Date), one per account, instead of the
+   one wide table.ledger.report-table every other report renders. Each
+   card is still a real table.ledger (same money/grand treatment, so a
+   total row reads identically to every other report's own grand row),
+   just capped to a width that reads as "a card" rather than stretching
+   full-bleed like a report table would. Internal class names kept their
+   original .t-account-* naming from when this page was "T-Accounts"
+   before it became "Ledger" — renaming them risked colliding with the
+   unrelated, much older generic .ledger class (the base table style
+   every table.ledger in this app already uses, this card included), and
+   nothing outside this file reads these names anyway. */
+.t-account-section { margin-top: 1.5rem; }
+.t-section-label {
+  font-family: var(--serif); font-weight: 600; font-size: 1rem;
+  margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule-strong);
+}
+.t-account-grid { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+table.ledger.t-account {
+  width: 20rem; flex: none; border: 1px solid var(--rule-strong); border-radius: 4px;
+  overflow: hidden;
+}
+table.ledger.t-account caption {
+  caption-side: top; text-align: left; padding: 0.5rem 0.7rem;
+  font-weight: 600; border-bottom: 1px solid var(--rule-strong);
+  background: var(--paper-deep);
+}
+/* The actual "T": a rule between Debit and Credit at the same weight as
+   the caption's own border above it, continuing that line straight down
+   through the header and every row — .money-first's usual red hint
+   border marks "money starts here" everywhere else in the app, which
+   isn't the same claim as "this is the T's own vertical stroke," so it
+   gets its own class rather than overloading that one. 2px, not the
+   caption border's own literal 1px — a vertical rule built from stacked
+   per-row border-lefts reads visibly thinner than a single horizontal
+   one at the same nominal width. */
+.t-account td.t-divider, .t-account th.t-divider { border-left: 2px solid var(--rule-strong); }
+table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; }
+
 /* A same-row link styled to sit quietly next to a button — "Export CSV"
    beside "Filter"/"Refresh", not competing for primary-action weight. */
 .quiet-link {

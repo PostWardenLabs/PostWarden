@@ -162,6 +162,68 @@ def balance_sheet(conn: Connection, scenario: str, as_of: str | None, raw: int =
     }
 
 
+def ledger_rows(conn: Connection, scenario: str, as_of: str | None, zeros: int = 0, raw: int = 0) -> dict:
+    """Ported from `app/main.py`'s `_ledger_rows`, unchanged in shape —
+    the one report that shows itemized lines rather than an aggregated
+    balance: one T-account card per postable account with activity (or
+    every account, with `zeros`), each a paired list of its own
+    debit/credit lines plus a running total. `raw` toggles the same
+    simulated-monthly-close carve-out Trial Balance applies to Income/
+    Expense accounts (drop any flow-account line dated before the
+    as-of month's start), applied here per *line* rather than to an
+    aggregate balance — Phase 4.1's own new backend work, since no
+    existing repository function returns itemized lines (see
+    `repository.ledger_lines`'s own docstring)."""
+    as_of_date = as_of or date.today().isoformat()
+    as_of_dt = date.fromisoformat(as_of_date)
+    month_start = date(as_of_dt.year, as_of_dt.month, 1)
+
+    accounts = repo.ledger_accounts(conn)
+    lines = repo.ledger_lines(conn, scenario, as_of_date)
+
+    lines_by_account: dict[int, list[dict]] = {}
+    for ln in lines:
+        if not raw and ln["account_type"] in ("income", "expense") and ln["entry_date"] < month_start:
+            continue
+        lines_by_account.setdefault(ln["account_id"], []).append(ln)
+
+    def t_account(a: dict) -> dict | None:
+        acct_lines = lines_by_account.get(a["id"], [])
+        if not acct_lines and not zeros:
+            return None
+        # Each side keeps its own line's date alongside its amount
+        # (BACKLOG.md's own ask) — a debit's date and the credit sitting
+        # beside it are otherwise unrelated, same as a real T-account,
+        # where the two sides are independent running lists that just
+        # happen to share a page; pairing them by index is purely for
+        # this card's own two-column layout, nothing more.
+        debits = [(ln["entry_date"], ln["debit"]) for ln in acct_lines if ln["debit"]]
+        credits = [(ln["entry_date"], ln["credit"]) for ln in acct_lines if ln["credit"]]
+        net = sum((d for _, d in debits), Decimal(0)) - sum((c for _, c in credits), Decimal(0))
+        rows = [{"debit_date": debits[i][0] if i < len(debits) else None,
+                 "debit": debits[i][1] if i < len(debits) else None,
+                 "credit": credits[i][1] if i < len(credits) else None,
+                 "credit_date": credits[i][0] if i < len(credits) else None}
+                for i in range(max(len(debits), len(credits)))]
+        is_flow = a["account_type"] in ("income", "expense")
+        return {"code": a["code"], "name": a["name"], "rows": rows,
+                # The total row only writes to the Debit or Credit column
+                # depending on the balance — a net debit balance shows in
+                # Debit, a net credit balance in Credit, never both, and
+                # neither at all for an exact wash (net == 0).
+                "total_debit": net if net > 0 else None,
+                "total_credit": -net if net < 0 else None,
+                "link_date_from": "" if (raw or not is_flow) else month_start.isoformat()}
+
+    grouped = []
+    for t in ACCOUNT_TYPES:
+        rows = [ta for a in accounts if a["account_type"] == t
+                for ta in [t_account(a)] if ta is not None]
+        if rows:
+            grouped.append({"label": TYPE_LABELS[t], "rows": rows})
+    return {"grouped": grouped, "as_of": as_of_date, "month_start": month_start.isoformat()}
+
+
 # ---------------------------------------------------------------------------
 # Income statement — single range, then the Split-view matrix built on
 # top of it.
