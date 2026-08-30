@@ -433,7 +433,81 @@ every phase since 1.4: a full `docker compose up -d --build` (clean log,
 separately the exact CI shape by hand (a bare `postgres:16` container,
 `alembic upgrade head`, `pytest`).
 
-**Next step:** 1.9 — `modules/reference/`.
+**Phase 1.9 done.** `modules/reference/` — Accounts, Account levels,
+Scenarios, Payees, Tags: `repository.py`, `service.py`, `schemas.py`,
+`router.py` (24 routes across the five resources — list plus whatever
+create/toggle/rename/delete/merge each legacy top-level page actually
+had). One module, not five: `REBUILD.md` decision 3's "deletable on its
+own" test still holds *within* the file (nothing here imports from any
+other `modules/` package, and every prior module that needed one of
+these lookups had already forked its own copy rather than reaching in
+here, since this module didn't exist yet), but splitting five
+few-dozen-line CRUD sections into five near-empty module triples would
+cost more than it buys. Two things worth recording:
+
+1. **Five write routes now check existence and raise on an unknown id,
+   where their legacy originals silently no-op'd instead** — `toggle_
+   account`/`toggle_account_cashflow`, `toggle_lock` (scenarios), and
+   `rename_account_level`/`delete_account_level` all ran a bare `UPDATE`/
+   `DELETE ... WHERE id = %s` with no rowcount check, unlike every one of
+   their conceptually-identical siblings in the same legacy file
+   (`toggle_payee`, `rename_payee`, `delete_payee`, `toggle_tag`,
+   `rename_tag`, `delete_tag`), which all already did check and raise.
+   Read as an oversight, not a deliberate asymmetry — nothing in
+   `SPEC.md`/`BACKLOG.md` calls out accounts/scenarios/account-levels as
+   special here — and harmonized to match their siblings, a real
+   behavior change from a verbatim port but a narrow, well-justified one
+   (`repository.py`'s own docstring has the full reasoning).
+2. **`merge_payees`/`merge_tags` now check the survivor id exists
+   *before* repointing any FK, where legacy only ever discovered a bad
+   survivor id at the very end, via the final rename's own rowcount.**
+   Caught by a test, not by reading the code first — `service.
+   merge_tags(conn, [999999, real_tag_id], "x")` raised a raw
+   `ForeignKeyViolation` from deep inside the junction-table `INSERT`
+   (before ever reaching the rowcount check), not a clean "Tag #999999
+   not found," because `other_ids` in the test fixture had a real
+   association to repoint. The same bug exists in legacy's own
+   `merge_tags`/`merge_payees` (a plain reassignment onto a nonexistent
+   id doesn't error *until* something is actually there to repoint);
+   fixed here the same way `modules.imports.service.stage_import_groups`
+   (Phase 1.8) already fixed an analogous "resolve it up front instead
+   of relying on a constraint violation" gap for unmapped account codes.
+
+Other decisions, smaller:
+
+- **`_accounts_with_gaps` and `top_level_types_taken` (legacy `accounts_
+  page`) are not ported** — both are rendering concerns computable by the
+  frontend directly from the same flat `GET /accounts` list this module
+  already returns, nothing to look up that isn't already in that
+  response.
+- **`TYPE_LABELS` is not ported** — a display-string mapping, not
+  reference data, same "render-time, not backend" reasoning `money()`/
+  `dateformat()` already got. `ACCOUNT_TYPES`/`SCENARIO_TYPES` themselves
+  live in `schemas.py` as Pydantic `Literal` types instead of a plain
+  list + manual membership check — a bad value is now a 422, not a
+  hand-rolled `ValueError`.
+- **Every write route catches `(ValueError, SQLAlchemyError)` uniformly
+  as a 400, never a 404** — matching `modules/entries/`'s, `/staging/`'s,
+  `/budget/`'s, and `/imports/`'s own settled convention (a "not found"
+  id is client-supplied-bad-input, the same shape as any other
+  validation failure, not a routing-level 404). A shared `_bad_request`
+  helper in `router.py` exists because, unlike those four modules, every
+  single write route here (not just some) needs the identical two-
+  exception mapping.
+- **No CSRF check anywhere in this module** — the one documented gap
+  every prior write module carries (`modules/auth/`, Phase 1.11) that
+  still applies here; narrower than it was for `entries`/`staging`/
+  `imports` since nothing in this module has a user-attribution column
+  to set in the first place.
+
+89 new tests (34 `repository.py`, 27 `service.py`, 28 `router.py`) — 344
+passed total. Verified for real, the same three ways as every phase
+since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
+200), a local `docker compose up -d db` + `pytest` run, and separately
+the exact CI shape by hand (a bare `postgres:16` container, `alembic
+upgrade head`, `pytest`).
+
+**Next step:** 1.10 — `modules/scheduling/`.
 
 ---
 
@@ -508,7 +582,7 @@ directly.
 - [x] **1.7** `modules/budget/`
 - [x] **1.8** `modules/imports/` — both importers (plain CSV and the
       mapped/rules importer).
-- [ ] **1.9** `modules/reference/` — accounts, payees, tags, scenarios,
+- [x] **1.9** `modules/reference/` — accounts, payees, tags, scenarios,
       account levels (CRUD).
 - [ ] **1.10** `modules/scheduling/` — scheduled entries, entry
       templates.
@@ -640,6 +714,16 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.9 done: `modules/reference/` — see the Current
+  status section above for the full write-up (five legacy top-level
+  resources in one module rather than five near-empty ones, five write
+  routes harmonized to check-and-raise on an unknown id matching their
+  already-checked siblings, `merge_payees`/`merge_tags` now validating
+  the survivor id up front instead of surfacing a raw `ForeignKeyViolation`
+  the way legacy's own version could, `_accounts_with_gaps`/
+  `top_level_types_taken`/`TYPE_LABELS` left as frontend concerns, and a
+  shared `_bad_request` router helper since every write route here needs
+  the identical `(ValueError, SQLAlchemyError)` -> 400 mapping).
 - **2026-08-29** — Phase 1.8 done: `modules/imports/` — see the Current
   status section above for the full write-up (forking `entries`/
   `staging`'s account-lookup and constraint-check helpers, resolving
