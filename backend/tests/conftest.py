@@ -156,3 +156,17 @@ def mk_line(conn: Connection, entry_id: str, account_id: int, amount, line_no: i
         INSERT INTO journal_lines (entry_id, line_no, account_id, amount)
         VALUES (:entry_id, :line_no, :account_id, :amount)
     """), {"entry_id": entry_id, "line_no": line_no, "account_id": account_id, "amount": amount})
+
+
+def mk_budget_line(conn: Connection, scenario_id: int, account_id: int, amount, period_month: str) -> int:
+    """A `budget_lines` row — needed for `modules/budget/`'s own tests,
+    which build an income-statement-only scenario's figures directly
+    rather than through `POST /budget/cell` (that route's own coverage is
+    the point of `test_router.py`'s upsert test)."""
+    row = conn.execute(text("""
+        INSERT INTO budget_lines (scenario_id, account_id, period_month, amount)
+        VALUES (:scenario_id, :account_id, :period_month, :amount)
+        RETURNING id
+    """), {"scenario_id": scenario_id, "account_id": account_id, "period_month": period_month,
+           "amount": amount}).mappings().one()
+    return row["id"]

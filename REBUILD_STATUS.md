@@ -265,7 +265,83 @@ since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
 the exact CI shape by hand (a bare `postgres:16` container, `alembic
 upgrade head`, `pytest`).
 
-**Next step:** 1.7 — `modules/budget/`.
+**Phase 1.7 done.** `modules/budget/` — the ActualBudget-style grid for an
+income-statement-only scenario: `repository.py`, `service.py`,
+`schemas.py`, `router.py` (two routes: `GET /budget` the grid,
+`POST /budget/cell` the single-cell upsert). Smaller in scope than 1.4-1.6
+— one report-shaped read plus one write, no bulk/filter machinery — and
+notably simpler than `modules/entries/`'s own write path for a real
+structural reason, not an oversight:
+
+1. **`fn_budget_line_guard` fires immediately, not deferred.** Unlike
+   `journal_entries`' balance/has-lines triggers (`DEFERRABLE INITIALLY
+   DEFERRED`, SPEC.md decision 2 — the reason `modules/entries/
+   repository.py`'s `check_deferred_constraints`/`SET CONSTRAINTS ALL
+   IMMEDIATE` exist at all), `trg_budget_line_guard` is a plain `BEFORE
+   INSERT OR UPDATE` trigger. A bad scenario/account raises right at the
+   `INSERT`, inside whatever `try/except` is already there — no COMMIT-
+   timing gap for `db.get_connection()`'s one-transaction-per-request
+   design to open up, so `repository.upsert_budget_cell` needed none of
+   that machinery.
+2. **`dim_accounts`, `account_balances`, and the scenario-by-code lookup
+   fork the equivalent queries in `modules/reports/repository.py`**
+   rather than importing them — the same "a module should be deletable on
+   its own" test (`REBUILD.md` decision 3) `modules/staging/repository.py`
+   already applied when it forked `modules/entries/`'s filter builder,
+   applied here for the first time against `reports` instead of a sibling
+   write module.
+3. **One real consolidation, found while porting rather than assumed
+   going in.** Legacy's `_budget_rows` carries its own local `flatten()`
+   helper — walks the merged tree with no zero-filtering, since a budget
+   grid has to show every account whether or not it's been budgeted, so
+   you have somewhere to type a number. That turns out to be exactly what
+   `domain.accounts.flatten_tree(nodes, zeros=True)` (Phase 1.1) already
+   does — `zeros=True` already means "never drop a zero-subtotal branch,"
+   and it produces the identical `has_children` for the identical reason.
+   `service.budget_grid` calls the existing domain function instead of
+   carrying a second, near-duplicate flatten — the same "legacy duplicated
+   this exact logic with no shared helper" pattern Phase 1.4 already found
+   once (`income_statement_groups`'s own `signed()`, later traced to
+   `domain.money.normalize_zero`), which this module's own `merge()`
+   closure also reuses for its sign-flip zero guard rather than
+   reimplementing it a third time.
+4. **`save_budget_cell` parses straight to `Decimal`, not legacy's
+   `round(float(amount_raw), 2)`** — the same fix `domain.entry.
+   parse_lines` (Phase 1.1) already applied to debit/credit input, for the
+   identical reason: every `budget_lines.amount` column is `NUMERIC(18,2)`
+   end to end, and `float` was only ever a latent-imprecision risk with no
+   upside.
+5. **`GET /budget` never picks a *default* scenario when `scenario` is
+   omitted**, unlike legacy's `budget_page` (`scens[0]["code"]` — the
+   first income-statement-only scenario it finds). Doing that needs the
+   full scenario list, which is `modules/reference/` (Phase 1.9) — same
+   "don't reach into a module that doesn't exist yet" reasoning every
+   report/entries/staging route already applies. An empty, unknown, or
+   non-income-statement-only `scenario` all fall through to `service.
+   budget_grid`'s zero-figure stub uniformly; the frontend resolves a real
+   default from `modules/reference/`'s own scenario list once that exists.
+6. **`domain.periods.shift_month`/`month_options` needed no changes at
+   all** — both were already ported in Phase 1.1 (`_shift_month`/`_month_
+   options` were module-level in `app/main.py`, right next to `_budget_
+   rows`, but pure — no framework/IO — so Phase 1.1 moved them to
+   `domain/` on sight, ahead of any module actually needing them yet).
+   This module is the first to actually call them; `router._resolve_month`
+   otherwise ports `budget_page`'s own month-normalization block
+   (`YYYY-MM` -> `YYYY-MM-01`, a stale/hand-typed month falling back to
+   today rather than a 500 — BACKLOG.md's own note on why the grid's
+   month field is a real picker, not a raw date input) verbatim.
+
+26 new tests (8 `repository.py`, 11 `service.py`, 7 `router.py`) — 217
+passed total. `backend/tests/conftest.py` gained one new helper,
+`mk_budget_line` (mirroring the root `tests/conftest.py`'s own version),
+needed because this is the first `backend/` module to test against
+`budget_lines` directly. Verified for real, the same three ways as every
+phase since 1.4: a full `docker compose up -d --build` (clean log,
+`/healthz` 200), a local `docker compose up -d db` + `pytest` run, and
+separately the exact CI shape by hand (a bare `postgres:16` container,
+`alembic upgrade head`, `pytest`).
+
+**Next step:** 1.8 — `modules/imports/`.
 
 ---
 
@@ -337,7 +413,7 @@ directly.
 - [x] **1.5** `modules/entries/` (router · schemas · service ·
       repository · tests) — the Journal backend.
 - [x] **1.6** `modules/staging/`
-- [ ] **1.7** `modules/budget/`
+- [x] **1.7** `modules/budget/`
 - [ ] **1.8** `modules/imports/` — both importers (plain CSV and the
       mapped/rules importer).
 - [ ] **1.9** `modules/reference/` — accounts, payees, tags, scenarios,
@@ -472,6 +548,13 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.7 done: `modules/budget/` — see the Current
+  status section above for the full write-up (the guard trigger firing
+  immediately rather than deferred, forking `reports.repository`'s
+  account/scenario queries, reusing `domain.accounts.flatten_tree(...,
+  zeros=True)` instead of a second near-duplicate flatten, and no
+  server-side default-scenario selection since `modules/reference/`
+  doesn't exist yet).
 - **2026-08-29** — Phase 1.4 done: `modules/reports/`. Ported from
   `app/main.py`'s report-building functions with comments/docstrings
   kept close to verbatim, per REBUILD.md §6's own instruction for this
