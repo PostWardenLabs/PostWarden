@@ -30,25 +30,74 @@ def test_trial_balance_splits_current_and_prior_year_earnings(book, conn):
     # since the book has nothing before 2026) -> prior_year_earnings == 0.
     # month_start=2026-02-01 covers only the Feb entries -> mtd_earnings
     # == fy_earnings == 1200 (2000 salary - 800 rent) -> current_year == 0
-    # too, so with zeros=0 (default) neither synthetic row appears.
+    # too, so with zeros=0 (default) the "Retained Earnings" node doesn't
+    # appear at all — not just its two children.
     result = service.trial_balance(conn, "ACTUAL", "2026-02-28", zeros=0, raw=0)
     equity_rows = next(g for g in result["grouped"] if g["type"] == "equity")["rows"]
-    assert not any("Earnings" in r["account_name"] for r in equity_rows)
+    assert not any(r["account_name"] == "Retained Earnings" for r in equity_rows)
 
-    # zeros=1 forces both synthetic rows to show even at $0.
+    # zeros=1 forces the node to show even at $0 — parent + two children,
+    # a real collapsible unit now, not two independent flat rows.
     result_zeros = service.trial_balance(conn, "ACTUAL", "2026-02-28", zeros=1, raw=0)
     equity_rows_zeros = next(g for g in result_zeros["grouped"] if g["type"] == "equity")["rows"]
-    assert sum(1 for r in equity_rows_zeros if "Earnings" in r["account_name"]) == 2
+    earnings_names = {r["account_name"] for r in equity_rows_zeros if "Earnings" in r["account_name"]}
+    assert earnings_names == {
+        "Retained Earnings", "Current Year Earnings (Unclosed)", "Prior Year Earnings (Unclosed)",
+    }
+    retained = next(r for r in equity_rows_zeros if r["account_name"] == "Retained Earnings")
+    current = next(r for r in equity_rows_zeros if r["account_name"] == "Current Year Earnings (Unclosed)")
+    prior = next(r for r in equity_rows_zeros if r["account_name"] == "Prior Year Earnings (Unclosed)")
+    assert current["parent_id"] == retained["id"] == prior["parent_id"]
+    assert retained["has_children"] is True
 
 
-def test_balance_sheet_balances(book, conn):
+def test_trial_balance_equity_subtotal_counts_retained_earnings_once_not_thrice(book, conn):
+    # as_of 2027-01-15: nothing's posted in FY2027 yet, so
+    # prior_year_earnings == all_time (1200: 2000 salary - 800 rent) and
+    # current_year_earnings == 0 — a real nonzero figure to prove
+    # sub_debits/sub_credits sums the "Retained Earnings" parent once,
+    # not the parent plus both of its children too (which would inflate
+    # Equity's own subtotal by an extra $2400 here — the book's fixture
+    # in the test above has both earnings figures at exactly $0, where a
+    # double-count and a correct count are indistinguishable).
+    result = service.trial_balance(conn, "ACTUAL", "2027-01-15", zeros=0, raw=0)
+    equity_group = next(g for g in result["grouped"] if g["type"] == "equity")
+    retained = next(r for r in equity_group["rows"] if r["account_name"] == "Retained Earnings")
+    assert retained["credit_balance"] == Decimal("1200.00")  # the whole P&L, all of it "prior year"
+
+    # OBE (real leaf account, -1000 credit-normal) rolls up through its
+    # "3000 Equity" summary root to a $1000 credit; Retained Earnings
+    # contributes another $1200 credit on top of that — $2200 total, not
+    # $3400 (which is what summing the parent *and* both $0/$1200
+    # children would give).
+    assert equity_group["sub_debits"] == Decimal("0.00")
+    assert equity_group["sub_credits"] == Decimal("2200.00")
+
+
+def test_balance_sheet_balances_with_the_simulated_close_plug(book, conn):
     # Assets (Checking 2200) == Liabilities (0) + Equity (OBE -1000,
     # sign-flipped to 1000 by -sum(subtotal)) + P&L (1200 unclosed
-    # earnings) = 1000 + 1200 = 2200.
+    # earnings) = 1000 + 1200 = 2200. raw=0 (the default): the plug is
+    # there, so this balances, same as it always has.
     result = service.balance_sheet(conn, "ACTUAL", "2026-02-28")
     assert result["total_assets"] == Decimal("2200.00")
     assert result["total_liab_and_equity"] == Decimal("2200.00")
     assert result["in_balance"] is True
+    retained = next(r for r in result["equity"] if r["account_name"] == "Retained Earnings")
+    assert retained["has_children"] is True
+
+
+def test_balance_sheet_raw_drops_the_plug_and_is_intentionally_unbalanced(book, conn):
+    # raw=1: no "Retained Earnings" node at all — Assets still reflects
+    # the same 2200 (nothing about a posted transaction changes), but
+    # Liabilities + Equity falls short by exactly the $1200 of unclosed
+    # P&L that plug used to stand in for. This is the point of `raw`,
+    # not a bug: a balance sheet genuinely doesn't balance pre-close.
+    result = service.balance_sheet(conn, "ACTUAL", "2026-02-28", raw=1)
+    assert result["total_assets"] == Decimal("2200.00")
+    assert result["total_liab_and_equity"] == Decimal("1000.00")
+    assert result["in_balance"] is False
+    assert not any(r["account_name"] == "Retained Earnings" for r in result["equity"])
 
 
 def test_income_statement_rows_net_income_for_february(book, conn):

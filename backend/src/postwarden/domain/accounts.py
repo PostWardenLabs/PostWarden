@@ -8,6 +8,11 @@ repository layer produces from a `v_dim_account` row and a
 `fn_account_balances()` row) — this module never touches the database
 itself, that's what makes it unit-testable in milliseconds.
 
+`earnings_row` is the one deliberate divergence from that port: it's now
+`earnings_rows` (plural), returning a real parent/children tree node
+instead of a flat row — a rebuild-branch UX change, not a straight port,
+see that function's own docstring and SPEC.md decision 10.
+
 `income_statement_groups` joined this file in Phase 1.4 rather than
 staying in `modules/reports/`: it's `_income_statement_groups` from
 `app/main.py`, and despite living next to genuinely hard, DB-calling
@@ -41,12 +46,66 @@ def pnl_net(accounts: list[dict], balances: dict) -> float:
     return -income - expense
 
 
-def earnings_row(name: str, amount, depth: int = 2) -> dict:
-    """A synthetic Trial Balance row for an unclosed-earnings figure
-    (Current/Prior Year Earnings) that has no backing `accounts` row —
-    same shape a real flattened tree row has, so it renders identically."""
-    return {"account_code": "", "account_name": name, "path": "", "depth": depth,
-            "has_children": False, "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0)}
+# Reserved ids for the synthetic "Retained Earnings" tree node (Trial
+# Balance / Balance Sheet's own simulated-close split, SPEC.md decision
+# 10) — fixed negative constants so they can never collide with a real
+# `accounts.id` (Postgres serial, always positive) and stay stable
+# across requests instead of depending on how many real accounts exist.
+RETAINED_EARNINGS_ID = -1
+CURRENT_YEAR_EARNINGS_ID = -2
+PRIOR_YEAR_EARNINGS_ID = -3
+
+
+def earnings_rows(current_year, prior_year, zeros: bool, depth: int = 2) -> list[dict]:
+    """The unclosed-earnings figure as a real collapsible tree node —
+    "Retained Earnings" (parent, rolled up total) with "Current Year
+    Earnings (Unclosed)"/"Prior Year Earnings (Unclosed)" as its two leaf
+    children — replacing what used to be two flat sibling rows with no
+    `id`/`parent_id` at all (deliberately invisible to
+    `useCollapsibleTree`, per that hook's own former comment). Giving
+    this a real id is what makes it a genuine collapsible node instead:
+    `useCollapsibleTree` only recognizes a parent/child relationship
+    through a real numeric id pair, so a flat list could never have been
+    made collapsible without this.
+
+    Returns `[]` (no node at all, not just an empty subtree) when both
+    figures are zero and `zeros` wasn't asked for — same all-or-nothing
+    "is there anything here worth a Retained Earnings line at all" check
+    Trial Balance always used, now shared by Balance Sheet's own version
+    of this split too (see SPEC.md decision 10's Balance Sheet
+    addendum) rather than each of the two lines independently
+    disappearing at its own zero, which read oddly once they're a single
+    parent/children unit instead of two unrelated rows.
+
+    Every row carries both `debit_balance`/`credit_balance` (Trial
+    Balance's own two-column layout, unflipped — a positive `amount`
+    here already means "real earnings, credit side of Equity" per
+    `pnl_net`'s own docstring) and `subtotal` (Balance Sheet's single
+    signed Amount column) — `subtotal` is deliberately stored as
+    `-amount`, the same "credit-normal, negative internally" convention
+    every real Equity account's own `subtotal` already uses via
+    `build_account_tree`'s `rollup()`, so Balance Sheet's existing
+    per-section sign flip (`sign=-1` on the frontend, `-r["subtotal"]`
+    in the CSV/XLSX exporters) turns it back into the correct positive-
+    for-profit figure without any special-casing for these rows."""
+    if not zeros and current_year == 0 and prior_year == 0:
+        return []
+    total = current_year + prior_year
+
+    def row(id_: int, parent_id: int | None, name: str, amount, d: int, has_children: bool) -> dict:
+        return {
+            "id": id_, "parent_id": parent_id, "account_code": "", "account_name": name,
+            "path": "", "depth": d, "has_children": has_children,
+            "subtotal": -amount, "debit_balance": max(-amount, 0), "credit_balance": max(amount, 0),
+        }
+
+    return [
+        row(RETAINED_EARNINGS_ID, None, "Retained Earnings", total, depth, True),
+        row(CURRENT_YEAR_EARNINGS_ID, RETAINED_EARNINGS_ID, "Current Year Earnings (Unclosed)",
+            current_year, depth + 1, False),
+        row(PRIOR_YEAR_EARNINGS_ID, RETAINED_EARNINGS_ID, "Prior Year Earnings (Unclosed)",
+            prior_year, depth + 1, False),
+    ]
 
 
 def build_account_tree(accounts: list[dict], balances_by_id: dict,

@@ -1,8 +1,11 @@
 """Unit tests for postwarden.domain.accounts — no database, no app."""
 from postwarden.domain.accounts import (
+    CURRENT_YEAR_EARNINGS_ID,
+    PRIOR_YEAR_EARNINGS_ID,
+    RETAINED_EARNINGS_ID,
     accounts_with_gaps,
     build_account_tree,
-    earnings_row,
+    earnings_rows,
     flatten_tree,
     income_statement_groups,
     pnl_net,
@@ -85,15 +88,48 @@ def test_pnl_net_is_income_minus_expense_sign_corrected():
     assert pnl_net(accounts, balances) == 200  # 300 income - 100 expense
 
 
-def test_earnings_row_shapes_amount_into_debit_credit_columns():
-    row = earnings_row("Current Year Earnings (Unclosed)", 150)
-    assert row["debit_balance"] == 0
-    assert row["credit_balance"] == 150
-    assert row["has_children"] is False
+def test_earnings_rows_builds_a_parent_with_two_real_children():
+    rows = earnings_rows(150, -75, zeros=False)
+    assert len(rows) == 3
+    parent, current, prior = rows
+    assert parent["id"] == RETAINED_EARNINGS_ID
+    assert parent["parent_id"] is None
+    assert parent["has_children"] is True
+    assert current["id"] == CURRENT_YEAR_EARNINGS_ID
+    assert current["parent_id"] == RETAINED_EARNINGS_ID
+    assert prior["id"] == PRIOR_YEAR_EARNINGS_ID
+    assert prior["parent_id"] == RETAINED_EARNINGS_ID
+    assert current["has_children"] is False
+    assert prior["has_children"] is False
 
-    row_neg = earnings_row("Prior Year Earnings (Unclosed)", -75)
-    assert row_neg["debit_balance"] == 75
-    assert row_neg["credit_balance"] == 0
+
+def test_earnings_rows_shapes_amount_into_debit_credit_columns():
+    _, current, prior = earnings_rows(150, -75, zeros=False)
+    assert current["debit_balance"] == 0
+    assert current["credit_balance"] == 150
+    assert prior["debit_balance"] == 75
+    assert prior["credit_balance"] == 0
+
+
+def test_earnings_rows_subtotal_is_negated_for_the_shared_equity_sign_flip():
+    # `subtotal` mirrors a real Equity account's own "credit-normal,
+    # negative internally" storage convention, not `pnl_net`'s "positive
+    # means real earnings" one — so the same -1 sign flip every real
+    # Equity row already gets (Balance Sheet's own per-section sign,
+    # the CSV/XLSX exporters' own `-r["subtotal"]`) also turns this back
+    # into the correct positive-for-profit figure with no special case.
+    parent, current, prior = earnings_rows(150, -75, zeros=False)
+    assert parent["subtotal"] == -75  # -(150 + -75)
+    assert current["subtotal"] == -150
+    assert prior["subtotal"] == 75
+
+
+def test_earnings_rows_all_or_nothing_on_zero_unless_zeros_flag():
+    assert earnings_rows(0, 0, zeros=False) == []
+    assert len(earnings_rows(0, 0, zeros=True)) == 3
+    # Only one side zero still returns the full parent+children triple —
+    # not just the nonzero child — since they're one collapsible unit now.
+    assert len(earnings_rows(100, 0, zeros=False)) == 3
 
 
 def test_accounts_with_gaps_interleaves_a_gap_before_each_row_and_one_trailing():

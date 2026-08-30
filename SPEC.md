@@ -206,21 +206,27 @@ inserted and then rolled back.
 
 Trial Balance defaults to showing Income/Expense accounts as
 month-to-date only, with the gap to their true cumulative balance folded
-into two synthetic "Current/Prior Year Earnings (Unclosed)" lines under
-Equity — as if a monthly close had actually run. It hasn't: this is
-computed at request time from `fn_account_balances` called with two
-different date windows and combined in Python
-(`_trial_balance_rows()`), and `raw=1` turns it off to show the true
-unmodified cumulative balances instead. No closing entry is ever posted,
-consistent with "if a number matters, it should be computable by SQL
-alone" (decision 6) — closing the books for real would mean a second
-write path outside the one the balance trigger governs, which is exactly
-what decision 2 exists to prevent.
+into a synthetic "Retained Earnings" line under Equity — as if a monthly
+close had actually run. It hasn't: this is computed at request time from
+`fn_account_balances` called with two different date windows and
+combined in Python (`trial_balance()`), and `raw=1` turns it off to show
+the true unmodified cumulative balances instead. No closing entry is
+ever posted, consistent with "if a number matters, it should be
+computable by SQL alone" (decision 6) — closing the books for real would
+mean a second write path outside the one the balance trigger governs,
+which is exactly what decision 2 exists to prevent.
+
+"Retained Earnings" itself is a real collapsible tree node — a parent
+row (the combined figure) with "Current Year Earnings (Unclosed)" and
+"Prior Year Earnings (Unclosed)" as its two children — not the two flat,
+unrelated sibling rows this used to be. That distinction matters for
+what `raw=1` means, and it means something different again on Balance
+Sheet — see the addendum below.
 
 **Addendum — the same idea, applied to individual lines instead of an
 aggregate:** the Ledger (`/ledger`) reused this exact simulated-close
 split once it grew its own "as of"/raw controls (previously fixed to
-month-to-date with no such toggle at all). `_ledger_rows()` applies the
+month-to-date with no such toggle at all). `ledger_rows()` applies the
 same Income/Expense-vs-everything-else distinction at the level of
 which journal lines are even fetched, rather than to a balance already
 computed: Asset/Liability/Equity accounts always show every line from
@@ -230,6 +236,29 @@ own lines by default (same as Trial Balance's `merged_balances`), and
 `raw=1` shows their full history too. Still no closing entry, same
 reasoning as above — this is a WHERE-clause distinction on a read, not
 a write path.
+
+**Addendum — Balance Sheet's `raw` doesn't mean the same thing, and
+that's deliberate:** Trial Balance already shows Income/Expense in their
+own section, so `raw=1` there just relocates the same total P&L from a
+synthetic Equity line back into the accounts that actually earned it —
+nothing is lost, the figure is still on the page somewhere. Balance
+Sheet has no Income/Expense section at all, so there's nowhere else for
+that money to go: `raw=1` there means the "Retained Earnings" node is
+simply *absent*, not collapsed into a single merged line the way an
+earlier version of this feature did. That absence is intentional and
+should be visible, not smoothed over — `balance_sheet()`'s `total_equity`
+only adds the unclosed P&L back in when the plug is actually present, so
+`raw=1` makes `total_assets` and `total_liab_and_equity` genuinely
+disagree by exactly that amount, `in_balance` correctly comes back
+`False`, and the Balance Sheet page says so (an explicit "won't balance
+pre-close" note, plus the existing out-of-balance styling on the grand-
+total row). This is not a bug to paper over with a plug under a
+different name: a real balance sheet drawn up before a real close
+genuinely doesn't balance against Assets alone, because Assets already
+reflects a fiscal year's worth of transactions that Equity won't, until
+something closes the books — which, per decision 2 and the rest of this
+decision, PostWarden never does. Showing that gap honestly when asked to
+("skip the simulated close") is more accurate than hiding it, not less.
 
 ### 11. Hierarchical rollups are built in the app, not SQL, and drill through uniformly
 

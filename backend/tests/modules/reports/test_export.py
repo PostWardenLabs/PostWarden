@@ -92,6 +92,28 @@ def test_balance_sheet_xlsx_liabilities_and_equity_are_sign_flipped(book, conn):
     assert equity_row[2] == 1000.0  # stored subtotal is -1000 (credit-normal); flipped positive
 
 
+def test_balance_sheet_csv_includes_retained_earnings_as_a_plain_equity_row(book, conn):
+    # No more separate "earnings_lines" pass — the "Retained Earnings"
+    # node rides through as part of `result["equity"]` and gets the same
+    # sign flip every real Equity row gets, same reasoning the sign-flip
+    # test above already covers for account 3100.
+    result = service.balance_sheet(conn, "ACTUAL", "2026-02-28", raw=0, zeros=0)
+    rows = csv_rows(export.balance_sheet_csv(result, "ACTUAL", "2026-02-28", raw=0))
+    retained_row = next(r for r in rows if r and r[2] == "Retained Earnings")
+    assert retained_row[0] == "Equity"
+    assert retained_row[4] == "1200.00"  # 2000 salary - 800 rent, unclosed
+
+
+def test_balance_sheet_csv_raw_omits_retained_earnings_entirely(book, conn):
+    result = service.balance_sheet(conn, "ACTUAL", "2026-02-28", raw=1, zeros=0)
+    rows = csv_rows(export.balance_sheet_csv(result, "ACTUAL", "2026-02-28", raw=1))
+    assert not any(r and r[2] == "Retained Earnings" for r in rows)
+    total_assets_row = next(r for r in rows if r and r[0] == "Total assets")
+    total_le_row = next(r for r in rows if r and r[0] == "Total liabilities + equity")
+    assert total_assets_row[4] != total_le_row[4]
+    assert result["in_balance"] is False
+
+
 # ---------------------------------------------------------------------------
 # Income statement
 # ---------------------------------------------------------------------------

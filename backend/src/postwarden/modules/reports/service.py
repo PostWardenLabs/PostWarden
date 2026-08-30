@@ -29,7 +29,7 @@ from ...domain.accounts import (
     ACCOUNT_TYPES,
     TYPE_LABELS,
     build_account_tree,
-    earnings_row,
+    earnings_rows,
     flatten_tree,
     income_statement_groups,
     pnl_net,
@@ -64,12 +64,20 @@ def trial_balance(conn: Connection, scenario: str, as_of: str | None, zeros: int
         for t in ACCOUNT_TYPES:
             type_roots = [r for r in roots if r["account_type"] == t]
             extra = extra_equity if t == "equity" else []
+            # Only `extra`'s own root ("Retained Earnings") goes into the
+            # sub_debits/sub_credits sum, not its two children too —
+            # `earnings_rows()` gives the parent a rolled-up total that
+            # already includes both, so summing all three would double-
+            # count the same money, the same reason `type_roots` (roots,
+            # not the post-flatten `flat` list) is what's summed for real
+            # accounts a few lines below.
+            extra_roots = [r for r in extra if r["parent_id"] is None]
             flat = flatten_tree(type_roots, zeros)
             if flat or extra:
                 grouped.append({
                     "type": t, "label": TYPE_LABELS[t], "rows": flat + extra,
-                    "sub_debits": sum((r["debit_balance"] for r in type_roots + extra), Decimal(0)),
-                    "sub_credits": sum((r["credit_balance"] for r in type_roots + extra), Decimal(0)),
+                    "sub_debits": sum((r["debit_balance"] for r in type_roots + extra_roots), Decimal(0)),
+                    "sub_credits": sum((r["credit_balance"] for r in type_roots + extra_roots), Decimal(0)),
                     "show_type_total": len(type_roots) > 1 or bool(extra),
                 })
         return grouped
@@ -94,12 +102,7 @@ def trial_balance(conn: Connection, scenario: str, as_of: str | None, zeros: int
                                   if a["account_type"] in ("income", "expense")
                                   else full_balances.get(a["id"], 0))
                         for a in accounts}
-    extra_equity = []
-    if zeros or current_year_earnings != 0 or prior_year_earnings != 0:
-        extra_equity = [
-            earnings_row("Current Year Earnings (Unclosed)", current_year_earnings),
-            earnings_row("Prior Year Earnings (Unclosed)", prior_year_earnings),
-        ]
+    extra_equity = earnings_rows(current_year_earnings, prior_year_earnings, bool(zeros))
     grouped = build_sections(merged_balances, extra_equity)
 
     return {"grouped": grouped, "total_debits": total_debits, "total_credits": total_credits,
@@ -113,12 +116,24 @@ def trial_balance(conn: Connection, scenario: str, as_of: str | None, zeros: int
 
 
 def balance_sheet(conn: Connection, scenario: str, as_of: str | None, raw: int = 0, zeros: int = 0) -> dict:
-    """Ported from `app/main.py`'s `_balance_sheet_rows`, unchanged in
-    shape. No MTD carve-out here, unlike trial_balance: a balance sheet
-    has no Income/Expense section of its own to hold that money in, so
+    """No MTD carve-out here, unlike trial_balance: a balance sheet has
+    no Income/Expense section of its own to hold that money in, so
     "Current Year" has to mean the *whole* fiscal year to date (MTD
     included) or Assets would stop reconciling against Liabilities +
-    Equity by exactly the MTD amount."""
+    Equity by exactly the MTD amount.
+
+    Unlike Trial Balance, `raw` here doesn't just change what Income/
+    Expense's own section shows — Balance Sheet has no such section at
+    all, so there's nowhere else for that money to be visible. `raw=1`
+    therefore drops the "Retained Earnings" plug entirely rather than
+    collapsing it to one merged line: Assets keeps reflecting every
+    posted transaction same as always, but Liabilities + Equity no
+    longer includes the not-yet-closed P&L that real-world Assets side
+    already absorbed, so the two genuinely stop reconciling by exactly
+    `total_pnl` — `in_balance` goes `False` and the page says so. That's
+    deliberate, not a bug to "fix" by re-adding a plug under a different
+    name: it's what a balance sheet actually looks like before a real
+    close, which PostWarden never performs (SPEC.md decision 10)."""
     as_of_date = as_of or None
     as_of_dt = date.fromisoformat(as_of_date) if as_of_date else date.today()
     accounts = repo.dim_accounts(conn)
@@ -126,20 +141,15 @@ def balance_sheet(conn: Connection, scenario: str, as_of: str | None, raw: int =
     total_pnl = pnl_net(accounts, full_balances)
 
     if raw:
-        earnings_lines = [("Current earnings (unclosed)", total_pnl)]
+        earn_rows: list[dict] = []
+        equity_plug = Decimal(0)
     else:
         fy_start = date(as_of_dt.year, 1, 1).isoformat()
         fy_balances = repo.account_balances(conn, scenario, as_of_date, fy_start)
         fy_earnings = pnl_net(accounts, fy_balances)
-        earnings_lines = [
-            ("Current Year Earnings (Unclosed)", fy_earnings),
-            ("Prior Year Earnings (Unclosed)", total_pnl - fy_earnings),
-        ]
-    # Same "hide a boring zero line" rule Trial Balance's own synthetic
-    # earnings rows follow — a zero unclosed-earnings line is noise, not
-    # information, unless zeros asked to see everything.
-    if not zeros:
-        earnings_lines = [(label, amt) for label, amt in earnings_lines if amt != 0]
+        prior_year_earnings = total_pnl - fy_earnings
+        earn_rows = earnings_rows(fy_earnings, prior_year_earnings, bool(zeros))
+        equity_plug = total_pnl
 
     roots = build_account_tree(accounts, full_balances)
     asset_roots = [r for r in roots if r["account_type"] == "asset"]
@@ -147,14 +157,19 @@ def balance_sheet(conn: Connection, scenario: str, as_of: str | None, raw: int =
     equity_roots = [r for r in roots if r["account_type"] == "equity"]
     assets = flatten_tree(asset_roots, zeros=zeros)
     liabilities = flatten_tree(liability_roots, zeros=zeros)
-    equity = flatten_tree(equity_roots, zeros=zeros)
+    # The "Retained Earnings" node (when present) is appended straight
+    # onto the real equity rows, not returned as a separate field the
+    # way `earnings_lines` used to be — it's a real collapsible tree
+    # node now (see `earnings_rows()`'s own docstring), so it renders
+    # through the exact same account-row component every real Equity
+    # account already does, both here and in the CSV/XLSX exporters.
+    equity = flatten_tree(equity_roots, zeros=zeros) + earn_rows
 
     total_assets = sum((r["subtotal"] for r in asset_roots), Decimal(0))
     total_liabilities = -sum((r["subtotal"] for r in liability_roots), Decimal(0))
-    total_equity = -sum((r["subtotal"] for r in equity_roots), Decimal(0)) + total_pnl
+    total_equity = -sum((r["subtotal"] for r in equity_roots), Decimal(0)) + equity_plug
     return {
         "assets": assets, "liabilities": liabilities, "equity": equity,
-        "earnings_lines": earnings_lines,
         "total_assets": total_assets, "total_liabilities": total_liabilities,
         "total_equity": total_equity,
         "total_liab_and_equity": total_liabilities + total_equity,

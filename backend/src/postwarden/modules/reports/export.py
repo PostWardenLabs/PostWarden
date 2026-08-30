@@ -140,8 +140,6 @@ def balance_sheet_csv(result: dict, scenario: str, as_of: str, raw: int) -> Resp
         w.writerow(["Liabilities", r["account_code"], r["account_name"], r["path"], -r["subtotal"]])
     for r in result["equity"]:
         w.writerow(["Equity", r["account_code"], r["account_name"], r["path"], -r["subtotal"]])
-    for label, amount in result["earnings_lines"]:
-        w.writerow(["Equity", "", label, "", amount])
     w.writerow([])
     w.writerow(["Total assets", "", "", "", result["total_assets"]])
     w.writerow(["Total liabilities + equity", "", "", "", result["total_liab_and_equity"]])
@@ -188,10 +186,6 @@ def balance_sheet_xlsx(result: dict, scenario: str, as_of: str, raw: int) -> Res
             row(r, line["account_code"], line["account_name"], line.get("depth", 2),
                 sign * line["subtotal"], style="group" if line.get("depth") == 1 else "line")
             r += 1
-        if label == "Equity":
-            for earn_label, amount in result["earnings_lines"]:
-                row(r, "", earn_label, 2, amount, style="line")
-                r += 1
     r += 1  # blank separator, same breathing room the CSV gives with w.writerow([])
     grand_style = "grand" if result["in_balance"] else "grand_bad"
     row(r, "", "Total assets", 1, result["total_assets"], style=grand_style)
