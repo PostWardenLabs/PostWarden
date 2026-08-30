@@ -86,6 +86,15 @@ wrong, turn it into a real fix instead of just unchecking it.
       were verified for real via `curl`, not a browser file picker or
       mouse clicks through the review step. See Current status's Phase
       4.7 write-up for exactly what *was* verified.
+- [ ] Phase 4.7 (help): no browser tool was available to verify
+      `HelpPage.tsx`'s two-column layout, the jump-nav's actual
+      click-to-anchor scrolling, or the new hash-scroll `useEffect`
+      (`/app/help#import`, reached from either importer's help icon)
+      actually landing on the right section. Only `200`s and the built
+      bundle's own text were checked. See Current status's Phase 4.7
+      write-up for exactly what *was* verified. This is the last
+      unverified item from Phase 4 — Phase 5 is where a full visual pass
+      happens.
 
 ---
 
@@ -3512,6 +3521,55 @@ transition, the mapping tables' `Combobox` rows, and the checkbox/button
 layout were not visually exercised — added to "Check when back at your
 computer" below.
 
+**help, done — this closes Phase 4.7, and Phase 4.** Ported from
+`app/templates/help.html` into `setup/HelpPage.tsx`, read start to
+finish first (a long two-column reference page: a `.side-nav` of
+jump-links down the left, prose sections down the right covering every
+screen this rebuild has now built). Purely static — no backend calls at
+all, the only screen in this entire phase (and one of very few in the
+whole rebuild) with zero API surface. The real work was mechanical but
+not trivial: every one of legacy's cross-reference links
+(`/staging`, `/entries?new=1`, `/entries`, `/budget`, `/scenarios`) had
+to be checked against `App.tsx`'s own `routeKey` table and converted to
+a real `<Link to="/app/...">`, since all of those screens exist by this
+point in the rebuild — `/entries/export.csv` is the one exception,
+staying a plain `<a href>` since it's a real file download, same
+reasoning `ConnectBiPage.tsx`'s `.pbids` link and `JournalPage.tsx`'s
+own CSV/XLSX export links already established. The in-page jump-nav
+itself (`#journal`, `#scheduled`, ...) is unchanged plain `<a
+href="#...">` — checked `base.html`/`help.html` directly and confirmed
+legacy never had a scroll-spy/`active`-highlighting script for this
+page's own side-nav either, unlike `.side-nav`'s other user
+(`AccountsPage.tsx`'s level-filter buttons, which *do* carry real active
+state).
+
+`nav.ts`'s own Help link switches to `client: true` / `/app/help` in
+this commit — the last remaining `nav.ts` link to make that switch,
+closing the gap that link's own long-standing top-of-file comment
+described. `ImportPage.tsx`'s and `ImportMappedPage.tsx`'s own
+help-icon links (`/help#import`, deferred at each of those screens' own
+commits earlier this phase) become real `<Link to="/app/help#import">`s
+now that the target exists. That surfaced one real gap: React Router
+doesn't scroll to a URL's own hash fragment the way a full-page browser
+navigation does (no data router/`<ScrollRestoration>` anywhere in this
+app) — so `HelpPage.tsx` adds one small mount-only `useEffect` reading
+`location.hash` and calling `scrollIntoView()` on the matching heading,
+the first and only place this rebuild has needed that.
+
+**Verified**: `tsc -b && vite build` and `oxlint` both clean; no backend
+touched. A real `docker compose -f backend/docker-compose.yml up -d
+--build`, then an authenticated `GET /app/help` (`200`, and the built JS
+bundle grepped directly for three of the page's own real strings:
+"How each screen works", the `/app/staging` link target, and the fixed-
+up `app/help#import` link) plus a `200` on every other route this
+commit touched a link to (`/app/import`, `/app/import/mapped`,
+`/app/entries`, `/app/scenarios`, `/app/budget`) to confirm none of the
+`<Link>` conversions pointed at a typo'd path. No browser tool was
+available this session, so the two-column layout, the jump-nav's actual
+click-to-anchor behavior, and the hash-scroll `useEffect`'s real
+scrolling were not visually exercised — added to "Check when back at
+your computer" below, closing out this phase's list.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3714,11 +3772,11 @@ Largely configuration once the Phase 3 archetype components exist.
       member; `.two-col`/`.side-nav`/`.add-gap` CSS added (tree/collapse
       CSS itself already landed in Phase 3.3). `nav.ts` promoted to
       `client: true`. See Current status for the full write-up.
-- [ ] **4.7** The rest: dashboard, connect_bi, import, import_mapped,
+- [x] **4.7** The rest: dashboard, connect_bi, import, import_mapped,
       import_mapped_review, account, help. `account` needs no work —
       Phase 4.2 already discovered it's `settings_account`, a different
       screen entirely (see that phase's own note); five real screens
-      remain. Screen 4 of 5 done:
+      remain. All five done — this closes Phase 4:
   - [x] dashboard — `reports/DashboardPage.tsx`, ported from
         `dashboard.html`. The one item in this list with **new backend
         code**: `modules/dashboard/` (`repository.py`/`service.py`/
@@ -3792,6 +3850,32 @@ Largely configuration once the Phase 3 archetype components exist.
         `ImportPage.tsx`'s own "Import with rules" link is now a real
         `<Link>`; its help-icon link stays deferred until Help itself
         ships. See Current status for the full write-up.
+  - [x] help — `setup/HelpPage.tsx`, ported from `help.html`. Purely
+        static prose, no backend calls at all — the only screen in this
+        phase (and one of very few in the whole rebuild) with zero API
+        surface of its own. Every cross-reference that pointed at
+        another screen (`/staging`, `/entries?new=1`, `/entries`,
+        `/budget`, `/scenarios`) is now a real `<Link>` into that
+        screen's `/app/*` route, all of which exist by this point;
+        `/entries/export.csv` stays a plain `<a href>`, same reasoning
+        as Connect BI's `.pbids` download. The in-page jump-nav anchors
+        (`#journal`, `#scheduled`, ...) are unchanged plain `<a
+        href="#...">` — legacy never had scroll-spy/`active` state on
+        them either. `nav.ts`'s own Help link becomes `client: true`
+        pointed at `/app/help` in the same commit — the last `nav.ts`
+        link to make that switch. Both `ImportPage.tsx`'s and
+        `ImportMappedPage.tsx`'s own help-icon links become real
+        `<Link to="/app/help#import">`s now that the target exists;
+        since React Router doesn't scroll to a URL's hash on its own
+        (no data router/`<ScrollRestoration>` in this app), `HelpPage.tsx`
+        adds one small mount-only `useEffect` reading `location.hash`
+        and calling `scrollIntoView()` — the first and only place this
+        rebuild needs that. See Current status for the full write-up.
+
+**Phase 4.7 is now fully done, which closes Phase 4.** Every screen in
+`UI_CONSISTENCY_AUDIT.md` §1's five archetypes has a real React
+component behind it; `app/templates/` is fully mined. Phase 5 ("the
+long tail," below) is the only unchecked phase left in this document.
 
 ## Phase 5 — The long tail
 

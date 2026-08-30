@@ -144,12 +144,7 @@ export default function ImportPage() {
           Imported entries land in <Link className="quiet-link" to="/app/staging">Staging</Link> for review,
           same as a scheduled entry.
         </p>
-        {/* Plain `<a>`, not a `<Link>` — Help doesn't exist yet as this
-            screen lands (it's the last screen this same phase builds);
-            same "don't reach into a screen that doesn't exist yet"
-            deferral every prior phase's own not-yet-built link already
-            followed. Revisit once `HelpPage.tsx` ships later this phase. */}
-        <a href="/help#import" className="help-icon" aria-label="How this works" title="How this works">?</a>
+        <Link to="/app/help#import" className="help-icon" aria-label="How this works" title="How this works">?</Link>
       </div>
 
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}

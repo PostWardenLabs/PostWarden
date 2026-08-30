@@ -65,7 +65,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'scenarios', label: 'Scenarios', href: '/app/scenarios', client: true },
       { key: 'payees', label: 'Payees', href: '/app/payees', client: true },
       { key: 'tags', label: 'Tags', href: '/app/tags', client: true },
-      { key: 'help', label: 'Help', href: '/help' },
+      { key: 'help', label: 'Help', href: '/app/help', client: true },
     ],
   },
 ]

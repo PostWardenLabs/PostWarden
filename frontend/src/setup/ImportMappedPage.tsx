@@ -170,10 +170,7 @@ export default function ImportMappedPage() {
           and every row gets turned into a proper double-entry posting, staged in{' '}
           <Link className="quiet-link" to="/app/staging">Staging</Link> for review same as any other import.
         </p>
-        {/* Plain `<a>`, not a `<Link>` — Help doesn't exist yet as this
-            screen lands (it's this same phase's last screen). Revisit
-            once HelpPage.tsx ships. */}
-        <a href="/help#import" className="help-icon" aria-label="How this works" title="How this works">?</a>
+        <Link to="/app/help#import" className="help-icon" aria-label="How this works" title="How this works">?</Link>
       </div>
 
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
