@@ -1226,10 +1226,61 @@ the Docker build's frontend-build stage would need to `npm ci`, untested
 either way, but this doesn't change the nature of the existing gap since
 that stage already couldn't be exercised at all this session.
 
-**Next up:** continue through Phase 2's remaining items (2.3 CSS tokens/
-themes, 2.4 shell, 2.5 per-widget decisions); close the Docker
-verification gap (both 2.1's and 2.2's share of it) whenever this
-machine's own Docker daemon is reachable again.
+**Phase 2.3 done.** `frontend/src/index.css` — the 320 CSS custom
+properties (the default Slate palette plus its 21 `data-theme` variants)
+and the 3 `data-font` bundles, ported byte-for-byte from `app/static/
+style.css`'s own first 565 lines. The placeholder scaffold's own comment
+("the real 327 CSS custom properties and 21 themes ... land in Phase
+2.3 — deliberately not here, since this file predates any of that work")
+already named this file as the destination.
+
+1. **Cut point verified structurally, not just by eye.** `app/static/
+   style.css` is 2,145 lines total, but a full-file scan for `--*:`
+   declarations found all 320 of them inside the first 565 lines — the
+   `-- top bar --` comment at line 566 is exactly where the source
+   itself turns from tokens to components, so nothing past that line
+   needed porting for this phase; a script diff also confirms the ported
+   565 lines are byte-identical to the source, not retyped.
+2. **The scaffold's own `color-scheme: light dark` reset (from Vite's
+   template, not from legacy) was dropped, not carried forward.** Legacy
+   never sets it anywhere in `style.css`/`base.html`, and it actively
+   fights this app's own manual `data-theme` mechanism — a browser
+   honoring `light dark` styles native form controls (scrollbars,
+   checkboxes) off the OS preference regardless of which of the 21
+   explicit themes is actually active, the opposite of what picking a
+   theme is for.
+
+**Verified for real, further than looked possible at the start of this
+session.** This environment had no `npm`/`node` on `PATH` at all
+initially (a new, narrower gap than the Docker one tracked since Phase
+2.1 — confirmed still separately true this session too, see below) and
+no already-built frontend running anywhere. Network access itself is
+fine (only the Docker daemon's own registry pulls are restricted here),
+so a portable Node 22 binary was downloaded directly and used for a real
+`npm run build` — clean, `tsc -b && vite build`, CSS bundled to 6.82 kB.
+Separately, `backend-db-1` (a `postgres:16` container from `backend/
+docker-compose.yml`'s own `db` service) turned out to already be running
+healthy from an earlier session — pointing a real `uvicorn postwarden.
+main:app` at it directly (no Docker) let `lifespan` succeed for the
+first time this session (`bootstrap_admin_from_env` against a real
+Postgres, not skipped): `GET /` and `/healthz` both 200, and the served
+CSS asset came back `content-type: text/css`, inspected over real HTTP
+— 21 `data-theme` blocks, 22 `--accent` declarations (default + 21), and
+the Matrix theme's own minified block matches the source exactly
+(`--paper:#000` etc., `#000000` minified losslessly). **Not verified**:
+an actual browser rendering a themed page — no browser tool exists in
+this session, the same gap 2.1/2.2 already carried, just never
+exercised until a UI change (this one) made it relevant. Tracked in Open
+questions alongside the Docker gap rather than treated as blocking this
+phase: the correctness risk of a byte-identical port of already-shipped,
+already-designed values is low, and both gaps get closed by the same
+kind of real run once available.
+
+**Next up:** Phase 2.4 (shell: sidebar, topbar, flash banners, the
+pre-paint theme/font restore script) and 2.5 (per-widget decisions);
+close the Docker `docker compose up -d --build` verification gap (2.1's,
+2.2's, and now 2.3's own browser-rendering share of it) whenever this
+machine's Docker daemon can reach its registry again.
 
 ---
 
@@ -1335,7 +1386,7 @@ directly.
 - [x] **2.2** Typed API client generated from the backend's OpenAPI
       schema — `openapi-typescript` + `openapi-fetch`, see the Current
       status write-up.
-- [ ] **2.3** Port the 327 CSS custom properties and 21 themes from
+- [x] **2.3** Port the 327 CSS custom properties and 21 themes from
       `app/static/style.css`, essentially verbatim.
 - [ ] **2.4** Shell: sidebar (hover-preview + click-to-pin, three
       collapsible groups), topbar, flash banners, and the pre-paint
@@ -1443,6 +1494,16 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 2.3 done: `frontend/src/index.css` — the 320 CSS
+  custom properties (Slate default + 21 `data-theme` variants) and 3
+  `data-font` bundles, ported byte-for-byte from `app/static/style.css`'s
+  first 565 lines (confirmed, not assumed, that every one of the source
+  file's 320 custom-property declarations sits inside that range). See
+  the Current status section for the full write-up, including why the
+  Vite scaffold's own `color-scheme: light dark` reset was dropped and
+  how this session verified it for real without Docker or a pre-installed
+  Node (a portable Node binary plus an already-running `backend-db-1`
+  Postgres container from an earlier session).
 - **2026-08-30** — Phase 2.2 done: a typed API client — `backend/scripts/
   dump_openapi_schema.py` (new, needs no DB/Docker) feeds
   `openapi-typescript` to generate `frontend/src/api/schema.ts`
@@ -1793,4 +1854,34 @@ Carried forward until answered; move to the log once resolved.
   treating Phase 2.1 as fully done rather than in-progress — Phase 2.2
   itself is marked `[x]` regardless, since nothing about the typed client
   specifically depends on Docker (see its own "Verified for real"
-  paragraph).
+  paragraph). **Confirmed still true in a later session** (the one that
+  did Phase 2.3): `docker pull hello-world` — the smallest image that
+  exists, already known-cached nowhere — was tried again from scratch and
+  still hangs/times out the same way, so this reads as a standing
+  characteristic of the sandbox rather than a one-off. That same session
+  did find a real, already-running `backend-db-1` (`postgres:16`)
+  container left over from an earlier one, which is what let Phase 2.3's
+  own verification reach a real `uvicorn` + real Postgres + real HTTP
+  check without Docker — worth trying first (`docker ps -a`) before
+  assuming a from-scratch container is the only way to verify anything
+  that needs Postgres.
+- **A second, narrower gap surfaced doing Phase 2.3, worth tracking
+  alongside the Docker one since both close on the same kind of real run:
+  no browser tool exists in this session (or, per the pattern above,
+  reliably in this sandbox at all).** `npm`/`node` weren't even on `PATH`
+  at the start of that session either — worked around with a portable
+  Node 22 binary downloaded directly (network access itself is fine, only
+  the Docker daemon's own registry pulls are restricted) — but even with
+  a real `npm run build` and a real `uvicorn` serving the result, there is
+  no way in this environment to actually paint a page and look at it.
+  Phase 2.3's own CSS port was verified as thoroughly as byte-level/
+  HTTP-level checks allow (see its Current status write-up) but a real
+  "cycle through the 21 themes and confirm they read correctly" pass is
+  still owed, and every visual phase from here on (2.4's shell onward)
+  will carry the same gap until a browser tool is available in-session.
+  **Needs**: whatever machine/session eventually runs the outstanding
+  `docker compose up -d --build` above should also do a real browser pass
+  over at least a few themes (Ledger, Midnight, Contrast, Matrix — the
+  widest spread of light/dark/accessibility/novelty) before any Phase 2.3
+  or later visual work is treated as fully closed out, not just
+  mechanically correct.

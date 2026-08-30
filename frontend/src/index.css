@@ -1,11 +1,575 @@
-/* Minimal reset only. The real 327 CSS custom properties and 21 themes
-   ported from app/static/style.css land in Phase 2.3 (REBUILD_STATUS.md) —
-   deliberately not here, since this file predates any of that work. */
+/* Design tokens — ported verbatim from app/static/style.css (REBUILD_STATUS.md
+   Phase 2.3): the 320 CSS custom properties across the default palette (Slate)
+   and its 21 --data-theme variants, the three --data-font bundles, and the
+   handful of global element rules (box-sizing, body background/ink/font,
+   default link color, --content-max) that sit alongside them in the source
+   file because nothing below this point in app/static/style.css declares a
+   new custom property — everything past here is components consuming these
+   variables, which land per screen/widget in later phases (2.4 onward), not
+   copied wholesale here. */
+
+/* ==========================================================================
+   PostWarden — design system
+   Grounded in the artifact this software replaces: columnar ledger paper.
+   Pale green stock, green ruling, the red vertical rule beside money
+   columns, tabular monospaced figures, and the accountant's double-rule
+   under balanced totals.
+   ========================================================================== */
 :root {
-  color-scheme: light dark;
+  /* Slate — cool, contemporary, least "paper" of the neutral light themes.
+     The default (no data-theme attribute set); every other theme,
+     including Ledger below, is a deliberate departure from this one. */
+  --paper:        #f4f6f8;
+  --paper-deep:   #e9edf1;
+  --surface:      #ffffff;
+  --ink:          #1b2430;
+  --ink-soft:     #5b6b7c;
+  --rule:         #d6dde3;
+  --rule-strong:  #aebbc7;
+  --red:          #b3392c;
+  --ok:           #1f7a52;
+  --warn:         #9c6b0e;
+  --focus:        #2f6fb0;
+  --accent:       var(--ink);
+  --accent-hover: #2c3a4c;
+  --accent-text:  var(--paper);
+  --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+  /* A role, not an alias — see the font-bundle block below for why this
+     is its own variable rather than every numeric readout just using
+     --mono directly. Defaults to --mono (today's look, unchanged) until
+     a bundle says otherwise. */
+  --figures: var(--mono);
 }
 
+/* Ledger — pale green ledger stock, grounded in the columnar paper this
+   software replaces. The original default; kept as an opt-in theme. */
+:root[data-theme="ledger"] {
+  --paper:        #f7faf4;
+  --paper-deep:   #eff5ea;   /* tinted money columns */
+  --surface:      #ffffff;   /* cards, inputs — the "clean sheet" on top of paper */
+  --ink:          #1d2b22;
+  --ink-soft:     #55665c;
+  --rule:         #ccdcc8;   /* ledger ruling */
+  --rule-strong:  #8fae8b;
+  --red:          #a63c2e;   /* the red rule; imbalance; credit accent */
+  --ok:           #2f6b45;
+  --warn:         #93690f;
+  --focus:        #3e6f8e;
+  --accent:       var(--ink);
+  --accent-hover: #2c4034;
+  --accent-text:  var(--paper);
+}
+
+/* Midnight — a night ledger: dark stock, brass-stamp accent. */
+:root[data-theme="midnight"] {
+  --paper:        #10140f;
+  --paper-deep:   #171d15;
+  --surface:      #1b221a;
+  --ink:          #ecefe8;
+  --ink-soft:     #9caa96;
+  --rule:         #262f24;
+  --rule-strong:  #435041;
+  --red:          #e2685a;
+  --ok:           #6fcf8e;
+  --warn:         #e2954a;
+  --focus:        #7fb0d9;
+  --accent:       #c9a227;
+  --accent-hover: #ddb939;
+  --accent-text:  #14180f;
+}
+
+/* Graphite — a second dark theme, cool where Midnight is warm: slate-black
+   stock, cyan accent. */
+:root[data-theme="graphite"] {
+  --paper:        #14181c;
+  --paper-deep:   #1b2126;
+  --surface:      #1f262c;
+  --ink:          #e6ecef;
+  --ink-soft:     #90a0a8;
+  --rule:         #262f35;
+  --rule-strong:  #3c4a52;
+  --red:          #e2685a;
+  --ok:           #5fbf9e;
+  --warn:         #e0a542;
+  --focus:        #6fb0d8;
+  --accent:       #46a8c9;
+  --accent-hover: #5cbdde;
+  --accent-text:  #0e1518;
+}
+
+/* Mono — true grayscale, no hue anywhere except the functional red/ok/
+   warn the ledger itself needs (imbalance, credit, income; pending-
+   approval banners). The most minimalist of the set: black-on-white,
+   one weight of accent. */
+:root[data-theme="mono"] {
+  --paper:        #fafafa;
+  --paper-deep:   #f0f0f0;
+  --surface:      #ffffff;
+  --ink:          #1a1a1a;
+  --ink-soft:     #6b6b6b;
+  --rule:         #e0e0e0;
+  --rule-strong:  #b0b0b0;
+  --red:          #b3261e;
+  --ok:           #2e7d4f;
+  --warn:         #b8860b;
+  --focus:        #4a4a4a;
+  --accent:       var(--ink);
+  --accent-hover: #333333;
+  --accent-text:  var(--paper);
+}
+
+/* Linen — the barest warmth, a whisper of a warm stock rather than a
+   shout. Still minimalist: one restrained hue, everything else grayscale. */
+:root[data-theme="linen"] {
+  --paper:        #faf8f5;
+  --paper-deep:   #f1ede6;
+  --surface:      #ffffff;
+  --ink:          #2b2620;
+  --ink-soft:     #7a7367;
+  --rule:         #e6dfd4;
+  --rule-strong:  #cabfae;
+  --red:          #a8402f;
+  --ok:           #4f7350;
+  --warn:         #96701a;
+  --focus:        #6b7280;
+  --accent:       var(--ink);
+  --accent-hover: #443c32;
+  --accent-text:  var(--paper);
+}
+
+/* Budget — clean cool-white and a saturated indigo accent, styled after
+   Actual Budget's default look rather than this app's own ledger-paper
+   idiom: flat surfaces, no warmth, one confident brand color instead of
+   ink-as-accent. */
+:root[data-theme="budget"] {
+  --paper:        #f7f8fb;
+  --paper-deep:   #eef0f6;
+  --surface:      #ffffff;
+  --ink:          #242530;
+  --ink-soft:     #6e7186;
+  --rule:         #e3e5ee;
+  --rule-strong:  #c7cbdc;
+  --red:          #d0393e;
+  --ok:           #2ba672;
+  --warn:         #d99a2b;
+  --focus:        #6366f1;
+  --accent:       #5442f5;
+  --accent-hover: #6f5ffa;
+  --accent-text:  #ffffff;
+}
+
+/* Forest — a third dark theme, distinct from Midnight (warm brass) and
+   Graphite (cool cyan): full pine-green-black with a mossy accent, the
+   ledger's own green pushed into a night register. */
+:root[data-theme="forest"] {
+  --paper:        #0f1811;
+  --paper-deep:   #16211a;
+  --surface:      #1a2620;
+  --ink:          #e3ede6;
+  --ink-soft:     #93a897;
+  --rule:         #24332a;
+  --rule-strong:  #3d5445;
+  --red:          #e2776a;
+  --ok:           #7ed9a0;
+  --warn:         #e0b34a;
+  --focus:        #6fa8d8;
+  --accent:       #4f9863;
+  --accent-hover: #5fac74;
+  --accent-text:  #0d140f;
+}
+
+/* Cobalt — a confident, saturated blue, brighter and more "brand" than
+   the muted cool tones of Slate, Ink, or Budget. */
+:root[data-theme="cobalt"] {
+  --paper:        #f4f8fc;
+  --paper-deep:   #e7f0fa;
+  --surface:      #ffffff;
+  --ink:          #142033;
+  --ink-soft:     #4f6478;
+  --rule:         #d3e2f0;
+  --rule-strong:  #9fc0e0;
+  --red:          #c23b3b;
+  --ok:           #1f8a5f;
+  --warn:         #c98a1f;
+  --focus:        #2f6fb0;
+  --accent:       #1c6fd6;
+  --accent-hover: #3480e0;
+  --accent-text:  #f4f8fc;
+}
+
+/* Contrast — an accessibility theme: pure black on white, no soft grays
+   in the borders that carry structure (rule-strong), for readers who
+   need the sharpest edges the design system can offer. */
+:root[data-theme="contrast"] {
+  --paper:        #ffffff;
+  --paper-deep:   #eeeeee;
+  --surface:      #ffffff;
+  --ink:          #000000;
+  --ink-soft:     #333333;
+  --rule:         #555555;
+  --rule-strong:  #000000;
+  --red:          #b30000;
+  --ok:           #006622;
+  --warn:         #806600;
+  --focus:        #0000cc;
+  --accent:       #000000;
+  --accent-hover: #262626;
+  --accent-text:  #ffffff;
+}
+
+/* -- VS Code–inspired themes ----------------------------------------------
+   Colors sourced from each theme's own real palette (the official Monokai
+   Pro VS Code extension, Binaryify/OneDark-Pro, Catppuccin's published
+   palette, the Tokyo Night VS Code theme, and the ayu-theme VS Code
+   extension) rather than approximated from memory or a screenshot, so
+   these actually read as the theme they're named after side-by-side with
+   the real editor. Ledger's own --paper/--paper-deep/--surface brightness
+   ladder (paper darkest, surface lightest, on a dark theme) is kept even
+   where the source theme doesn't distinguish three tiers itself. */
+
+/* Monokai Pro — the redesigned, softer palette the actual Monokai Pro
+   product ships (not classic Sublime-era Monokai, which is more
+   saturated/harsher — #ff6188/#a9dc76/#78dce8/#ab9df2 are Pro's own
+   toned-down hues). Purple accent since orange and cyan are already
+   spoken for as focus/ok. */
+:root[data-theme="monokai-pro"] {
+  --paper:        #2d2a2e;
+  --paper-deep:   #353238;
+  --surface:      #3a373d;
+  --ink:          #fcfcfa;
+  --ink-soft:     #a19d9e;
+  --rule:         #403d42;
+  --rule-strong:  #5b565d;
+  --red:          #ff6188;
+  --ok:           #a9dc76;
+  --warn:         #ffd866;
+  --focus:        #78dce8;
+  --accent:       #ab9df2;
+  --accent-hover: #c0b4f6;
+  --accent-text:  #221f24;
+}
+
+/* Monokai Pro Light — the product's official light variant, not a
+   lightened guess at the dark one; a distinct, cooler-accented palette
+   in its own right (see monokai.pro). */
+:root[data-theme="monokai-pro-light"] {
+  --paper:        #faf4f2;
+  --paper-deep:   #f1e8e4;
+  --surface:      #ffffff;
+  --ink:          #29242a;
+  --ink-soft:     #756d72;
+  --rule:         #e8dad4;
+  --rule-strong:  #cbb3aa;
+  --red:          #e14775;
+  --ok:           #269d69;
+  --warn:         #b8860b;
+  --focus:        #1c8ca8;
+  --accent:       #7058be;
+  --accent-hover: #8570cc;
+  --accent-text:  #faf4f2;
+}
+
+/* One Dark — Atom's original, still the most-ported dark theme in the
+   editor world; its blue (#61afef) is as recognizable as Monokai's pink. */
+:root[data-theme="one-dark"] {
+  --paper:        #282c34;
+  --paper-deep:   #2f333c;
+  --surface:      #333842;
+  --ink:          #abb2bf;
+  --ink-soft:     #8f949f;
+  --rule:         #363b44;
+  --rule-strong:  #4b5263;
+  --red:          #e06c75;
+  --ok:           #98c379;
+  --warn:         #e5c07b;
+  --focus:        #56b6c2;
+  --accent:       #61afef;
+  --accent-hover: #7cc0f5;
+  --accent-text:  #1b1d23;
+}
+
+/* One Light — One Dark's own light counterpart, not a separately-styled
+   theme (see Atom's one-light-syntax) — same hue family, inverted
+   register, so the two read as a matched pair the way they're meant to. */
+:root[data-theme="one-light"] {
+  --paper:        #fafafa;
+  --paper-deep:   #f0f0f1;
+  --surface:      #ffffff;
+  --ink:          #383a42;
+  --ink-soft:     #707279;
+  --rule:         #e5e5e6;
+  --rule-strong:  #c7c7c9;
+  --red:          #e45649;
+  --ok:           #50a14f;
+  --warn:         #c18401;
+  --focus:        #0184bc;
+  --accent:       #4078f2;
+  --accent-hover: #5f91f5;
+  --accent-text:  #fafafa;
+}
+
+/* Monaspace — GitHub's own variable-width monospace font superfamily
+   isn't a color theme at all, so this borrows GitHub's own Dark palette
+   (the one Monaspace actually ships alongside on github.com) and, unique
+   among these themes, swaps --mono itself to actually request the font —
+   gracefully falling back to the usual stack wherever it isn't
+   installed, same as any web font. */
+:root[data-theme="monaspace"] {
+  --paper:        #0d1117;
+  --paper-deep:   #131920;
+  --surface:      #161b22;
+  --ink:          #c9d1d9;
+  --ink-soft:     #8b949e;
+  --rule:         #21262d;
+  --rule-strong:  #30363d;
+  --red:          #f85149;
+  --ok:           #3fb950;
+  --warn:         #d29922;
+  --focus:        #58a6ff;
+  --accent:       #58a6ff;
+  --accent-hover: #79b8ff;
+  --accent-text:  #0d1117;
+  --mono: "Monaspace Argon", "Monaspace Neon", ui-monospace, "SF Mono",
+          "Cascadia Code", Consolas, Menlo, monospace;
+}
+
+/* Catppuccin — the Mocha variant specifically (the four official variants
+   go Latte/Frappé/Macchiato/Mocha, light to darkest; Mocha is the one
+   most people mean by "Catppuccin" unqualified). Mauve is its signature
+   accent in the project's own branding. */
+:root[data-theme="catppuccin"] {
+  --paper:        #1e1e2e;
+  --paper-deep:   #262637;
+  --surface:      #313244;
+  --ink:          #cdd6f4;
+  --ink-soft:     #a6adc8;
+  --rule:         #2c2c3d;
+  --rule-strong:  #45475a;
+  --red:          #f38ba8;
+  --ok:           #a6e3a1;
+  --warn:         #f9e2af;
+  --focus:        #89dceb;
+  --accent:       #cba6f7;
+  --accent-hover: #dcc2fa;
+  --accent-text:  #1e1e2e;
+}
+
+/* Tokyo Night — the default ("Night") register, not the softer "Storm"
+   variant; enkia's original palette, still the most-cloned Tokyo Night
+   port. --surface reuses the theme's own bg_highlight rather than an
+   invented tint, so a card actually matches what "elevated" looks like
+   in the real theme. */
+:root[data-theme="tokyo-night"] {
+  --paper:        #1a1b26;
+  --paper-deep:   #20212e;
+  --surface:      #292e42;
+  --ink:          #c0caf5;
+  --ink-soft:     #7983ad;
+  --rule:         #23253a;
+  --rule-strong:  #414868;
+  --red:          #f7768e;
+  --ok:           #9ece6a;
+  --warn:         #e0af68;
+  --focus:        #7dcfff;
+  --accent:       #7aa2f7;
+  --accent-hover: #92b4f9;
+  --accent-text:  #16161e;
+}
+
+/* Ayu — the Dark register specifically (Ayu also ships Mirage and Light;
+   Dark is the one most VS Code galleries list first). Signature gold
+   accent, from the theme's own focus-border color. */
+:root[data-theme="ayu"] {
+  --paper:        #10141c;
+  --paper-deep:   #171c26;
+  --surface:      #1b212c;
+  --ink:          #bfbdb6;
+  --ink-soft:     #797f8f;
+  --rule:         #1c2230;
+  --rule-strong:  #2a3242;
+  --red:          #f07178;
+  --ok:           #aad94c;
+  --warn:         #ff8f40;
+  --focus:        #59c2ff;
+  --accent:       #e6b450;
+  --accent-hover: #f2c565;
+  --accent-text:  #10141c;
+}
+
+/* -- Monkeytype-inspired themes ---------------------------------------
+   monkeytype.com is a typing-test site, not a code editor, so these four
+   come straight from its own open-source theme definitions
+   (frontend/src/ts/constants/themes.ts in monkeytypegame/monkeytype)
+   rather than a VS Code gallery. Monkeytype's palette only defines a
+   background/main/sub/subAlt/text/error set — no separate "success"
+   green or "pending" amber the way an editor/ledger has — so --ok and
+   --warn are both chosen to fit each theme's register rather than
+   copied from a nonexistent source value. */
+
+/* Paper — Monkeytype's own minimalist light theme: warm light grays, one
+   ink color doing double duty as text and accent (same restrained-accent
+   family as Mono/Linen). Its own --sub (#b2b2b2) reads too low-contrast
+   against --paper for this app's body text, which sits directly on the
+   page rather than dimmed by a typing test's unfocused-word treatment —
+   darkened for legibility while keeping the same neutral gray. */
+:root[data-theme="paper"] {
+  --paper:        #eeeeee;
+  --paper-deep:   #dddddd;
+  --surface:      #f7f7f7;
+  --ink:          #444444;
+  --ink-soft:     #6a6a6a;
+  --rule:         #dddddd;
+  --rule-strong:  #b2b2b2;
+  --red:          #d70000;
+  --ok:           #2f7d32;
+  --warn:         #a3790a;
+  --focus:        #444444;
+  --accent:       #444444;
+  --accent-hover: #2b2b2b;
+  --accent-text:  #eeeeee;
+}
+
+/* Matrix — black stock, phosphor-green everything, straight off
+   Monkeytype's own theme (main/caret #15ff00, text #d1ffcd). Its --sub
+   (#006500) is too dark to read as UI text on black, so --ink-soft
+   brightens it rather than reusing it verbatim — same reasoning as
+   Paper's --sub above. */
+:root[data-theme="matrix"] {
+  --paper:        #000000;
+  --paper-deep:   #0a1608;
+  --surface:      #0f1f0c;
+  --ink:          #d1ffcd;
+  --ink-soft:     #4f9b40;
+  --rule:         #0d2408;
+  --rule-strong:  #1c4012;
+  --red:          #da3333;
+  --ok:           #15ff00;
+  --warn:         #d9a300;
+  --focus:        #15ff00;
+  --accent:       #15ff00;
+  --accent-hover: #4dff3d;
+  --accent-text:  #001a00;
+}
+
+/* Nord — the canonical Arctic palette (arctic-ish-code/nord) rather than
+   Monkeytype's own looser take on it, since "Nord" as a name promises a
+   specific, widely-recognized 16-color palette and nord8's frost cyan is
+   the whole reason anyone asks for this theme by name. */
+:root[data-theme="nord"] {
+  --paper:        #2e3440;
+  --paper-deep:   #333a48;
+  --surface:      #3b4252;
+  --ink:          #eceff4;
+  --ink-soft:     #949eae;
+  --rule:         #363c4a;
+  --rule-strong:  #4c566a;
+  --red:          #bf616a;
+  --ok:           #a3be8c;
+  --warn:         #ebcb8b;
+  --focus:        #81a1c1;
+  --accent:       #88c0d0;
+  --accent-hover: #9fd0de;
+  --accent-text:  #2e3440;
+}
+
+/* Shadow — Monkeytype's true monochrome dark theme: black stock, white
+   ink, nothing else — the dark-mode counterpart to Contrast's light-mode
+   austerity rather than to Mono (which still lets --focus/--accent stay
+   achromatic-adjacent; Shadow pushes ink itself into both roles). --red/
+   --ok/--warn exist only because the ledger's imbalance/credit/income and
+   pending-approval signals have to actually read as red/green/amber to
+   mean anything — the same deliberate exception Mono documents on its
+   own block above. */
+:root[data-theme="shadow"] {
+  --paper:        #000000;
+  --paper-deep:   #171717;
+  --surface:      #1e1e1e;
+  --ink:          #eeeeee;
+  --ink-soft:     #9a9a9a;
+  --rule:         #1e1e1e;
+  --rule-strong:  #3a3a3a;
+  --red:          #d64545;
+  --ok:           #6fae6f;
+  --warn:         #ab8f4a;
+  --focus:        #8a8a8a;
+  --accent:       #eeeeee;
+  --accent-hover: #ffffff;
+  --accent-text:  #000000;
+}
+
+/* -- font bundles ---------------------------------------------------------
+   Independent of color theme — see Settings' "Font" picker, font.js.
+   A person picks a *look*, not a lone typeface: which of --serif/--sans/
+   --mono a bundle touches, and what each becomes, is one design decision
+   bundled together, not three separate free-text fields where a single
+   swapped face without its companions rereading to match tends to look
+   like a mistake rather than a choice.
+
+   Sits after every :root[data-theme=...] block above, on purpose: left
+   at its default, data-font carries no attribute at all (same "no
+   override" convention theme.js already uses for data-theme), so a
+   theme with its own font opinion — Monaspace above, which sets --mono
+   as part of its identity — keeps it. Actually picking a bundle is a
+   deliberate override, same as picking a non-default color theme
+   overrides the base palette; equal specificity, later source order,
+   so a chosen bundle always wins over whatever a theme set for itself.
+
+   --figures is its own role, not an alias for --mono used everywhere
+   .mono already is — account codes, entry IDs, dates, the SQL/hostname
+   snippets in Settings' Connect BI panel all stay genuinely monospace
+   regardless of bundle, since a technical string or an identifier
+   benefits from a fixed-width face in a way a plain quantity doesn't.
+   --figures only backs actual numeric readouts: table.ledger's .num
+   columns, amount inputs, the balance bar, Dashboard's stat tiles. */
+:root[data-font="serif"] {
+  --sans: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+  --figures: var(--serif);
+}
+:root[data-font="modern"] {
+  --serif: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+  --sans: "Helvetica Neue", Arial, "Segoe UI", sans-serif;
+}
+:root[data-font="mono"] {
+  --serif: var(--mono);
+  --sans: var(--mono);
+}
+
+* { box-sizing: border-box; }
+html { font-size: 16px; }
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  line-height: 1.45;
 }
+/* Plain in-content links (flash banners, page-sub pointers, Help body
+   copy) default to the browser's own blue, which several themes —
+   Midnight especially, on a dark ledger stock — render nearly
+   unreadable. Use the same accent as buttons instead, so a link reads
+   as "the app's color" rather than "whatever blue this browser ships."
+   :where() keeps this at zero specificity on purpose: a real ":visited"
+   pseudo-class is (0,1,1), which would otherwise beat any plain single
+   class (.dim, .quiet-link, .username-link — all (0,1,0)) the moment a
+   link had been clicked once, silently recoloring exactly the links
+   that are supposed to stay muted. Elements with their own link color
+   (.topbar nav a, .sidebar a, .quiet-link, .pager a, a.amount-link,
+   a.button-link, .help-icon, ...) keep it, visited or not. */
+:where(a, a:visited) { color: var(--accent); }
+:where(a:hover, a:visited:hover) { color: var(--accent-hover); }
+
+/* -- shared content width ------------------------------------------------ */
+/* main and .footer size off this one variable. Fluid — min(90vw, …) — so
+   a wide or ultrawide monitor actually gets used instead of stranding the
+   page in a fixed-width column; capped at 1680px so prose/forms don't
+   stretch into unreadably long lines on a very wide (5120px+) monitor.
+   .topbar-inner deliberately does NOT use this any more — see the "top
+   bar" comment below for why it's independent now — and a report table
+   that outgrows this cap relaxes it per-page rather than falling back to
+   .table-scroll immediately; see "the ledger table" section for both. */
+:root {
+  --content-max: min(90vw, 1680px);
+}
+
