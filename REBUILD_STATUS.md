@@ -787,7 +787,76 @@ local `docker compose up -d db` + `pytest` run, and separately the exact
 CI shape by hand (a bare `postgres:16` container, `alembic upgrade
 head`, `pytest`).
 
-**Next step:** 1.13 — `analytics/`.
+**Phase 1.13 done.** `analytics/` — the star-schema views plus the
+documented `/api/*` contract: `repository.py`, `service.py`, `router.py`
+(five read-only `/api/*` routes — trial-balance, accounts, scenarios,
+entries, monthly-activity — plus two Connect BI settings routes). Ported
+from `app/main.py`'s JSON-API section (its final block, five routes) and
+its `/settings/connect-bi`/`/settings/connect-bi/download.pbids` routes.
+The smallest module so far — no writes, no CSRF, nothing from
+`modules/auth/` to wire in — but two decisions worth recording:
+
+1. **Every query is its own fork, not an import — cutting in both
+   directions at once, not just the usual sibling-module direction.**
+   `repository.accounts` (`SELECT * FROM v_dim_account ORDER BY
+   sort_path`, no `WHERE is_active`) looks almost identical to
+   `modules/reports/repository.dim_accounts`, and `repository.scenarios`
+   looks almost identical to `modules/reference/repository.scenarios_all`
+   — but neither pair was ever actually the same query: legacy's own
+   `api_accounts` never filtered to active accounts at all (a JSON
+   mirror for a BI tool has a reason to see an archived account that a
+   report/picker doesn't), and reports' own scenario lookup
+   (`full_scenarios`) is deliberately narrower than the reference/`/api/*`
+   shape, not a different version of the same thing. REBUILD.md decision
+   3's "deletable on its own" test settles it the same way it has every
+   prior time: `modules/reports/`, `modules/reference/`, and `analytics/`
+   should each survive the others being deleted.
+2. **The two Connect BI routes (`GET /settings/connect-bi`, `GET
+   /settings/connect-bi/download.pbids`) landed here, not in a Settings
+   module that doesn't exist and isn't in REBUILD.md §6's roadmap.**
+   Legacy's `/settings` (theme/amount-entry/number-format) and
+   `/settings/account` (username/password, Phase 1.11) are pure
+   client-side-state or already-ported-elsewhere pages with nothing left
+   to build on the backend; Connect BI is the one `/settings/*` legacy
+   route with real logic (host/port resolution, the `BI_OBJECTS`
+   catalog, the `.pbids` file body), and everything it describes — the
+   four star-schema views and the one SRF a BI tool can actually query —
+   is exactly what this module already owns. `service.py`'s own
+   docstring has the full reasoning; `config.py`'s `postwarden_bi_port`
+   field (added ahead of time back in Phase 1.2, unused until now) was
+   the tell that this was always where it was headed.
+
+Other decisions, smaller:
+
+- **No `schemas.py`** — same reasoning `modules/reports/router.py`
+  (Phase 1.4) already gives: every route is a GET with plain query
+  params, no request body ever needs a Pydantic model.
+- **No single router `prefix`** — the `/api/*` and `/settings/*` route
+  families don't share one, so every route spells out its own full
+  path, the same shape `modules/reference/router.py` and `modules/auth/
+  router.py` already use for the identical reason (bundling more than
+  one legacy top-level concern into one module).
+- **`repository.trial_balance` exposes only `(scenario, as_of)`, not
+  `fn_trial_balance`'s full `(scenario, as_of, from)` signature** —
+  legacy's own `api_trial_balance` never accepted a `from` either; this
+  module ports what `/api/*` actually did, not the SRF's full capability.
+
+24 new tests (11 `repository.py`, 4 `service.py` — the `/api/*` wrappers
+are thin pass-throughs already covered by `repository.py`'s own tests,
+so these focus on `connect_bi_info`/`pbids_document`, the two functions
+with real logic — 9 `router.py`) — 513 passed total. `backend/tests/
+analytics/conftest.py`'s own `book` fixture forks `modules/reports/
+conftest.py`'s (same "deletable on its own" reasoning as the module
+itself), extended with a second scenario and an inactive account so
+`entry_count`/`base_level_name`/the no-`is_active`-filter behavior all
+have something to actually prove. Verified for real, the same three ways
+as every phase since 1.4: a full `docker compose up -d --build` (clean
+log, `/healthz` 200), a local `docker compose up -d db` + `pytest` run,
+and separately the exact CI shape by hand (a bare `postgres:16`
+container, `alembic upgrade head`, `pytest`).
+
+**Next step:** 1.14 — `main.py` cut down to app factory + router
+mounting only.
 
 ---
 
@@ -873,7 +942,7 @@ directly.
       on this package; corrected on completion, see the Current status
       write-up). XLSX carries live Excel formulas (cell-by-cell sums,
       not ranges) — ported deliberately, not incidentally.
-- [ ] **1.13** `analytics/` — star-schema views + the documented
+- [x] **1.13** `analytics/` — star-schema views + the documented
       `/api/*` contract (the 5 existing routes).
 - [ ] **1.14** `main.py` cut down to app factory + router mounting only.
 - [ ] **1.15** **Gate:** the 60 pure-Postgres tests
