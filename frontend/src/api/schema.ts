@@ -24,6 +24,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Config
+         * @description Public, unauthenticated app metadata — Phase 3.1. Legacy never
+         *     needed a route for this: `version`/`demo_banner`/`demo_user`/
+         *     `demo_password` were plain Jinja globals, already in scope for
+         *     every server-rendered template (`login.html`'s auth-brand corner
+         *     and demo callout, `base.html`'s footer). A JSON SPA has nothing
+         *     playing that role, so this is the same class of addition `GET /me`
+         *     already is: dictated by the medium, not new business logic. Lives
+         *     here rather than in a module for the same reason `/healthz` does —
+         *     no DB touch, nothing worth a router/service/repository split for.
+         *
+         *     Unauthenticated on purpose: the login page itself is the main
+         *     caller, before any session exists.
+         *
+         *     `demo_user`/`demo_password` are only ever included when
+         *     `demo_banner` is true — this is a real, security-relevant departure
+         *     from just mirroring the Jinja globals' own always-populated dict:
+         *     those globals are always set server-side, but Jinja's own `{% if
+         *     demo_banner %}` guard means legacy only ever put them in an actual
+         *     HTTP response when a visitor was really looking at a demo instance.
+         *     A JSON body has no equivalent of a template conditionally omitting
+         *     a value from its own rendered output, so that conditional has to be
+         *     made explicit here — the alternative would leak a real instance's
+         *     admin password to any unauthenticated caller of this route whenever
+         *     `POSTWARDEN_ADMIN_PASSWORD` happens to be set (every Docker
+         *     deployment's own bootstrap-admin convenience, not just demo's),
+         *     regardless of `POSTWARDEN_DEMO_MODE`.
+         */
+        get: operations["config_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/login": {
         parameters: {
             query?: never;
@@ -78,6 +123,14 @@ export interface paths {
          *     template. A JSON SPA has no equivalent on page load, so this is the
          *     minimal "who am I, if anyone" check the new architecture requires —
          *     an addition dictated by the medium, not invented business logic.
+         *
+         *     Includes `csrf_token`, same as `login`'s own response, not just
+         *     `id`/`username` — added in Phase 3.1 once a frontend actually
+         *     existed to expose the gap: a page load riding an existing, still-
+         *     valid session cookie (the common case — most page loads are not
+         *     themselves a fresh `POST /login`) has no other way to learn the
+         *     token its next write needs. Same value `login` already handed back
+         *     when this session was created, not a new one.
          */
         get: operations["me_me_get"];
         put?: never;
@@ -1864,6 +1917,28 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    config_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

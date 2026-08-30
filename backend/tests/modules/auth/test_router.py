@@ -66,10 +66,12 @@ def test_me_returns_401_without_a_session(conn):
 
 def test_me_returns_the_logged_in_user(conn, user):
     client = client_for(conn)
-    client.post("/login", json={"username": user["username"], "password": user["password"]})
+    login = client.post("/login", json={"username": user["username"],
+                                         "password": user["password"]}).json()
     resp = client.get("/me")
     assert resp.status_code == 200
-    assert resp.json() == {"id": user["id"], "username": user["username"]}
+    assert resp.json() == {"id": user["id"], "username": user["username"],
+                            "csrf_token": login["csrf_token"]}
 
 
 def test_me_returns_401_after_logout(conn, user):

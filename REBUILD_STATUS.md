@@ -1501,12 +1501,155 @@ trap, clicking the number stepper's chevrons — no browser tool exists in
 this session; folded into the same Open Questions entry Phase 2.3/2.4
 already track, now covering every interactive surface built so far.
 
-**Next up:** Phase 3 — one screen per archetype, the go/no-go gate
-(`REBUILD.md` §9): login (3.1), tags (3.2), trial balance (3.3), Journal
-(3.4). Close the Docker `docker compose up -d --build` verification gap
-and the no-browser-tool gap (now covering all of Phase 2) whenever this
-machine's Docker daemon can reach its registry again or a browser tool
-becomes available.
+**Phase 3.1 done.** Login — the first of Phase 3's four archetype
+screens, and per `REBUILD.md` §6 the one meant to "prove the pipeline end
+to end." It does: `App.tsx`'s old `GET /healthz` check and hardcoded
+`PLACEHOLDER_USER` (both explicitly temporary stand-ins since Phase
+2.1/2.4) are gone, replaced by a real three-way branch on session
+state — loading, anonymous (`LoginPage`), or authenticated (`Shell`) —
+backed by a real cookie session a real `POST /login` created against
+the real Postgres container.
+
+Two backend gaps surfaced by actually building the frontend side of
+this, both closed here rather than deferred, since neither is separable
+from "login works end to end":
+
+1. **`GET /me` now echoes `csrf_token`, not just `id`/`username`.** The
+   gap: `POST /login`'s response already carries the new session's CSRF
+   token, but a page load riding an *existing* still-valid cookie (the
+   common case — most page loads are not themselves a fresh login) had
+   no way to learn it at all. Same value `login` already created, not a
+   new one; `router.py`'s own docstring and `backend/tests/modules/
+   auth/test_router.py`'s `test_me_returns_the_logged_in_user` both
+   updated.
+2. **A new, unauthenticated `GET /config`** (`main.py`, next to
+   `/healthz` — same "no DB touch, nothing worth a router/service split
+   for" reasoning) exposes `version`/`demo_banner`/`demo_user`/
+   `demo_password`, replacing the Jinja globals `login.html`'s
+   auth-brand corner and demo callout, and `base.html`'s footer, used to
+   read directly. **A real, deliberate security-relevant departure from
+   just mirroring those globals**, spelled out in the route's own
+   docstring: Jinja's `{% if demo_banner %}` meant `demo_user`/
+   `demo_password` only ever reached an actual HTTP response on a real
+   demo instance, even though the globals themselves were always
+   populated server-side; a JSON body has no equivalent of a template
+   conditionally omitting a value from its own output, so `/config`
+   makes that conditional explicit — omitting both fields whenever
+   `demo_banner` is false, not just when they're empty. Skipping that
+   would leak any deployment's real bootstrap-admin password (which
+   `POSTWARDEN_ADMIN_PASSWORD` sets regardless of demo mode) to any
+   unauthenticated caller. Four new tests in `backend/tests/test_main.py`
+   cover both the omission and the inclusion case, plus the missing-file
+   tolerance below.
+   - **`version` needed a real file to read**, and `postwarden_static_dir`'s
+     own "resolve relative to `__file__`" trick doesn't carry over
+     unchanged: a local checkout's repo root sits three directories above
+     `config.py` (`backend/src/postwarden/config.py` → repo root), but
+     `backend/Dockerfile`'s runtime stage COPYs everything into
+     `WORKDIR /srv/postwarden` directly — only *two* directories up from
+     the same file once installed there. `postwarden_version_file`
+     (`config.py`) tries both candidates in order and tolerates neither
+     existing (`main.py`'s `/config` route catches `OSError` and answers
+     `""` rather than a 500 — a backend-only checkout, or an image built
+     without the new `COPY VERSION .` line, shouldn't break the route
+     over a missing footer string). Two new `test_config.py` tests cover
+     the real-checkout resolution and the override.
+
+On the frontend, `frontend/src/auth/`:
+
+- **`sessionContext.ts` + `SessionProvider.tsx`** — same two-file split
+  `confirmContext.ts`/`ConfirmDialog.tsx` already established for the
+  identical `oxlint react(only-export-components)` reason. `useSession()`
+  exposes `status` (`'loading' | 'authenticated' | 'anonymous'`), `user`,
+  and real `login()`/`logout()` functions backed by `client.POST('/login'
+  | '/logout', ...)`. Mounted once at the true root in `main.tsx`,
+  alongside (and outside) `ConfirmProvider` — neither reads from the
+  other.
+- **`LoginPage.tsx`** — the split-screen login itself, ported from
+  `login.html`. Two real differences from the template, both dictated by
+  the medium rather than a design change: no `ok=`/`err=` query-string
+  flash (a local `error` state does the same job, since the same
+  component stays mounted through a failed attempt instead of a page
+  redirecting back to itself), and the demo callout's prefilled
+  credentials/version now come from `GET /config` (`useAppConfig`)
+  instead of Jinja globals baked into the initial HTML — seeded into the
+  username/password fields exactly once, via a ref guard, not a "seed
+  while the field reads empty" check that would have silently refilled
+  the field if a user cleared it by hand after config had already
+  loaded.
+- **`api/client.ts`** now attaches `X-CSRF-Token` to every non-`GET`
+  request via `openapi-fetch`'s own `use()` middleware, reading a plain
+  module-level variable (`setCsrfToken`) `SessionProvider` is the only
+  writer of — exactly the extension point that file's own Phase 2.2
+  comment already predicted ("the obvious place to add that once Phase
+  3's login screen gives it a token to read"). Also added: an
+  `onUnauthorized` callback, fired on any `401` from any request, that
+  `SessionProvider` registers to fall back to `'anonymous'` — the
+  closest equivalent this SPA has to legacy `auth_gate`'s own redirect-
+  to-`/login` on a stale/expired cookie, without a client-side router to
+  actually redirect through yet (see below).
+- **`api/useAppConfig.ts`** — a plain hook (not a Context; `LoginPage`
+  and `Shell`'s footer are the only two callers, and they're mutually
+  exclusive in practice) wrapping the new `GET /config`.
+- **`shell/Shell.tsx`** gained a `version?: string` prop, closing the one
+  gap Phase 2.4's own version of this file's comment left open — the
+  footer now reads `PostWarden v{version}` (or just `PostWarden`, the
+  same tolerant-degradation choice `/config` itself makes, when
+  `version` is empty) instead of a bare, permanently-incomplete
+  `PostWarden`.
+
+**A router decision this phase deliberately still defers.** `App.tsx`
+branches on `session.status` alone, not a URL — there's still no
+client-side router anywhere in the frontend, and Sidebar/Topbar's own
+nav links are still plain `<a href>` full-page navigations, exactly as
+Phase 2.4 left them. Login doesn't force this decision: "authenticated
+or not" has no URL of its own to conflict with. The genuine forcing
+function — `GET /entries` already being the Journal's own JSON data
+route, so a same-path client route can never work without deciding how
+the app-shell HTML and the JSON API stop sharing a path at all
+(`main.py`'s own long-standing comment on its static mount) — doesn't
+land until a *second* authenticated screen actually needs its own
+distinct URL. That's Phase 3.2 (tags), not this phase.
+
+**Verified for real.** Backend: `postwarden_version_file`'s two-candidate
+resolution, `/config`'s demo-omission/-inclusion logic, and `/me`'s new
+`csrf_token` field each have real `pytest` coverage — 529 passed (523 +
+6 new), the 60 pure-Postgres tests untouched. A real `npm run build`
+(`tsc -b && vite build`, two casts needed — `data as unknown as
+AppConfig`/`LoginBody`, since `/login`/`/me`/`/config` all return a bare
+`dict` FastAPI can only describe as `{[key: string]: unknown}` in the
+generated OpenAPI schema, same class of gap `client.ts`'s own comment
+already flagged) and a real `npm run lint` (`oxlint`) both come back
+clean. A real `uvicorn postwarden.main:app` against `backend-db-1`
+proved the actual flow end to end over real HTTP, not just through
+FastAPI's `TestClient`: `POST /login` with a wrong password →
+`401 {"detail": "Invalid username or password"}`; with `POSTWARDEN_
+ADMIN_USER=david`/`_PASSWORD=devpassword` → `200` with a real session
+cookie and `csrf_token`; `GET /me` with that cookie echoes the identical
+`csrf_token`; `POST /logout` clears it (`GET /me` → `401` again); toggling
+`POSTWARDEN_DEMO_MODE` between requests flips `/config`'s `demo_user`/
+`demo_password` between `null` and the real values with no restart-order
+bug once the earlier `lru_cache`d-settings/stale-process mixup during
+this same check was caught and re-run correctly. The served bundle
+contains `auth-split`, `auth-wordmark`, `demo-callout`, `X-CSRF-Token`,
+and `csrf_token` in the JS, and `.auth-split`/`.auth-wordmark`/
+`.demo-callout`/`.checkline`/`.grid-form`/`label.field` in the CSS. `GET
+/entries`, `/reports/trial-balance`, `/staging`, `/accounts` are still
+`401` with no session — the static mount still doesn't shadow any
+module's own routes. **Not verified, same standing gap, now covering the
+login screen's own interactive surface too**: real browser interaction
+— autofocus landing in the username field, tabbing through the form,
+the demo callout's responsive reflow to `order: -1` at the 720px
+breakpoint, submitting via Enter instead of clicking — no browser tool
+exists in this session.
+
+**Next up:** Phase 3.2 — tags, the Management/CRUD archetype. The first
+screen that actually needs its own URL, which is what forces the
+client-router-vs-API-path decision this phase deferred. Close the
+Docker `docker compose up -d --build` verification gap and the
+no-browser-tool gap (now covering all of Phase 2 and Phase 3.1) whenever
+this machine's Docker daemon can reach its registry again or a browser
+tool becomes available.
 
 ---
 
@@ -1629,7 +1772,7 @@ directly.
 
 Ascending risk, per `REBUILD.md` §6:
 
-- [ ] **3.1** login — proves the pipeline end to end
+- [x] **3.1** login — proves the pipeline end to end
 - [ ] **3.2** tags — Management/CRUD archetype
 - [ ] **3.3** trial balance — Point-in-time report archetype
 - [ ] **3.4** Journal — the hardest screen in the app
@@ -1720,6 +1863,25 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 3.1 done: `frontend/src/auth/` (`sessionContext.ts`/
+  `SessionProvider.tsx`, `LoginPage.tsx`) plus two backend additions this
+  phase's own frontend work surfaced the need for: `GET /me` now echoes
+  `csrf_token` (previously only `id`/`username`), and a new unauthenticated
+  `GET /config` (`main.py`) exposes `version`/`demo_banner`/`demo_user`/
+  `demo_password` — with `demo_user`/`demo_password` deliberately omitted
+  whenever `demo_banner` is false, a real security-relevant departure from
+  legacy's own Jinja-globals shape (see Current status for why). `api/
+  client.ts` gained an `X-CSRF-Token` request middleware and a global
+  `401` handler; `api/useAppConfig.ts` and `shell/Shell.tsx`'s new
+  `version` prop close the "no footer version number" gap Phase 2.4 left
+  open. `App.tsx`'s placeholder `GET /healthz` check and hardcoded
+  `PLACEHOLDER_USER` are both gone, replaced by a real three-way branch
+  on session state. `index.css` gained four more byte-verified ranges
+  (the login split-screen/demo-callout, `label.field`, `.checkline`,
+  `.grid-form`). Deliberately still deferred: any client-side router —
+  login has no URL of its own to reconcile with the API's existing paths,
+  so the real forcing function waits for Phase 3.2. See Current status
+  for the full write-up.
 - **2026-08-29** — Phase 2.5 done: `frontend/src/widgets/` —
   `NumberStepper.tsx`, `ConfirmDialog.tsx`/`confirmContext.ts`,
   `DatePicker.tsx`, `Combobox.tsx`. Decision, for all four: port the
@@ -2165,3 +2327,17 @@ Carried forward until answered; move to the log once resolved.
   Phase 2.5's own write-up) exists specifically so this pass has
   something real to exercise once a browser tool is available, rather
   than needing a Phase 3 screen to exist first.
+  **Confirmed still true doing Phase 3.1**, scope grown once more: the
+  login screen adds a real, if smaller, surface of its own — autofocus
+  landing in the username field on load, tabbing username -> password ->
+  Remember me -> Log in in the right order, submitting via Enter (not
+  just a button click), the demo callout's `order: -1` reflow to above
+  the form at the 720px breakpoint, and the once-only demo-credential
+  seed effect (`LoginPage.tsx`'s `seededDemo` ref) actually behaving as
+  intended — filling the fields once, then staying out of the way even
+  if a user clears them by hand afterward. Every real HTTP/session-state
+  transition behind these (a wrong password 401ing with the right
+  message, a correct one setting a real cookie, `/me` surviving a
+  refresh, logout clearing it) was verified for real over HTTP this
+  phase (see Current status) — what's still unexercised is purely the
+  DOM-level interaction layered on top of it.

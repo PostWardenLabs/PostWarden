@@ -38,6 +38,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from postwarden import main
+from postwarden.config import Settings, get_settings
 from postwarden.db import get_connection
 from postwarden.modules.auth.deps import SESSION_COOKIE
 
@@ -98,6 +99,56 @@ def test_analytics_api_route_401s_with_no_session(conn):
     # dependency.
     resp = app_client(conn).get("/api/accounts")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /config — Phase 3.1's public, unauthenticated app-metadata route.
+# ---------------------------------------------------------------------------
+
+def _config_client(settings: Settings) -> TestClient:
+    main.app.dependency_overrides[get_settings] = lambda: settings
+    return TestClient(main.app)
+
+
+def test_config_reads_version_from_the_configured_file(tmp_path):
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("9.9.9\n")
+    resp = _config_client(Settings(POSTWARDEN_VERSION_FILE=version_file)).get("/config")
+    assert resp.status_code == 200
+    assert resp.json()["version"] == "9.9.9"
+
+
+def test_config_version_is_blank_not_a_500_when_the_file_is_missing(tmp_path):
+    resp = _config_client(Settings(POSTWARDEN_VERSION_FILE=tmp_path / "nope")).get("/config")
+    assert resp.status_code == 200
+    assert resp.json()["version"] == ""
+
+
+def test_config_omits_demo_credentials_when_demo_mode_is_off(tmp_path):
+    settings = Settings(POSTWARDEN_VERSION_FILE=tmp_path / "nope",
+                         POSTWARDEN_DEMO_MODE=False,
+                         POSTWARDEN_ADMIN_USER="david", POSTWARDEN_ADMIN_PASSWORD="secret")
+    resp = _config_client(settings).get("/config")
+    body = resp.json()
+    # The security-relevant case this route's own docstring calls out:
+    # an admin user/password can be set on *any* Docker deployment (it's
+    # what bootstraps the first account), not just a demo one — those
+    # must never reach an unauthenticated caller unless demo_banner is
+    # genuinely on.
+    assert body["demo_banner"] is False
+    assert body["demo_user"] is None
+    assert body["demo_password"] is None
+
+
+def test_config_includes_demo_credentials_when_demo_mode_is_on(tmp_path):
+    settings = Settings(POSTWARDEN_VERSION_FILE=tmp_path / "nope",
+                         POSTWARDEN_DEMO_MODE=True,
+                         POSTWARDEN_ADMIN_USER="david", POSTWARDEN_ADMIN_PASSWORD="secret")
+    resp = _config_client(settings).get("/config")
+    body = resp.json()
+    assert body["demo_banner"] is True
+    assert body["demo_user"] == "david"
+    assert body["demo_password"] == "secret"
 
 
 # ---------------------------------------------------------------------------

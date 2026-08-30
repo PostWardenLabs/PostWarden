@@ -83,6 +83,32 @@ class Settings(BaseSettings):
         alias="POSTWARDEN_STATIC_DIR",
     )
 
+    # Read by GET /config (Phase 3.1) for the footer's "PostWarden vX.Y.Z"
+    # and login.html's own auth-brand corner — the same file legacy's
+    # `app/main.py` reads once at startup (`(BASE.parent / "VERSION").
+    # read_text().strip()`), just resolved at Settings-construction time
+    # instead of module-import time. Two candidate locations, tried in
+    # order, because this file's own distance from VERSION differs
+    # between a local checkout and the built image: a repo-root
+    # checkout has `backend/src/postwarden/config.py` three directories
+    # under VERSION, but `backend/Dockerfile`'s runtime stage COPYs
+    # VERSION straight into WORKDIR (`/srv/postwarden`) alongside
+    # `pyproject.toml` — the same directory `pip install -e .` puts
+    # `src/` under — which is only two directories up from here. Neither
+    # candidate is required to exist (a backend-only checkout with no
+    # VERSION file at all is a real, tolerated case — see `main.py`'s
+    # own `/config` route for how an unreadable file degrades).
+    postwarden_version_file: Path = Field(
+        default_factory=lambda: next(
+            (p for p in (
+                Path(__file__).resolve().parents[3] / "VERSION",  # repo-root checkout
+                Path(__file__).resolve().parents[2] / "VERSION",  # Docker image (WORKDIR)
+            ) if p.is_file()),
+            Path(__file__).resolve().parents[2] / "VERSION",  # default; may not exist
+        ),
+        alias="POSTWARDEN_VERSION_FILE",
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -31,6 +31,14 @@ COPY backend/src ./src
 RUN pip install --no-cache-dir -e .
 COPY backend/alembic.ini .
 COPY backend/alembic ./alembic
+# Read by GET /config (Phase 3.1) for the footer/login-page version
+# string — same file the legacy root Dockerfile already COPYs in for
+# the identical reason. Lands at WORKDIR directly (not under src/),
+# which is exactly the second candidate path config.py's own
+# `postwarden_version_file` tries — see that field's own comment for
+# why a plain repo-root-relative path wouldn't resolve the same way in
+# this image as it does in a local checkout.
+COPY VERSION .
 # Lands at src/postwarden/static — same relative path frontend-build's own
 # `npm run build` already wrote to directly (vite.config.ts's outDir), so a
 # non-Docker local run (`npm run build` then a bare `uvicorn postwarden.

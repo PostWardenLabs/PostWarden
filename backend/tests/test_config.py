@@ -1,4 +1,6 @@
 """Unit tests for postwarden.config — env vars only, no database."""
+from pathlib import Path
+
 from postwarden.config import Settings, get_settings
 
 
@@ -35,6 +37,30 @@ def test_bool_fields_accept_the_same_truthy_spellings_legacy_used(monkeypatch):
 def test_bool_fields_default_false_on_empty_or_unset(monkeypatch):
     monkeypatch.setenv("POSTWARDEN_COOKIE_SECURE", "")
     assert Settings().postwarden_cookie_secure is False
+
+
+def test_version_file_default_finds_the_real_repo_root_version_file(monkeypatch):
+    # Run from this checkout, so the "repo-root checkout" candidate
+    # (backend/src/postwarden/config.py's own three-parents-up) is the
+    # one that should actually resolve — proves the two-candidate search
+    # picks a real file, not just that it doesn't crash.
+    monkeypatch.delenv("POSTWARDEN_VERSION_FILE", raising=False)
+    version_file = Settings().postwarden_version_file
+    assert version_file.name == "VERSION"
+    assert version_file.is_file()
+    # This file's own path is backend/tests/test_config.py — two
+    # directories under the repo root, not three (config.py's own
+    # "repo-root checkout" candidate is one directory deeper still,
+    # under backend/src/postwarden/).
+    assert version_file.read_text().strip() == \
+        (Path(__file__).resolve().parents[2] / "VERSION").read_text().strip()
+
+
+def test_version_file_is_overridable(tmp_path, monkeypatch):
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("1.2.3")
+    monkeypatch.setenv("POSTWARDEN_VERSION_FILE", str(version_file))
+    assert Settings().postwarden_version_file == version_file
 
 
 def test_get_settings_is_cached(monkeypatch):

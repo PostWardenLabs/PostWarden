@@ -36,11 +36,11 @@ the wrong layer for it.
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from starlette.staticfiles import StaticFiles
 
 from .analytics.router import router as analytics_router
-from .config import get_settings
+from .config import Settings, get_settings
 from .db import get_engine
 from .json import JSONResponse, configure_decimal_encoding
 from .modules.auth import service as auth_service
@@ -114,6 +114,50 @@ async def advance_due_schedules(request: Request, call_next):
 def healthz() -> dict[str, str]:
     """Liveness check — no DB touch. Used by Phase 0's docker-compose bring-up."""
     return {"status": "ok"}
+
+
+@app.get("/config")
+def config(settings: Settings = Depends(get_settings)) -> dict:
+    """Public, unauthenticated app metadata — Phase 3.1. Legacy never
+    needed a route for this: `version`/`demo_banner`/`demo_user`/
+    `demo_password` were plain Jinja globals, already in scope for
+    every server-rendered template (`login.html`'s auth-brand corner
+    and demo callout, `base.html`'s footer). A JSON SPA has nothing
+    playing that role, so this is the same class of addition `GET /me`
+    already is: dictated by the medium, not new business logic. Lives
+    here rather than in a module for the same reason `/healthz` does —
+    no DB touch, nothing worth a router/service/repository split for.
+
+    Unauthenticated on purpose: the login page itself is the main
+    caller, before any session exists.
+
+    `demo_user`/`demo_password` are only ever included when
+    `demo_banner` is true — this is a real, security-relevant departure
+    from just mirroring the Jinja globals' own always-populated dict:
+    those globals are always set server-side, but Jinja's own `{% if
+    demo_banner %}` guard means legacy only ever put them in an actual
+    HTTP response when a visitor was really looking at a demo instance.
+    A JSON body has no equivalent of a template conditionally omitting
+    a value from its own rendered output, so that conditional has to be
+    made explicit here — the alternative would leak a real instance's
+    admin password to any unauthenticated caller of this route whenever
+    `POSTWARDEN_ADMIN_PASSWORD` happens to be set (every Docker
+    deployment's own bootstrap-admin convenience, not just demo's),
+    regardless of `POSTWARDEN_DEMO_MODE`."""
+    try:
+        version = settings.postwarden_version_file.read_text().strip()
+    except OSError:
+        # Same tolerated-absence shape as `postwarden_static_dir` below:
+        # a backend-only checkout, or an image built without `COPY
+        # VERSION .`, shouldn't 500 this route over a missing footer
+        # string.
+        version = ""
+    return {
+        "version": version,
+        "demo_banner": settings.postwarden_demo_mode,
+        "demo_user": settings.postwarden_admin_user if settings.postwarden_demo_mode else None,
+        "demo_password": settings.postwarden_admin_password if settings.postwarden_demo_mode else None,
+    }
 
 
 app.include_router(auth_router)

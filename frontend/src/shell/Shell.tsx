@@ -11,6 +11,7 @@ interface ShellProps {
   current?: string
   user: TopbarUser | null
   onLogout?: () => void
+  version?: string
   children: ReactNode
 }
 
@@ -22,21 +23,21 @@ interface ShellProps {
 // script now lives in frontend/index.html directly, ahead of anything
 // React renders — see that file's own comment; nothing here re-does it.
 //
-// `user` is null until Phase 3.1 (login) gives the app real session
-// state — same "don't reach into a mechanism that doesn't exist yet"
-// reasoning every backend module already applied to auth/CSRF ahead of
-// Phase 1.11. Matches legacy exactly: no sidebar, no topbar user area,
+// `user` is real session state as of Phase 3.1 (`auth/SessionProvider.tsx`)
+// — App.tsx is the caller that supplies it now, no longer a hardcoded
+// placeholder. Matches legacy exactly: no sidebar, no topbar user area,
 // with nobody logged in — only the topbar's left half, the flash slot,
 // and the footer render.
 //
-// No footer version number yet (legacy's own "PostWarden v{{ version }}"
-// reads the repo-root VERSION file at template-render time) — no backend
-// route exposes it anywhere the frontend can reach yet. A one-line gap,
-// deliberately not closed here: it doesn't belong to this phase's own
-// scope (sidebar/topbar/flash/pre-paint script, per REBUILD_STATUS.md),
-// and the obvious real fix (piggyback it on a route that already needs
-// to exist, e.g. Phase 3.1's own GET /me) doesn't exist yet either.
-export default function Shell({ title, current, user, onLogout, children }: ShellProps) {
+// `version` closes the one gap Phase 2.4's own version of this comment
+// left open: legacy's footer reads the repo-root VERSION file directly
+// at template-render time (`"PostWarden v{{ version }}"`); this is a
+// plain prop instead, sourced from `GET /config` (`useAppConfig`,
+// Phase 3.1) by whichever caller has it — optional, and rendered without
+// the "v" prefix at all when absent, the same tolerant-degradation
+// choice `main.py`'s own `/config` route already makes for a missing
+// VERSION file (a blank string, not a 500).
+export default function Shell({ title, current, user, onLogout, version, children }: ShellProps) {
   const { open, previewOpen, scheduleClose, toggle } = useSidebarPin()
 
   useEffect(() => {
@@ -69,7 +70,7 @@ export default function Shell({ title, current, user, onLogout, children }: Shel
         <FlashBanner />
         {children}
       </main>
-      <footer className="footer">PostWarden</footer>
+      <footer className="footer">PostWarden{version ? ` v${version}` : ''}</footer>
     </>
   )
 }

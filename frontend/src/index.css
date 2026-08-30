@@ -1113,3 +1113,144 @@ button.quiet:disabled {
   border-color: color-mix(in srgb, var(--red) 85%, black);
 }
 
+
+/* ==========================================================================
+   Phase 3.1 (login) — four more ranges out of app/static/style.css,
+   extracted the same way as Phase 2.3/2.4/2.5's own (sed -n, then a
+   byte-diff against this file's own copy): the login split-screen +
+   demo callout (734-812 — flagged back in Phase 2.3's own write-up as
+   "a real different phase, Phase 3.1, not just some selectors don't
+   exist yet"), label.field + label.field[hidden] (1249-1274, minus the
+   .amount-range rule sharing that neighborhood — the Amount filter
+   doesn't exist yet), .checkline (1407-1418, the checkbox-label style
+   the login form's own "Remember me" uses), and .grid-form
+   (2110-2111 — the login form's own single-column layout, forced via
+   its inline style="grid-template-columns: 1fr", per .auth-form-wrap's
+   own comment below). Everything else in each of these three
+   neighborhoods (.bar, .amount-range, .memo-cell, .select-only,
+   .panel, .stat-label/.stat-value) belongs to archetypes not built yet
+   and stays out for the same reason Phase 2.3/2.4 already gave.
+   ========================================================================== */
+
+/* -- login: a split screen instead of the standard topbar/main chrome —
+   see login.html's {% block chrome %} override. Brand on the left (the
+   one place in the app "PostWarden" gets to be the whole point, rather than
+   a muted trailer after the page name), the form on the right. */
+.auth-split { display: flex; min-height: 100vh; }
+.auth-brand {
+  flex: 1 1 50%; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--paper-deep); border-right: 1px solid var(--rule-strong);
+  padding: 2rem;
+}
+.auth-wordmark {
+  font-family: var(--serif); font-size: 4.5rem; font-weight: 600;
+  letter-spacing: 0.01em; color: var(--ink);
+}
+.auth-version {
+  position: absolute; bottom: 1.3rem; left: 1.5rem;
+  font-size: 0.78rem; color: var(--ink-soft);
+}
+.auth-panel {
+  flex: 1 1 50%; display: flex; align-items: center; justify-content: flex-start;
+  padding: 2rem 2rem 2rem 3rem; gap: 1.5rem; flex-wrap: wrap;
+}
+.auth-form-wrap { width: 100%; max-width: 20rem; }
+.auth-form-wrap h2:first-child { margin-top: 0; }
+/* The login form forces .grid-form down to a single column (see its own
+   inline style="grid-template-columns: 1fr") so Username/Password/
+   Remember me each get a full-width row — a grid item's default
+   justify-items: stretch does the same to the submit button right
+   along with them, though, since nothing about being a <button> exempts
+   it from that. Every other .grid-form on the app (Scenarios' "Create
+   scenario", etc.) uses the default multi-column auto-fit instead, so
+   its own button only ever stretches to one of several narrower
+   columns — narrow enough that nobody noticed the same stretch
+   happening there too. justify-self: start opts this one button out
+   back to its own natural width, without touching .grid-form itself. */
+.auth-form-wrap form.grid-form > button { justify-self: start; }
+
+/* -- demo callout: a guide-style bubble sitting beside the form, in the
+   auth-panel's own flex row — not layered over anything, just the
+   second thing on that row after .auth-form-wrap, so a speech-bubble
+   arrow on its *left* edge is enough to read as "pointing at the
+   fields," no absolute positioning/anchoring needed. */
+.demo-callout {
+  position: relative; width: 12rem; flex-shrink: 0;
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  border-radius: 10px; padding: 0.8rem 1rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  font-size: 0.85rem; line-height: 1.45; color: var(--ink);
+}
+.demo-callout p { margin: 0 0 0.3rem; }
+.demo-callout p:last-child { margin-bottom: 0; color: var(--ink-soft); }
+.demo-callout code { font-size: 0.82rem; }
+.demo-callout::before,
+.demo-callout::after {
+  content: ""; position: absolute; top: 50%; right: 100%;
+  transform: translateY(-50%); border: 9px solid transparent;
+}
+.demo-callout::before { border-right-color: var(--rule-strong); }
+.demo-callout::after  { right: calc(100% - 1px); border-right-color: var(--surface); }
+
+@media (max-width: 720px) {
+  .auth-split { flex-direction: column; }
+  .auth-brand {
+    flex: none; min-height: 10rem; flex-direction: column;
+    border-right: none; border-bottom: 1px solid var(--rule-strong);
+  }
+  .auth-wordmark { font-size: 3rem; }
+  .auth-version { bottom: 0.7rem; }
+  .auth-panel { flex: none; flex-direction: column; align-items: stretch; padding: 2.5rem 2rem; }
+  .demo-callout {
+    /* Stacked layout has no "beside the form" left to point at, and no
+       row for it to sit second-in — shown above the form instead (order:
+       -1), same "read this before you start typing" intent the callout
+       has always had. */
+    order: -1; width: auto; max-width: 16rem; margin: 0 auto 1.4rem; box-shadow: none;
+  }
+  .demo-callout::before, .demo-callout::after { display: none; }
+}
+
+/* flex: 1 1 10rem — a field grows to fill whatever room is left on its
+   row rather than sitting at its own bare intrinsic width (an <input>
+   or <select>'s browser-default size, which has nothing to do with how
+   much space its .bar row actually has), but stops at max-width so an
+   otherwise-empty row doesn't stretch one field absurdly wide. This is
+   what actually fixes filter/field rows rendering a different width
+   per row at different window sizes — every field used to keep its own
+   intrinsic width regardless of how flex-wrap happened to break the
+   row, so two rows with a different number of fields (or fields with
+   different natural content widths) ended up visibly misaligned.
+   A field with its own inline flex/width/max-width (Tags' flex: 1, the
+   Amount value's width: 7rem, Settings' narrower Symbol/Position, ...)
+   still wins over this default — inline style always beats a class
+   rule for the same property, so nothing above this is a regression,
+   just a sane fallback for every field that never opted into its own
+   sizing to begin with. */
+label.field { display: flex; flex-direction: column; gap: 0.2rem;
+              font-size: 0.78rem; color: var(--ink-soft);
+              flex: 1 1 10rem; max-width: 18rem; }
+/* label.field's own `display: flex` (author stylesheet) otherwise beats
+   the browser's built-in `[hidden] { display: none }` rule (user-agent
+   stylesheet — author always wins regardless of selector specificity),
+   so a plain `hidden` attribute on a .field label — the Amount filter's
+   second bound, shown only for "between" — would sit there rendered
+   anyway. This is what actually makes `hidden` hide it. */
+label.field[hidden] { display: none; }
+
+/* Every checkbox label in the app uses this one style: mono/uppercase,
+   the same treatment table.ledger's headers and the Journal's dates
+   already use. This used to be sentence-case (plain .sans), with only
+   Staging's "select all" (.list-toggle) singled out for the mono
+   treatment — reverted per feedback that the sentence-case version was
+   the odd one out, not the other way around: a checkbox reads more like
+   "a control" than "a sentence" across the whole app, not just atop a
+   list. .list-toggle itself stays gone; there's nothing left for a
+   second class to distinguish now that every checkbox looks like this. */
+.checkline { display: flex; align-items: center; gap: 0.4rem;
+             font-family: var(--mono); text-transform: uppercase;
+             letter-spacing: 0.04em; font-size: 0.7rem; color: var(--ink-soft); }
+
+.grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+             gap: 0.8rem; align-items: end; }

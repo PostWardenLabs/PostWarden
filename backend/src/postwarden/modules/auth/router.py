@@ -81,8 +81,17 @@ def me(session: dict = Depends(get_current_session)) -> dict:
     `request.state.user` was already in scope for every server-rendered
     template. A JSON SPA has no equivalent on page load, so this is the
     minimal "who am I, if anyone" check the new architecture requires —
-    an addition dictated by the medium, not invented business logic."""
-    return {"id": session["user_id"], "username": session["username"]}
+    an addition dictated by the medium, not invented business logic.
+
+    Includes `csrf_token`, same as `login`'s own response, not just
+    `id`/`username` — added in Phase 3.1 once a frontend actually
+    existed to expose the gap: a page load riding an existing, still-
+    valid session cookie (the common case — most page loads are not
+    themselves a fresh `POST /login`) has no other way to learn the
+    token its next write needs. Same value `login` already handed back
+    when this session was created, not a new one."""
+    return {"id": session["user_id"], "username": session["username"],
+            "csrf_token": session["csrf_token"]}
 
 
 @router.post("/settings/username")
