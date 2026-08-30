@@ -522,6 +522,9 @@ export default function JournalPage() {
                   </Link>
                 )}
                 {e.posted_by && <span className="dim small">— {e.posted_by}</span>}
+              </span>
+              <span className="num mono">{formatMoneyOrDash(e.total_debits)}</span>
+              <span className="entry-tags">
                 {e.tags.map((t) => (
                   <Link
                     key={t}
@@ -532,8 +535,6 @@ export default function JournalPage() {
                   </Link>
                 ))}
               </span>
-              <span className="num mono">{formatMoneyOrDash(e.total_debits)}</span>
-              <span />
             </summary>
             <div className="lines">
               <table className="ledger">

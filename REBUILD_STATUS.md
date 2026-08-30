@@ -131,6 +131,22 @@ wrong, turn it into a real fix instead of just unchecking it.
       with many rows next to one with few, and on an account with large
       amounts, to confirm both are actually fixed and nothing else
       regressed.
+- [ ] Journal page (`JournalPage.tsx`) row tags: moved per-entry tag
+      badges out of the description span and into the row's trailing
+      grid column (was an empty spacer `<span>`), so tags now sit
+      right-aligned at the far right of the row instead of inline after
+      the description/payee/reference/reversal badges — requested
+      directly, not part of a numbered phase. Verified `tsc -b && vite
+      build` and `oxlint` both clean, and that the built CSS bundle (via
+      `backend/Dockerfile`'s frontend-build stage) contains the new
+      `.entry-tags` rule; confirmed via the API that real tagged entries
+      exist to exercise it against (`96ZZAH`/`016TBN`, `phase34`/
+      `smoketest`). No browser tool was available to confirm the layout
+      visually — in particular whether `max-width: 11rem` wraps
+      sensibly on an entry with several tags, and whether the
+      right-alignment reads well next to the amount column. Needs a
+      real look at `/app/entries` on an entry with 1 tag, an entry with
+      several, and an entry with none.
 - [ ] Phase 5 visual pass: the 21 themes × 26 screens sweep (every theme
       switch actually looks right, not just the default) and the
       Apple-hardware confirmation that `option-key.js`'s ⌥ relabeling

@@ -1436,6 +1436,21 @@ body.select-mode details.entry-journal summary {
   padding-left: 2.3rem;
 }
 details.entry summary > .mono.dim:nth-child(2) { white-space: nowrap; }
+/* Journal row tags: pulled out of the description span into their own
+   trailing grid column (last "auto" in .entry-journal summary's own
+   template — was an empty spacer <span> before tags moved here) so a
+   tagged entry's description isn't competing with badge chips for the
+   same line. flex-wrap lets a heavily-tagged entry wrap to a second
+   line instead of stretching the auto column — and therefore the whole
+   row — wide enough to fit every tag on one line; justify-content puts
+   the wrapped lines flush against the row's right edge, matching where
+   the single-line case already sits since the column itself is auto
+   (content-width, right-flush against the amount column via the grid's
+   own gap). */
+.entry-journal summary .entry-tags {
+  display: flex; flex-wrap: wrap; gap: 0.3rem;
+  justify-content: flex-end; max-width: 11rem;
+}
 details.entry summary::-webkit-details-marker { display: none; }
 details.entry summary:hover { background: var(--paper-deep); }
 details.entry .lines { padding: 0.2rem 0.8rem 0.7rem; }
