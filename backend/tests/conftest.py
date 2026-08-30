@@ -45,6 +45,7 @@ only) still fires normally within the open transaction, same as it
 would at real runtime.
 """
 import os
+import secrets
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -170,3 +171,21 @@ def mk_budget_line(conn: Connection, scenario_id: int, account_id: int, amount, 
     """), {"scenario_id": scenario_id, "account_id": account_id, "period_month": period_month,
            "amount": amount}).mappings().one()
     return row["id"]
+
+
+def mk_user(conn: Connection) -> dict:
+    """A real `users` row — needed as of Phase 1.14, whose write-route
+    tests (`modules/entries/`, `/staging/`, `/imports/`) fake a logged-in
+    session by overriding `get_current_session`/`require_csrf_header`
+    directly rather than a real login, but still thread that session's
+    `user_id` into `created_by_user_id`/`imported_by_user_id` for real —
+    a bare made-up int like `1` would violate those columns' own FK
+    against `users(id)` in a scratch database that starts with none.
+    Username is random per call (`users.username` is UNIQUE) since some
+    tests call `client_for(conn)`, and so this, more than once."""
+    row = conn.execute(
+        text("INSERT INTO users (username, password_hash) VALUES (:username, 'x') "
+             "RETURNING id, username"),
+        {"username": f"test-{secrets.token_hex(4)}"},
+    ).mappings().one()
+    return dict(row)

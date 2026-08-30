@@ -14,12 +14,15 @@ Nothing in this router calls it.
 `/budget/`, `/imports/`, and `/reference/` all already use; a "not
 found" id is client-supplied-bad-input, not a routing-level 404.
 
-**No CSRF check, no real `imported_by`/attribution equivalent** — same
-`modules/auth/` (Phase 1.11) gap every prior write module documents.
-Neither `scheduled_entries` nor `entry_templates` has a user-attribution
-column at all (unlike `journal_entries.created_by_user_id`), so this
-gap is narrower here than for `entries`/`staging`/`imports` — there's
-nothing to leave `NULL`, just no audit trail to add.
+**Mounted into `app` as of Phase 1.14 (`main.py`):** every route now
+requires `get_current_session` (router-level, legacy's global `auth_
+gate` equivalent), and every write route additionally requires `require_
+csrf_header`. Neither `scheduled_entries` nor `entry_templates` has a
+user-attribution column at all (unlike `journal_entries.created_by_
+user_id`), so — same as `modules/reference/router.py`'s own Phase 1.14
+wiring — every write route below gains the dependency as a bare
+`dependencies=[...]` entry, not a bound parameter; there's nothing to
+thread a `session["user_id"]` into.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
@@ -27,9 +30,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ...db import get_connection
 from ...errors import pg_message
+from ..auth.deps import get_current_session, require_csrf_header
 from . import schemas, service
 
-router = APIRouter(tags=["scheduling"])
+router = APIRouter(tags=["scheduling"], dependencies=[Depends(get_current_session)])
 
 
 def _bad_request(e: Exception) -> HTTPException:
@@ -46,7 +50,7 @@ def list_schedules(conn: Connection = Depends(get_connection)) -> list[dict]:
     return service.list_schedules(conn)
 
 
-@router.post("/scheduled", status_code=201)
+@router.post("/scheduled", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_schedule(payload: schemas.CreateScheduleRequest,
                      conn: Connection = Depends(get_connection)) -> dict:
     accounts = [ln.account for ln in payload.lines]
@@ -65,7 +69,7 @@ def create_schedule(payload: schemas.CreateScheduleRequest,
     return {"id": sched_id}
 
 
-@router.post("/scheduled/{scheduled_id}/toggle-active")
+@router.post("/scheduled/{scheduled_id}/toggle-active", dependencies=[Depends(require_csrf_header)])
 def toggle_schedule_active(scheduled_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_schedule_active(conn, scheduled_id)
@@ -82,7 +86,7 @@ def list_templates(conn: Connection = Depends(get_connection)) -> list[dict]:
     return service.list_templates(conn)
 
 
-@router.post("/templates", status_code=201)
+@router.post("/templates", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_template(payload: schemas.CreateTemplateRequest,
                      conn: Connection = Depends(get_connection)) -> dict:
     accounts = [ln.account for ln in payload.lines]
@@ -99,7 +103,7 @@ def create_template(payload: schemas.CreateTemplateRequest,
     return {"id": tpl_id}
 
 
-@router.post("/templates/{template_id}/delete")
+@router.post("/templates/{template_id}/delete", dependencies=[Depends(require_csrf_header)])
 def delete_template(template_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         service.delete_template(conn, template_id)

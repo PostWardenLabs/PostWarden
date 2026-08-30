@@ -7,13 +7,27 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from postwarden.db import get_connection
+from postwarden.modules.auth.deps import get_current_session, require_csrf_header
 from postwarden.modules.imports.router import router
+
+from ...conftest import mk_user
 
 
 def client_for(conn) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
+    # As of Phase 1.14, every route here requires a session
+    # (`APIRouter(dependencies=[Depends(get_current_session)])`), and every
+    # write route additionally requires `require_csrf_header` — override both
+    # to a fixed fake session rather than simulate a real login/CSRF-token
+    # round-trip in every test below. A *real* `users` row (`mk_user`), not a
+    # made-up id: `import_csv`/`import_mapped_commit` both thread this
+    # session's `user_id` into `imported_by_user_id`, which has a real FK
+    # against `users(id)`.
+    session = {"user_id": mk_user(conn)["id"], "username": "test"}
+    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[require_csrf_header] = lambda: session
     return TestClient(app)
 
 

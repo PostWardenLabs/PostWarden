@@ -3,26 +3,29 @@ occurrence or a CSV import row sits in until approved. Same shape
 `modules/entries/router.py` established: thin routes, real logic in
 `service.py`.
 
-Deliberately not yet mounted into `app` — real mounting is Phase 1.14,
-once every module in `modules/` has built one.
-
-**Same two documented gaps `modules/entries/router.py` already carries,
-for the same reason (`modules/auth/`, Phase 1.11, doesn't exist yet):**
-no CSRF check, and no real `created_by_user_id` attribution on an
-approved entry — every approve posts with `created_by_user_id = NULL`.
-No CSV import routes either: `_parse_csv_import` and the two importer
-flows (plain CSV, mapped/rules) belong to `modules/imports/` (Phase
-1.8), which produces the `import_batches`/staged `journal_entries` rows
-this module only ever reads and acts on."""
+Mounted into `app` as of Phase 1.14 (`main.py`), which closes the two
+gaps this docstring used to flag: every route now requires `get_current_
+session` (router-level, legacy's global `auth_gate` equivalent), every
+write route additionally requires `require_csrf_header`, and
+`approve_entries` binds the resulting `session` to thread `session
+["user_id"]` through to `service.approve_entries` as the approved
+entry's own `created_by_user_id` — matching legacy's `auth.current_user
+(request)["user_id"]` at the same call site. No CSV import routes here
+either: `_parse_csv_import` and the two importer flows (plain CSV,
+mapped/rules) belong to `modules/imports/` (Phase 1.8), which produces
+the `import_batches`/staged `journal_entries` rows this module only ever
+reads and acts on."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
 
 from ...db import get_connection
 from ...errors import pg_message
+from ..auth.deps import get_current_session, require_csrf_header
 from . import schemas, service
 
-router = APIRouter(prefix="/staging", tags=["staging"])
+router = APIRouter(prefix="/staging", tags=["staging"],
+                    dependencies=[Depends(get_current_session)])
 
 
 @router.get("")
@@ -38,10 +41,11 @@ def list_pending(date_from: str = "", date_to: str = "", qtext: str = "", tags: 
 
 @router.post("/approve")
 def approve_entries(payload: schemas.ApproveRejectRequest,
+                     session: dict = Depends(require_csrf_header),
                      conn: Connection = Depends(get_connection)) -> dict:
     if not payload.entry_ids:
         raise HTTPException(400, detail="Select at least one entry to approve")
-    approved, errors = service.approve_entries(conn, payload.entry_ids)
+    approved, errors = service.approve_entries(conn, payload.entry_ids, session["user_id"])
     return {"approved": approved, "errors": errors}
 
 
@@ -53,7 +57,7 @@ def get_edit_data(entry_id: str, conn: Connection = Depends(get_connection)) -> 
         raise HTTPException(400, detail=str(e))
 
 
-@router.post("/{entry_id}/edit")
+@router.post("/{entry_id}/edit", dependencies=[Depends(require_csrf_header)])
 def save_edit(entry_id: str, payload: schemas.EditStagingEntryRequest,
               conn: Connection = Depends(get_connection)) -> dict:
     accounts = [ln.account for ln in payload.lines]
@@ -72,7 +76,7 @@ def save_edit(entry_id: str, payload: schemas.EditStagingEntryRequest,
     return {"entry_id": entry_id}
 
 
-@router.post("/{entry_id}/reject")
+@router.post("/{entry_id}/reject", dependencies=[Depends(require_csrf_header)])
 def reject_entry(entry_id: str, conn: Connection = Depends(get_connection)) -> dict:
     try:
         service.reject_entry(conn, entry_id)
@@ -81,7 +85,7 @@ def reject_entry(entry_id: str, conn: Connection = Depends(get_connection)) -> d
     return {"entry_id": entry_id}
 
 
-@router.post("/reject")
+@router.post("/reject", dependencies=[Depends(require_csrf_header)])
 def reject_entries(payload: schemas.ApproveRejectRequest,
                     conn: Connection = Depends(get_connection)) -> dict:
     if not payload.entry_ids:
@@ -95,7 +99,7 @@ def find_duplicates(conn: Connection = Depends(get_connection)) -> dict:
     return {"groups": service.find_duplicate_groups(conn)}
 
 
-@router.post("/duplicates/merge")
+@router.post("/duplicates/merge", dependencies=[Depends(require_csrf_header)])
 def merge_duplicates(payload: schemas.MergeDuplicatesRequest,
                       conn: Connection = Depends(get_connection)) -> dict:
     try:

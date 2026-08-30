@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from postwarden.db import get_connection
+from postwarden.modules.auth.deps import get_current_session
 from postwarden.modules.reports.router import router
 
 
@@ -21,6 +22,11 @@ def client_for(conn) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
+    # As of Phase 1.14, every route here requires a session
+    # (`APIRouter(dependencies=[Depends(get_current_session)])`) — no
+    # write routes in this module, so there's no `require_csrf_header`
+    # to override alongside it.
+    app.dependency_overrides[get_current_session] = lambda: {"user_id": 1, "username": "test"}
     return TestClient(app)
 
 

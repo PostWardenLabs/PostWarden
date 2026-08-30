@@ -3,13 +3,16 @@ throwaway `FastAPI()` + `include_router()`, the same pattern
 `modules/reports/test_router.py` established for an unmounted router.
 `get_connection` is overridden to hand back this test's own rolled-back
 transaction; `get_settings` is overridden for the Connect BI routes so
-the port shown is deterministic regardless of the ambient environment."""
+the port shown is deterministic regardless of the ambient environment;
+`get_current_session` is overridden to a fixed fake session, since every
+route here requires one as of Phase 1.14."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from postwarden.analytics.router import router
 from postwarden.config import Settings, get_settings
 from postwarden.db import get_connection
+from postwarden.modules.auth.deps import get_current_session
 
 
 def client_for(conn, *, bi_port: str = "5432") -> TestClient:
@@ -17,6 +20,10 @@ def client_for(conn, *, bi_port: str = "5432") -> TestClient:
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
     app.dependency_overrides[get_settings] = lambda: Settings(POSTWARDEN_BI_PORT=bi_port)
+    # As of Phase 1.14, every route here (both /api/* and /settings/connect-bi*)
+    # requires a session — the same router-level `get_current_session` dependency
+    # every other module's own router carries.
+    app.dependency_overrides[get_current_session] = lambda: {"user_id": 1, "username": "test"}
     return TestClient(app)
 
 

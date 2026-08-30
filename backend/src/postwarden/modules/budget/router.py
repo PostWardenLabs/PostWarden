@@ -2,12 +2,16 @@
 `modules/reports/router.py`/`modules/entries/router.py` already
 established: thin routes, real logic in `service.py`.
 
-Deliberately not yet mounted into `app` — real mounting is Phase 1.14,
-once every module in `modules/` has built one.
+Mounted into `app` as of Phase 1.14 (`main.py`): every route now
+requires `get_current_session` (router-level, legacy's global `auth_
+gate` equivalent), and `POST /budget/cell` additionally requires
+`require_csrf_header`. `budget_lines` carries no user-attribution column
+at all, so — unlike `modules/entries/`'s own Phase 1.14 wiring — there's
+nothing for `save_cell` to thread a `session["user_id"]` into; it gains
+the dependency as a bare `dependencies=[...]` entry, not a bound
+parameter.
 
-**No CSRF check, no scenario picker.** Same two documented gaps every
-other write module carries for the same reasons: `require_csrf` is
-`modules/auth/` (Phase 1.11); the list of income-statement-only scenarios
+**Still no scenario picker.** The list of income-statement-only scenarios
 to populate a picker with is `modules/reference/` (Phase 1.9) — reaching
 into either now would break the "deletable on its own" test `REBUILD.md`
 decision 3 sets for a vertical slice, the same reasoning `modules/
@@ -29,9 +33,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from ...db import get_connection
 from ...domain.periods import month_options, shift_month
 from ...errors import pg_message
+from ..auth.deps import get_current_session, require_csrf_header
 from . import schemas, service
 
-router = APIRouter(prefix="/budget", tags=["budget"])
+router = APIRouter(prefix="/budget", tags=["budget"],
+                    dependencies=[Depends(get_current_session)])
 
 
 def _resolve_month(month: str) -> str:
@@ -74,7 +80,7 @@ def budget_grid(scenario: str = "", month: str = "", pct_of_base: int = 0,
     }
 
 
-@router.post("/cell")
+@router.post("/cell", dependencies=[Depends(require_csrf_header)])
 def save_cell(payload: schemas.SaveCellRequest, conn: Connection = Depends(get_connection)) -> dict:
     try:
         amount = service.save_budget_cell(

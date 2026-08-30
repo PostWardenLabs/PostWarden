@@ -19,6 +19,14 @@ exists because, unlike those four modules, *every* write route here (not
 just some) needs the identical two-exception mapping — Accounts/
 Scenarios/Account levels/Payees/Tags share no other structure, but they
 share this.
+
+**Mounted into `app` as of Phase 1.14 (`main.py`):** every route now
+requires `get_current_session` (router-level, legacy's global `auth_
+gate` equivalent), and every write route additionally requires `require_
+csrf_header`. None of these five resources carry a user-attribution
+column, so every write route gains the dependency as a bare
+`dependencies=[...]` entry, not a bound parameter — same shape `modules/
+budget/router.py`'s own `save_cell` uses for the identical reason.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
@@ -26,9 +34,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ...db import get_connection
 from ...errors import pg_message
+from ..auth.deps import get_current_session, require_csrf_header
 from . import schemas, service
 
-router = APIRouter(tags=["reference"])
+router = APIRouter(tags=["reference"], dependencies=[Depends(get_current_session)])
 
 
 def _bad_request(e: Exception) -> HTTPException:
@@ -45,7 +54,7 @@ def list_accounts(level_id: int | None = None, conn: Connection = Depends(get_co
     return service.list_accounts(conn, level_id)
 
 
-@router.post("/accounts", status_code=201)
+@router.post("/accounts", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_account(payload: schemas.CreateAccountRequest,
                     conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -57,7 +66,7 @@ def create_account(payload: schemas.CreateAccountRequest,
         raise _bad_request(e)
 
 
-@router.post("/accounts/quick-create", status_code=201)
+@router.post("/accounts/quick-create", status_code=201, dependencies=[Depends(require_csrf_header)])
 def quick_create_account(payload: schemas.QuickCreateAccountRequest,
                           conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -68,7 +77,7 @@ def quick_create_account(payload: schemas.QuickCreateAccountRequest,
         raise _bad_request(e)
 
 
-@router.post("/accounts/{account_id}/toggle-active")
+@router.post("/accounts/{account_id}/toggle-active", dependencies=[Depends(require_csrf_header)])
 def toggle_account_active(account_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_account_active(conn, account_id)
@@ -76,7 +85,7 @@ def toggle_account_active(account_id: int, conn: Connection = Depends(get_connec
         raise _bad_request(e)
 
 
-@router.post("/accounts/{account_id}/toggle-cashflow")
+@router.post("/accounts/{account_id}/toggle-cashflow", dependencies=[Depends(require_csrf_header)])
 def toggle_account_cashflow(account_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_account_cashflow(conn, account_id)
@@ -93,7 +102,7 @@ def list_account_levels(conn: Connection = Depends(get_connection)) -> list[dict
     return service.list_account_levels(conn)
 
 
-@router.post("/account-levels", status_code=201)
+@router.post("/account-levels", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_account_level(payload: schemas.CreateAccountLevelRequest,
                           conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -102,7 +111,7 @@ def create_account_level(payload: schemas.CreateAccountLevelRequest,
         raise _bad_request(e)
 
 
-@router.post("/account-levels/{level_id}/rename")
+@router.post("/account-levels/{level_id}/rename", dependencies=[Depends(require_csrf_header)])
 def rename_account_level(level_id: int, payload: schemas.RenameRequest,
                           conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -112,7 +121,7 @@ def rename_account_level(level_id: int, payload: schemas.RenameRequest,
     return {"id": level_id, "name": name}
 
 
-@router.post("/account-levels/{level_id}/delete")
+@router.post("/account-levels/{level_id}/delete", dependencies=[Depends(require_csrf_header)])
 def delete_account_level(level_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         service.delete_account_level(conn, level_id)
@@ -130,7 +139,7 @@ def list_scenarios(conn: Connection = Depends(get_connection)) -> list[dict]:
     return service.list_scenarios(conn)
 
 
-@router.post("/scenarios", status_code=201)
+@router.post("/scenarios", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_scenario(payload: schemas.CreateScenarioRequest,
                      conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -143,7 +152,7 @@ def create_scenario(payload: schemas.CreateScenarioRequest,
         raise _bad_request(e)
 
 
-@router.post("/scenarios/{scenario_id}/toggle-lock")
+@router.post("/scenarios/{scenario_id}/toggle-lock", dependencies=[Depends(require_csrf_header)])
 def toggle_scenario_lock(scenario_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_scenario_lock(conn, scenario_id)
@@ -160,7 +169,7 @@ def list_payees(conn: Connection = Depends(get_connection)) -> list[dict]:
     return service.list_payees(conn)
 
 
-@router.post("/payees", status_code=201)
+@router.post("/payees", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_payee(payload: schemas.CreatePayeeRequest,
                   conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -169,7 +178,7 @@ def create_payee(payload: schemas.CreatePayeeRequest,
         raise _bad_request(e)
 
 
-@router.post("/payees/quick-create", status_code=201)
+@router.post("/payees/quick-create", status_code=201, dependencies=[Depends(require_csrf_header)])
 def quick_create_payee(payload: schemas.CreatePayeeRequest,
                         conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -178,7 +187,7 @@ def quick_create_payee(payload: schemas.CreatePayeeRequest,
         raise _bad_request(e)
 
 
-@router.post("/payees/{payee_id}/toggle-active")
+@router.post("/payees/{payee_id}/toggle-active", dependencies=[Depends(require_csrf_header)])
 def toggle_payee_active(payee_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_payee_active(conn, payee_id)
@@ -186,7 +195,7 @@ def toggle_payee_active(payee_id: int, conn: Connection = Depends(get_connection
         raise _bad_request(e)
 
 
-@router.post("/payees/{payee_id}/rename")
+@router.post("/payees/{payee_id}/rename", dependencies=[Depends(require_csrf_header)])
 def rename_payee(payee_id: int, payload: schemas.RenameRequest,
                   conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -196,7 +205,7 @@ def rename_payee(payee_id: int, payload: schemas.RenameRequest,
     return {"id": payee_id, "name": name}
 
 
-@router.post("/payees/{payee_id}/delete")
+@router.post("/payees/{payee_id}/delete", dependencies=[Depends(require_csrf_header)])
 def delete_payee(payee_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         name = service.delete_payee(conn, payee_id)
@@ -205,7 +214,7 @@ def delete_payee(payee_id: int, conn: Connection = Depends(get_connection)) -> d
     return {"id": payee_id, "name": name}
 
 
-@router.post("/payees/merge")
+@router.post("/payees/merge", dependencies=[Depends(require_csrf_header)])
 def merge_payees(payload: schemas.MergePayeesRequest,
                   conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -224,7 +233,7 @@ def list_tags(conn: Connection = Depends(get_connection)) -> list[dict]:
     return service.list_tags(conn)
 
 
-@router.post("/tags", status_code=201)
+@router.post("/tags", status_code=201, dependencies=[Depends(require_csrf_header)])
 def create_tag(payload: schemas.CreateTagRequest, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.create_tag(conn, payload.name)
@@ -232,7 +241,7 @@ def create_tag(payload: schemas.CreateTagRequest, conn: Connection = Depends(get
         raise _bad_request(e)
 
 
-@router.post("/tags/{tag_id}/toggle-active")
+@router.post("/tags/{tag_id}/toggle-active", dependencies=[Depends(require_csrf_header)])
 def toggle_tag_active(tag_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         return service.toggle_tag_active(conn, tag_id)
@@ -240,7 +249,7 @@ def toggle_tag_active(tag_id: int, conn: Connection = Depends(get_connection)) -
         raise _bad_request(e)
 
 
-@router.post("/tags/{tag_id}/rename")
+@router.post("/tags/{tag_id}/rename", dependencies=[Depends(require_csrf_header)])
 def rename_tag(tag_id: int, payload: schemas.RenameRequest,
                 conn: Connection = Depends(get_connection)) -> dict:
     try:
@@ -250,7 +259,7 @@ def rename_tag(tag_id: int, payload: schemas.RenameRequest,
     return {"id": tag_id, "name": name}
 
 
-@router.post("/tags/{tag_id}/delete")
+@router.post("/tags/{tag_id}/delete", dependencies=[Depends(require_csrf_header)])
 def delete_tag(tag_id: int, conn: Connection = Depends(get_connection)) -> dict:
     try:
         name = service.delete_tag(conn, tag_id)
@@ -259,7 +268,7 @@ def delete_tag(tag_id: int, conn: Connection = Depends(get_connection)) -> dict:
     return {"id": tag_id, "name": name}
 
 
-@router.post("/tags/merge")
+@router.post("/tags/merge", dependencies=[Depends(require_csrf_header)])
 def merge_tags(payload: schemas.MergeTagsRequest, conn: Connection = Depends(get_connection)) -> dict:
     try:
         merged, affected = service.merge_tags(conn, payload.tag_ids, payload.target_name)

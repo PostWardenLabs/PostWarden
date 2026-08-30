@@ -855,8 +855,144 @@ log, `/healthz` 200), a local `docker compose up -d db` + `pytest` run,
 and separately the exact CI shape by hand (a bare `postgres:16`
 container, `alembic upgrade head`, `pytest`).
 
-**Next step:** 1.14 — `main.py` cut down to app factory + router
-mounting only.
+**Phase 1.14 done.** `main.py` — every module's router mounted into the
+real `app` for the first time (`reports`, `entries`, `staging`,
+`imports`, `budget`, `reference`, `scheduling`, `auth`, `analytics`),
+plus the two retrofits every one of those modules' own docstrings had
+been pointing at since the phase that built them: the `modules/auth/`
+(Phase 1.11) session/CSRF gate, and `bootstrap_admin_from_env`'s actual
+call site.
+
+1. **The auth retrofit is a router-level `Depends(...)`, not global
+   middleware — `modules/auth/deps.py`'s own Phase 1.11 docstring already
+   settled this ("as a per-route dependency instead of blanket
+   middleware"), this phase just carried it out.** Every module's
+   `router = APIRouter(...)` gained `dependencies=[Depends(get_current_
+   session)]` — the direct equivalent of legacy's global `auth_gate`
+   requiring a valid session for every route, just FastAPI-idiomatic
+   (visible in the router's own construction, testable by overriding one
+   named dependency) instead of ASGI-idiomatic (an opaque `call_next`
+   wrapper). Every write route additionally depends on `require_csrf_
+   header`. Two shapes, depending on whether the route's own service call
+   has anywhere to put a real user id:
+   - **`modules/entries/`'s `create_entry`/`reverse_entry`/`reverse_
+     entries_bulk`, `modules/staging/`'s `approve_entries`, and `modules/
+     imports/`'s `import_csv`/`import_mapped_commit`** bind the
+     dependency to a real `session: dict` parameter and thread `session
+     ["user_id"]` through to `created_by_user_id`/`imported_by_user_id`
+     — columns every one of those `service.py`/`repository.py` functions
+     already accepted as an optional argument since the phase that built
+     them (Phase 1.5, 1.8, 1.9), left `None` until now on purpose.
+   - **Every other write route** — all of `modules/reference/`,
+     `modules/scheduling/`, `modules/budget/`'s `save_cell`, and
+     `modules/entries/`'s tag/description/memo edits — has nothing to
+     attribute (no user-attribution column on that table at all, or the
+     edit itself never touched one in legacy either), so it gains
+     `require_csrf_header` as a bare `dependencies=[...]` entry on the
+     route decorator instead of a bound parameter.
+   `modules/auth/router.py` itself carries no router-level dependency:
+   `/login` has to stay reachable with no session at all, and its other
+   four routes (`logout`, `me`, the two `/settings/*` routes) already
+   spelled out their own per-route `Depends(...)` back in Phase 1.11.
+2. **One piece of legacy's `auth_gate` doesn't fit a per-route
+   dependency at all, and stays real middleware in `main.py`:
+   `advance_due_schedules`, lazily materializing due schedules on every
+   request that carries a valid session** (SPEC.md decision 9 — no task
+   runner in this deployment). No single module's router can own
+   something that has to run on literally every request regardless of
+   which module it's headed to, so `main.py` is where it lives, exactly
+   the cross-cutting exception `modules/scheduling/service.py`'s own
+   Phase 1.10 docstring predicted ("wiring a periodic or per-request call
+   ... into the new app is that phase's job, or `main.py`'s"). Opens its
+   own connection directly against `get_engine()` rather than going
+   through `db.get_connection()`, since it runs outside any route's own
+   request-scoped dependency graph; swallows any failure the same bare
+   `except Exception: pass` legacy uses.
+3. **`main.py`'s `lifespan` calls `auth.service.bootstrap_admin_from_
+   env` with `settings.postwarden_admin_user`/`_password`** — the one
+   remaining piece of legacy's own `lifespan`, same call site. **Does
+   NOT call anything migration-related**, unlike legacy's `lifespan`
+   calling `run_migrations()`: REBUILD.md decision 5 already made Alembic
+   a separate, explicit step (the Dockerfile's own `CMD`, or CI's own
+   `alembic upgrade head`) that runs *before* this process starts, not
+   from inside the app — `main.py`'s own docstring calls this out so it
+   doesn't read as a gap.
+4. **Caught by this phase's own new test, not by inspection**:
+   `analytics/router.py` was the one module whose Phase 1.13 write-up
+   already listed a settled auth stance but whose actual `router =
+   APIRouter(...)` line was never updated to carry it — every other
+   module's `router.py` got the `dependencies=[Depends(get_current_
+   session)]` treatment directly during this phase's own pass, but
+   analytics' pass only touched its test file's own override, leaving
+   the real router still wide open. `test_main.py`'s `test_analytics_
+   api_route_401s_with_no_session` (below) caught this immediately — a
+   `200` where every other protected route answered `401` — fixed in the
+   same commit, not a follow-up.
+
+Other decisions, smaller:
+
+- **A new `mk_user` helper in `backend/tests/conftest.py`.** The three
+  modules that now thread a real `session["user_id"]` into a real FK
+  (`created_by_user_id`/`imported_by_user_id`) need an actual `users`
+  row to point at in their own scratch-DB tests — a bare made-up int
+  like `1` violates the FK in a database that starts with no seeded
+  users at all. Random username per call (`users.username` is UNIQUE),
+  since some existing tests already call `client_for(conn)` more than
+  once within a single test.
+- **Every module's own `test_router.py` `client_for()` now overrides
+  `get_current_session` (and `require_csrf_header`, for the modules with
+  write routes) to a fixed fake session**, the same "override the
+  dependency directly rather than simulate a real login" shape `test_
+  service.py` already used for `get_settings` back in Phase 1.13 —
+  simpler and faster than a real login/CSRF-token round-trip in every
+  one of the ~500 existing tests this phase's own router changes would
+  otherwise have 401'd.
+- **A new `backend/tests/test_main.py`, testing `main.py` itself for the
+  first time** — nothing before this phase exercised the real, fully-
+  mounted `app` object; every module's own tests proved their router
+  *in isolation*. Covers: every module actually being mounted (one
+  representative path each, via `app.openapi()`), the auth wiring
+  holding through the real `app` (a handful of `401` checks, using the
+  real `app`'s own `get_connection` override pointed at this test's
+  scratch transaction — not a second throwaway `FastAPI()`, since the
+  point is proving `main.py` itself, not re-proving each module), and
+  `advance_due_schedules`/`lifespan` in isolation via a fake `Engine`
+  and `monkeypatch.setattr` on `main.auth_service`/`main.scheduling_
+  service` directly — deliberately not a real Postgres connection for
+  those two, since `bootstrap_admin_from_env`'s and `materialize_due_
+  schedules`' own logic already have real-Postgres tests in `modules/
+  auth/`'s and `modules/scheduling/`'s own suites (Phases 1.11, 1.10),
+  and the *only* new thing to prove here is `main.py`'s own plumbing
+  ("call this, with these arguments, only under these conditions") —
+  which also sidesteps a real hazard: the actual, cached `get_engine()`
+  points at whatever `DATABASE_URL` names, which for a developer running
+  this suite locally is their own `docker compose up -d db` database,
+  not the scratch one `conftest.py` builds — a test that let `lifespan`
+  or the middleware touch it for real would leave a stray admin user or
+  materialized schedule in a developer's own dev data on every `pytest`
+  run.
+- **Verified for real, end to end, against the actual running
+  container** — not just the pytest suite: `docker compose up -d
+  --build`, manually bootstrapped an admin user against the live `db`
+  service, then round-tripped `POST /login` → `GET /reports/trial-
+  balance` (200) → `POST /tags` with no `X-CSRF-Token` header (400, the
+  exact "session expired or stale" message) → the same request with the
+  header (201) → `POST /entries` → confirmed the new entry's own
+  `created_by_user_id` resolves to the logged-in username via a direct
+  `psql` join. This is the first phase where that kind of check is even
+  possible — every prior module's routes existed but were never reachable
+  through the real app until this one mounted them.
+
+10 new tests (`test_main.py`) — 523 passed total. Verified for real, the
+same three ways as every phase since 1.4: a full `docker compose up -d
+--build` (clean log, `/healthz` 200, plus the manual end-to-end
+login/CSRF/attribution check above), a local `docker compose up -d db` +
+`pytest` run, and separately the exact CI shape by hand (a bare
+`postgres:16` container, `alembic upgrade head`, `pytest`).
+
+**Next step:** 1.15 — the gate: confirm the 60 pure-Postgres tests still
+pass unchanged and every ported module's own tests are green in CI,
+before any frontend work starts.
 
 ---
 
@@ -944,7 +1080,7 @@ directly.
       not ranges) — ported deliberately, not incidentally.
 - [x] **1.13** `analytics/` — star-schema views + the documented
       `/api/*` contract (the 5 existing routes).
-- [ ] **1.14** `main.py` cut down to app factory + router mounting only.
+- [x] **1.14** `main.py` cut down to app factory + router mounting only.
 - [ ] **1.15** **Gate:** the 60 pure-Postgres tests
       (`tests/test_invariants.py`, `tests/test_cashflow.py`) pass
       unchanged, and every ported module's own tests are green in CI.

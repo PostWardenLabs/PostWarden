@@ -11,8 +11,18 @@ already gives: every route here is a GET with plain query params FastAPI
 already validates from the function signature, and no request body ever
 needs a Pydantic model.
 
-Deliberately not yet mounted into `app` — real router mounting is Phase
-1.14, once every module in `modules/` (and this package) has built one.
+Mounted into `app` as of Phase 1.14 (`main.py`), with `get_current_
+session` required at the router level for every route below — the same
+router-level dependency every other module's own Phase 1.14 wiring uses,
+matching legacy's global `auth_gate`. That includes `/api/*`: legacy's
+`auth_gate` gated it too (its own `path.startswith("/api/")` branch just
+picked a JSON 401 over a redirect, which every route here already
+answers with regardless, being JSON throughout) — a BI tool reaches the
+star schema directly, over Postgres, as the `postwarden_bi` role
+(`service.py`'s own `BI_USER`/`BI_DB`), not through `/api/*`, so there's
+no separate "machine-friendly, unauthenticated" path being closed off
+here. No write routes in this module, so no `require_csrf_header`
+anywhere.
 """
 import json as stdlib_json
 
@@ -21,9 +31,10 @@ from sqlalchemy.engine import Connection
 
 from ..config import Settings, get_settings
 from ..db import get_connection
+from ..modules.auth.deps import get_current_session
 from . import service
 
-router = APIRouter(tags=["analytics"])
+router = APIRouter(tags=["analytics"], dependencies=[Depends(get_current_session)])
 
 
 # ---------------------------------------------------------------------------

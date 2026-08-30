@@ -14,12 +14,16 @@ exporting one that predates this rebuild and is preserved rather than
 "fixed" (REBUILD.md decision 4 — port behavior, don't redesign it along
 the way).
 
-Deliberately not yet mounted into `app` — see `main.py`'s own docstring:
-real router mounting is Phase 1.14, once every module in `modules/` has
-built one. This file is fully testable on its own in the meantime (a
-throwaway `FastAPI()` + `include_router()`, the same pattern
-`test_json.py` already established for an unmounted route), and its
-Decimal/date fields serialize correctly with no extra wiring here —
+Mounted into `app` as of Phase 1.14 (`main.py`), with `get_current_session`
+required at the router level for every route below — the direct
+equivalent of legacy's global `auth_gate` (every route needs a valid
+session; there's nothing here for it to redirect to, so an absent/expired
+session is a plain 401 like every other JSON route). No write routes in
+this module, so no `require_csrf_header` anywhere — a report or its
+export never mutates anything. This file was fully testable before
+mounting too (a throwaway `FastAPI()` + `include_router()`, the same
+pattern `test_json.py` already established for an unmounted route), and
+its Decimal/date fields serialize correctly with no extra wiring here —
 `configure_decimal_encoding()` runs once at `main.py` import time and
 patches FastAPI's `jsonable_encoder` process-wide, which is what
 actually renders every plain-dict return below (see `json.py`'s own
@@ -44,9 +48,11 @@ from sqlalchemy.engine import Connection
 
 from ...db import get_connection
 from ...domain.periods import shift_date_by_month, shift_range, split_periods
+from ..auth.deps import get_current_session
 from . import export, service
 
-router = APIRouter(prefix="/reports", tags=["reports"])
+router = APIRouter(prefix="/reports", tags=["reports"],
+                    dependencies=[Depends(get_current_session)])
 
 
 @router.get("/trial-balance")
