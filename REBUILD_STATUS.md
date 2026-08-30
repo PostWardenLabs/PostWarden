@@ -2547,6 +2547,53 @@ each time rather than mutating the three real seeded levels; the delete
 confirm's copy matches legacy's own `Delete level {name}?` verbatim. No
 console errors.
 
+**Phase 4.2, screen 4 of 6 — Scheduled entries done.** `frontend/src/
+setup/ScheduledPage.tsx`, ported from `app/templates/scheduled.html`.
+The first screen this phase that needed real line-entry UI, not just a
+table plus a couple of scalar fields — legacy's own template shares one
+`app.js` between this page and `entries.html`'s New entry panel, so this
+reuses `journal/EntryGrid.tsx` and `journal/gridLines.ts`
+(`makeBlankLine`/`ensureTrailingBlank`/`isLineUsed`) unchanged, and
+mirrors `NewEntryPanel.tsx`'s own state/handlers (account-by-scenario
+refiltering via `usePostableAccounts()`, Distribute, the payee quick-
+create combobox, Alt+N/D/S shortcuts via `e.code`) rather than
+reinventing them. Three real differences from that panel, not a shared
+abstraction: a permanent `<div class="panel">`, not a collapsible
+`<details>` (so no Alt+E, no `defaultOpen`); Repeats-every/unit/Next-on
+replace a single Date field, and Save is disabled on `!balanced` alone —
+`modules/scheduling/service.py::create_schedule`'s own `total != 0`
+check is unconditional, unlike the Journal's scenario-dependent
+`enforce_balance`, though the "(single-sided OK)" scenario-label suffix
+is kept since it still describes a real property of that scenario, just
+not a rule this form's own Save button honors; and no Clear button/
+Alt+C — legacy's own button row here only ever had Save/Add line/
+Distribute. The `pending_count` Staging banner is deliberately not
+ported yet — noted inline, revisit at Phase 4.3 once Staging exists to
+read and link to.
+
+Verified with a real `docker compose up -d --build`: `tsc -b && vite
+build` needed one real fix first (`oxlint`'s `react(set-state-in-effect)`
+on an effect that synced `scenarioId` to the first-loaded scenario once
+`scenarios` arrived — fixed by deriving `scenarioId` from
+`explicitScenarioId ?? firstScenarioId` during render instead of
+syncing via `setState` inside a `useEffect`), clean after; then
+browser-driven against the running container with real seed data — the
+account combobox on the grid correctly listed the selected scenario's
+own postable accounts, Distribute correctly filled the second row's
+credit to balance the first row's debit, and a real schedule saved end
+to end. One real surprise, not a bug: the newly created schedule's
+`next_date` (submitted as today) showed as one month later immediately
+after creation — `main.py`'s own `advance_due_schedules` middleware
+(wired at Phase 1.14, despite `modules/scheduling/service.py`'s own
+docstring on `materialize_due_schedules` still saying "not wired into
+anything yet" — a stale comment worth fixing on a future pass through
+that file) runs `materialize_due_schedules` on every authenticated
+request, so a same-day schedule gets staged and its `next_date`
+advanced before the page's own post-save reload even completes.
+Confirmed by reading `scheduled_entries` directly in the container's
+Postgres, not assumed. Archived the test schedule afterward. No
+console errors.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2710,7 +2757,8 @@ Largely configuration once the Phase 3 archetype components exist.
       already-existing route.
 - [~] **4.2** Remaining Management/CRUD: payees, scenarios,
       account_levels, scheduled, entry_templates, settings. Payees,
-      Scenarios, and Account levels done — see Current status.
+      Scenarios, Account levels, and Scheduled entries done — see
+      Current status.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates

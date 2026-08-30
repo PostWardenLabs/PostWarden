@@ -38,7 +38,7 @@ export const NAV_GROUPS: NavGroup[] = [
     links: [
       { key: 'entries', label: 'Journal', href: '/app/entries', client: true },
       { key: 'staging', label: 'Staging', href: '/staging' },
-      { key: 'scheduled', label: 'Scheduled Entries', href: '/scheduled' },
+      { key: 'scheduled', label: 'Scheduled Entries', href: '/app/scheduled', client: true },
       { key: 'import', label: 'Import', href: '/import' },
       { key: 'templates', label: 'Templates', href: '/templates' },
       { key: 'budget', label: 'Budget Grid', href: '/budget' },
