@@ -3964,6 +3964,31 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — `formatMoneyOrDash()` added to `format/money.ts`: a
+  genuine $0 in any single-value money column now renders as "—" (the
+  same em dash already used app-wide for "no value here" — Scenarios,
+  Entry Templates, Scheduled Entries), not "0.00" and not a blank cell.
+  Applied across every report/list that has one — Balance Sheet (which
+  used to render blank for zero, the only place that already did),
+  Cash Flow, Income Statement, Variance, Budget grid, Dashboard,
+  Journal/Staging's own per-entry total badge, Staging Duplicates.
+  Deliberately **not** applied to: debit/credit paired columns (Trial
+  Balance, Journal/Staging/Ledger's line-level debit/credit cells) —
+  one side of a real balance is trivially $0 for nearly every row by
+  construction, so a blank non-balance side is the meaningful signal,
+  dashing it would just be noise on almost every row; editable inputs
+  (Budget grid's own Budgeted cell, `rawAmount()`) — a dash placeholder
+  would have to be deleted before typing a real number over it; and two
+  live-editing "Debits/Credits/Difference" form footers
+  (`NewEntryPanel.tsx`, `StagingEditPanel.tsx`) where a literal "0.00"
+  difference is the meaningful "you're balanced" signal mid-entry, not
+  a "nothing to show" state a dash would blur. Mechanical, same-
+  signature drop-in everywhere it does apply (`formatMoneyOrDash` takes
+  the exact same `string | number | null | undefined` `formatMoney`
+  always did), so every call site converts by substitution alone — no
+  behavior change beyond the zero case. Not verified against a real
+  `tsc -b`/build, same standing sandbox caveat as the commit above this
+  one.
 - **2026-08-30** — Retained Earnings becomes a real collapsible tree
   node on Trial Balance and Balance Sheet, and Balance Sheet's `raw=1`
   ("skip simulated close") stops hiding that the sheet genuinely doesn't

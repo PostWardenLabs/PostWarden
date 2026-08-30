@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import client from '../api/client'
 import { usePayees, type Payee } from '../api/usePayees'
 import { useTags } from '../api/useTags'
-import { formatMoney } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 import TagInput from '../widgets/TagInput'
 import { useSelectMode } from '../widgets/useSelectMode'
@@ -459,7 +459,7 @@ export default function StagingDuplicatesPage() {
                     <td className="dim">{e.reference || ''}</td>
                     <td className="dim">{e.payee_name || ''}</td>
                     <td className="dim small">{e.tags.join(', ')}</td>
-                    <td className="num money">{formatMoney(debitTotal(e))}</td>
+                    <td className="num money">{formatMoneyOrDash(debitTotal(e))}</td>
                   </tr>
                 ))}
               </tbody>

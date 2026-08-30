@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
 import { formatDate } from '../format/date'
-import { formatMoney } from '../format/money'
+import { formatMoney, formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
@@ -210,21 +210,21 @@ export default function CashFlowPage() {
                 <tr className="subtotal">
                   <td></td>
                   <td>Beginning cash balance</td>
-                  <td className="num money money-first">{formatMoney(result.tie_out.beginning)}</td>
+                  <td className="num money money-first">{formatMoneyOrDash(result.tie_out.beginning)}</td>
                 </tr>
 
                 <CashFlowSection label="Inflows" rows={result.inflows} emptyText="No inflows in this range." />
                 <tr className="subtotal">
                   <td></td>
                   <td>Total inflows</td>
-                  <td className="num money money-first">{formatMoney(result.total_inflows)}</td>
+                  <td className="num money money-first">{formatMoneyOrDash(result.total_inflows)}</td>
                 </tr>
 
                 <CashFlowSection label="Outflows" rows={result.outflows} emptyText="No outflows in this range." />
                 <tr className="subtotal">
                   <td></td>
                   <td>Total outflows</td>
-                  <td className="num money money-first">{formatMoney(result.total_outflows)}</td>
+                  <td className="num money money-first">{formatMoneyOrDash(result.total_outflows)}</td>
                 </tr>
 
                 {result.ledger_adjustments.length > 0 && (
@@ -240,7 +240,7 @@ export default function CashFlowPage() {
                     <tr className="subtotal">
                       <td></td>
                       <td>Total ledger adjustments</td>
-                      <td className="num money money-first">{formatMoney(result.total_adjustments)}</td>
+                      <td className="num money money-first">{formatMoneyOrDash(result.total_adjustments)}</td>
                     </tr>
                   </>
                 )}
@@ -251,12 +251,12 @@ export default function CashFlowPage() {
                     Net change in cash
                     {!result.tie_out.ok && <span className="small dim"> (tie-out failed — see above)</span>}
                   </td>
-                  <td className="num money money-first">{formatMoney(result.net_change)}</td>
+                  <td className="num money money-first">{formatMoneyOrDash(result.net_change)}</td>
                 </tr>
                 <tr className="subtotal">
                   <td></td>
                   <td>Ending cash balance</td>
-                  <td className="num money money-first">{formatMoney(result.tie_out.ending)}</td>
+                  <td className="num money money-first">{formatMoneyOrDash(result.tie_out.ending)}</td>
                 </tr>
               </tbody>
             </table>
@@ -320,7 +320,7 @@ function CashFlowRowTr({ row }: { row: CashFlowRow }) {
           </>
         )}
       </td>
-      <td className="num money money-first">{formatMoney(row.amount)}</td>
+      <td className="num money money-first">{formatMoneyOrDash(row.amount)}</td>
     </tr>
   )
 }

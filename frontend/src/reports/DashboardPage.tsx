@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import client from '../api/client'
 import { formatDate } from '../format/date'
-import { formatMoney } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import { useStagingPendingCount } from '../staging/useStagingPendingCount'
 
 // Ported from app/templates/dashboard.html — Phase 4.7, the landing
@@ -97,22 +97,22 @@ export default function DashboardPage() {
         <div className="stat-tile">
           <div className="stat-label">Net worth</div>
           <div className={`stat-value${isNeg(summary.net_worth) ? ' neg' : ''}`}>
-            {formatMoney(summary.net_worth)}
+            {formatMoneyOrDash(summary.net_worth)}
           </div>
           <Link className="quiet-link" to="/app/balance-sheet">Balance Sheet →</Link>
         </div>
         <div className="stat-tile">
           <div className="stat-label">{summary.month_label} income</div>
-          <div className="stat-value">{formatMoney(summary.mtd_income)}</div>
+          <div className="stat-value">{formatMoneyOrDash(summary.mtd_income)}</div>
         </div>
         <div className="stat-tile">
           <div className="stat-label">{summary.month_label} expenses</div>
-          <div className="stat-value">{formatMoney(summary.mtd_expenses)}</div>
+          <div className="stat-value">{formatMoneyOrDash(summary.mtd_expenses)}</div>
         </div>
         <div className="stat-tile">
           <div className="stat-label">{summary.month_label} net</div>
           <div className={`stat-value${isNeg(summary.mtd_net) ? ' neg' : ''}`}>
-            {formatMoney(summary.mtd_net)}
+            {formatMoneyOrDash(summary.mtd_net)}
           </div>
           <Link className="quiet-link" to="/app/income-statement">Income Statement →</Link>
         </div>
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                 </span>
                 <FlowLabel row={e} />
               </td>
-              <td className="num money money-first">{formatMoney(e.total_debits)}</td>
+              <td className="num money money-first">{formatMoneyOrDash(e.total_debits)}</td>
             </tr>
           ))}
         </tbody>
@@ -182,7 +182,7 @@ export default function DashboardPage() {
                 </span>
                 <FlowLabel row={e} />
               </td>
-              <td className="num money money-first">{formatMoney(e.total_debits)}</td>
+              <td className="num money money-first">{formatMoneyOrDash(e.total_debits)}</td>
             </tr>
           ))}
         </tbody>

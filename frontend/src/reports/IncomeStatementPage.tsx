@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
-import { formatMoney } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
@@ -163,7 +163,7 @@ function pctText(pct: string | number | null | undefined): ReactNode {
 function amtText(value: string | number, pct: string | number | null | undefined): ReactNode {
   return (
     <>
-      {formatMoney(value)}
+      {formatMoneyOrDash(value)}
       {pct !== null && pct !== undefined && <span className="dim small"> ({pct}%)</span>}
     </>
   )
@@ -492,14 +492,14 @@ function IncomeStatementTable({
             const pt = periodsTotals[i]
             return (
               <Fragment key={i}>
-                <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoney(pt.total_base_income)}</td>
+                <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoneyOrDash(pt.total_base_income)}</td>
                 {hasCompare && (
                   <>
                     <td className={`num money${aggCls(p)} ${Number(pt.income_variance_amount) < 0 ? 'neg' : ''}`}>
-                      {formatMoney(pt.income_variance_amount)}
+                      {formatMoneyOrDash(pt.income_variance_amount)}
                     </td>
                     <td className={`num${aggCls(p)}`}>{pctText(pt.income_variance)}</td>
-                    <td className={`num money${aggCls(p)}`}>{formatMoney(pt.total_compare_income)}</td>
+                    <td className={`num money${aggCls(p)}`}>{formatMoneyOrDash(pt.total_compare_income)}</td>
                   </>
                 )}
               </Fragment>
@@ -537,7 +537,7 @@ function IncomeStatementTable({
                   {hasCompare && (
                     <>
                       <td className={`num money${aggCls(p)} ${Number(pt.net_income_variance_amount) < 0 ? 'neg' : ''}`}>
-                        {formatMoney(pt.net_income_variance_amount)}
+                        {formatMoneyOrDash(pt.net_income_variance_amount)}
                       </td>
                       <td className={`num${aggCls(p)}`}>{pctText(pt.net_income_variance)}</td>
                       <td className={`num money${aggCls(p)} ${Number(pt.compare_net_income) < 0 ? 'neg' : ''}`}>
@@ -598,14 +598,14 @@ function GroupBlock({
               const rp = rowPeriod(r, i, matrix)
               return (
                 <Fragment key={i}>
-                  <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoney(rp.base_net)}</td>
+                  <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoneyOrDash(rp.base_net)}</td>
                   {hasCompare && (
                     <>
                       <td className={`num money${aggCls(p)} ${Number(rp.variance) < 0 ? 'neg' : ''}`}>
-                        {formatMoney(rp.variance)}
+                        {formatMoneyOrDash(rp.variance)}
                       </td>
                       <td className={`num${aggCls(p)}`}>{pctText(rp.pct_variance)}</td>
-                      <td className={`num money${aggCls(p)}`}>{formatMoney(rp.compare_net)}</td>
+                      <td className={`num money${aggCls(p)}`}>{formatMoneyOrDash(rp.compare_net)}</td>
                     </>
                   )}
                 </Fragment>
@@ -622,14 +622,14 @@ function GroupBlock({
             const gp = groupPeriod(group, i, matrix)
             return (
               <Fragment key={i}>
-                <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoney(gp.base_subtotal)}</td>
+                <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoneyOrDash(gp.base_subtotal)}</td>
                 {hasCompare && (
                   <>
                     <td className={`num money${aggCls(p)} ${Number(gp.variance) < 0 ? 'neg' : ''}`}>
-                      {formatMoney(gp.variance)}
+                      {formatMoneyOrDash(gp.variance)}
                     </td>
                     <td className={`num${aggCls(p)}`}>{pctText(gp.pct_variance)}</td>
-                    <td className={`num money${aggCls(p)}`}>{formatMoney(gp.compare_subtotal)}</td>
+                    <td className={`num money${aggCls(p)}`}>{formatMoneyOrDash(gp.compare_subtotal)}</td>
                   </>
                 )}
               </Fragment>
@@ -684,14 +684,14 @@ function ExpenseGroupBlock({
               const rp = rowPeriod(r, i, matrix)
               return (
                 <Fragment key={i}>
-                  <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoney(rp.base_net)}</td>
+                  <td className={`num money${colCls(i, multiPeriod)}${aggCls(p)}`}>{formatMoneyOrDash(rp.base_net)}</td>
                   {hasCompare && (
                     <>
                       <td className={`num money${aggCls(p)} ${Number(rp.variance) < 0 ? 'neg' : ''}`}>
-                        {formatMoney(rp.variance)}
+                        {formatMoneyOrDash(rp.variance)}
                       </td>
                       <td className={`num${aggCls(p)}`}>{pctText(rp.pct_variance)}</td>
-                      <td className={`num money${aggCls(p)}`}>{formatMoney(rp.compare_net)}</td>
+                      <td className={`num money${aggCls(p)}`}>{formatMoneyOrDash(rp.compare_net)}</td>
                     </>
                   )}
                 </Fragment>
@@ -713,7 +713,7 @@ function ExpenseGroupBlock({
               {hasCompare && (
                 <>
                   <td className={`num money${aggCls(p)} ${Number(gp.variance) < 0 ? 'neg' : ''}`}>
-                    {formatMoney(gp.variance)}
+                    {formatMoneyOrDash(gp.variance)}
                   </td>
                   <td className={`num${aggCls(p)}`}>{pctText(gp.pct_variance)}</td>
                   <td className={`num money${aggCls(p)}`}>{amtText(gp.compare_subtotal, gp.compare_pct_of_income)}</td>
@@ -738,7 +738,7 @@ function ExpenseGroupBlock({
               {hasCompare && (
                 <>
                   <td className={`num money${aggCls(p)} ${Number(gp.running_variance) < 0 ? 'neg' : ''}`}>
-                    {formatMoney(gp.running_variance!)}
+                    {formatMoneyOrDash(gp.running_variance!)}
                   </td>
                   <td className={`num${aggCls(p)}`}>{pctText(gp.running_pct_variance)}</td>
                   <td className={`num money${aggCls(p)} ${Number(gp.compare_running_after) < 0 ? 'neg' : ''}`}>

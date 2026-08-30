@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
-import { formatMoney } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import { useConfirm } from '../widgets/confirmContext'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
@@ -84,9 +84,11 @@ function toNumber(v: string | number): number {
 
 // A budgeted cell's own raw editable value — blank for a real zero, same
 // as budget.html's own `'%.2f' % r.budgeted if r.budgeted else ''`, not
-// `formatMoney()` (no thousands separator/currency symbol on an input
-// meant to be typed back into, matching EntryGrid.tsx's debit/credit
-// cells).
+// `formatMoney()`/`formatMoneyOrDash()` (no thousands separator/currency
+// symbol, and no dash either, on an input meant to be typed back into —
+// a dash placeholder would have to be deleted before typing a real
+// number over it, same reason EntryGrid.tsx's own debit/credit cells
+// stay blank rather than switching to a dash for this feature too).
 function rawAmount(v: number): string {
   return v ? v.toFixed(2) : ''
 }
@@ -531,10 +533,10 @@ export default function BudgetPage() {
               <tr className="grand">
                 <td></td>
                 <td>Net (Income &minus; Expenses)</td>
-                <td className="num money money-first">{formatMoney(result.net_actual)}</td>
-                <td className={`num money ${grid!.netVariance < 0 ? 'neg' : ''}`}>{formatMoney(grid!.netVariance)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.net_actual)}</td>
+                <td className={`num money ${grid!.netVariance < 0 ? 'neg' : ''}`}>{formatMoneyOrDash(grid!.netVariance)}</td>
                 <td className="num">{pctText(grid!.netPct)}</td>
-                <td className="num money budgeted-cell">{formatMoney(grid!.netBudgeted)}</td>
+                <td className="num money budgeted-cell">{formatMoneyOrDash(grid!.netBudgeted)}</td>
               </tr>
             </tbody>
           </table>
@@ -608,13 +610,13 @@ function GroupRows({
               <span className="tree-toggle" />
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
             </td>
-            <td className="num money money-first">{formatMoney(r.actual)}</td>
+            <td className="num money money-first">{formatMoneyOrDash(r.actual)}</td>
             <td className={`num money ${(grid.varianceById.get(r.id) ?? 0) < 0 ? 'neg' : ''}`}>
-              {formatMoney(grid.varianceById.get(r.id) ?? 0)}
+              {formatMoneyOrDash(grid.varianceById.get(r.id) ?? 0)}
             </td>
             <td className="num pct-variance-cell">{pctText(grid.pctById.get(r.id) ?? null)}</td>
             {r.has_children ? (
-              <td className="num money budgeted-cell">{formatMoney(grid.budgetedById.get(r.id) ?? 0)}</td>
+              <td className="num money budgeted-cell">{formatMoneyOrDash(grid.budgetedById.get(r.id) ?? 0)}</td>
             ) : (
               <td className="num money budget-cell-wrap">
                 <input
@@ -644,10 +646,10 @@ function GroupRows({
       <tr className="subtotal">
         <td></td>
         <td>{group.label} subtotal</td>
-        <td className="num money money-first">{formatMoney(group.sub_actual)}</td>
-        <td className={`num money ${typeVariance < 0 ? 'neg' : ''}`}>{formatMoney(typeVariance)}</td>
+        <td className="num money money-first">{formatMoneyOrDash(group.sub_actual)}</td>
+        <td className={`num money ${typeVariance < 0 ? 'neg' : ''}`}>{formatMoneyOrDash(typeVariance)}</td>
         <td className="num pct-variance-cell">{pctText(typePct)}</td>
-        <td className="num money budgeted-cell">{formatMoney(typeBudgeted)}</td>
+        <td className="num money budgeted-cell">{formatMoneyOrDash(typeBudgeted)}</td>
       </tr>
     </>
   )

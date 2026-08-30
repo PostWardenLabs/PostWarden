@@ -8,7 +8,7 @@ import { useScenarios } from '../api/useScenarios'
 import { useTags } from '../api/useTags'
 import { useTemplates } from '../api/useTemplates'
 import { formatDate } from '../format/date'
-import { formatMoney, isZeroAmount } from '../format/money'
+import { formatMoney, formatMoneyOrDash, isZeroAmount } from '../format/money'
 import { altLabel } from '../format/shortcut'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
@@ -532,7 +532,7 @@ export default function JournalPage() {
                   </Link>
                 ))}
               </span>
-              <span className="num mono">{formatMoney(e.total_debits)}</span>
+              <span className="num mono">{formatMoneyOrDash(e.total_debits)}</span>
               <span />
             </summary>
             <div className="lines">

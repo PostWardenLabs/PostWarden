@@ -4,7 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import client from '../api/client'
 import { useAccountLevels } from '../api/useAccountLevels'
 import { useScenarios } from '../api/useScenarios'
-import { formatMoney } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
@@ -252,12 +252,12 @@ export default function VariancePage() {
               <tr className="grand">
                 <td></td>
                 <td>Total</td>
-                <td className="num money money-first">{formatMoney(result.total_baseline)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.total_baseline)}</td>
                 <td className={`num money ${Number(result.total_variance) < 0 ? 'neg' : ''}`}>
-                  {formatMoney(result.total_variance)}
+                  {formatMoneyOrDash(result.total_variance)}
                 </td>
                 <td className="num">{pctText(result.total_pct_variance)}</td>
-                <td className="num money">{formatMoney(result.total_compare)}</td>
+                <td className="num money">{formatMoneyOrDash(result.total_compare)}</td>
               </tr>
             </tbody>
           </table>
@@ -289,22 +289,22 @@ function GroupRows({ group, tree }: { group: Group; tree: ReturnType<typeof useC
               {r.id !== undefined && <span className="tree-toggle" />}
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
             </td>
-            <td className="num money money-first">{formatMoney(r.baseline_net)}</td>
-            <td className={`num money ${Number(r.variance) < 0 ? 'neg' : ''}`}>{formatMoney(r.variance)}</td>
+            <td className="num money money-first">{formatMoneyOrDash(r.baseline_net)}</td>
+            <td className={`num money ${Number(r.variance) < 0 ? 'neg' : ''}`}>{formatMoneyOrDash(r.variance)}</td>
             <td className="num">{pctText(r.pct_variance)}</td>
-            <td className="num money">{formatMoney(r.compare_net)}</td>
+            <td className="num money">{formatMoneyOrDash(r.compare_net)}</td>
           </tr>
         ),
       )}
       <tr className="subtotal">
         <td></td>
         <td>{group.label} subtotal</td>
-        <td className="num money money-first">{formatMoney(group.sub_baseline)}</td>
+        <td className="num money money-first">{formatMoneyOrDash(group.sub_baseline)}</td>
         <td className={`num money ${Number(group.sub_variance) < 0 ? 'neg' : ''}`}>
-          {formatMoney(group.sub_variance)}
+          {formatMoneyOrDash(group.sub_variance)}
         </td>
         <td className="num">{pctText(group.sub_pct_variance)}</td>
-        <td className="num money">{formatMoney(group.sub_compare)}</td>
+        <td className="num money">{formatMoneyOrDash(group.sub_compare)}</td>
       </tr>
     </>
   )

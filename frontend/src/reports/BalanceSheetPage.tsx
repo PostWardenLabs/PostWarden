@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
-import { formatMoney, isZeroAmount } from '../format/money'
+import { formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
@@ -204,21 +204,21 @@ export default function BalanceSheetPage() {
               <tr className="subtotal">
                 <td></td>
                 <td>Total assets</td>
-                <td className="num money money-first">{formatMoney(result.total_assets)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.total_assets)}</td>
               </tr>
 
               <SectionRows label="Liabilities" rows={result.liabilities} tree={tree} sign={-1} />
               <tr className="subtotal">
                 <td></td>
                 <td>Total liabilities</td>
-                <td className="num money money-first">{formatMoney(result.total_liabilities)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.total_liabilities)}</td>
               </tr>
 
               <SectionRows label="Equity" rows={result.equity} tree={tree} sign={-1} />
               <tr className="subtotal">
                 <td></td>
                 <td>Total equity</td>
-                <td className="num money money-first">{formatMoney(result.total_equity)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.total_equity)}</td>
               </tr>
 
               <tr className={`grand${result.in_balance ? '' : ' out-of-balance'}`}>
@@ -231,7 +231,7 @@ export default function BalanceSheetPage() {
                     </span>
                   )}
                 </td>
-                <td className="num money money-first">{formatMoney(result.total_liab_and_equity)}</td>
+                <td className="num money money-first">{formatMoneyOrDash(result.total_liab_and_equity)}</td>
               </tr>
             </tbody>
           </table>
@@ -278,7 +278,7 @@ function SectionRows({
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
             </td>
             <td className="num money money-first">
-              {isZeroAmount(r.subtotal) ? '' : formatMoney(Number(r.subtotal) * sign)}
+              {formatMoneyOrDash(Number(r.subtotal) * sign)}
             </td>
           </tr>
         ),

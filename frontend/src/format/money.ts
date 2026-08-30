@@ -67,14 +67,34 @@ export function formatMoney(value: string | number | null | undefined): string {
   return (negative ? '-' : '') + withSymbol
 }
 
-// Trial Balance's own leaf-row cells render nothing at all for a genuine
-// zero balance (`{{ r.debit_balance | money if r.debit_balance else '' }}`
-// — a falsy `Decimal(0)`), not "0.00" — same rule every other point-in-
-// time report will need. A plain JS truthiness check can't reproduce
-// that: the value here is always a non-empty numeric *string* ("0.00"),
-// which is truthy regardless of the number it spells.
+// Trial Balance's own debit/credit leaf-row cells render nothing at all
+// for a genuine zero balance (`{{ r.debit_balance | money if
+// r.debit_balance else '' }}` — a falsy `Decimal(0)`), not "0.00". A
+// plain JS truthiness check can't reproduce that: the value here is
+// always a non-empty numeric *string* ("0.00"), which is truthy
+// regardless of the number it spells. Still used for exactly that one
+// case — a debit/credit *pair*, where one side is trivially $0 for
+// nearly every row by construction (a balance can't be on both sides at
+// once), so a blank non-balance side is the meaningful signal, not
+// noise. `formatMoneyOrDash` below is the one every single-value money
+// column should reach for instead.
 export function isZeroAmount(value: string | number | null | undefined): boolean {
   if (value === null || value === undefined || value === '') return true
   const n = typeof value === 'number' ? value : parseFloat(value)
   return Number.isNaN(n) || n === 0
+}
+
+// A genuine $0 in a single-value money column (as opposed to one side of
+// a debit/credit pair — see `isZeroAmount`'s own comment on why those
+// stay blank instead) renders as "—", the same em dash `ScenariosPage
+// .tsx`/`EntryTemplatesPage.tsx`/`ScheduledPage.tsx` already use for "no
+// value here" elsewhere in the app, not "0.00" and not blank. Missing
+// data (`null`/`undefined`/`''`) is a different case from a real zero
+// and stays blank, same as `formatMoney` itself already does for it —
+// this only ever changes what a *present*, genuinely-zero value shows.
+export function formatMoneyOrDash(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const n = typeof value === 'number' ? value : parseFloat(value)
+  if (Number.isNaN(n)) return ''
+  return n === 0 ? '—' : formatMoney(value)
 }
