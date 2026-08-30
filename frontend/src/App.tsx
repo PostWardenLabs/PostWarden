@@ -11,6 +11,7 @@ import IncomeStatementPage from './reports/IncomeStatementPage'
 import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
+import PayeesPage from './setup/PayeesPage'
 import Shell from './shell/Shell'
 import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
@@ -105,6 +106,7 @@ function Dashboard() {
 // nav.ts's own `client` flag.
 function routeKey(pathname: string): string {
   if (pathname === '/app/tags') return 'tags'
+  if (pathname === '/app/payees') return 'payees'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
@@ -123,6 +125,7 @@ function routeKey(pathname: string): string {
 // aren't keyed for a 1:1 lookup this cheap anyway.
 const PAGE_TITLES: Record<string, string> = {
   tags: 'Tags',
+  payees: 'Payees',
   tb: 'Trial Balance',
   entries: 'Journal',
   balance_sheet: 'Balance Sheet',
@@ -180,6 +183,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/app/tags" element={<TagsPage />} />
+        <Route path="/app/payees" element={<PayeesPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/cash-flow" element={<CashFlowPage />} />

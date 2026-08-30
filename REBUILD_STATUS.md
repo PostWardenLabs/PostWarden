@@ -2452,6 +2452,42 @@ settings), which reuses `useSelectMode.ts`/`MergeDialog.tsx` from Tags
 Statement/Variance already proved out for the Point-in-time/Range-report
 archetypes this phase.
 
+**Phase 4.2, screen 1 of 6 — Payees done.** `frontend/src/setup/
+PayeesPage.tsx`, ported from `app/templates/payees.html` +
+`entity-manage.js`. No new backend work at all — `modules/reference/`
+(router, service, repository, schemas) already carried every route this
+screen needs (`GET/POST /payees`, `.../rename`, `.../toggle-active`,
+`.../delete`, `.../merge`), left over from when Accounts/Account levels/
+Scenarios/Payees/Tags were bundled into one module rather than being
+Tags-only. Structurally almost identical to `TagsPage.tsx`
+(Phase 3.2) — same Select/Merge bar (`useSelectMode.ts`/
+`MergeDialog.tsx`, reused unchanged, confirming that hook's own Phase 3.2
+comment that it was written generic on purpose), same inline-rename-
+input/Archive/Delete row shape — with three real differences, not a
+generic abstraction of the two: name is `maxlength="80"` here, not 40
+(payees.html's own input, vs. tags.html's 40); the entry-count cell is a
+real drill-through `<Link>` to the Journal (`/app/entries?payee=...`),
+unreachable from TagsPage.tsx (Phase 3.2 predates Journal existing) but
+real now that `JournalPage.tsx` (Phase 3.4) already reads `?payee=` —
+still no `back=`, matching JournalPage.tsx's own standing deferral; and
+no quick-create route rendered on this page (`POST /payees/quick-
+create` is `usePayees.ts`'s own Journal-combobox route, not this
+table's). Wired into `App.tsx` (`/app/payees`, `routeKey`,
+`PAGE_TITLES`) and `nav.ts` (Setup group, `client: true`, same pattern
+every other Phase 3/4 screen already followed).
+
+Verified with a real `docker compose up -d --build` (`backend/docker-
+compose.yml`): clean `tsc -b && vite build`, `oxlint` 0 warnings/errors,
+then browser-driven end to end against the running container — add,
+archive, unarchive, and delete all round-tripped correctly (flash
+copy matches legacy's own strings verbatim, including the delete
+confirm's "Entries that used it will lose the payee label" wording);
+rename's own submit path confirmed via `form.requestSubmit()` (this
+sandbox's synthetic Enter keypress doesn't trigger a browser's implicit
+single-text-field form submission — confirmed to be a pre-existing
+harness quirk, not a regression, by reproducing the identical non-
+submission on the already-shipped TagsPage.tsx first).
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2613,8 +2649,9 @@ Largely configuration once the Phase 3 archetype components exist.
       `ledger_accounts`, `service.ledger_rows`, `GET /reports/ledger`),
       the only screen this phase that wasn't just frontend against an
       already-existing route.
-- [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
-      account_levels, scheduled, entry_templates, settings
+- [~] **4.2** Remaining Management/CRUD: payees, scenarios,
+      account_levels, scheduled, entry_templates, settings. Payees
+      done — see Current status.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates
