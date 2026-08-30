@@ -72,6 +72,12 @@ wrong, turn it into a real fix instead of just unchecking it.
       rather than navigating. Only the API round trip was checked. See
       Current status's Phase 4.7 write-up for exactly what *was*
       verified.
+- [ ] Phase 4.7 (import): no browser tool was available to verify
+      `FileField.tsx`'s actual click-to-open/chosen-filename-updates
+      behavior or `ImportPage.tsx`'s panel/table layout. The upload
+      itself was verified for real via `curl -F`, not a browser file
+      picker. See Current status's Phase 4.7 write-up for exactly what
+      *was* verified.
 
 ---
 
@@ -3362,6 +3368,62 @@ session, so the three panels' actual visual layout and the download
 link's real click-triggers-a-download behavior were not visually
 exercised — added to "Check when back at your computer" below.
 
+**import, done.** Ported from `app/templates/import.html` into
+`setup/ImportPage.tsx` — backend already fully built (`modules/
+imports/`, Phase 1.8/1.14), no new backend work. New shared widget:
+`widgets/FileField.tsx`, ported from `app/static/import-file.js` — a
+controlled file-choose control (a real hidden `<input type="file">`
+plus a visible "Choose file" button and a synced filename box), first
+used here and by this same phase's still-to-come sibling, Import with
+rules. Target-scenario picker is a `Combobox`, not legacy's own raw
+`<select>` — every scenario picker built during this rebuild has been a
+`Combobox` since `ScheduledPage.tsx` (Phase 4.2), and there was no
+reason for this one to be the exception; same eligibility filter as
+that page's own target-scenario picker (`!is_locked && !income_
+statement_only && !is_staging`).
+
+**The first real multipart upload anywhere in this rebuild's frontend.**
+`client.POST('/import', { body: formData })` — openapi-fetch's own
+`defaultBodySerializer` already passes a `FormData` instance straight
+through unchanged (confirmed by reading its own source, not assumed)
+and skips the JSON `Content-Type` header so the browser sets its own
+multipart boundary, so this needed only a type-level cast to satisfy the
+generated client's request-body type (`{ target_scenario_id: number;
+file: string }` — an `UploadFile` has no better OpenAPI representation
+than `string`), not a real `bodySerializer` override.
+
+Two links stay plain `<a href>`s rather than real `<Link>`s for now: the
+help icon (`/help#import`) and "Import with rules" (`/import/mapped`) —
+both point at screens this same phase hasn't built yet as this commit
+lands, same "don't reach into a screen that doesn't exist yet" deferral
+every prior phase's own forward reference already used. Both get fixed
+up once their targets actually exist, later this phase.
+
+**Verified the same two ways as Connect BI**: `tsc -b && vite build`
+and `oxlint` both clean, zero findings; no backend touched. Then a real
+`docker compose -f backend/docker-compose.yml up -d --build` and an
+authenticated round trip that actually exercised the upload, not just
+the surrounding routes: a real two-line CSV (`Dr Checking 50.00 / Cr
+Salary 50.00`) posted via `curl -F` staged one real entry in Staging,
+confirmed both by `import_csv`'s own response (`{"batch_id": 2,
+"staged_count": 1, "errors": []}`) and by reading the staged entry
+straight back out of `GET /staging` (right accounts, right amounts, the
+right `import_filename`); a second upload with the wrong column headers
+came back `400` with the exact `"Missing required column(s): ..."`
+detail message `errorDetail()` renders into the error flash; `GET
+/import` correctly listed both this session's batch and an
+already-existing one from a prior phase's own test data; test data
+cleaned up afterward with a direct `DELETE` (lines, then the entry, then
+the batch row) since a staged, schedule-or-import-sourced entry has no
+plain reject-via-API path once past this test's own manual insert; `GET
+/app/import` (authenticated) served `200`, and the built JS bundle
+contains the screen's own real strings ("Upload a CSV", "Recent
+imports", "Choose file", "Import with rules"). No browser tool was
+available this session, so the file-choose button's actual click-to-open
+behavior, the chosen-filename box updating live, and the panel/table
+layout were not visually exercised — added to "Check when back at your
+computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3568,7 +3630,7 @@ Largely configuration once the Phase 3 archetype components exist.
       import_mapped_review, account, help. `account` needs no work —
       Phase 4.2 already discovered it's `settings_account`, a different
       screen entirely (see that phase's own note); five real screens
-      remain. Screen 2 of 5 done:
+      remain. Screen 3 of 5 done:
   - [x] dashboard — `reports/DashboardPage.tsx`, ported from
         `dashboard.html`. The one item in this list with **new backend
         code**: `modules/dashboard/` (`repository.py`/`service.py`/
@@ -3593,6 +3655,27 @@ Largely configuration once the Phase 3 archetype components exist.
         existing `current?.startsWith('settings')` username-link check
         picks it up unchanged, same precedent `settings_account` already
         set. See Current status for the full write-up.
+  - [x] import — `setup/ImportPage.tsx`, ported from `import.html`.
+        Backend already fully built (`modules/imports/`, Phase 1.8/
+        1.14); no new backend. New shared widget `widgets/FileField.tsx`
+        (ported from `import-file.js`), a controlled file-choose control
+        with a real hidden `<input type="file">` plus a visible button/
+        name-box pair — its first two callers are this screen and its
+        still-to-come sibling, Import with rules. Target-scenario picker
+        is a `Combobox`, not a raw `<select>` (legacy's own shape), same
+        as every other scenario picker in this rebuild since
+        `ScheduledPage.tsx`. The upload itself is a real `FormData` POST
+        through `client.POST('/import', ...)` — the first multipart
+        request anywhere in this rebuild's frontend; openapi-fetch's own
+        `defaultBodySerializer` already passes a `FormData` instance
+        through unchanged, so this only needed a type-level cast, not a
+        bodySerializer override. Both the help icon and the "Import with
+        rules" link stay plain `<a href>`s for now (both point at
+        screens this same phase hasn't built yet as this commit lands) —
+        same "don't reach into a screen that doesn't exist yet"
+        deferral every prior phase's own forward reference already used;
+        revisit both once their targets exist later this phase. See
+        Current status for the full write-up.
 
 ## Phase 5 — The long tail
 
