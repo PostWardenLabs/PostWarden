@@ -3964,6 +3964,59 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Retained Earnings becomes a real collapsible tree
+  node on Trial Balance and Balance Sheet, and Balance Sheet's `raw=1`
+  ("skip simulated close") stops hiding that the sheet genuinely doesn't
+  balance pre-close. Prompted by a design conversation about what the
+  "skip simulated close" checkbox actually promises: the label implies
+  the user is consciously choosing to see `Assets ≠ Liabilities +
+  Equity` (true whenever Income/Expense are nonzero and nothing's been
+  closed), but the shipped behavior always kept a plug — one merged line
+  instead of two split ones — so the checkbox never delivered on what it
+  said. Two changes, not one:
+
+  1. `domain.accounts.earnings_row()` → `earnings_rows()`: the unclosed-
+     earnings figure is now "Retained Earnings" as a real parent row with
+     "Current Year Earnings (Unclosed)"/"Prior Year Earnings (Unclosed)"
+     as its two children, using reserved negative-sentinel ids so
+     `useCollapsibleTree` treats it as a genuine collapsible unit — it
+     used to be two flat, id-less sibling rows specifically excluded from
+     that hook by design. Both TrialBalancePage.tsx and
+     BalanceSheetPage.tsx needed zero rendering-logic changes for this —
+     both already walk rows generically by id/parent_id/has_children, so
+     giving the synthetic rows real ids was the entire fix on the
+     frontend side for Trial Balance; Balance Sheet additionally lost its
+     separate `earnings_lines` field/render path since the node now rides
+     through `result.equity` like any real account.
+  2. Balance Sheet's `raw=1` no longer merges the split into one line —
+     it drops the node *entirely*, and `total_equity` only includes the
+     unclosed P&L when the plug is actually present. Assets and
+     Liabilities+Equity now genuinely disagree by `total_pnl` when
+     `raw=1`, `in_balance` correctly comes back `False`, and the page
+     says so explicitly ("*Balance sheet won't balance pre-close").
+     Trial Balance's own `raw=1` needed no equivalent change — it already
+     relocates the same money into Income/Expense's own section rather
+     than hiding it, so nothing was ever actually lost there. Balance
+     Sheet has no such section, so `raw=1` has to mean "it's just not
+     there" instead.
+
+  This reverses an in-conversation argument I made for the opposite
+  design (a merged single-line plug, reasoning that a real ledger never
+  goes out of balance — still true of `journal_lines` itself, enforced
+  by trigger, but not the same claim as "a balance sheet always balances
+  before a real close," which it doesn't). `SPEC.md` decision 10
+  rewritten with a new addendum spelling this out, specifically so it
+  doesn't read as an inconsistency worth "fixing" later. Backend
+  (`backend/src/postwarden/domain/accounts.py`,
+  `modules/reports/service.py`, `modules/reports/export.py`) + tests
+  landed in one commit (`756ebbd`, 563/563 backend tests pass, 6
+  new/rewritten); frontend (`BalanceSheetPage.tsx` + three now-stale
+  comment fixes) in a second (`738c6a7`) — not verified against a real
+  `tsc -b`/build, this sandbox still has no working `node` on `PATH`
+  (confirmed again this session: `node_modules/.bin/tsc` exists but its
+  own shebang needs `node`, which isn't installed anywhere on this
+  machine) — needs a real typecheck/build/manual browser pass before
+  fully trusted.
 - **2026-08-30** — Phase 5 item 8, addendum: audited Budget grid's other
   empty state — the top-level "no income-statement-only scenarios
   exist at all" gate (`BudgetPage.tsx:408-416`,
