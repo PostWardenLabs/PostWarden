@@ -573,3 +573,272 @@ body {
   --content-max: min(90vw, 1680px);
 }
 
+
+/* ==========================================================================
+   Phase 2.4 — shell chrome (sidebar, topbar, footer, flash banners, the
+   shared chevron). Ported byte-for-byte from app/static/style.css, same
+   as index.css's own Phase 2.3 header explains for the design tokens
+   above. Four separate ranges, not one contiguous cut — the source file
+   interleaves shell sections with page-specific ones (the login split
+   screen, the ledger table, forms, ...) that belong to later phases —
+   see REBUILD_STATUS.md's Phase 2.4 write-up for the exact line ranges
+   and the reasoning for including .chevron and the mobile/reduced-motion
+   rules' selectors for components that don't exist in the frontend yet
+   (dead until built, same as most of Phase 2.3's own 21 themes).
+   ========================================================================== */
+/* -- top bar ------------------------------------------------------------- */
+/* .topbar itself is pure chrome — full-bleed background/border, nothing
+   that positions content.
+   .topbar-inner used to mirror main's own max-width/margin:auto box model
+   exactly, on the theory that the title should line up with the page
+   content beneath it. That fell apart the moment main's own width became
+   variable (see "the ledger table" below, where a wide report legitimately
+   wants main much wider than a form or a short report does): matching
+   main's width would mean .topbar-right (username/log out) drifts to a
+   different distance from the true right edge on every page depending on
+   what that page's content happens to need, which is a worse experience
+   on a wide monitor than the 1080px-box version this replaced — the
+   original complaint (log out reads as "stuck in the middle") would just
+   recur at a bigger fixed width, or reappear on any page whose main
+   didn't need the full width. So .topbar-inner is now independent of main
+   entirely: no max-width, no margin: auto — a plain block box, which
+   means it's full-width by default (width: auto on a block fills its
+   containing block) and stays that way regardless of what main is doing
+   on any given page. Log out sits near the real right edge, on every
+   page, on every monitor, always — that's the actual property being
+   asked for, not "matches main," which was only ever a proxy for it back
+   when main had one fixed width for every page. */
+.topbar {
+  padding: 0.9rem 0 0.7rem;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--paper);
+}
+.topbar-inner {
+  padding: 0 1.25rem;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 1.5rem; flex-wrap: wrap;
+}
+/* Clears the fixed hamburger button (.sidebar-toggle, permanently at
+   1.1rem–2.8rem from the viewport edge). Needed unconditionally now that
+   .topbar-inner is always flush against the true left edge when unpinned
+   — there's no viewport width at which it naturally clears the button on
+   its own any more, unlike the old centered version, so no media query is
+   needed either. Pinned resets it to 0 (min-width: 721px, i.e. above the
+   ≤720px breakpoint below where pinned reverts to overlay behavior)
+   because the pushed-over content starts at 14rem regardless of button
+   position, and the sidebar's own opaque background already covers the
+   hamburger's spot at that point besides. */
+.topbar-left { padding-left: 2.55rem; }
+@media (min-width: 721px) {
+  html.sidebar-pinned .topbar-left { padding-left: 0; }
+}
+.wordmark {
+  font-family: var(--serif);
+  font-size: 1.7rem; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--ink); text-decoration: none;
+}
+/* The current page's own name, e.g. "Dashboard" — the app's actual
+   name trails after it, de-emphasized, the way a browser tab reads
+   "Page · Site" rather than leading with the site every time. */
+.wordmark-brand { color: var(--ink-soft); font-weight: 400; }
+.topbar-right { display: flex; align-items: baseline; gap: 1.3rem; flex-wrap: wrap; }
+.topbar nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
+.topbar nav a {
+  color: var(--ink-soft); text-decoration: none; font-size: 0.92rem;
+  padding-bottom: 0.15rem; border-bottom: 2px solid transparent;
+}
+.topbar nav a:hover { color: var(--ink); }
+.topbar nav a.active { color: var(--ink); border-bottom-color: var(--red); }
+
+/* -- hamburger sidebar --------------------------------------------------- */
+/* Hover the button (or the panel) to preview the menu; click to pin it
+   open — see sidebar.js. Pinned state pushes the page over via the
+   html.sidebar-pinned rules below instead of overlaying it. */
+.sidebar-toggle {
+  position: fixed; top: 0.85rem; left: 1.1rem; z-index: 60;
+  width: 1.7rem; height: 1.7rem; padding: 0;
+  background: none; border: none; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; gap: 4px;
+}
+.sidebar-toggle span {
+  display: block; height: 2px; width: 100%;
+  background: var(--ink-soft); border-radius: 1px;
+}
+.sidebar-toggle:hover span { background: var(--ink); }
+html.sidebar-pinned .sidebar-toggle span { background: var(--ink); }
+
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 14rem; z-index: 55;
+  background: var(--surface); border-right: 1px solid var(--rule-strong);
+  padding: 3.4rem 0 1rem; overflow-y: auto;
+  transform: translateX(-100%);
+  transition: transform 160ms ease;
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15);
+}
+.sidebar.open { transform: translateX(0); }
+html.sidebar-pinned .sidebar { box-shadow: none; }
+
+.sidebar-group { padding: 0 0.4rem 1.2rem 1.5rem; }
+/* A real <button>, not a styled <div> (sidebar-collapse.js) — reset to
+   plain text since every other button in this app has its own strong
+   filled look, wrong for a section label sitting quietly above a list
+   of links. Negative margins claw back the same left/right space the
+   equivalent <div> used to sit flush with, since a <button> carries
+   default padding/border a <div> never did. */
+.sidebar-label {
+  display: flex; align-items: center; gap: 0.3rem; width: 100%;
+  font: inherit; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--ink-soft); margin: 0 0 0.35rem -0.1rem; padding: 0;
+  background: none; border: none; cursor: pointer;
+}
+.sidebar-label:hover { color: var(--ink); }
+/* Chevron points down (expanded, the default) or right (collapsed) —
+   same rotation convention report-tree.js's own tree-toggle already
+   uses, including that shape's own known centering quirk (see
+   .tree-toggle::before's comment): a corner built from the top+right
+   border edges carries its visual weight low-and-right within its own
+   box, so the *down*-pointing 135deg rotation reads as sitting low
+   against the text beside it unless nudged — the 45deg (right,
+   collapsed) rotation needs no such correction, since that's the
+   shape's own unrotated resting position. Links inside a collapsed
+   group are removed from layout entirely, not just visually hidden, so
+   a collapsed section actually shrinks the sidebar instead of leaving
+   blank space. */
+.sidebar-chevron {
+  color: var(--ink-soft); transition: transform 120ms ease;
+  position: relative; top: -0.1rem; left: -0.08rem;
+}
+.sidebar-group.collapsed .sidebar-chevron { transform: rotate(45deg); top: 0; left: 0; }
+.sidebar-group.collapsed a { display: none; }
+.sidebar a {
+  display: block; padding: 0.3rem 0 0.3rem 0.6rem; margin-left: -0.6rem;
+  color: var(--ink-soft); text-decoration: none; font-size: 0.92rem;
+  border-left: 2px solid transparent;
+}
+.sidebar a:hover { color: var(--ink); }
+.sidebar a.active { color: var(--ink); border-left-color: var(--red); }
+
+/* Pinned: push the page content over instead of the sidebar overlaying it.
+   Only the block content needs it — the sidebar itself and the hamburger
+   button are already fixed to the viewport. .topbar-inner here, not
+   .topbar itself — .topbar's own background stays full-bleed at the
+   viewport edge always; the pinned sidebar (position: fixed, its own
+   opaque --surface background, higher z-index) already covers that region
+   whether .topbar's box extends under it or not, so there's nothing to
+   gain by shifting the outer bar too. All three of these are width: auto
+   (no explicit width, .topbar-inner no longer even has a max-width) block
+   boxes, so margin-left here simply eats into their own width rather than
+   pushing them past their container and causing overflow. */
+html.sidebar-pinned .topbar-inner,
+html.sidebar-pinned main,
+html.sidebar-pinned .footer { margin-left: 14rem; }
+
+.logout-form { display: flex; align-items: center; gap: 0.5rem; }
+.username-link { text-decoration: none; border-bottom: 2px solid transparent; padding-bottom: 0.15rem; }
+.username-link:hover { color: var(--ink); }
+.username-link.active { color: var(--ink); border-bottom-color: var(--red); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* --content-max is the default for every page — a comfortable reading
+   width for forms, dashboard cards, and prose. A page holding a report
+   table that actually needs more room than that relaxes it back off; see
+   the main:has(...) rule in "the ledger table" section below, next to the
+   table-side half of that same change. */
+main { max-width: var(--content-max); margin: 1.6rem auto 3rem; padding: 0 1.25rem; }
+.footer {
+  max-width: var(--content-max); margin: 0 auto 1.5rem; padding: 0.8rem 1.25rem 0;
+  border-top: 1px solid var(--rule); color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+/* -- flash messages ------------------------------------------------------ */
+.flash {
+  padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.9rem;
+  border-left: 3px solid;
+}
+.flash-ok  { border-color: var(--ok);  background: color-mix(in srgb, var(--ok) 14%, var(--paper));  color: var(--ok); }
+.flash-err { border-color: var(--red); background: color-mix(in srgb, var(--red) 14%, var(--paper)); color: var(--red); }
+/* .flash-warn: not "success" (green) and not an actual error (red) — a
+   real success message is always something an action just did (a payee
+   created, an entry posted); an actual error means something failed.
+   "N entries waiting in Staging for your approval" is neither — nothing
+   failed, but it's also not done, it's a pending state asking for
+   attention — so it gets its own amber fill distinct from both. Only the
+   *fill* differs from .flash-ok/.flash-err's own pattern (border/
+   background/text all keyed off one color) — text stays --ink rather
+   than --warn itself, since several themes' --warn is chosen for fill
+   contrast against --paper specifically (a light amber on a light theme,
+   for instance) and reads too low-contrast as body-sized link text.
+   See base.html for why the "waiting" banners use flash-warn specifically
+   while every ok=/err= flash elsewhere stays green/red. */
+.flash-warn {
+  border-color: var(--warn); background: color-mix(in srgb, var(--warn) 20%, var(--paper));
+  color: var(--ink);
+}
+
+
+/* -- chevron (shared by the date picker, tree collapse/expand, and the
+   number stepper) -----------------------------------------------------
+   A solid clip-path triangle, not a font glyph (whose angle is whatever
+   the font happens to draw) — an open corner, like the ">" it's
+   standing in for, not a solid arrowhead: a filled triangle (tried
+   briefly) reads as a totally different mark once you actually look at
+   it, however thin it's made. Two straight border edges meeting at a
+   right angle, rotated so the vertex points the right way. Thin on
+   purpose (1.5px) but not hairline-thin — this needs to stay legible at
+   a glance, not just technically visible.
+   Rotated with transform, same as any other rotated element — this is
+   NOT the clip-path shape an earlier pass here used, which had its own
+   separate bug (this browser distorts a *clip-path* rotated by exactly
+   ±90deg; a plain border box rotates however you'd expect, at any
+   angle, confirmed by every other rotated element in this file working
+   fine). Points right by default; .chevron-{up,down,left} cover every
+   other direction actually used. */
+.chevron {
+  display: inline-block; flex: none;
+  width: 0.4rem; height: 0.4rem;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: rotate(45deg); /* right */
+}
+.chevron-down { transform: rotate(135deg); }
+.chevron-up   { transform: rotate(-45deg); }
+.chevron-left { transform: rotate(225deg); }
+
+
+@media (max-width: 720px) {
+  /* Same specificity as .entry-journal/.entry-staging's own desktop
+     rules (each one class + one element) — wins here on source order
+     (this block comes later in the file), same as the plain
+     details.entry summary selector this replaced always relied on. */
+  .entry-journal summary, .entry-staging summary { grid-template-columns: 1fr auto; }
+  .topbar-inner { gap: 0.6rem; }
+  /* "Dashboard · PostWarden" wraps onto two lines once the title plus
+     brand no longer fit one row next to topbar-right (username/logout)
+     — the brand half is the one that can go; the page's own name alone
+     is still meaningful and was the whole point of .wordmark-brand
+     trailing after it, de-emphasized, in the first place (see "The page
+     title lives in the topbar" in docs/ARCHITECTURE.md). */
+  .wordmark-brand { display: none; }
+  /* Too narrow to push content over without squeezing it unusably —
+     pinned still overlays here, same as an unpinned hover-preview. */
+  .sidebar { width: 82vw; box-shadow: 2px 0 16px rgba(0, 0, 0, 0.15); }
+  html.sidebar-pinned .topbar-inner,
+  html.sidebar-pinned main,
+  html.sidebar-pinned .footer { margin-left: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .flash { animation: slide-in 160ms ease-out; }
+  @keyframes slide-in { from { opacity: 0; transform: translateY(-4px); } }
+
+  /* A theme switch recolors most of the page at once; ease it rather
+     than snap, since it's a deliberate user action, not page load. */
+  body, .topbar, table.ledger, .panel, details.entry, .balance-bar,
+  input, select, textarea, button {
+    transition: background-color 160ms ease, color 160ms ease,
+                border-color 160ms ease;
+  }
+}

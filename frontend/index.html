@@ -5,6 +5,27 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PostWarden</title>
+    <script>
+      // Ported from app/templates/base.html's own inline <head> script,
+      // unchanged: applied before the stylesheet renders (Vite injects
+      // its built <link rel="stylesheet"> after this point in <head>, and
+      // this plain, non-module script runs synchronously, before the
+      // deferred `type="module"` bundle below ever does), so a saved
+      // theme, a saved font bundle, and whether the sidebar is pinned
+      // open are all right on first paint instead of flashing the
+      // default and then jumping. Deliberately plain JS, not TypeScript
+      // bundled through Vite — it has to exist and run before any bundle
+      // does, which rules out being part of one.
+      (function () {
+        var t = localStorage.getItem('postwarden-theme')
+        if (t) document.documentElement.setAttribute('data-theme', t)
+        var f = localStorage.getItem('postwarden-font')
+        if (f) document.documentElement.setAttribute('data-font', f)
+        if (localStorage.getItem('postwarden-sidebar-pinned') === '1') {
+          document.documentElement.classList.add('sidebar-pinned')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

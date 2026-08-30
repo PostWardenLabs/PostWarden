@@ -1276,11 +1276,121 @@ phase: the correctness risk of a byte-identical port of already-shipped,
 already-designed values is low, and both gaps get closed by the same
 kind of real run once available.
 
-**Next up:** Phase 2.4 (shell: sidebar, topbar, flash banners, the
-pre-paint theme/font restore script) and 2.5 (per-widget decisions);
-close the Docker `docker compose up -d --build` verification gap (2.1's,
-2.2's, and now 2.3's own browser-rendering share of it) whenever this
-machine's Docker daemon can reach its registry again.
+**Phase 2.4 done.** `frontend/src/shell/` — `Shell.tsx`, `Sidebar.tsx`,
+`Topbar.tsx`, `FlashBanner.tsx`, `nav.ts`, `useSidebarPin.ts`,
+`useSidebarGroupCollapse.ts` — plus the pre-paint restore script, moved
+from `app/templates/base.html`'s own inline `<head>` script into
+`frontend/index.html` directly, unchanged. `frontend/src/index.css`
+gained 269 more lines (844 total) — four more byte-for-byte ranges from
+`app/static/style.css` (top bar/hamburger sidebar/footer, flash messages,
+the shared chevron, the 720px/reduced-motion rules), the same porting
+discipline Phase 2.3 established for the tokens. `App.tsx` now renders
+its existing placeholder content inside `<Shell>`.
+
+1. **Four separate byte ranges, not one contiguous cut — verified the
+   same structural way Phase 2.3 verified its own single cut point.**
+   Unlike the tokens (one clean prefix), the source file interleaves
+   shell sections with page-specific ones that belong to later phases:
+   lines 566–732 (top bar, hamburger sidebar, `--content-max`/`main`/
+   `.footer`), 853–877 (flash messages), 1610–1637 (the chevron shared by
+   the sidebar, date picker, tree collapse, and number stepper — needed
+   here because the sidebar's own collapse indicator uses it), and
+   2113–2145 (the ≤720px breakpoint and the `prefers-reduced-motion`
+   transition rule). Deliberately skipped in between: 734–852 (the
+   login split-screen and demo callout — a real different phase,
+   Phase 3.1, not just "some selectors don't exist yet") and 878–1609
+   (the ledger table, forms, combobox — later archetype work). A Python
+   script diffed all four extracted ranges against `index.css`'s own
+   appended copy line-for-line; all four came back byte-identical.
+2. **The 720px and reduced-motion rules were ported whole, including
+   selectors for components that don't exist in the frontend yet**
+   (`.entry-journal summary`, `table.ledger`, `.panel`, `details.entry`,
+   `.balance-bar`) — the same call already made for most of Phase 2.3's
+   21 themes, most of which also serve components not yet built. A CSS
+   selector matching nothing is inert, not fragile; splitting a single
+   source rule to strip the not-yet-relevant part of its own selector
+   list would only mean re-adding it later, by hand, when that component
+   ships — a real chance to introduce a typo Phase 2.3's own byte-diff
+   verification exists to rule out.
+3. **`user` is a plain nullable prop through `Shell`/`Topbar`/`Sidebar`,
+   not read from any real session — there is no session anywhere in the
+   frontend yet.** Matches legacy's own `{% if request.state.user %}`
+   guard exactly: with `user={null}`, only the topbar's left half, the
+   flash slot, and the footer render — no hamburger, no sidebar, no
+   username/logout. `App.tsx` currently passes a hardcoded
+   `PLACEHOLDER_USER = { username: 'david' }`, commented as temporary,
+   purely so this phase's own shell has something to be verified
+   against; Phase 3.1 (login) is what replaces it with real state, and
+   nothing in `Shell.tsx`/`Topbar.tsx`/`Sidebar.tsx` needs to change when
+   that happens, since they already only depend on the shape of `user`,
+   never its source. Same "don't reach into a mechanism that doesn't
+   exist yet" reasoning every backend module already applied to auth/
+   CSRF ahead of Phase 1.11, and the same accepted-fake-value pattern
+   Phase 1.11's own `test_router.py`'s `client_for()` established for a
+   test session ahead of the real thing.
+4. **Logout is a plain `<button onClick>`, not legacy's `<form
+   method="post" action="/logout">`.** A real form submit is a full-page
+   navigation — wrong for a SPA. `onLogout` is an optional prop, unwired
+   for the same reason #3 already gives: `POST /logout` needs an
+   `X-CSRF-Token` sourced from a real session, and there isn't one yet.
+5. **The pin/hover-preview mechanics (`useSidebarPin.ts`) write
+   `sidebar-pinned` straight to `document.documentElement.classList`,
+   the same way `sidebar.js` did, rather than letting React own the
+   class through some wrapper element's own `className`.** There is no
+   wrapper element positioned to hold it — `index.html`'s own pre-paint
+   script already established `document.documentElement` as the single
+   source of truth for that class before React ever mounts, and several
+   CSS rules key off `html.sidebar-pinned` globally (`.topbar-inner`,
+   `main`, `.footer`), not just the sidebar's own subtree. The
+   open/close and per-group collapse state, by contrast, stay ordinary
+   React state — nothing outside each component's own subtree needs to
+   read those.
+6. **No footer version number** (`"PostWarden v{{ version }}"` in
+   legacy, reading the repo-root `VERSION` file at template-render time)
+   — no backend route exposes it anywhere the frontend can reach yet.
+   Genuinely out of this phase's own scope (sidebar/topbar/flash/
+   pre-paint script, per this file's own checklist wording); the obvious
+   real fix — piggyback it on a route that already needs to exist, e.g.
+   Phase 3.1's own `GET /me` — doesn't exist yet either.
+7. **One real lint finding, fixed during this phase, not deferred.**
+   `oxlint`'s `react(set-state-in-effect)` rule caught
+   `FlashBanner.tsx`'s first draft — it read `window.location.search` and
+   called `setState` inside a `useEffect`, which the linter correctly
+   flags as an unnecessary extra render (nothing ongoing to synchronize
+   with yet, since no client-side router re-renders this component
+   across a navigation). Fixed by deriving the value once via
+   `useState`'s own lazy initializer instead — `npm run lint` came back
+   clean afterward.
+
+**Verified for real, the same way as Phase 2.3.** A real `npm run build`
+(`tsc -b && vite build`, zero type errors) and a real `npm run lint`
+(`oxlint`, zero warnings after the fix above) both pass. A real `uvicorn
+postwarden.main:app` (against `backend-db-1`, the same already-running
+`postgres:16` container Phase 2.3 used) served the rebuilt bundle end to
+end: `GET /` 200 with the pre-paint `<script>` confirmed sitting ahead of
+both the injected `<link rel="stylesheet">` and the deferred `type=
+"module"` bundle in the served HTML (not just assumed from source order —
+read directly off the actual response), the served JS bundle contains
+the literal strings `postwarden-sidebar-pinned`, `postwarden-sidebar-
+collapsed-`, `Budget Grid`, `Log out`, and `Toggle menu`, and the served
+CSS bundle contains `.sidebar-toggle`, `.flash-ok`, `.chevron-down`, and
+`.sidebar-pinned`. `GET /entries` and `GET /reports/trial-balance` still
+answer `401` (the static mount still doesn't shadow the API), `GET
+/favicon.svg` still `200`. The full backend test suite — 523 tests,
+untouched by this phase — stays green, confirming no regression from the
+`App.tsx` change. **Not verified**: an actual browser rendering and
+interacting with the shell (hover-preview, click-to-pin, per-group
+collapse, the Escape-key close, the mobile breakpoint) — no browser tool
+exists in this session, the same carried-forward gap Phase 2.3 already
+tracks in Open questions; this phase adds more surface it applies to
+(real pointer/keyboard interaction, not just static rendering) but not a
+new kind of gap.
+
+**Next up:** Phase 2.5 (per-widget decisions — Radix/shadcn vs. porting
+the existing JS); close the Docker `docker compose up -d --build`
+verification gap and the no-browser-tool gap (now covering 2.1 through
+2.4) whenever this machine's Docker daemon can reach its registry again
+or a browser tool becomes available.
 
 ---
 
@@ -1388,7 +1498,7 @@ directly.
       status write-up.
 - [x] **2.3** Port the 327 CSS custom properties and 21 themes from
       `app/static/style.css`, essentially verbatim.
-- [ ] **2.4** Shell: sidebar (hover-preview + click-to-pin, three
+- [x] **2.4** Shell: sidebar (hover-preview + click-to-pin, three
       collapsible groups), topbar, flash banners, and the pre-paint
       theme/font restore script that currently prevents FOUC via an
       inline `<head>` script.
@@ -1494,6 +1604,20 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 2.4 done: `frontend/src/shell/` — `Shell.tsx`/
+  `Sidebar.tsx`/`Topbar.tsx`/`FlashBanner.tsx` plus their supporting
+  `nav.ts`/`useSidebarPin.ts`/`useSidebarGroupCollapse.ts`, ported from
+  `app/templates/base.html` and `sidebar.js`/`sidebar-collapse.js`; the
+  pre-paint theme/font/pinned-sidebar restore script moved from
+  `base.html`'s own inline `<head>` script into `frontend/index.html`
+  directly, unchanged. `index.css` gained four more byte-for-byte ranges
+  from `style.css` (top bar/sidebar/footer, flash messages, the shared
+  chevron, the 720px/reduced-motion rules). See the Current status
+  section for the full write-up, including why `user` stays a plain
+  nullable prop with no real session behind it yet, why logout is a
+  button instead of a form, and the one real `oxlint` finding fixed
+  along the way (`FlashBanner`'s state derivation moved out of an effect
+  and into `useState`'s own lazy initializer).
 - **2026-08-29** — Phase 2.3 done: `frontend/src/index.css` — the 320 CSS
   custom properties (Slate default + 21 `data-theme` variants) and 3
   `data-font` bundles, ported byte-for-byte from `app/static/style.css`'s
@@ -1884,4 +2008,16 @@ Carried forward until answered; move to the log once resolved.
   over at least a few themes (Ledger, Midnight, Contrast, Matrix — the
   widest spread of light/dark/accessibility/novelty) before any Phase 2.3
   or later visual work is treated as fully closed out, not just
-  mechanically correct.
+  mechanically correct. **Confirmed still true doing Phase 2.4**, and its
+  scope grew with that phase: beyond "do the themes look right," 2.4 adds
+  real pointer/keyboard interaction that has never been exercised at all
+  in this environment — hover-preview open/close (including the 200ms
+  close grace and the hover-gap crossing it exists for), click-to-pin
+  persisting and pushing the page over, per-group collapse persisting
+  independently across the three sidebar groups, Escape closing an
+  unpinned preview, and the ≤720px breakpoint's overlay-instead-of-push
+  behavior. Every one of these was ported from a working, tested vanilla-
+  JS original and re-verified only at the source-diff/bundle-content
+  level this session (see Phase 2.4's own "Verified for real" paragraph)
+  — real before any of it is treated as behaviorally, not just
+  structurally, correct.
