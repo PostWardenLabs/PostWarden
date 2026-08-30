@@ -1,0 +1,360 @@
+"""Raw SQL access for the entries module — the Journal backend. Every
+function takes a SQLAlchemy `Connection` (from `db.get_connection()`,
+shared with the rest of the app) and returns plain dicts/lists/scalars —
+`Decimal` for every money value (`NUMERIC(18,2)` columns; psycopg's
+default, unchanged here), never `float` — same convention
+`modules/reports/repository.py` established. Ported from `app/main.py`'s
+Journal-entry section: `_sync_entry_tags`/`_sync_tags`,
+`_add_tag_to_entries`, `_remove_tag_from_entries`, `_shared_journal_
+filters`/`_entries_filter`, and the raw SQL inline in `entries_page`,
+`create_entry`, `_reverse_one_entry`, `edit_entry_description`,
+`edit_line_memo`.
+
+**The entries/staging shared filter builder stays here, not in a common
+location.** Legacy's `_shared_journal_filters` is reused by both the
+Journal and Staging's own filter bar; only entries needs it in this
+phase. Phase 1.6 (`modules/staging/`) decides then whether to import
+`build_filter` from here or fork its own copy — same "don't reach into
+a module that doesn't exist yet" reasoning `modules/reports/
+repository.py`'s own `full_scenarios()` docstring already applied to
+`modules/reference/`.
+
+**`check_deferred_constraints` exists because of a real interaction with
+`db.get_connection()`'s design, not a hypothetical one.** The balance/
+has-lines invariants (`trg_lines_balanced`, `trg_entry_has_lines`,
+SPEC.md decision 2) are `DEFERRABLE INITIALLY DEFERRED` — they fire at
+COMMIT, not at the individual `INSERT`. Legacy's `tx()` context manager
+commits at the end of *each* route's own `with tx() as cur:` block, so a
+violation always surfaces inside that same route's `except
+psycopg.Error` handler. `db.get_connection()` (Phase 1.2) instead opens
+*one* transaction for the whole request and commits only when the
+dependency's own generator resumes after the route returns — by which
+point the route's `try/except` has already exited. Left alone, an
+unbalanced entry would still get rejected (Postgres does not let a
+violating transaction commit), but as an unhandled exception raised
+*after* the route returned 201, surfacing to the client as a bare 500
+with none of `errors.pg_message`'s trigger-message extraction — not the
+400-with-message legacy always gave. `SET CONSTRAINTS ALL IMMEDIATE`
+forces every deferred constraint trigger to run right now, inside the
+still-open transaction, at a point the caller controls — mechanically
+equivalent to what commit already does, just moved earlier so the
+service function's own `try/except` (or, in a bulk loop,
+`Connection.begin_nested()`'s own SAVEPOINT) is the thing that catches
+it. `service.create_entry`/`service.reverse_entry` both call this
+immediately after inserting an entry's lines, before returning.
+"""
+from decimal import Decimal, InvalidOperation
+
+from sqlalchemy import text
+from sqlalchemy.engine import Connection
+
+AMOUNT_OPS = {"gte": ">=", "lte": "<=", "gt": ">", "lt": "<", "eq": "="}
+
+
+def check_deferred_constraints(conn: Connection) -> None:
+    """Force every `DEFERRABLE INITIALLY DEFERRED` trigger in the current
+    transaction to run now, instead of waiting for COMMIT — see this
+    module's own docstring for why. Raises `sqlalchemy.exc.DBAPIError` on
+    a violation, same as a real COMMIT would; callers can immediately
+    unwrap it with `errors.pg_message`.
+
+    Sets the mode back to `DEFERRED` immediately afterward — `SET
+    CONSTRAINTS ALL IMMEDIATE` isn't a one-shot check, it's a standing
+    mode change that lasts for the rest of the transaction (Postgres
+    docs). Left in `IMMEDIATE` mode, the *next* multi-statement operation
+    in the same request-scoped transaction — another entry in
+    `service.reverse_entries_bulk`'s own loop, say — would have its own
+    header insert checked (and fail) before its lines ever get a chance
+    to be copied in, instead of only at this deliberate checkpoint. Only
+    the passing path needs this: if `ALL IMMEDIATE` itself raises, the
+    caller's own `Connection.begin_nested()` savepoint (or, outside a
+    bulk loop, the whole request's rollback) undoes the mode change along
+    with everything else — `ROLLBACK TO SAVEPOINT` reverts a `SET
+    CONSTRAINTS` change made since the savepoint, unlike a successful
+    `RELEASE`."""
+    conn.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+    conn.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+
+
+def account_ids_by_code(conn: Connection, codes: list[str]) -> dict[str, int]:
+    """`{code: id}` for whichever of the given codes actually exist —
+    `service.create_entry`'s own "unknown account code" check is just the
+    set difference between what it asked for and what this returns."""
+    rows = conn.execute(
+        text("SELECT code, id FROM accounts WHERE code = ANY(:codes)"), {"codes": codes}
+    ).mappings()
+    return {r["code"]: r["id"] for r in rows}
+
+
+def insert_entry(conn: Connection, *, scenario_id: int, entry_date, description: str,
+                  reference: str | None, payee_id: int | None,
+                  created_by_user_id: int | None = None,
+                  reverses_entry_id: str | None = None) -> str:
+    """Inserts one `journal_entries` header, `id` generated by
+    `fn_generate_entry_id()` (SPEC.md decision 17 — a random 6-character
+    code, not a sequential integer). Returns the new id."""
+    row = conn.execute(text("""
+        INSERT INTO journal_entries
+               (scenario_id, entry_date, description, reference, payee_id,
+                created_by_user_id, reverses_entry_id)
+        VALUES (:scenario_id, :entry_date, :description, :reference, :payee_id,
+                :created_by_user_id, :reverses_entry_id)
+        RETURNING id
+    """), {"scenario_id": scenario_id, "entry_date": entry_date, "description": description,
+           "reference": reference, "payee_id": payee_id,
+           "created_by_user_id": created_by_user_id, "reverses_entry_id": reverses_entry_id},
+    ).mappings().one()
+    return row["id"]
+
+
+def insert_line(conn: Connection, *, entry_id: str, line_no: int, account_id: int,
+                 amount: Decimal, memo: str | None) -> None:
+    """Inserts one `journal_lines` row. `amount` is the canonical signed
+    figure (debit > 0, credit < 0) — `debit`/`credit` are generated
+    columns, never written directly (see `db/schema.sql`)."""
+    conn.execute(text("""
+        INSERT INTO journal_lines (entry_id, line_no, account_id, amount, memo)
+        VALUES (:entry_id, :line_no, :account_id, :amount, :memo)
+    """), {"entry_id": entry_id, "line_no": line_no, "account_id": account_id,
+           "amount": amount, "memo": memo})
+
+
+def sync_entry_tags(conn: Connection, entry_id: str, tag_names: list[str]) -> None:
+    """Full replace of one entry's tags — ported from `_sync_tags`/
+    `_sync_entry_tags`. `ON CONFLICT ... DO UPDATE SET is_active = TRUE`
+    (not a no-op) is deliberate: typing an existing tag's name here is
+    exactly the signal that it's back in use, so this quietly reactivates
+    one that was archived rather than leaving it archived-but-attached,
+    which would be a tag with no way back into its own suggestion list."""
+    conn.execute(text("DELETE FROM journal_entry_tags WHERE entry_id = :entry_id"),
+                 {"entry_id": entry_id})
+    for name in tag_names:
+        tag_id = conn.execute(text("""
+            INSERT INTO tags (name) VALUES (:name)
+            ON CONFLICT (name) DO UPDATE SET is_active = TRUE
+            RETURNING id
+        """), {"name": name}).mappings().one()["id"]
+        conn.execute(text("""
+            INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (:entry_id, :tag_id)
+        """), {"entry_id": entry_id, "tag_id": tag_id})
+
+
+def add_tag_to_entries(conn: Connection, entry_ids: list[str], tag_name: str) -> None:
+    """Adds one tag to every given entry that doesn't already have it —
+    ported from `_add_tag_to_entries`. Deliberately additive, not
+    `sync_entry_tags`'s full replace: different selected entries can have
+    different existing tags, and this should only ever touch the one tag
+    actually being added."""
+    tag_id = conn.execute(text("""
+        INSERT INTO tags (name) VALUES (:name)
+        ON CONFLICT (name) DO UPDATE SET is_active = TRUE
+        RETURNING id
+    """), {"name": tag_name}).mappings().one()["id"]
+    for entry_id in entry_ids:
+        conn.execute(text("""
+            INSERT INTO journal_entry_tags (entry_id, tag_id) VALUES (:entry_id, :tag_id)
+            ON CONFLICT DO NOTHING
+        """), {"entry_id": entry_id, "tag_id": tag_id})
+
+
+def remove_tag_from_entries(conn: Connection, entry_ids: list[str], tag_name: str) -> None:
+    """The other half of the bulk tag popup — ported from `_remove_tag_
+    from_entries`. A tag nobody uses anymore is just left in `tags`, same
+    as everywhere else in the app that removes a tag from something."""
+    conn.execute(text("""
+        DELETE FROM journal_entry_tags
+         WHERE entry_id = ANY(:entry_ids)
+           AND tag_id = (SELECT id FROM tags WHERE name = :tag_name)
+    """), {"entry_ids": entry_ids, "tag_name": tag_name})
+
+
+def build_filter(*, scenario: str = "", date_from: str | None = None, date_to: str | None = None,
+                  qtext: str = "", tag_list: list[str] | None = None, account: str = "",
+                  payee: str = "", amount_op: str = "", amount_value: str = "",
+                  amount_value2: str = "", hide_reversed: bool = False,
+                  entry_id: str = "") -> tuple[list[str], dict]:
+    """WHERE-clause fragments + named bind params for the Journal's own
+    filter bar — ported from `_entries_filter`/`_shared_journal_filters`.
+    Unconditional `NOT s.is_staging`, same as legacy: the Journal is
+    exclusively for posted, non-staging scenarios, and this holds even
+    against a hand-edited query string. Shared by the paged list
+    (`list_entries` below) and, once `export/` (Phase 1.12) exists, the
+    CSV/XLSX export routes — same filters, same WHERE clause, so what you
+    see is exactly what you'd export."""
+    where: list[str] = ["NOT s.is_staging"]
+    params: dict = {}
+    if scenario:
+        where.append("s.code = :scenario")
+        params["scenario"] = scenario
+    if date_from:
+        where.append("e.entry_date >= :date_from")
+        params["date_from"] = date_from
+    if date_to:
+        where.append("e.entry_date <= :date_to")
+        params["date_to"] = date_to
+    if qtext:
+        where.append("(e.description ILIKE :qtext OR e.reference ILIKE :qtext)")
+        params["qtext"] = f"%{qtext}%"
+    if tag_list:
+        # ANY of the given tags — a broadening filter, like most tag UIs.
+        where.append("""e.id IN (SELECT jet.entry_id FROM journal_entry_tags jet
+                                   JOIN tags tg ON tg.id = jet.tag_id
+                                  WHERE tg.name = ANY(:tags))""")
+        params["tags"] = tag_list
+    if account:
+        where.append("""e.id IN (SELECT jl.entry_id FROM journal_lines jl
+                                   JOIN accounts a ON a.id = jl.account_id
+                                  WHERE a.code = :account)""")
+        params["account"] = account
+    if payee:
+        where.append("p.name = :payee")
+        params["payee"] = payee
+    if amount_op == "between" and amount_value and amount_value2:
+        try:
+            lo, hi = Decimal(amount_value).quantize(Decimal("0.01")), Decimal(amount_value2).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            lo = hi = None  # a hand-edited query string with garbage; just ignore it
+        if lo is not None:
+            lo, hi = sorted((lo, hi))
+            where.append("""(SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                               WHERE l.entry_id = e.id) BETWEEN :amount_lo AND :amount_hi""")
+            params["amount_lo"], params["amount_hi"] = lo, hi
+    elif amount_op in AMOUNT_OPS and amount_value:
+        try:
+            amount_num = Decimal(amount_value).quantize(Decimal("0.01"))
+        except InvalidOperation:
+            amount_num = None
+        if amount_num is not None:
+            op = AMOUNT_OPS[amount_op]
+            where.append(f"""(SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                               WHERE l.entry_id = e.id) {op} :amount_value""")
+            params["amount_value"] = amount_num
+    if entry_id:
+        where.append("e.id = :entry_id")
+        params["entry_id"] = entry_id
+    if hide_reversed:
+        # Excludes both halves of a reversal pair: the reversal itself
+        # (reverses_entry_id set) and whatever it reversed (some other
+        # entry's reverses_entry_id points back at this one).
+        where.append("""e.reverses_entry_id IS NULL
+                         AND NOT EXISTS (SELECT 1 FROM journal_entries r
+                                          WHERE r.reverses_entry_id = e.id)""")
+    return where, params
+
+
+def list_entries(conn: Connection, where: list[str], params: dict, limit: int, offset: int) -> list[dict]:
+    """One row per entry (no lines/tags — see `lines_for_entries`/
+    `tags_for_entries` below), ported from `entries_page`'s own query.
+    `total_debits`/`total_credits` and `reversed_by` are computed here,
+    same as legacy, rather than derived client-side from lines the
+    caller doesn't necessarily have yet."""
+    sql = f"""
+        SELECT e.id, e.entry_date, e.description, e.reference,
+               e.reverses_entry_id, s.code AS scenario_code,
+               s.is_locked AS scenario_locked, u.username AS posted_by,
+               p.name AS payee_name,
+               (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
+                 WHERE l.entry_id = e.id) AS total_debits,
+               (SELECT COALESCE(SUM(l.credit), 0) FROM journal_lines l
+                 WHERE l.entry_id = e.id) AS total_credits,
+               (SELECT r.id FROM journal_entries r
+                 WHERE r.reverses_entry_id = e.id LIMIT 1) AS reversed_by
+          FROM journal_entries e
+          JOIN scenarios s ON s.id = e.scenario_id
+          LEFT JOIN users u ON u.id = e.created_by_user_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE {' AND '.join(where)}
+         ORDER BY e.entry_date DESC, e.seq DESC
+         LIMIT :limit OFFSET :offset
+    """
+    rows = conn.execute(text(sql), {**params, "limit": limit, "offset": offset}).mappings()
+    return [dict(r) for r in rows]
+
+
+def lines_for_entries(conn: Connection, entry_ids: list[str]) -> list[dict]:
+    rows = conn.execute(text("""
+        SELECT l.id, l.entry_id, l.line_no, l.debit, l.credit, l.memo,
+               a.code AS account_code, a.name AS account_name
+          FROM journal_lines l
+          JOIN accounts a ON a.id = l.account_id
+         WHERE l.entry_id = ANY(:entry_ids)
+         ORDER BY l.entry_id, l.line_no
+    """), {"entry_ids": entry_ids}).mappings()
+    return [dict(r) for r in rows]
+
+
+def tags_for_entries(conn: Connection, entry_ids: list[str]) -> list[dict]:
+    rows = conn.execute(text("""
+        SELECT jet.entry_id, tg.name
+          FROM journal_entry_tags jet
+          JOIN tags tg ON tg.id = jet.tag_id
+         WHERE jet.entry_id = ANY(:entry_ids)
+         ORDER BY tg.name
+    """), {"entry_ids": entry_ids}).mappings()
+    return [dict(r) for r in rows]
+
+
+def entry_for_reverse(conn: Connection, entry_id: str) -> dict | None:
+    """The fields `service.reverse_entry` needs from the entry being
+    reversed — ported from `_reverse_one_entry`'s own lookup."""
+    row = conn.execute(text("""
+        SELECT e.id, e.scenario_id, e.description, e.reference, e.payee_id,
+               s.code AS scenario_code
+          FROM journal_entries e
+          JOIN scenarios s ON s.id = e.scenario_id
+         WHERE e.id = :entry_id
+    """), {"entry_id": entry_id}).mappings().first()
+    return dict(row) if row else None
+
+
+def reversed_by(conn: Connection, entry_id: str) -> str | None:
+    """The id of whatever already reverses this entry, or `None` — used
+    to reject a double reversal before ever inserting one."""
+    row = conn.execute(
+        text("SELECT id FROM journal_entries WHERE reverses_entry_id = :entry_id"),
+        {"entry_id": entry_id},
+    ).mappings().first()
+    return row["id"] if row else None
+
+
+def copy_lines_reversed(conn: Connection, new_entry_id: str, orig_entry_id: str) -> None:
+    """Every line of `orig_entry_id`, sign-flipped, onto `new_entry_id` —
+    ported from `_reverse_one_entry`'s own `INSERT ... SELECT`."""
+    conn.execute(text("""
+        INSERT INTO journal_lines (entry_id, line_no, account_id, amount, memo)
+        SELECT :new_entry_id, line_no, account_id, -amount, memo
+          FROM journal_lines WHERE entry_id = :orig_entry_id
+    """), {"new_entry_id": new_entry_id, "orig_entry_id": orig_entry_id})
+
+
+def copy_tags(conn: Connection, new_entry_id: str, orig_entry_id: str) -> None:
+    """Carries the original's tags onto the reversal — a reversal is
+    still "about" whatever it was tagged for."""
+    conn.execute(text("""
+        INSERT INTO journal_entry_tags (entry_id, tag_id)
+        SELECT :new_entry_id, tag_id FROM journal_entry_tags WHERE entry_id = :orig_entry_id
+    """), {"new_entry_id": new_entry_id, "orig_entry_id": orig_entry_id})
+
+
+def update_description(conn: Connection, entry_id: str, description: str) -> int:
+    """Returns the rowcount so the caller can tell "not found" apart from
+    "updated" without a separate existence check — `fn_entries_guard`
+    already allows changing `description`/`reference` on a posted entry
+    (only `scenario_id`/`entry_date`/`reverses_entry_id` are blocked)."""
+    result = conn.execute(
+        text("UPDATE journal_entries SET description = :description WHERE id = :entry_id"),
+        {"description": description, "entry_id": entry_id},
+    )
+    return result.rowcount
+
+
+def update_line_memo(conn: Connection, line_id: int, memo: str | None) -> int:
+    """Same shape as `update_description` — `fn_lines_immutable`'s own
+    memo-only exception (a row where only `memo` differs from `OLD` is
+    let through) doesn't condition on Staging status at all, unlike the
+    trigger's other carve-outs, so this works on any entry."""
+    result = conn.execute(
+        text("UPDATE journal_lines SET memo = :memo WHERE id = :line_id"),
+        {"memo": memo, "line_id": line_id},
+    )
+    return result.rowcount

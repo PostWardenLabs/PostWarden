@@ -85,8 +85,113 @@ verified the exact CI shape by hand (a bare `postgres:16` container,
 `alembic upgrade head`, `pytest`) since this phase's tests are the first
 in `backend/` to actually touch a database.
 
-**Next step:** 1.5 — `modules/entries/` (router · schemas · service ·
-repository · tests), the Journal backend.
+**Phase 1.5 done.** `modules/entries/` — the Journal backend:
+`schemas.py` (the one module so far that needs Pydantic request bodies —
+every route here is a POST, unlike reports' all-GET shape),
+`repository.py`, `service.py`, `router.py` (six routes: list/filter/
+paginate, create, single reverse, bulk reverse, bulk tag edit, edit
+description, edit line memo — eight, counting both edit routes
+separately). Two things surfaced here that reports' read-only shape
+never exercised, both worth carrying forward to every future write
+module:
+
+1. **`errors.py`, new** — `pg_message()`, ported from legacy `_pg_msg`,
+   unwrapping `sqlalchemy.exc.DBAPIError.orig` before extracting a
+   trigger's own `RAISE EXCEPTION` text. Not entries-specific: every
+   future write module (`staging`, `budget`, `imports`, `reference`,
+   `scheduling`) needs the identical unwrap, so it's centralized now
+   rather than copy-pasted later, same "documented gap, not theoretical"
+   reasoning `json.py` (Phase 1.3) applied to Decimal/date encoding.
+2. **`repository.check_deferred_constraints()` — a real interaction with
+   `db.get_connection()`'s design (Phase 1.2), not a hypothetical one.**
+   The balance/has-lines invariants are `DEFERRABLE INITIALLY DEFERRED`
+   — they fire at COMMIT. Legacy's `tx()` commits at the end of each
+   route's own block, so a violation always lands in that same route's
+   `except`. `get_connection()` instead commits once, when its own
+   generator resumes *after* the route returns — so left alone, an
+   unbalanced entry would still be rejected, just as an unhandled
+   exception raised after `create_entry` already returned 201, surfacing
+   as a bare 500 instead of a 400 with `pg_message`'s extracted text.
+   Fixed with `SET CONSTRAINTS ALL IMMEDIATE`, called right after a
+   function's last line insert, forcing the deferred triggers to run at
+   a point the caller's own `try/except` still covers.
+
+   **This needed a second fix once actually run against Postgres, not
+   just reasoned about.** `SET CONSTRAINTS ALL IMMEDIATE` is a standing
+   mode change for the rest of the transaction, not a one-shot check —
+   caught by `test_reverse_entries_bulk_a_duplicate_id_reverses_once_
+   and_reports_the_second` and two others failing with "entry ... has no
+   lines" on the *header insert itself* of a *second* entry-creating
+   call in the same test, before its lines had a chance to be copied in.
+   `create_entry`'s own `check_deferred_constraints` call had left the
+   connection in `IMMEDIATE` mode for the rest of that test's shared
+   transaction, so `reverse_entry`'s later header-then-lines sequence no
+   longer got the deferred window it needs. Fixed by having
+   `check_deferred_constraints` set the mode back to `DEFERRED`
+   immediately after a passing `IMMEDIATE` check (only the passing path
+   needs this — a raised violation means the caller's own `begin_
+   nested()` savepoint or the request's own rollback undoes the mode
+   change along with everything else, per Postgres's own semantics for
+   `SET CONSTRAINTS` across `ROLLBACK TO SAVEPOINT`). Left as a one-line
+   fix easy to get wrong quietly: without a test that does two
+   entry-creating operations in the same transaction, this would have
+   shipped working in every one-off case and broken exactly the bulk-
+   reversal path that most needs the deferred window.
+3. **`reverse_entries_bulk` uses `Connection.begin_nested()` (a
+   SAVEPOINT) per entry, not a bare loop.** Legacy's version calls
+   `_reverse_one_entry` in a loop where each call opens and commits its
+   own `tx()`, so one bad entry in the batch is independent of every
+   other. `get_connection()` gives the whole request one transaction, so
+   a bare loop would behave *worse* than legacy: Postgres aborts an
+   entire transaction on its first error, so entry #2 failing would
+   silently take #3 onward down with it too. A `SAVEPOINT` per entry
+   restores legacy's true per-entry independence inside the one shared
+   transaction. `test_reverse_entries_bulk_one_bad_id_does_not_stop_the_
+   rest` deliberately puts the bad id *first* in the batch to prove a
+   later success isn't collateral damage.
+
+Other decisions, smaller:
+
+- **Entry list responses nest `lines`/`tags` directly under each entry**
+  (`{"entries": [{..., "lines": [...], "tags": [...]}]}`), not legacy's
+  three parallel dicts (`entries`/`lines_by_entry`/`tags_by_entry`) a
+  Jinja template re-joined by id at render time. A JSON API consumer has
+  no reason to redo grouping the backend already did.
+- **No `created_by_user_id`/reversed-by attribution, no CSRF check.**
+  Both are `modules/auth/` (Phase 1.11) concerns; every write posts with
+  `created_by_user_id = NULL` for now (the column is nullable for
+  exactly this reason — `db/schema.sql`'s own comment). Same "don't
+  reach into a module that doesn't exist yet" reasoning Phase 1.4 #4
+  applied to `modules/reference/`.
+- **No CSV/XLSX export routes.** Those belong to the shared `export/`
+  module (Phase 1.12); `service.list_entries`/`repository.build_filter`
+  are already shaped so 1.12 can reuse them unchanged — same filters,
+  same WHERE clause, the way legacy's own `_entries_filter` was shared
+  three ways.
+- **The entries/staging shared filter builder (legacy's `_shared_
+  journal_filters`) stays in `modules/entries/repository.py`, not a
+  common location** — only entries needs it in this phase; Phase 1.6
+  (`modules/staging/`) decides then whether to import `build_filter`
+  from here or fork its own copy.
+- **`schemas.EntryLineIn` keeps `debit`/`credit` as plain strings**, not
+  Pydantic `Decimal` fields — `domain.entry.parse_lines` already does
+  the string -> `Decimal` parsing (and its own tested validation
+  messages) against parallel string lists; a separate Pydantic numeric
+  field would mean the same question answered twice, possibly
+  disagreeing. The router unzips `list[EntryLineIn]` back into parallel
+  lists immediately before calling `parse_lines`.
+
+46 new tests (15 `repository.py`, 16 `service.py`, 11 `router.py`; `test_
+errors.py`'s 4 are top-level, not entries-specific) — 139 passed total.
+Verified for real, twice over: a full `docker compose up -d --build`
+(clean log, `/healthz` 200), and separately, the exact CI shape by hand
+(a bare `postgres:16` container, `alembic upgrade head`, `pytest`) —
+which is what actually caught the `SET CONSTRAINTS` bug above, since
+`pytest -q`'s full-suite run (not a single test in isolation) is what
+put `create_entry` and `reverse_entry` in the same shared transaction
+the bug depended on.
+
+**Next step:** 1.6 — `modules/staging/`.
 
 ---
 
@@ -155,7 +260,7 @@ directly.
       `fn_cash_flow_lines`, `fn_rollup_balance`, `fn_account_balances`)
       directly — **not** modeled through SQLAlchemy Core (decision in
       `REBUILD.md` §6).
-- [ ] **1.5** `modules/entries/` (router · schemas · service ·
+- [x] **1.5** `modules/entries/` (router · schemas · service ·
       repository · tests) — the Journal backend.
 - [ ] **1.6** `modules/staging/`
 - [ ] **1.7** `modules/budget/`
