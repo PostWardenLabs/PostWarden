@@ -10,12 +10,25 @@ import client from './client'
 // actually needs are typed; `repository.scenarios_all`'s own extra
 // columns (`base_level_name`, `entry_count`, ...) are real but unused
 // here.
+//
+// Widened for Phase 3.4 (the Journal): `is_staging`/`is_locked`/
+// `income_statement_only`/`enforce_balance`/`base_level_id` are what
+// `NewEntryPanel.tsx` needs to reproduce legacy `entries_page`'s own
+// `new_entry_scenarios` filter (excludes locked/income-statement-only/
+// staging scenarios from the New entry picker) and the balance-bar's
+// `enforcing()` check — Trial Balance's own Phase 3.3 usage only ever
+// read `code`/`name`/`is_locked`, so this is a strict superset, not a
+// breaking change to that call site.
 export interface Scenario {
   id: number
   code: string
   name: string
   scenario_type: string
   is_locked: boolean
+  is_staging: boolean
+  income_statement_only: boolean
+  enforce_balance: boolean
+  base_level_id: number | null
 }
 
 // A plain hook, not a Context/Provider — same call `useAppConfig.ts`

@@ -1,10 +1,10 @@
 import { useEffect, useState, type RefObject } from 'react'
 
-export interface SelectModeState {
+export interface SelectModeState<T> {
   selectMode: boolean
-  checkedIds: Set<number>
+  checkedIds: Set<T>
   toggleSelectMode: () => void
-  toggleChecked: (id: number) => void
+  toggleChecked: (id: T) => void
   toggleSelectAll: () => void
 }
 
@@ -33,12 +33,20 @@ export interface SelectModeState {
 // nothing below ever reads `.current` outside an effect or an event
 // handler, same rule this file's own indeterminate-setting effect below
 // already follows.
-export function useSelectMode(
-  ids: number[],
+//
+// Generic as of Phase 3.4 — the Journal's own entries are keyed by a
+// random 6-character string id (SPEC.md decision 17), not the plain
+// integer primary key every prior caller (Tags, and Payees in Phase 4.2)
+// happened to have. `<T>` costs nothing at either existing call site
+// (both already infer `T = number` from their own `ids: number[]`) and
+// avoids forking this hook a second time for the one caller whose ids
+// aren't numeric.
+export function useSelectMode<T>(
+  ids: T[],
   selectAllRef: RefObject<HTMLInputElement | null>,
-): SelectModeState {
+): SelectModeState<T> {
   const [selectMode, setSelectMode] = useState(false)
-  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
+  const [checkedIds, setCheckedIds] = useState<Set<T>>(new Set())
 
   // Same `body.select-mode` hook index.css's own `.select-only` rules key
   // off of — reusing the identical mechanism (and CSS) Journal/Staging's
@@ -68,7 +76,7 @@ export function useSelectMode(
     })
   }
 
-  function toggleChecked(id: number) {
+  function toggleChecked(id: T) {
     setCheckedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)

@@ -1938,13 +1938,157 @@ interaction — the tree collapse/expand click target and its persisted
 state, the DatePicker popup on this page specifically, hover states on
 `.quiet-link`/sticky columns — no browser tool exists in this session.
 
-**Next up:** Phase 3.4 — the Journal. The hardest screen in the app, and
-`REBUILD.md` §9's own go/no-go gate: if it doesn't come out clearly
-better than the Jinja version, stop and reconsider before Phase 4 starts.
-Close the Docker `docker compose up -d --build` verification gap and the
-no-browser-tool gap (now covering all of Phase 2 and Phase 3.1–3.3)
-whenever this machine's Docker daemon can reach its registry again or a
-browser tool becomes available.
+**Phase 3.4 done — the go/no-go gate, and it passes.** The Journal:
+`entries.html` (346 lines) plus ~1,240 lines of hand-written DOM
+scripting across `app.js`, `entries-select.js`, `tags-bulk-edit.js`,
+`description-edit.js`, `memo-edit.js`, and `entry_templates.js`. No
+backend changes needed — `modules/entries/` has existed since Phase 1.5/
+1.14, and `modules/reference/`'s `GET /accounts`/`GET /account-levels`/
+`GET /payees`/`GET /tags` and `modules/scheduling/`'s `GET /templates`
+already carried everything the New entry form needs.
+
+`frontend/src/journal/JournalPage.tsx` is the main deliverable — filter
+bar, Select mode + Reverse + Edit tags, the entries list itself, export
+links, pager — built on five pieces it composes rather than inlines:
+
+- **`NewEntryPanel.tsx` + `EntryGrid.tsx`/`gridLines.ts`** — the "+ New
+  entry" form and its line grid. `gridLines.ts` holds the pure
+  `GridLine`/`makeBlankLine`/`isLineUsed`/`ensureTrailingBlank`
+  functions (split out once `EntryGrid.tsx` tripped oxlint's
+  `react(only-export-components)`, same fix `confirmContext.ts` already
+  used for `ConfirmDialog.tsx` in Phase 2.5) so a controlled `GridLine[]`
+  array can be trimmed/grown the same way `app.js`'s own DOM-mutating
+  version did. Keyboard nav (Enter/Shift+Enter move vertically, same
+  column) is a real `querySelector` over the rendered table rather than a
+  ref registry — the same blend of React state and direct `.focus()`
+  calls `DatePicker.tsx` already uses for its own roving-tabindex grid,
+  chosen because that really is how `app.js`'s own `columns()` worked
+  (re-querying the DOM on every keypress), and because a query is simpler
+  than threading a per-cell ref map through a table that grows and
+  shrinks rows on every keystroke. Distribute/Add line/Post/Clear and the
+  Alt+N/D/E/S/C shortcuts are all ported; Distribute's own first-row
+  special case (see `app.js`'s file comment) and the "never trim the row
+  someone's still focused in" guard both carried over unchanged.
+- **`TagInput.tsx`** — the chip tag picker, ported from `tags.js`. A
+  controlled component (comma-separated `value`/`onChange`, matching
+  every server-side consumer's own shape) rather than a hidden-input DOM
+  enhancement, reused by the New entry form's own Tags field, the filter
+  bar's Tags field (`creatable={false}`, same as legacy's
+  `data-creatable="0"`), and `BulkTagsDialog.tsx`.
+- **`useInlineEdit.ts`** — the debounce-autosave-with-corrective-cancel
+  mechanics behind both `DescriptionCell.tsx` and `MemoCell.tsx`,
+  factored out of what were two deliberately-separate legacy files
+  (`description-edit.js`/`memo-edit.js`) into one hook. Legacy kept them
+  apart on the grounds that "two files this close in shape is exactly the
+  amount of duplication worth keeping simple... a third such widget would
+  be the point to actually factor one out" — but that was a judgment
+  about the cost of *sharing* in hand-wired DOM code specifically; in
+  React, a bug fixed once in the hook benefits both cells for free, at no
+  coordination cost, so sharing it is the better default here, not a
+  departure from that reasoning. The one real behavioral knob between the
+  two (a memo can autosave blank; a description can't) is the hook's
+  `allowBlank` flag — the other legacy difference (stopping `<summary>`'s
+  native toggle on click) stayed a DOM concern the caller handles, not
+  the hook's. The iPad bug this whole pattern exists to survive
+  (BACKLOG.md — a hardware-keyboard setup where blur/Enter's own save
+  never landed) is preserved exactly: a draft autosaves on a 600ms
+  debounce while still typing, and `cancel()` re-POSTs the pre-edit value
+  if a debounced draft already reached the server.
+- **`BulkTagsDialog.tsx`** — the Journal's "Edit tags" popup, ported from
+  `tags-bulk-edit.js`. Reuses `ConfirmDialog.tsx`'s own `.confirm-
+  overlay`/`.confirm-modal` CSS (an `<h3>` plus `TagInput.tsx` instead of
+  a message and Cancel/OK) rather than `useConfirm()` itself, same
+  reasoning `MergeDialog.tsx` already gives: this needs to run a live
+  side effect per chip add/remove (one `POST /entries/tags` each,
+  diffed against the union of tags across whatever's checked), not just
+  resolve a boolean once.
+
+**Smaller decisions:**
+
+- **`useSelectMode.ts` made generic (`<T>`), not forked a second time.**
+  Every prior caller (Tags; Payees in Phase 4.2) has a plain integer id;
+  the Journal's own entries are keyed by a random 6-character string
+  (`SPEC.md` decision 17). Widening the hook to `useSelectMode<T>` costs
+  nothing at either existing call site (both still infer `T = number`)
+  and keeps one implementation instead of two copies that could drift.
+- **The filter bar's own state lives in the URL** (`useSearchParams`),
+  same design `TrialBalancePage.tsx` already established — but the
+  push-vs-replace call inverts here, and deliberately so: every control
+  in `entries.html`'s own filter form really did cause a full page
+  navigation in legacy (`auto-refresh.js`'s `form.requestSubmit()`), so a
+  browser-history entry per filter change is exactly the right parity, not
+  something to avoid the way it was for Trial Balance's per-keystroke `As
+  of` field. Free-typed fields (Search, the Amount value/value2 pair) stay
+  local, uncommitted state until a real form submit — Enter in any field,
+  or the Search icon's click — matching `auto-refresh.js`'s own
+  deliberate carve-out for exactly those two fields.
+- **No "Back to report" link.** Legacy's own `back=` only ever arrives via
+  a drill-through from another report page; nothing in this rebuild
+  produces one yet (Trial Balance's own Phase 3.3 write-up chose plain
+  text over a real link for the identical reason). Reintroduce once a
+  report actually links here with `back=` set, rather than half-wiring a
+  parameter nothing sends.
+- **No help-icon**, same omission every `.page-head` since Phase 3.2 has
+  made — `/help` doesn't exist in this SPA yet (Phase 5).
+- **The reversal/tag badges are real click targets** (`applyFilters` to
+  jump to the reversed/reversing entry, or to filter by that tag) — these
+  *do* have a live target today, unlike Trial Balance's own deferred
+  drill-through-to-Journal links, since they only ever navigate within
+  this same page.
+- **`postable_accounts_for_pickers`/`postable_accounts_by_scenario`
+  ported client-side**, not as new backend endpoints — `widgets/
+  usePostableAccounts.ts` recomputes both from `GET /accounts` + `GET
+  /account-levels` + the caller's own `GET /scenarios`, matching
+  `fn_line_account_guard` exactly (a leaf account, or anything sitting at
+  a scenario's own `base_level_id`'s depth). Consistent with REBUILD.md
+  decision 3's line: the frontend fetches reference data separately, but
+  nothing stops it from re-deriving a pure filter over that data the way
+  the pure `domain/` layer would on the backend.
+- **A real, confirmed HTTP-round-trip discovery, not a gotcha this time**:
+  `journal_lines.debit`/`.credit` are `NOT NULL GENERATED ALWAYS AS (...)`
+  columns (`db/schema.sql`), so — unlike Trial Balance's `max(int, 0)`
+  gap — every leg's debit/credit always serializes as a real Decimal
+  string ("0.00", never a bare `0`). `JournalPage.tsx` reuses `format/
+  money.ts`'s `isZeroAmount`/`formatMoney` regardless, for the same
+  blanking-a-zero-cell behavior every other report already has, not
+  because this route needed the `string | number` widening.
+
+**Verified for real.** 532 backend tests still passing, unchanged (no
+backend code touched this phase). The 60 pure-Postgres tests green. A
+real `npm run build` and `npm run lint` both clean. A real `uvicorn
+postwarden.main:app` against `backend-db-1` (seeded via `seed_demo.sql`)
+proved the full flow over real HTTP, not just a clean compile: login;
+`GET /app/entries` → `200` serving the SPA shell while bare
+`GET /entries` stays `401` unauthenticated; `GET /entries`/`/accounts`/
+`/account-levels`/`/payees`/`/tags`/`/templates`/`/scenarios` all `200`
+with the exact response shapes the TypeScript interfaces assume; a real
+`POST /entries` posting a balanced two-line entry; `GET /entries?entry_
+id=...` finding it back; `POST /entries/{id}/edit-description`, `POST
+/entries/lines/{id}/edit-memo`, and `POST /entries/tags` all landing;
+`POST /entries/{id}/reverse` posting a real reversal; `POST /entries/
+reverse` (bulk) against an already-reversed entry returning `200` with
+the failure captured in its own `errors` array rather than aborting the
+whole batch (`service.reverse_entries_bulk`'s own per-entry `SAVEPOINT`,
+confirmed live, not just read); both `/entries/export.csv` and `.xlsx`
+`200`ing with the right content-type and the edited description/memo
+actually showing up in the export. The served bundle's JS contains "New
+entry (Alt"/"Distribute (Alt"; its CSS contains `tag-chip-remove`.
+**Not verified, same standing gap, now covering the Journal's own
+(considerably larger) interactive surface too**: real browser
+interaction — the full keyboard flow through the entry grid, Tab
+order, Distribute/Add line/Clear's focus management, the tag chip
+picker's arrow-key nav, `<details>` expand/collapse per entry, and
+every Alt+ shortcut — no browser tool exists in this session. Close this
+gap, and the Docker `docker compose up -d --build` verification gap
+(now covering all of Phase 2 and Phase 3.1–3.4), whenever a browser tool
+or this machine's Docker registry access becomes available.
+
+**Next up:** Phase 4 — fill in the remaining 22 screens by archetype,
+largely configuration now that all four archetype components exist.
+`REBUILD_STATUS.md`'s own Phase 4 checklist starts with 4.1 (remaining
+Range/period + Point-in-time reports), which reuses `useCollapsibleTree.ts`/
+`useScenarios.ts` from Trial Balance, and 4.2 (remaining Management/CRUD),
+which reuses `useSelectMode.ts`/`MergeDialog.tsx` from Tags.
 
 ---
 
@@ -2070,11 +2214,20 @@ Ascending risk, per `REBUILD.md` §6:
 - [x] **3.1** login — proves the pipeline end to end
 - [x] **3.2** tags — Management/CRUD archetype
 - [x] **3.3** trial balance — Point-in-time report archetype
-- [ ] **3.4** Journal — the hardest screen in the app
+- [x] **3.4** Journal — the hardest screen in the app
 
-**Gate:** if Journal does not come out clearly better than the Jinja
-version, stop and reconsider per `REBUILD.md` §9. Record the outcome of
-this gate here, whichever way it goes, before Phase 4 starts.
+**Gate outcome: pass — proceed to Phase 4.** Ported to
+`frontend/src/journal/` (`JournalPage.tsx`, `NewEntryPanel.tsx`,
+`EntryGrid.tsx`, `BulkTagsDialog.tsx`, `DescriptionCell.tsx`,
+`MemoCell.tsx`, `gridLines.ts`), plus `widgets/TagInput.tsx` and
+`widgets/useInlineEdit.ts`. Clearly better than the Jinja version on the
+axis that actually matters here: the entry grid, filter bar, description/
+memo edits, and Select/Reverse/Edit-tags are all one component tree
+sharing real state, replacing ~1,240 lines of hand-wired DOM scripting
+(`app.js` + five smaller files) and a page-reload-plus-`fetch()` model
+with plain React re-renders — no `data-*` attribute wiring, no delegated
+document-level listeners standing in for what props/state already give
+for free. See Current status for the full write-up.
 
 ## Phase 4 — Fill in by archetype
 
@@ -2158,6 +2311,24 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 3.4 done, and with it `REBUILD.md` §9's own
+  go/no-go gate: **pass, proceed to Phase 4.** `frontend/src/journal/`
+  (`JournalPage.tsx`, `NewEntryPanel.tsx`, `EntryGrid.tsx`/`gridLines.ts`,
+  `BulkTagsDialog.tsx`, `DescriptionCell.tsx`, `MemoCell.tsx`), plus two
+  new reusable widgets (`widgets/TagInput.tsx`, `widgets/
+  useInlineEdit.ts`) and `widgets/useSelectMode.ts` made generic (`<T>`)
+  to cover the Journal's own string entry ids. No backend changes needed
+  — `modules/entries/` (Phase 1.5) and `modules/reference/`/`modules/
+  scheduling/`'s reference-data routes already carried everything this
+  screen needs; `widgets/usePostableAccounts.ts` re-derives legacy's
+  `postable_accounts_for_pickers`/`postable_accounts_by_scenario`
+  client-side from `GET /accounts`+`GET /account-levels`+`GET /scenarios`
+  rather than adding a bespoke endpoint. See Current status for the full
+  write-up, including the `useInlineEdit.ts` factoring decision (sharing
+  what `description-edit.js`/`memo-edit.js` deliberately kept as two
+  files) and a real HTTP round trip confirming `journal_lines.debit`/
+  `.credit` are `NOT NULL` generated columns (always a Decimal string,
+  unlike Trial Balance's own `max(int, 0)` gap).
 - **2026-08-30** — Phase 3.3 done: `frontend/src/reports/TrialBalancePage.tsx`,
   the Point-in-time report archetype's first real screen. Filter state
   lives in the URL's own query string (`useSearchParams`), not component
@@ -2700,3 +2871,24 @@ Carried forward until answered; move to the log once resolved.
   a nonexistent scenario code, both export routes) was verified for real
   over HTTP this phase (see Current status) — same split as every phase
   before it.
+  **Confirmed still true doing Phase 3.4**, scope grown by more than any
+  prior phase — the Journal is the densest interactive surface in the
+  app: the entry grid's full keyboard flow (Tab through account -> debit
+  -> credit -> memo, Enter/Shift+Enter moving vertically instead of
+  submitting, the debit/credit exclusivity on typing), Distribute's
+  first-row special case and its focus handoff, Add line/Clear's own
+  focus management, every Alt+N/D/E/S/C/R shortcut actually firing (and
+  *not* firing while a plain click, not Option+key, produces the same
+  letter on a non-Mac keyboard), the tag chip input's arrow-key nav and
+  Backspace-pops-last-chip behavior in both the New entry form and the
+  filter bar, each entry's own `<details>` expand/collapse, and the
+  description/memo cells' click-to-edit — including the 600ms debounce
+  actually firing and Escape's corrective re-POST actually landing, the
+  one piece of this phase with no cheap way to verify short of watching
+  it happen in a real browser over real time. Every real HTTP/data
+  transition behind all of this (posting a balanced entry, reversing one
+  singly and in bulk with per-entry error collection, editing a
+  description/memo/tag set, both exports reflecting the edit) was
+  verified for real over HTTP this phase (see Current status) — same
+  split as every phase before it, just with more surface than ever on
+  the unverified side of it.

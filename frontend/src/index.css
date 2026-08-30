@@ -1855,3 +1855,142 @@ tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
    stretch as everything above, needed for Trial Balance's own account
    path ("<span class="dim small">...</span>") and out-of-balance note. */
 .small { font-size: 0.8rem; }
+
+/* =========================================================================
+   Phase 3.4 — Journal (the hardest screen, and REBUILD.md §9's own go/
+   no-go gate) CSS ported from app/static/style.css, verbatim.
+
+   Eight byte-verified ranges, same methodology as every prior CSS-
+   porting phase. `details.entry`/`.entry-journal`/`.entry-new`,
+   `.select-only` + `body.select-mode`, `table.ledger`'s base rules, and
+   custom checkbox rendering all already landed in Phase 3.2 (Tags) —
+   entries.html's own summary/checkbox-gutter/select-mode markup reuses
+   every one of those unchanged, which is exactly why that range was
+   pre-imported whole back then. `.quiet-link`/`a.amount-link`/
+   `.combobox-panel` (Phase 2.5/3.3) are reused here too, by TagInput.tsx
+   and the badge/description-cell click targets, with nothing new needed
+   for them.
+
+   What's actually new this phase: the Amount filter's two-input range
+   layout, a memo cell's hover/edit-input look, the pager, the Search
+   field's own magnifying-glass icon, the entry-grid's column widths, the
+   balance bar, the reversal/tag badges, and the tag chip input. */
+.amount-range { display: flex; align-items: center; gap: 0.4rem; }
+
+/* -- Journal line memo, click-to-edit (see memo-edit.js) ------------------
+   Cursor + a faint hover fill are the cell's only "this is clickable"
+   signal — no visible border/underline while not editing, so a filled-in
+   memo still reads as plain text the rest of the time, same instinct as
+   every other click-through in this app (an amount link only says
+   "clickable" via cursor/hover, never a permanent underline). The input
+   that replaces the span while editing matches table.entry-grid's own
+   "full width, --rule border" shape for a cell-sized input. */
+.memo-cell { cursor: pointer; }
+.memo-cell:hover { background: var(--paper-deep); }
+.memo-input { width: 100%; border-color: var(--rule); font: inherit; }
+
+.pager {
+  display: flex; align-items: center; justify-content: center; gap: 1.2rem;
+  margin-top: 1.4rem; font-size: 0.88rem;
+}
+.pager a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule-strong); }
+.pager a:hover { border-bottom-color: var(--ink); }
+
+/* -- search box (Journal's Search filter) ----------------------------------
+   The Journal used to have one shared "Filter" button for every field in
+   the bar. Dropdowns/dates/checkboxes already auto-refresh on change
+   (auto-refresh.js) without it; free-typed text (Search, Amount) never
+   did, on purpose — refreshing on every keystroke would be noise. Rather
+   than a button sitting off at the end of the whole bar for that one
+   case, Search gets its own submit affordance right where you're
+   already typing: a magnifying glass, same footprint/positioning as the
+   date picker's trigger chevron. Pressing Enter in *any* text field
+   still submits the form same as before (this is still the form's one
+   submit control) — the icon is just a visible, clickable way to do the
+   same thing without reaching for the keyboard. */
+.search-field { position: relative; width: 100%; }
+.search-input { width: 100%; padding-right: 1.9rem; }
+.search-submit {
+  position: absolute; top: 50%; right: 0.3rem; transform: translateY(-50%);
+  width: 1.3rem; height: 1.3rem;
+  background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
+  padding: 0; border-radius: 2px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.search-submit:hover { background: var(--paper-deep); }
+.search-icon {
+  position: relative; width: 0.6rem; height: 0.6rem;
+  border: 1.5px solid currentColor; border-radius: 50%;
+}
+.search-icon::after {
+  content: ""; position: absolute; width: 1.5px; height: 0.45rem;
+  background: currentColor; top: 95%; left: 95%;
+  transform: rotate(-45deg); transform-origin: top left;
+}
+
+/* -- journal entry screen ------------------------------------------------ */
+table.entry-grid input { width: 100%; border-color: var(--rule); }
+table.entry-grid td { padding: 0.2rem 0.3rem; }
+table.entry-grid .col-account { width: 42%; }
+table.entry-grid .col-amount  { width: 15%; }
+
+.balance-bar {
+  display: flex; gap: 2rem; align-items: baseline; flex-wrap: wrap;
+  margin-top: 0.9rem; padding: 0.7rem 0.9rem;
+  background: var(--paper-deep);
+  border-left: 3px solid var(--rule-strong);
+  font-family: var(--figures); font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+.balance-bar.balanced { border-left-color: var(--ok); }
+.balance-bar.balanced .diff { color: var(--ok);
+  border-bottom: 3.5px double var(--ok); }
+.balance-bar.unbalanced .diff { color: var(--red); }
+.balance-bar .lbl { color: var(--ink-soft); font-family: var(--sans);
+  font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase;
+  margin-right: 0.4rem; }
+
+.badge {
+  display: inline-block; font-size: 0.68rem; letter-spacing: 0.05em;
+  text-transform: uppercase; padding: 0.1rem 0.45rem;
+  border: 1px solid var(--rule-strong); color: var(--ink-soft);
+  border-radius: 2px;
+}
+/* .rev is now also a link (BACKLOG.md — "reversal of #X"/"reversed by
+   #X" hyperlink through to that entry) — text-decoration: none and a
+   hover cue for the same reason .tag already needed both below. */
+.badge.rev { border-color: var(--red); color: var(--red); text-decoration: none; }
+.badge.rev:hover { background: var(--paper-deep); }
+.badge.tag {
+  border-color: var(--focus); color: var(--focus); text-decoration: none;
+}
+.badge.tag:hover { background: var(--paper-deep); }
+
+/* -- tag chip input (see tags.js) ----------------------------------------- */
+/* Same padding as a plain input/select/textarea, and no fixed min-height
+   forcing it taller — the wrapper used to hard-set 2.2rem regardless of
+   what its own padding would produce (0.3rem 0.4rem, tighter than the
+   0.35rem 0.5rem every other field uses), so a tag box with zero or one
+   chip sat visibly taller than the Search box right next to it. It still
+   grows normally once tags wrap to a second line — flex-wrap plus the
+   inner text input's own natural sizing handles that without help. */
+.tag-input {
+  position: relative; display: flex; flex-wrap: wrap; gap: 0.3rem;
+  align-items: center; border: 1px solid var(--rule-strong);
+  background: var(--surface); border-radius: 2px; padding: 0.35rem 0.5rem;
+}
+.tag-input input[type="text"] {
+  flex: 1; min-width: 6rem; border: none; padding: 0; background: transparent;
+}
+.tag-input input[type="text"]:focus { outline: none; }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: var(--paper-deep); border: 1px solid var(--rule-strong);
+  border-radius: 999px; padding: 0.1rem 0.4rem 0.1rem 0.6rem; font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tag-chip-remove {
+  background: transparent; border: none; color: var(--ink-soft); cursor: pointer;
+  font-size: 0.9rem; line-height: 1; padding: 0;
+}
+.tag-chip-remove:hover { color: var(--red); }

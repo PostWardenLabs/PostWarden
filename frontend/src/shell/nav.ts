@@ -36,7 +36,7 @@ export const NAV_GROUPS: NavGroup[] = [
     key: 'ledger',
     label: 'Books',
     links: [
-      { key: 'entries', label: 'Journal', href: '/entries' },
+      { key: 'entries', label: 'Journal', href: '/app/entries', client: true },
       { key: 'staging', label: 'Staging', href: '/staging' },
       { key: 'scheduled', label: 'Scheduled Entries', href: '/scheduled' },
       { key: 'import', label: 'Import', href: '/import' },
