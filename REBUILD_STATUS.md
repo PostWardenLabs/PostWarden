@@ -2090,6 +2090,66 @@ Range/period + Point-in-time reports), which reuses `useCollapsibleTree.ts`/
 `useScenarios.ts` from Trial Balance, and 4.2 (remaining Management/CRUD),
 which reuses `useSelectMode.ts`/`MergeDialog.tsx` from Tags.
 
+**Phase 4.1, screen 1 of 5 — Balance Sheet done.**
+`frontend/src/reports/BalanceSheetPage.tsx`, modeled directly on
+`TrialBalancePage.tsx`'s own pattern (URL-state filters via
+`useSearchParams`, one `useEffect` fetch, `useCollapsibleTree` with its
+own `localStorage` key). No backend changes — `GET /reports/balance-sheet`
+has existed since Phase 1.4/1.14. One real structural difference from
+Trial Balance, confirmed by reading `service.balance_sheet` directly
+rather than assumed: the response is **not** the `{grouped: [...]}`
+per-type-section shape — it flattens straight to three separate top-level
+arrays (`assets`/`liabilities`/`equity`), each already a `flatten_tree()`
+row list with no section wrapper, plus a separate `earnings_lines` list
+of plain 2-tuples (`[label, amount]`), not `{label, amount}` objects.
+Liabilities/Equity rows negate their stored (credit-normal) `subtotal`
+for display — a `sign: 1 | -1` prop on a shared `SectionRows` sub-component
+rather than repeating the ternary `balance_sheet.html`'s own three copies
+use.
+
+Wired into `App.tsx` (`/app/balance-sheet` route, `routeKey`,
+`PAGE_TITLES`) and `nav.ts` (`balance_sheet` link flipped to
+`client: true`, href repointed from `/balance-sheet` to
+`/app/balance-sheet`) — the first of Phase 4.1's five links to make that
+flip.
+
+**Verified for real**, including — for the first time this rebuild — an
+actual browser pass, not just source-level reasoning: this session had
+live `mcp__Claude_Browser__*` tools, closing the gap every phase since
+2.3 had to carry forward as an open question. `docker compose up -d
+--build` from `backend/` built clean (Docker registry access also
+worked fine this session — the sandbox-specific pull restriction noted
+in the Open questions section below does not apply here); `tsc -b` +
+`vite build` clean (via the Dockerfile's own frontend-build stage);
+`oxlint` clean (0 warnings, via a throwaway `node:22-slim` container
+since this machine has no local `node`/`npm` on `PATH`); backend `pytest`
+(532 passed, unchanged — no backend code touched) and the 60
+pure-Postgres tests (`tests/test_invariants.py`/`test_cashflow.py`, both
+run against the same `docker compose`-started Postgres) all green. Then,
+in a real browser: logged in, opened the sidebar, clicked through to
+Balance Sheet; collapsed/expanded the Assets branch and confirmed
+subtotals recompute; toggled "show true balances" and confirmed the
+`· simulated monthly close` sub-header note disappears and the two
+Current/Prior Year earnings lines collapse into legacy's single "Current
+earnings (unclosed)" line, same total either way; clicked the next-month
+link and confirmed `as_of` advances while `raw=1` carries forward in the
+URL and both Export links; opened the Scenario Combobox and confirmed it
+lists the real `ACTUAL`/`BUD2026`/`STAGING` scenarios; confirmed the
+grand total row reads "in balance" with Assets (122,544.51) exactly
+matching Liabilities + Equity; both `.csv`/`.xlsx` export URLs `200` with
+the right content-type over a real authenticated `curl` round trip.
+
+**Unrelated, and reverted, not part of this commit**: `git status` at the
+start of this phase's work showed an unexplained uncommitted change to
+`frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
+become the literal string `` `⌥+{letter}` `` — a real regression, not a
+formatting nit, that would have broken every Mac/iPad Option-key shortcut
+label). Neither this session nor its own tool history produced that
+edit; reverted via `git checkout -- frontend/src/format/shortcut.ts`
+before committing Balance Sheet, so it isn't bundled in here. Flagged to
+David directly rather than silently discarded, in case it was
+in-progress work from elsewhere that shouldn't have been touched.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -2233,8 +2293,12 @@ for free. See Current status for the full write-up.
 
 Largely configuration once the Phase 3 archetype components exist.
 
-- [ ] **4.1** Remaining Range/period + Point-in-time reports:
-      income_statement, cash_flow, balance_sheet, variance, ledger
+- [~] **4.1** Remaining Range/period + Point-in-time reports:
+      income_statement, cash_flow, balance_sheet, variance, ledger.
+      Balance Sheet done (see Current status); income_statement,
+      cash_flow, variance, ledger remain — ledger also needs new
+      backend work (no `/ledger`-equivalent route exists yet, see its
+      own note when that commit lands).
 - [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
       account_levels, scheduled, entry_templates, settings
 - [ ] **4.3** staging (Filterable transaction list, second instance)
@@ -2311,6 +2375,13 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 4.1 started: Balance Sheet (screen 1 of 5) done,
+  `frontend/src/reports/BalanceSheetPage.tsx`. First screen built since
+  the Phase 3 go/no-go gate passed. Also the first phase verified with a
+  real browser pass in-session (`mcp__Claude_Browser__*` tools were
+  available this time) rather than deferring that check — see Current
+  status for the full write-up, including an unrelated stray edit found
+  in `frontend/src/format/shortcut.ts` and reverted before this commit.
 - **2026-08-30** — First real-browser QA pass (David, on his own
   machine, against a real `docker compose up -d --build`) surfaced six
   genuine bugs across Phase 3.2–3.4, all fixed same-session:

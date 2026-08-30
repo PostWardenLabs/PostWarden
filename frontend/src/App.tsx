@@ -5,6 +5,7 @@ import { useAppConfig } from './api/useAppConfig'
 import { useSession } from './auth/sessionContext'
 import LoginPage from './auth/LoginPage'
 import JournalPage from './journal/JournalPage'
+import BalanceSheetPage from './reports/BalanceSheetPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import Shell from './shell/Shell'
 import TagsPage from './tags/TagsPage'
@@ -102,6 +103,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/tags') return 'tags'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
+  if (pathname === '/app/balance-sheet') return 'balance_sheet'
   return 'dashboard'
 }
 
@@ -111,7 +113,12 @@ function routeKey(pathname: string): string {
 // `nav.ts`-independent duplication `routeKey` already accepts (see its
 // own comment) rather than importing NAV_GROUPS' own labels, which
 // aren't keyed for a 1:1 lookup this cheap anyway.
-const PAGE_TITLES: Record<string, string> = { tags: 'Tags', tb: 'Trial Balance', entries: 'Journal' }
+const PAGE_TITLES: Record<string, string> = {
+  tags: 'Tags',
+  tb: 'Trial Balance',
+  entries: 'Journal',
+  balance_sheet: 'Balance Sheet',
+}
 
 // Root component. As of Phase 3.1, this is the real end-to-end pipeline
 // proof REBUILD_STATUS.md's own checklist wording asked for — not the
@@ -162,6 +169,7 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
+        <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
       </Routes>
     </Shell>
