@@ -3883,23 +3883,40 @@ This is where rebuilds overrun — budgeted for explicitly, per
 `REBUILD.md` §6. Track each item's completion independently; expect this
 list to grow as items are discovered, not just shrink.
 
-- [ ] 21 themes × 26 screens visual pass
+- [ ] 21 themes × 26 screens visual pass — blocked: needs a real browser
+      (see 2026-08-30 changes-log entry)
 - [ ] Every `Alt+`/`e.code` shortcut, plus `option-key.js`'s ⌥
-      relabeling on Apple hardware
-- [ ] Confirm dialogs: focus Cancel by default, trap Tab between exactly
-      two buttons, red reserved for genuinely destructive actions
-- [ ] Debounced-autosave-with-corrective-POST on memo/description edit
-      (Escape must undo a draft that already reached the server)
-- [ ] Tri-state (indeterminate) select-all on five screens, clearing
-      selection when Select mode turns off
-- [ ] Per-thing `localStorage` keys (per sidebar group, per report
+      relabeling on Apple hardware — shortcut/`e.code` wiring and
+      `altLabel()`'s detection logic audited and correct everywhere
+      (2026-08-30); real Apple-hardware confirmation of the ⌥ relabel
+      still open, needs a real device
+- [x] Confirm dialogs: focus Cancel by default, trap Tab between exactly
+      two buttons, red reserved for genuinely destructive actions —
+      code-audited 2026-08-30, `ConfirmDialog.tsx` plus all 7 call sites
+- [x] Debounced-autosave-with-corrective-POST on memo/description edit
+      (Escape must undo a draft that already reached the server) —
+      code-audited 2026-08-30, `useInlineEdit.ts` plus both cells
+- [x] Tri-state (indeterminate) select-all on five screens, clearing
+      selection when Select mode turns off — code-audited 2026-08-30,
+      shared `useSelectMode.ts` plus its one bespoke sibling
+      (`StagingDuplicatesPage.tsx`'s per-group variant)
+- [x] Per-thing `localStorage` keys (per sidebar group, per report
       table, per budget scenario) — collapsing one must never reset
-      another
-- [ ] Report tree defaults differ by page (Accounts collapsed-first,
-      reports expanded-first)
+      another — code-audited 2026-08-30, every call site keys distinct
+- [x] Report tree defaults differ by page (Accounts collapsed-first,
+      reports expanded-first) — code-audited 2026-08-30, confirmed by
+      design (two separate collapse implementations, not a shared
+      default flag)
 - [ ] Distinct empty states per condition (nothing exists vs. nothing
-      matches filters), most with their own call to action
-- [ ] `help.html`'s content, and the `?` deep-links into it
+      matches filters), most with their own call to action — real gap,
+      confirmed 2026-08-30: most screens render one message regardless
+      of which condition applies (faithful to legacy on Journal, which
+      never distinguished the two either; genuinely new UX work
+      elsewhere)
+- [x] `help.html`'s content, and the `?` deep-links into it — content
+      shipped with Phase 4.7; deep-links wired 2026-08-30 across all 17
+      screens that were still missing them (verified against every
+      legacy template's own `help-icon`, 19 in total, 2 already wired)
 
 ## Cutover
 
@@ -3944,6 +3961,48 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 5, first pass: a code-only audit plus one real
+  fix, done without a browser on either end (this session had none; the
+  session's own operator was on a remote/mobile connection with no
+  computer). Six of Phase 5's nine items are mechanics built once as
+  shared widgets during Phase 3/4 rather than per-screen — audited every
+  call site of each against spec and found all correct: `ConfirmDialog.tsx`
+  (Cancel-default-focus, two-item Tab trap, `danger` styling — including
+  cross-checking every ambiguous case, like Budget's non-`danger`
+  "overwrite, can't be undone" quickfill, against legacy's own
+  `confirm.js`/`budget-grid.js` to confirm it's a faithful port, not a
+  gap); `useInlineEdit.ts`'s debounced autosave with `cancel()`'s
+  corrective re-POST, wired to Escape in both `DescriptionCell.tsx` and
+  `MemoCell.tsx`; `useSelectMode.ts`'s tri-state select-all, shared by
+  exactly the 5 screens that use it (2 more deliberately opt out, per
+  their own comments); every `localStorage` key (`useSidebarGroupCollapse`/
+  `useCollapsibleTree`/budget's own scenario-scoped key) confirmed
+  distinct, no collisions; and Accounts' collapsed-first vs. reports'
+  expanded-first tree default, which turned out to be two genuinely
+  separate implementations (`AccountsPage.tsx`'s own bespoke
+  `loadCollapsed`, not `useCollapsibleTree.ts`), not one shared default
+  worth double-checking for a stray flag. The one real fix: `?`
+  deep-links into Help. `HelpPage.tsx` (Phase 4.7) shipped with anchors
+  for every screen, but 17 of the 19 screens legacy ever gave a
+  `help-icon` still either had none or carried a Phase-5-deferral comment
+  explaining `/help` didn't exist yet — stale the moment Help shipped.
+  Wired all 17 to `/app/help#<anchor>`, matched one-for-one against every
+  legacy template's own `help-icon` target (`grep`'d all 19, confirmed
+  the other 2 — Import/ImportMapped — were already done). Two items
+  stayed open on purpose, not attempted: distinct empty states (a real,
+  unstarted gap — most screens render one message regardless of "nothing
+  exists" vs. "nothing matches filters," faithful to legacy on Journal
+  specifically but genuinely new work elsewhere, and worth a real design
+  pass rather than a rushed per-screen copy fix) and the visual
+  pass/Apple-hardware confirmation (structurally impossible without a
+  real browser and, for the hardware half, real Apple hardware — deferred
+  to a session where both exist). Also surfaced, not fixed: this
+  session's sandbox has no `node`/`npm` at all (`frontend/node_modules/
+  .bin` exists but every binary in it needs a `node` that isn't on
+  `PATH`), so none of this could be typechecked or linted locally either
+  — the edits are small and pattern-matched against already-working call
+  sites, but a real `tsc -b`/`oxlint` pass is still owed before this is
+  fully trusted.
 - **2026-08-30** — Phase 4.1 complete (screen 5 of 5: Ledger),
   `frontend/src/reports/LedgerPage.tsx` plus new backend
   (`modules/reports/repository.py::ledger_accounts`/`ledger_lines`,

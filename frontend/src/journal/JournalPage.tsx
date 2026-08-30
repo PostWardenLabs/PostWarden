@@ -244,14 +244,15 @@ export default function JournalPage() {
   return (
     <>
       <div className="page-head">
-        {/* No help-icon — `/help` doesn't exist anywhere in this SPA yet
-            (Phase 5), same omission every prior phase's own `.page-head`
-            already made. No "Back to report" link either: legacy's own
-            `back=` only ever arrives via a drill-through link from
-            another report, and nothing in this rebuild produces one yet
-            (Trial Balance's own Phase 3.3 write-up chose plain text over
-            a link for exactly this reason) — reintroduce this once a
-            report actually links here with `back=` set. */}
+        {/* No "Back to report" link: legacy's own `back=` only ever
+            arrives via a drill-through link from another report, and
+            nothing in this rebuild produces one yet (Trial Balance's own
+            Phase 3.3 write-up chose plain text over a link for exactly
+            this reason) — reintroduce this once a report actually links
+            here with `back=` set. */}
+        <Link to="/app/help#journal" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}

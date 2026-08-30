@@ -398,11 +398,11 @@ export default function StagingDuplicatesPage() {
 
   return (
     <>
-      {/* No help-icon — `/help` doesn't exist anywhere in this SPA yet
-          (Phase 5), same omission every prior phase's own `.page-head`
-          already made. */}
       <div className="page-head">
         <p className="page-sub">Pending Staging entries that share the same accounts, amounts, and date</p>
+        <Link to="/app/help#staging" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}

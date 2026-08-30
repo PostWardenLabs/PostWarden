@@ -131,17 +131,14 @@ export default function TrialBalancePage() {
 
   return (
     <>
-      {/* No help-icon here, unlike trial_balance.html's own `.page-head` —
-          `/help` doesn't exist anywhere in this SPA yet (Phase 5, the
-          long tail), so linking to it would be a dead link rather than a
-          rough edge on an unbuilt screen. `.page-head`/`.page-sub` are
-          still rendered (and their CSS still ported) since the sub-note
-          itself is real content, not a placeholder for the icon. */}
       <div className="page-head">
         <p className="page-sub">
           {asOf ? `As of ${asOf}` : 'Through today'} · scenario <span className="mono">{scenario}</span>
           {!raw && ' · simulated monthly close'}
         </p>
+        <Link to="/app/help#reports" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       <div className="bar">

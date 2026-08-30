@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import { useAccountLevels } from '../api/useAccountLevels'
 import client from '../api/client'
@@ -131,6 +132,12 @@ export default function ScenariosPage() {
 
   return (
     <>
+      <div className="page-head">
+        <Link to="/app/help#scenarios" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
+
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
       {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 

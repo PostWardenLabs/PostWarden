@@ -266,7 +266,11 @@ export default function StagingPage() {
 
   return (
     <>
-      <div className="page-head" />
+      <div className="page-head">
+        <Link to="/app/help#staging" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
 
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
       {flash?.err && <div className="flash flash-err">{flash.err}</div>}

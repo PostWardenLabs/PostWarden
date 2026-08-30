@@ -259,6 +259,9 @@ export default function IncomeStatementPage() {
             </>
           )}
         </p>
+        <Link to="/app/help#reports" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       <div className="bar">

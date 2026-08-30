@@ -421,9 +421,11 @@ export default function BudgetPage() {
 
   return (
     <>
-      {/* No help-icon here, same "no /help route exists yet" reasoning
-          every other report page's own comment already gives. */}
-      <div className="page-head" />
+      <div className="page-head">
+        <Link to="/app/help#budget-grid" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
 
       <div className="bar" style={{ justifyContent: 'space-between' }}>
         <span className="bar" style={{ marginBottom: 0 }}>

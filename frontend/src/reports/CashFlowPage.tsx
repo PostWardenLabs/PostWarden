@@ -116,6 +116,9 @@ export default function CashFlowPage() {
         <p className="page-sub">
           {dateFrom} – {dateTo} · scenario <span className="mono">{scenario}</span>
         </p>
+        <Link to="/app/help#reports" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       <div className="bar">

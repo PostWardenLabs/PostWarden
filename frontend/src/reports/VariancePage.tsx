@@ -145,12 +145,12 @@ export default function VariancePage() {
   return (
     <>
       {/* variance.html's own .page-head holds nothing but the help-icon
-          (no .page-sub at all, unlike every other report) — omitted here,
-          same "no /help route exists yet" reasoning every other screen's
-          own help-icon already carries. Kept as an empty div anyway for
-          the same vertical rhythm before the filter bar every other
-          report page has. */}
-      <div className="page-head" />
+          (no .page-sub at all, unlike every other report). */}
+      <div className="page-head">
+        <Link to="/app/help#variance" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
 
       <div className="bar">
         <label className="field">

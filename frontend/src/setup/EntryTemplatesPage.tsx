@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import client from '../api/client'
 import type { Payee } from '../api/usePayees'
@@ -249,6 +250,12 @@ export default function EntryTemplatesPage() {
 
   return (
     <>
+      <div className="page-head">
+        <Link to="/app/help#templates" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
+
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
       {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 

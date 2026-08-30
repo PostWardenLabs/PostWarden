@@ -280,6 +280,12 @@ export default function ScheduledPage() {
 
   return (
     <>
+      <div className="page-head">
+        <Link to="/app/help#scheduled" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
+      </div>
+
       {!!pendingCount && (
         <div className="flash flash-warn" style={{ marginBottom: '1.2rem' }}>
           <Link to="/app/staging">

@@ -117,6 +117,9 @@ export default function BalanceSheetPage() {
           As of {asOf || 'today'} · scenario <span className="mono">{scenario}</span>
           {!raw && ' · simulated monthly close'}
         </p>
+        <Link to="/app/help#reports" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       <div className="bar">

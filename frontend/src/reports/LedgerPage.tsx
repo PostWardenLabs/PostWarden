@@ -97,6 +97,9 @@ export default function LedgerPage() {
           {asOf ? `As of ${asOf}` : 'Through today'} · scenario <span className="mono">{scenario}</span>
           {!raw && ' · simulated monthly close for Income/Expense'}
         </p>
+        <Link to="/app/help#reports" className="help-icon" aria-label="How this works" title="How this works">
+          ?
+        </Link>
       </div>
 
       <div className="bar">
