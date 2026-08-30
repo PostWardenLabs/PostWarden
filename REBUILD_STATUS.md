@@ -118,6 +118,24 @@ wrong, turn it into a real fix instead of just unchecking it.
       See REBUILD_STATUS.md's own changes-log entries for this session
       (both dated 2026-08-30) for the full reasoning and exact commits
       (`756ebbd`, `738c6a7`, `3e2d01f`, `4182ce2`).
+- [ ] Phase 5 visual pass: the 21 themes × 26 screens sweep (every theme
+      switch actually looks right, not just the default) and the
+      Apple-hardware confirmation that `option-key.js`'s ⌥ relabeling
+      (`altLabel()`'s detection logic) actually renders correctly on
+      real Apple hardware, not just audited by reading the code. Both
+      are blocked in every sandbox session so far for the same reason as
+      everything else on this list — no real browser/device available —
+      see the `## Phase 5` section above for exactly what *has* already
+      been code-audited and checked off there.
+- [ ] Cutover checklist (`## Cutover` above, none of it started): merge
+      `rebuild` into `master`, tag, deploy beta first, exercise beta
+      **authenticated** (an unauthenticated `303` sweep proves nothing —
+      `auth_gate` redirects before any route body, or its queries, ever
+      run), confirm no parallel Jinja instance is left running once beta
+      looks good, rewrite `docs/ARCHITECTURE.md` to describe the new
+      tree, bump `VERSION`. Do this only once the visual pass above and
+      everything else still open in Phase 5 is actually cleared — not a
+      thing to start early.
 
 ---
 
