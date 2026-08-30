@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 
 import { useAppConfig } from './api/useAppConfig'
@@ -8,6 +7,7 @@ import BudgetPage from './budget/BudgetPage'
 import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
+import DashboardPage from './reports/DashboardPage'
 import IncomeStatementPage from './reports/IncomeStatementPage'
 import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
@@ -24,88 +24,6 @@ import Shell from './shell/Shell'
 import StagingDuplicatesPage from './staging/StagingDuplicatesPage'
 import StagingPage from './staging/StagingPage'
 import TagsPage from './tags/TagsPage'
-import Combobox, { type ComboboxOption } from './widgets/Combobox'
-import { useConfirm } from './widgets/confirmContext'
-import DatePicker from './widgets/DatePicker'
-import NumberStepper from './widgets/NumberStepper'
-
-// Stand-in options for the Combobox demo below — real screens (Phase
-// 3.4+) source these from the API (accounts, payees, scenarios, ...) via
-// the typed client, not a hardcoded array.
-const PLACEHOLDER_ACCOUNTS: ComboboxOption[] = [
-  { value: '1', label: 'Checking' },
-  { value: '2', label: 'Savings' },
-  { value: '3', label: 'Credit Card' },
-]
-
-// Widget preview section for Phase 2.5 — exercises all four ported
-// widgets (Combobox, DatePicker, NumberStepper, the confirm dialog via
-// useConfirm()) so there's something real for `npm run build` +
-// `npm run lint` + a served-bundle content check to verify against.
-// Still here after Phase 3.1: login doesn't call any of these (a
-// username/password pair and a checkbox need none of them), so none of
-// the four gets a real caller until Journal (Phase 3.4) — see
-// REBUILD_STATUS.md Phase 2.5's own note on when this section is meant
-// to go away.
-function WidgetPreview() {
-  const [account, setAccount] = useState('')
-  const [accounts, setAccounts] = useState(PLACEHOLDER_ACCOUNTS)
-  const [date, setDate] = useState('')
-  const [amount, setAmount] = useState('0')
-  const confirm = useConfirm()
-  const [confirmResult, setConfirmResult] = useState<string | null>(null)
-
-  return (
-    <section aria-label="Widget preview">
-      <h2>Widgets (Phase 2.5)</h2>
-      <label className="field">
-        Account
-        <Combobox
-          options={accounts}
-          value={account}
-          onChange={setAccount}
-          onCreate={async (name) => {
-            const opt = { value: String(Date.now()), label: name }
-            setAccounts((prev) => [...prev, opt])
-            return opt
-          }}
-        />
-      </label>
-      <label className="field">
-        Date
-        <DatePicker value={date} onChange={setDate} />
-      </label>
-      <label className="field">
-        Amount
-        <NumberStepper value={amount} onChange={setAmount} min="0" max="10" step="1" />
-      </label>
-      <button
-        type="button"
-        onClick={async () => {
-          const ok = await confirm('Reverse this entry?', { okLabel: 'Reverse' })
-          setConfirmResult(ok ? 'confirmed' : 'cancelled')
-        }}
-      >
-        Reverse
-      </button>
-      {confirmResult && <p>Confirm dialog result: {confirmResult}</p>}
-    </section>
-  )
-}
-
-// Everything the placeholder root route ("/") has shown since Phase 2.1 —
-// unchanged in substance by Phase 3.2's routing, just moved into its own
-// component now that "/" is one of (currently) two real routes rather
-// than the only thing App ever rendered.
-function Dashboard() {
-  return (
-    <>
-      <h1>PostWarden</h1>
-      <p>Frontend scaffold (REBUILD_STATUS.md Phase 2.1–3.2).</p>
-      <WidgetPreview />
-    </>
-  )
-}
 
 // Maps a real browser path to the `current` key Sidebar.tsx/Topbar.tsx
 // use for active-link highlighting — deliberately a plain if-chain, not a
@@ -211,7 +129,7 @@ function App() {
     <Shell title={PAGE_TITLES[current] ?? 'Dashboard'} current={current}
            user={session.user} onLogout={session.logout} version={config.version || undefined}>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<DashboardPage />} />
         <Route path="/app/accounts" element={<AccountsPage />} />
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/payees" element={<PayeesPage />} />

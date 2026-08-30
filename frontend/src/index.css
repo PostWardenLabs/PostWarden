@@ -2190,3 +2190,60 @@ table.entry-grid .col-amount  { width: 15%; }
   font-size: 0.9rem; line-height: 1; padding: 0;
 }
 .tag-chip-remove:hover { color: var(--red); }
+
+/* =========================================================================
+   Phase 4.7 — the last of "The rest": Dashboard, Connect BI, Import,
+   Import with rules, Help. `.stat-row`/`.stat-tile`/`.activity-desc-cell`
+   are Dashboard's own — the first real caller for both; `.activity-desc-
+   cell` was deliberately deferred all the way back at Phase 3.2's own
+   CSS-porting pass for exactly this reason (see that range's own
+   comment above `.small`). `.panel`/`.panel h2` is a second deferred
+   gap, closed here for the same reason: never actually ported despite
+   `<div className="panel">` already appearing on AccountsPage.tsx
+   (Phase 4.6) and ScenariosPage.tsx's own add-panel — this phase's own
+   Import/Import-with-rules/Connect BI screens are what finally give it
+   more than one caller worth checking against, and it renders exactly
+   as unstyled (no border/background/padding) everywhere it was already
+   in use until this lands. `.file-field`/`.file-field-name` is Import's
+   own file-choose control, ported for `widgets/FileField.tsx`'s first
+   two callers (plain Import, Import with rules). All five ported
+   verbatim from `app/static/style.css`. */
+.stat-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem; margin-bottom: 2rem;
+}
+.stat-tile {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-top: 3px solid var(--accent); padding: 0.9rem 1rem;
+}
+.stat-label {
+  font-size: 0.78rem; color: var(--ink-soft); text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.3rem;
+}
+.stat-value {
+  font-family: var(--figures); font-size: 1.5rem; font-weight: 600;
+  font-variant-numeric: tabular-nums; margin-bottom: 0.4rem;
+}
+.stat-value.neg { color: var(--red); }
+
+.activity-desc-cell {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 0.8rem; flex-wrap: wrap;
+}
+.activity-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-flow { flex: none; white-space: nowrap; }
+
+.panel {
+  background: var(--surface); border: 1px solid var(--rule);
+  padding: 1rem 1.1rem; margin-top: 1.4rem;
+}
+.panel h2 { margin-top: 0; }
+
+.file-field { display: flex; align-items: center; gap: 0.6rem; }
+.file-field-name {
+  flex: 1; min-width: 0; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--rule-strong); border-radius: 2px;
+  padding: 0.35rem 0.5rem; font-size: 0.82rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.file-field-name.dim { color: var(--ink-soft); }

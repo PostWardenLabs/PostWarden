@@ -48,6 +48,7 @@ from .modules.auth import service as auth_service
 from .modules.auth.deps import SESSION_COOKIE
 from .modules.auth.router import router as auth_router
 from .modules.budget.router import router as budget_router
+from .modules.dashboard.router import router as dashboard_router
 from .modules.entries.router import router as entries_router
 from .modules.imports.router import router as imports_router
 from .modules.reference.router import router as reference_router
@@ -170,6 +171,7 @@ app.include_router(budget_router)
 app.include_router(reference_router)
 app.include_router(scheduling_router)
 app.include_router(analytics_router)
+app.include_router(dashboard_router)
 
 # The built frontend (REBUILD_STATUS.md Phase 2.1) — mounted last and only
 # if it exists, both deliberately.

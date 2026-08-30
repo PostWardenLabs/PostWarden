@@ -57,6 +57,15 @@ wrong, turn it into a real fix instead of just unchecking it.
       outside-click-close, and the side-nav's hover/active button
       states. Only the API round trip was checked. See Current status's
       Phase 4.6 write-up for exactly what *was* verified.
+- [ ] Phase 4.7 (dashboard): no browser tool was available to verify
+      `DashboardPage.tsx`'s actual rendering — the stat tiles' layout and
+      `.neg` red-figure styling, the Staging pending-count banner's real
+      appearance, the recent/upcoming tables' flow labels (including the
+      italic "multiple" fallback, unexercised against real data since
+      every row in the current dev DB resolves to a single account each
+      side), and both tables' empty-state links. Only the API round trip
+      (against real dev data, not synthetic) was checked. See Current
+      status's Phase 4.7 write-up for exactly what *was* verified.
 
 ---
 
@@ -3210,6 +3219,98 @@ outside-click-close and focus-on-open, and the side-nav's hover/active
 states were not visually exercised — added to "Check when back at your
 computer" below.
 
+### Phase 4.7 — the rest (dashboard, screen 1 of 5)
+
+The last checklist item, bundling five unrelated screens that share
+nothing but not fitting Phase 4.1-4.6's own archetype groupings:
+dashboard, connect_bi, import, import_mapped (+ its own second step,
+import_mapped_review), and help. `account` — listed in the original
+checklist entry — turned out to need no work at all: Phase 4.2's own
+research found `app/templates/account.html` is actually the already-
+shipped `settings_account` page, a different screen with a confusingly
+similar filename, not a sixth item here.
+
+**dashboard, done.** Ported from `app/templates/dashboard.html`
+(Phase 4.7) into `reports/DashboardPage.tsx` — placed alongside the
+report screens (Trial Balance, Balance Sheet, ...) rather than under
+`setup/`, since it reads report-shaped data (net worth, month-to-date
+income/expense) rather than managing reference data. Retires `App.tsx`'s
+own `Dashboard`/`WidgetPreview` placeholder, live since Phase 2.1/2.5
+and explicitly marked back then for deletion "once Phase 3's real
+archetype screens give each widget an actual caller" — overdue by a
+few phases (every one of Combobox/DatePicker/NumberStepper/`useConfirm`
+has had a real caller since Journal, Phase 3.4), finally done here since
+this is the placeholder's own literal route (`/`).
+
+**The one screen in Phase 4 (so far) needing genuinely new backend
+code**, `modules/dashboard/` — `repository.py`, `service.py`,
+`router.py`, `GET /dashboard` — because legacy's own dashboard route
+(a bare `GET /`) never had a JSON shape for an earlier Phase 1 module to
+have already produced (every other module here was ported during
+Phase 1; Phase 4 has been frontend-only ever since Phase 1.14 finished
+mounting them). Forked, not shared, from `modules/reports/repository.py`'s
+own `fn_trial_balance` call — REBUILD.md decision 3's "deletable on its
+own" test, the same reason every module's own repository stays
+self-contained rather than importing another's. Mounted at `GET
+/dashboard`, not bare `/`: the frontend's own root path already serves
+the SPA shell, the same `/foo` (JSON) vs. `/app/foo` (React route) split
+every Phase 4 screen already follows.
+
+One intentional omission, closing a forward reference two phases left
+open on purpose: legacy's own `pending_count` banner is **not**
+recomputed by the new backend at all. `ScheduledPage.tsx`'s Phase 4.2
+write-up flagged the Dashboard as this hook's likely second caller once
+built; `useStagingPendingCount.ts` (built in Phase 4.3 for that same
+banner) is reused here unchanged, reading `GET /staging`'s own
+`entries.length` — one less independent way to compute the same number.
+`service._flow_by_id` also replaces legacy's own `flow_side`/
+`debit_names`/`credit_names` dance with a JSON-appropriate shape: `None`
+for "more than one account on this side" instead of baking an
+`<em>multiple</em>` marker into an HTML string, since this is a JSON API
+and rendering that fallback is the frontend's job (`FlowLabel` in
+`DashboardPage.tsx`) — 14 new backend tests (`repository.py`/
+`service.py`/`router.py`, `backend/tests/modules/dashboard/`), 556
+passed total (up from 542 as of Phase 4.1's own Ledger, the last phase
+to add backend code).
+
+**New CSS**, three groups: `.stat-row`/`.stat-tile`/`.stat-label`/
+`.stat-value`/`.activity-desc-cell`/`.activity-desc`/`.activity-flow` —
+Dashboard's own, deliberately deferred all the way back at Phase 3.2's
+own CSS-porting pass for lack of a caller; `.panel`/`.panel h2` — a
+second, older gap, closed now rather than later: `<div
+className="panel">` already appears on `AccountsPage.tsx` (Phase 4.6)
+and `ScenariosPage.tsx`'s own add-panel, both rendering completely
+unstyled (no border/background/padding) until this commit, since
+`.panel` itself was never actually ported despite being referenced by
+name in a Phase 2.3/2.4 "not ported yet" comment; and `.file-field`/
+`.file-field-name` — added early for `widgets/FileField.tsx`, this
+phase's still-to-come Import/Import-with-rules screens' own file-choose
+control, so it lands once rather than twice.
+
+**Verified for real, the same two ways as Phase 4.1's Ledger** (the
+last screen with new backend code): `tsc -b && vite build` and `oxlint`
+both clean, zero findings; backend `pytest` — 556 passed, 1 skipped, up
+from 542 — run against the exact CI shape by hand (a bare `postgres:16`
+container on a throwaway Docker network, `alembic upgrade head`,
+`pytest -q` from `backend/`, matching `.github/workflows/backend-ci.yml`'s
+own `test` job precisely). Then a real `docker compose -f backend/
+docker-compose.yml up -d --build` and an **authenticated** round trip:
+logged in as `david`/`devpassword`, `GET /dashboard` against the real
+dev database returned `net_worth` (110094.51) matching `asset + liability`
+summed by hand from `GET /reports/trial-balance`'s own totals exactly,
+`recent` entries with correctly-resolved single-account flow labels
+("Interest (Credit Card/Loans)" / "Credit Cards", etc.), and `upcoming:
+[]` confirmed correct against the dev DB directly (`scheduled_entries`
+has exactly one row, and it's `is_active = false`) rather than assumed;
+`GET /` (authenticated) served the SPA shell at `200`, and the built JS
+bundle contains the real strings ("Net worth", "Recent activity",
+"Upcoming transactions", the Staging banner's own wording) confirming
+the new page actually shipped in the bundle, not just compiled clean
+locally. No interactive browser tool was available in this session, so
+the stat tiles/tables' actual visual rendering, the Staging banner's
+real appearance, and the empty-state links were not visually exercised
+— added to "Check when back at your computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3413,7 +3514,21 @@ Largely configuration once the Phase 3 archetype components exist.
       CSS itself already landed in Phase 3.3). `nav.ts` promoted to
       `client: true`. See Current status for the full write-up.
 - [ ] **4.7** The rest: dashboard, connect_bi, import, import_mapped,
-      import_mapped_review, account, help
+      import_mapped_review, account, help. `account` needs no work —
+      Phase 4.2 already discovered it's `settings_account`, a different
+      screen entirely (see that phase's own note); five real screens
+      remain. Screen 1 of 5 done:
+  - [x] dashboard — `reports/DashboardPage.tsx`, ported from
+        `dashboard.html`. The one item in this list with **new backend
+        code**: `modules/dashboard/` (`repository.py`/`service.py`/
+        `router.py`, `GET /dashboard`), since legacy's bare `GET /` never
+        had a JSON shape any earlier phase could have already produced.
+        Retires `App.tsx`'s Phase 2.1/2.5 `Dashboard`/`WidgetPreview`
+        placeholder in the same commit. New CSS: `.stat-row`/`.stat-
+        tile`/`.activity-desc-cell` (Dashboard's own), plus `.panel`/
+        `.panel h2` and `.file-field`/`.file-field-name`, added early for
+        this phase's remaining four screens. See Current status for the
+        full write-up.
 
 ## Phase 5 — The long tail
 
