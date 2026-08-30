@@ -3908,11 +3908,11 @@ list to grow as items are discovered, not just shrink.
       design (two separate collapse implementations, not a shared
       default flag)
 - [ ] Distinct empty states per condition (nothing exists vs. nothing
-      matches filters), most with their own call to action — real gap,
-      confirmed 2026-08-30: most screens render one message regardless
-      of which condition applies (faithful to legacy on Journal, which
-      never distinguished the two either; genuinely new UX work
-      elsewhere)
+      matches filters), most with their own call to action — surveyed
+      2026-08-30, copy drafted for the three screens that actually need
+      it (Journal, Trial Balance, Variance — see 2026-08-30 changes-log
+      entry for the exact strings and why the rest of the app doesn't
+      need this); still unimplemented
 - [x] `help.html`'s content, and the `?` deep-links into it — content
       shipped with Phase 4.7; deep-links wired 2026-08-30 across all 17
       screens that were still missing them (verified against every
@@ -3961,6 +3961,78 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 5 item 8 (distinct empty states), second pass:
+  surveyed every screen's empty-state message, found the real scope is
+  much narrower than the first pass's "most screens" guess, and drafted
+  copy for the three that actually need it. Still unimplemented — this
+  was a design/audit pass, not a code change.
+
+  Turned out most screens are already correct and need no work: the six
+  Management/CRUD tables (Tags, Payees, Templates, Scheduled, Accounts,
+  Account Levels) have no search/filter at all, so their one "No X yet"
+  message is accurate, not a gap. Dashboard and Staging Duplicates are
+  the same — no filters, one condition, matches legacy. Staging itself
+  (`StagingPage.tsx:401-406`) turned out to *already* branch on its own
+  `hasFilters` flag ("No staged entries match these filters — use Clear
+  filters above" vs. "No staged entries right now...") — the first
+  pass's "most screens render one message" was wrong about this one
+  specifically; correcting the record here. Cash Flow and Income
+  Statement also turned out fine as shipped: both already scope their
+  wording to the window ("No inflows/outflows in this range," "No
+  income or expense activity in this period"), which never falsely
+  implies "never" the way a bare "yet" would. Budget grid's empty
+  branch (`BudgetPage.tsx:481`, "No activity in this scenario yet") is
+  a defensive fallback for a scenario with zero income/expense accounts
+  in the whole chart — traced through `budget_grid()`
+  (`backend/src/postwarden/modules/budget/service.py:40-65`) to confirm
+  it isn't reachable from a date/month choice at all, so it's not a
+  real two-condition case worth splitting.
+
+  Three screens are a genuine, worthwhile gap — all share the same
+  shape: a point-in-time (`as_of`) or filtered query can make a
+  scenario *look* empty when it just has nothing in the selected
+  window, and the current copy says "yet," which reads as "never,"
+  which is sometimes false and misleading:
+  - **Journal** (`JournalPage.tsx:462-472`) — cheapest of the three:
+    `hasFilters` is already computed (used for the "Clear filters" link
+    at line 397) and just isn't consulted in the empty message yet.
+    Drafted: `hasFilters` true → "No entries match these filters — use
+    Clear filters above to see everything posted."; false → "No entries
+    yet. Post one from" + the existing `+ New entry` button (same
+    element already there, just reworded off "match" since there's no
+    filter to have failed).
+  - **Trial Balance** (`TrialBalancePage.tsx:222`) — needs one thing
+    Journal doesn't: `useScenarios.ts`'s shared `Scenario` interface
+    deliberately doesn't type `entry_count`, even though `GET
+    /scenarios` already returns it (the hook's own comment: "real but
+    unused here" — `ScenariosPage.tsx`'s own bespoke `ScenarioRow`
+    types it separately for the same reason `TagsPage.tsx`'s casts
+    exist). Widening it to include `entry_count: number` is what makes
+    the two conditions distinguishable client-side with no new backend
+    work: `scenario.entry_count === 0` → "No entries posted to this
+    scenario yet. Post your first entry from" + a real `+ New entry`
+    link — which restores a small regression found along the way:
+    legacy's `trial_balance.html:106` had exactly this link
+    ("Post your first entry from <a href=...>+ New entry</a>") and the
+    port dropped it, unrelated to the empty-state distinction itself.
+    `scenario.entry_count > 0` but the result is still empty → "No
+    activity in this scenario as of {asOf || 'today'}. Try an earlier —
+    or blank — “as of” date."
+  - **Variance** (`VariancePage.tsx:264`) — same `entry_count` widening,
+    checked against both the baseline and compare scenario (kept as one
+    combined "either" message, not per-scenario, matching how the rest
+    of the report already treats the pair as a unit): both scenarios at
+    `entry_count === 0` → "Neither scenario has any entries yet. Post
+    one from" + `+ New entry` link; otherwise → "No activity in either
+    scenario as of {asOf || 'today'}. Try an earlier — or blank — “as
+    of” date."
+
+  None of this is wired up yet — no `.tsx` or `.ts` file changed in this
+  pass, `Scenario.entry_count` still isn't typed. Left for a session
+  that can run a real `tsc -b`/`oxlint` pass afterward (this sandbox
+  still has no `node`, per the entry below), and because the interface
+  widening touches every `useScenarios()` caller's type surface even
+  though it only changes behavior in two of them.
 - **2026-08-30** — Phase 5, first pass: a code-only audit plus one real
   fix, done without a browser on either end (this session had none; the
   session's own operator was on a remote/mobile connection with no
