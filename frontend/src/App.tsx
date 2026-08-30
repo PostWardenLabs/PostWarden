@@ -4,6 +4,7 @@ import { Route, Routes, useLocation } from 'react-router-dom'
 import { useAppConfig } from './api/useAppConfig'
 import { useSession } from './auth/sessionContext'
 import LoginPage from './auth/LoginPage'
+import BudgetPage from './budget/BudgetPage'
 import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
@@ -123,6 +124,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/staging') return 'staging'
+  if (pathname === '/app/budget') return 'budget'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
   if (pathname === '/app/cash-flow') return 'cash_flow'
   if (pathname === '/app/income-statement') return 'income_statement'
@@ -149,6 +151,7 @@ const PAGE_TITLES: Record<string, string> = {
   tb: 'Trial Balance',
   entries: 'Journal',
   staging: 'Staging',
+  budget: 'Budget Grid',
   balance_sheet: 'Balance Sheet',
   cash_flow: 'Cash Flow',
   income_statement: 'Income Statement',
@@ -219,6 +222,7 @@ function App() {
         <Route path="/app/ledger" element={<LedgerPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
         <Route path="/app/staging" element={<StagingPage />} />
+        <Route path="/app/budget" element={<BudgetPage />} />
       </Routes>
     </Shell>
   )

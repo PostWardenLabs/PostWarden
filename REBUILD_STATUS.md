@@ -32,6 +32,15 @@ wrong, turn it into a real fix instead of just unchecking it.
       focus management on `StagingPage.tsx`/`StagingEditPanel.tsx` — only
       the API round trip was checked. See Current status's Phase 4.3
       write-up for exactly what *was* verified.
+- [ ] Phase 4.4 (Budget): no browser tool was available to verify hover
+      states or focus management on `BudgetPage.tsx` — in particular the
+      quick-fill menu's own open/close behavior (per-cell chevron *and*
+      the page-level "Set all values" button), whether typing into a
+      Budgeted cell and tabbing/clicking away actually fires the blur
+      save, and whether the live rollup recompute reads correctly at a
+      glance on a real chart of accounts. Only the API round trip was
+      checked. See Current status's Phase 4.4 write-up for exactly what
+      *was* verified.
 
 ---
 
@@ -2873,6 +2882,127 @@ before committing Balance Sheet, so it isn't bundled in here. Flagged to
 David directly rather than silently discarded, in case it was
 in-progress work from elsewhere that shouldn't have been touched.
 
+### Phase 4.4 — Budget
+
+Ported from `app/templates/budget.html` + `budget-grid.js` (Phase 4.4) —
+the Editable grid archetype's only instance
+(`UI_CONSISTENCY_AUDIT.md` §1/§2d). `modules/budget/` (backend) was
+already fully built and tested back in Phase 1.7 — this phase is
+frontend-only, one new file: `budget/BudgetPage.tsx`.
+
+**No fork needed, unlike every prior Phase 4 screen.** Staging/Scheduled/
+Entry templates all reused or forked `journal/`'s entry-grid shape
+because they're variations on the same "edit debits and credits" table.
+Budget's own grid — one editable Budgeted column per leaf account, a
+static Actual column, a live Variance/% Variance pair — has no sibling
+anywhere else in the app, so `BudgetPage.tsx` is entirely self-contained;
+its shape (account tree, collapsible rows, `Actual`/`Variance` columns)
+borrows conventions from `VariancePage.tsx`/`TrialBalancePage.tsx`
+instead (same `useCollapsibleTree` hook, same `Row extends
+CollapsibleRow` pattern, same per-group `GroupRows` sub-component split).
+One real difference from those two: **Budget's own collapse-state
+`localStorage` key is scoped per scenario**
+(`postwarden-budget-collapsed-${scenario}`), matching
+`budget.html`'s own `data-collapse-key="postwarden-budget-collapsed-{{
+scenario }}"` verbatim — Trial Balance/Variance/Balance Sheet all use one
+fixed global key instead, since none of them has a reason a collapsed
+state under one scenario should differ from another's.
+
+**Live client-side recompute, ported from `budget-grid.js`'s own
+`recompute()`.** Typing into a leaf's Budgeted cell has to update that
+leaf's own Variance/% Variance *and* roll up through every ancestor,
+live, with no round trip — Actual never changes here, so only Budgeted
+(and anything derived from it) ever needs recomputing. `computeGrid()`
+is a pure function (one bottom-up pass over the flattened row list,
+keyed by `parent_id`) called fresh on every render via `useMemo`, keyed
+off the fetched `result` and a local `edits` map (`{account id: raw
+typed string}`) — the same two-source-of-truth split (server figures
+until touched, then whatever's locally typed) `budget-grid.js`'s own
+`input.dataset.saved` vs. live DOM value distinction made, just as
+React state instead of dataset attributes. `varianceAmount`/
+`pctVariance` (client-side) are direct ports of `domain.money.
+variance_amount`/`pct_variance` (backend) — duplicated, not shared
+across a network boundary, for the same reason `budget-grid.js` itself
+duplicated `_variance_amount`/`_pct_variance` from `app/main.py`: the
+browser needs the same math with no request in the loop. Saving is still
+a single `POST /budget/cell` per cell, fired on blur, exactly like
+legacy — only the recompute is instant; the save was never meant to be.
+
+**The quick-fill menu (BACKLOG.md's own per-cell chevron, plus the
+page-level "Set all values" button) is a small local floating-menu
+component, not a port of `budget-grid.js`'s vanilla-DOM positioning
+mechanism.** Legacy built one shared `<div>` appended to `document.body`,
+repositioned via `getBoundingClientRect()` on each click, with its own
+hand-rolled outside-click/Escape/scroll listeners. The React version
+(`toggleMenu`/a `menu` state object/a `useEffect` for the three close
+triggers, rendered via `createPortal(..., document.body)` to reuse
+legacy's own "escape the table's stacking context" reasoning) reproduces
+the identical behavior, including the one real subtlety legacy's own
+code has to handle: a second click on the *same* chevron must close the
+menu, not have the outside-click listener close it and the click
+handler's own toggle immediately reopen it. Legacy solves this by
+excluding `menuTarget` from its outside-click check; the port does the
+same (the effect's `onMouseDown` explicitly skips closing when the click
+lands inside `menu.anchor`), verified by reasoning through the event
+order (`mousedown` fires before `click`) rather than assumed.
+
+**New CSS, the only Phase 4 screen so far that's needed any.** Every
+prior Phase 4 screen reused component classes Phase 2.3/3.x had already
+ported (`.ledger`, `.report-table`, `.checkline`, `.combobox-panel`, …).
+Budget's own `.budget-cell`/`.budget-cell-wrap`/`.quickfill-toggle`/
+`.quickfill-menu` never had a caller before this phase, so they're
+ported into `index.css` verbatim from `style.css` now, in the same
+"add it when its first real screen needs it" spirit every earlier CSS
+addition in this rebuild has followed (`.balance-bar` at Phase 3.4,
+the toggle-switch pattern at Phase 4.2's Settings).
+
+**One real gap, decided on rather than silently ported forward:**
+`modules/budget/router.py` has no `/budget/export.csv`/`.xlsx` route at
+all — Phase 1.12 (`export/`) only ever built exports for
+`modules/reports/`/`modules/entries/`, and `UI_CONSISTENCY_AUDIT.md`
+§2d/§3.6 already flagged Budget Grid's missing export as "no such note
+anywhere... worth deciding on purpose rather than leaving as an
+accident." Deciding on purpose, for this phase: adding a new backend
+export route is out of scope for a frontend-only phase built against an
+already-frozen `modules/budget/` module (Phase 1.7 closed with 26 tests
+green; reopening it now to add a CSV/XLSX writer would be scope creep
+for a UI port). `BudgetPage.tsx`'s own file comment records this
+explicitly so it doesn't read as an oversight later — same treatment
+Ledger's own documented "no export" already got, just arrived at from
+the opposite direction (an accident being formalized, not a deliberate
+choice being ported).
+
+**Verified two ways**, the same shape as every frontend-only phase since
+Staging: `tsc -b && vite build` and `oxlint` both clean (run inside a
+throwaway `node:22-slim` container, same reasoning as every prior
+phase — no Node on this machine's own `PATH`). One real oxlint finding
+along the way: a first draft reseeded `edits`/the "already saved" map
+in a second `useEffect` keyed on `[result]`, which oxlint's `react(set-
+state-in-effect)` correctly flagged as a derived-state anti-pattern
+(a second effect merely reacting to state that a different effect just
+set, risking a cascading render) — fixed by folding that reseed directly
+into the fetch effect's own `.then()` callback, right alongside
+`setResult` itself, rather than as a separate reactive effect. Second, a
+real `docker compose -f backend/docker-compose.yml up -d --build
+backend` followed by an **authenticated** round trip (per this repo's
+own "an unauthenticated sweep proves nothing" rule) — logged in as
+`david`/`devpassword`, then: `GET /budget?scenario=BUD2026` matched
+`BudgetPage.tsx`'s own `BudgetResult`/`Row` interfaces field-for-field;
+`POST /budget/cell` (set `4200 Interest & Dividend Income` to `123.45`)
+round-tripped correctly on a follow-up `GET`, with the parent `4000
+Income` node's own rollup (`subtotal`/`budgeted`) correctly reflecting
+the change; reverted the test edit back to `0.00` afterward, confirmed
+clean; `GET /app/budget` (authenticated) returned `200`, serving the SPA
+shell; an unknown scenario code returned the documented zero-figure stub
+(`grouped: []`) rather than a 404/500, driving the "Scenario ... not
+found" message; `month=2026-13` (the exact BACKLOG.md regression this
+page's own Month-as-`<select>`/Combobox design exists to prevent)
+returned `200`, not a 500, confirming `_resolve_month`'s fallback still
+holds against the new backend. No interactive browser tool was available
+in this session, so hover states and focus management (particularly
+around the quick-fill menu's open/close behavior) were not visually
+exercised — added to "Check when back at your computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3040,7 +3170,17 @@ Largely configuration once the Phase 3 archetype components exist.
       abstraction" call `ScheduledPage.tsx` already made). Also closed a
       forward reference from Phase 4.2: `ScheduledPage.tsx` now has its
       pending-Staging banner. See Current status for the full write-up.
-- [ ] **4.4** budget (Editable grid archetype)
+- [x] **4.4** budget (Editable grid archetype) — backend already done
+      (Phase 1.7); frontend-only this phase. `BudgetPage.tsx` is the one
+      new component (no `EntryGrid.tsx`-style fork needed — nothing else
+      in the app shares this archetype). Live client-side rollup
+      recompute ported from `budget-grid.js`, quick-fill chevron menu
+      ported as a small local floating-menu component rather than
+      vanilla-DOM repositioning. New CSS (`.budget-cell`/
+      `.budget-cell-wrap`/`.quickfill-toggle`/`.quickfill-menu`) — the
+      only Phase 4 screen so far that needed genuinely new component CSS,
+      not just reuse of what Phase 2.3/3.x already ported. See Current
+      status for the full write-up.
 - [ ] **4.5** staging_duplicates
 - [ ] **4.6** accounts
 - [ ] **4.7** The rest: dashboard, connect_bi, import, import_mapped,

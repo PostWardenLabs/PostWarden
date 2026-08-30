@@ -41,7 +41,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'scheduled', label: 'Scheduled Entries', href: '/app/scheduled', client: true },
       { key: 'import', label: 'Import', href: '/import' },
       { key: 'templates', label: 'Templates', href: '/app/templates', client: true },
-      { key: 'budget', label: 'Budget Grid', href: '/budget' },
+      { key: 'budget', label: 'Budget Grid', href: '/app/budget', client: true },
     ],
   },
   {

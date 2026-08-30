@@ -2012,6 +2012,41 @@ table.entry-grid td { padding: 0.2rem 0.3rem; }
 table.entry-grid .col-account { width: 42%; }
 table.entry-grid .col-amount  { width: 15%; }
 
+/* -- budget grid (BudgetPage.tsx, Phase 4.4 — see budget-grid.js for the
+   legacy mechanism this ports) ---------------------------------------- */
+.budget-cell { width: 100%; border-color: var(--rule); }
+/* Quick-fill chevron ("Set to ACTUAL value of last month", ...) — sits
+   flush against the cell's own input rather than the input having its
+   own right-side padding carved out for it, so a cell with the chevron
+   looks the same width as it always did. Reuses the input's own
+   right-hand rule border rather than drawing a second one, so the pair
+   reads as one control, not two adjacent boxes. */
+.budget-cell-wrap { display: flex; align-items: stretch; gap: 0; }
+.budget-cell-wrap .budget-cell { border-right: none; border-radius: 2px 0 0 2px; }
+.quickfill-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 1.3rem; padding: 0; background: var(--surface);
+  border: 1px solid var(--rule); border-left: none; border-radius: 0 2px 2px 0;
+  color: var(--ink-soft); cursor: pointer;
+}
+.quickfill-toggle:hover { background: var(--paper-deep); color: var(--ink); }
+/* The quick-fill menu (Combobox.tsx's own floating-panel look, reused
+   wholesale — border/shadow/hover-accent — same reasoning as reusing
+   .chevron itself: one popover visual language across the app rather
+   than a parallel one-off just for this feature). position: fixed, not
+   absolute — it needs to sit next to whichever chevron was clicked
+   anywhere in a tall, independently-scrolling report table, and fixed
+   positioning (computed fresh on each open) sidesteps needing an
+   offset-parent relationship with a cell buried in a scroll container. */
+/* z-index 65, not the standard combobox-panel 20 — this menu is
+   `position: fixed` and can open near the page's left edge (Budget
+   Grid's own page-level "Set all values" button sits right next to the
+   sidebar boundary), where z-index 20 rendered it behind the sidebar
+   (z-index 55) instead of on top of it. 65 clears both the sidebar and
+   its own toggle button (60), still under confirm-overlay's 100. */
+.quickfill-menu { position: fixed; z-index: 65; min-width: 15rem; }
+.quickfill-menu.combobox-panel { max-height: none; }
+
 .balance-bar {
   display: flex; gap: 2rem; align-items: baseline; flex-wrap: wrap;
   margin-top: 0.9rem; padding: 0.7rem 0.9rem;
