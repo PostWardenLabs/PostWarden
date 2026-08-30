@@ -3912,7 +3912,10 @@ list to grow as items are discovered, not just shrink.
       2026-08-30, copy drafted for the three screens that actually need
       it (Journal, Trial Balance, Variance — see 2026-08-30 changes-log
       entry for the exact strings and why the rest of the app doesn't
-      need this); still unimplemented
+      need this); still unimplemented. Budget grid's own "zero
+      income-statement-only scenarios" state audited separately
+      (2026-08-30) and confirmed already correct as shipped — no second
+      condition actually exists there, so no copy change is owed
 - [x] `help.html`'s content, and the `?` deep-links into it — content
       shipped with Phase 4.7; deep-links wired 2026-08-30 across all 17
       screens that were still missing them (verified against every
@@ -3961,6 +3964,29 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 5 item 8, addendum: audited Budget grid's other
+  empty state — the top-level "no income-statement-only scenarios
+  exist at all" gate (`BudgetPage.tsx:408-416`,
+  `isoScenarios.length === 0`), distinct from the "no activity in this
+  scenario" branch the prior entry already covered. Checked whether it
+  has the same nothing-exists-vs-nothing-matches split as Journal/Trial
+  Balance/Variance: it doesn't, and can't — `scenarios` has no
+  `is_active`/archive column at all (`db/schema.sql:145-158`, only
+  `is_locked`), so "zero income-statement-only scenarios" is a single,
+  genuinely binary condition, not two conditions collapsed into one
+  message. The screen already has what would be the second condition,
+  too, just as its own separate branch a few lines down: once at least
+  one such scenario exists, an invalid/mistyped `?scenario=` param hits
+  `!scenExists` instead ("Scenario {scenario} not found or isn't
+  income-statement-only") — so the Journal/Staging-style two-message
+  split is effectively already there, just expressed as two different
+  code paths rather than one ternary. Current copy for the
+  zero-scenarios gate — "No income-statement-only scenarios yet. Create
+  one from Scenarios — check 'income statement only' when you do." —
+  matches legacy's `budget.html:12` verbatim and needs no change; same
+  for the `!scenExists` message against `budget.html:58`. No copy
+  drafted because none is owed here; recorded so this state doesn't
+  read as an overlooked fourth gap sitting next to the three real ones.
 - **2026-08-30** — Phase 5 item 8 (distinct empty states), second pass:
   surveyed every screen's empty-state message, found the real scope is
   much narrower than the first pass's "most screens" guess, and drafted
