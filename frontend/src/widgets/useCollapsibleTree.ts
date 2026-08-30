@@ -11,13 +11,18 @@ import { useEffect, useMemo, useState } from 'react'
 // used, not scenario/date-scoped, so paging through months or switching
 // scenarios doesn't reset which sections a viewer already collapsed.
 //
-// A row with no `id` at all (Trial Balance's synthetic "Current/Prior
-// Year Earnings (Unclosed)" rows — `domain.accounts.earnings_row` sets
-// no `id`/`parent_id` key) is never registered in `byId` and never
+// A row with no `id` at all is never registered in `byId` and never
 // hidden by an ancestor's collapse — the same behavior report-tree.js's
-// own `tr[data-id]` selector gave for free, since Jinja never emitted
-// a `data-id` attribute on that row's `<tr>` at all (see
-// `trial_balance.html`'s own `{% if r.id is defined %}` guard).
+// own `tr[data-id]` selector gave for free, since Jinja never emitted a
+// `data-id` attribute on such a row's `<tr>` at all (see
+// `trial_balance.html`'s own `{% if r.id is defined %}` guard). Trial
+// Balance/Balance Sheet's synthetic "Retained Earnings" node used to be
+// exactly this case — two flat rows with no `id`/`parent_id`, invisible
+// to this hook on purpose. It isn't anymore: `domain.accounts.
+// earnings_rows` now gives it real (reserved, negative-sentinel) ids
+// specifically so it becomes a genuine collapsible parent/children unit
+// like any real account — the id-less case above is about a row this
+// hook is deliberately never asked to track, not about that feature.
 export interface CollapsibleRow {
   id?: number
   parent_id?: number | null

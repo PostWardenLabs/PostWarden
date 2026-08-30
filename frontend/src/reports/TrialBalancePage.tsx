@@ -96,9 +96,9 @@ export default function TrialBalancePage() {
   // Every leaf row across every group, in one flat list — what
   // useCollapsibleTree needs to walk parent chains regardless of which
   // section (Assets, Liabilities, ...) a given account sits in; the
-  // synthetic earnings rows (no `id`) fall out of this the same way they
-  // fall out of report-tree.js's own `tr[data-id]` selector, see that
-  // hook's own docstring.
+  // synthetic "Retained Earnings" node (a real parent/children triple,
+  // `domain.accounts.earnings_rows`) is registered here exactly like a
+  // real account is, unlike its old flat, id-less, tree-invisible shape.
   const allRows = result ? result.grouped.flatMap((g) => g.rows) : []
   const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
 
@@ -233,11 +233,11 @@ function GroupRows({ group, tree }: { group: Group; tree: ReturnType<typeof useC
       </tr>
       {group.rows.map((r, i) =>
         tree.isHidden(r) ? null : (
-          // Rows with no `id` (the synthetic earnings rows) fall back to
-          // an index key — never reordered/added mid-list independently
-          // of the rest of `group.rows`, so index is stable here, same
-          // reasoning `entity-manage.js`'s own precursor never needed a
-          // key at all (server-rendered, not React).
+          // Every row here — real account or the synthetic "Retained
+          // Earnings" node — carries a real `id` now, so the `?? index`
+          // fallback below is purely defensive at this point; kept
+          // rather than removed, since `Row["id"]` is still optional on
+          // the type and nothing enforces every future caller sets one.
           <tr
             key={r.id ?? `${group.type}-${i}`}
             className={r.id !== undefined && r.has_children && tree.isCollapsed(r.id) ? 'collapsed' : undefined}

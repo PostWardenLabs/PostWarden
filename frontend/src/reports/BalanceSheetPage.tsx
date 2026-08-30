@@ -16,11 +16,16 @@ import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsib
 // response is NOT the `{grouped: [...]}` per-type-section shape Trial
 // Balance returns — `service.balance_sheet` flattens straight to three
 // separate top-level arrays (`assets`/`liabilities`/`equity`), each
-// already a flatten_tree() row list with no section wrapper, plus a
-// separate `earnings_lines` list of plain 2-tuples (`[label, amount]`,
-// not `{label, amount}` objects — this is exactly what
-// `service.balance_sheet` returns, confirmed by reading it directly, not
-// assumed from Trial Balance's shape).
+// already a flatten_tree() row list with no section wrapper.
+//
+// There used to be a fourth field here, `earnings_lines` — a flat list
+// of plain `[label, amount]` tuples rendered in its own separate `.map`
+// below `equity`, bypassing `tree` entirely. It's gone: the "Retained
+// Earnings" figure is a real collapsible tree node now (see
+// `domain.accounts.earnings_rows`'s own docstring), appended straight
+// onto `result["equity"]` server-side, so it renders through the exact
+// same `SectionRows` component every real Equity account already does —
+// no separate render path needed here at all.
 interface Row extends CollapsibleRow {
   account_code: string
   account_name: string
@@ -41,7 +46,6 @@ interface BalanceSheetResult {
   assets: Row[]
   liabilities: Row[]
   equity: Row[]
-  earnings_lines: [string, string | number][]
   total_assets: string
   total_liabilities: string
   total_equity: string
@@ -84,11 +88,11 @@ export default function BalanceSheetPage() {
 
   // One tree across all three sections — same reasoning TrialBalancePage
   // gives: useCollapsibleTree only needs a flat list to walk parent
-  // chains, it doesn't care which section a row's in. Rows with no `id`
-  // (the earnings_lines tuples) aren't part of this list at all here —
-  // unlike Trial Balance's synthetic equity rows, Balance Sheet's
-  // earnings lines are real 2-tuples rendered separately below, never
-  // registered with the tree.
+  // chains, it doesn't care which section a row's in. `result.equity`
+  // already includes the synthetic "Retained Earnings" node (a real
+  // parent/children triple now, not id-less tuples), so it's registered
+  // with the tree exactly like every real Equity account is — no
+  // separate handling needed.
   const allRows = result ? [...result.assets, ...result.liabilities, ...result.equity] : []
   const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
 
@@ -159,6 +163,22 @@ export default function BalanceSheetPage() {
         </label>
       </p>
 
+      {/* Unlike Trial Balance's own raw=1, there's no Income/Expense
+          section here for the unclosed P&L to relocate into — so raw=1
+          means the "Retained Earnings" line is just gone, not merged
+          into one line the way an earlier version of this page did.
+          That's not a bug: SPEC.md decision 10's own addendum on this
+          is explicit that a balance sheet genuinely doesn't reconcile
+          against Assets alone before a real close, and PostWarden never
+          performs one. Said up front, not just implied by the grand
+          total row quietly turning red below. */}
+      {raw && (
+        <p className="dim small">
+          *Balance sheet won't balance pre-close — Assets already reflect this year's activity, Equity won't
+          until you close.
+        </p>
+      )}
+
       {result === null ? (
         <p>Loading…</p>
       ) : (
@@ -195,13 +215,6 @@ export default function BalanceSheetPage() {
               </tr>
 
               <SectionRows label="Equity" rows={result.equity} tree={tree} sign={-1} />
-              {result.earnings_lines.map(([label, amount]) => (
-                <tr key={label}>
-                  <td></td>
-                  <td className="acct-name depth-2 dim">{label}</td>
-                  <td className="num money money-first">{formatMoney(amount)}</td>
-                </tr>
-              ))}
               <tr className="subtotal">
                 <td></td>
                 <td>Total equity</td>
@@ -212,7 +225,11 @@ export default function BalanceSheetPage() {
                 <td></td>
                 <td>
                   Total liabilities + equity
-                  {!result.in_balance && <span className="small dim"> (doesn't match total assets)</span>}
+                  {!result.in_balance && (
+                    <span className="small dim">
+                      {raw ? ' (expected — see note above)' : " (doesn't match total assets)"}
+                    </span>
+                  )}
                 </td>
                 <td className="num money money-first">{formatMoney(result.total_liab_and_equity)}</td>
               </tr>
