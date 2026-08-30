@@ -20,6 +20,21 @@ note in the log.
 
 ---
 
+## Check when back at your computer
+
+Things flagged during a remote/no-browser session that need a real
+manual pass once you're actually at the machine — not blocking, but
+don't let them get lost. Clear an item once checked; if something's
+wrong, turn it into a real fix instead of just unchecking it.
+
+- [ ] Phase 4.3 (Staging): no browser tool was available to verify hover
+      states, the Alt+A/Alt+R/Alt+N/Alt+D/Alt+S keyboard shortcuts, and
+      focus management on `StagingPage.tsx`/`StagingEditPanel.tsx` — only
+      the API round trip was checked. See Current status's Phase 4.3
+      write-up for exactly what *was* verified.
+
+---
+
 ## Current status
 
 **Phase 0 done.** `backend/` exists as a `src`-layout package with the full
