@@ -9,16 +9,28 @@ name: Backend CI
 #
 # Scoped to backend/ paths on purpose: frontend/ doesn't exist yet, and
 # legacy app/ has its own (nonexistent) CI story that this doesn't touch.
+#
+# Phase 1.15 added the second job below: the root `tests/` suite
+# (`test_invariants.py`, `test_cashflow.py`) — REBUILD.md §3's "60
+# pure-Postgres tests," the safety net this whole rebuild leans on — had
+# never actually run in CI at all, on any branch (`master` has none, and
+# this workflow was scoped to `backend/` only). A safety net nobody
+# checks isn't one; it only ever ran by hand, per README's "Tests"
+# section. `tests/**` is added to the trigger paths for the same reason
+# `db/schema.sql` already was: that's what these tests are actually
+# exercising.
 on:
   push:
     paths:
       - "backend/**"
       - "db/schema.sql"
+      - "tests/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
       - "backend/**"
       - "db/schema.sql"
+      - "tests/**"
       - ".github/workflows/backend-ci.yml"
   workflow_dispatch: {}
 
@@ -59,3 +71,45 @@ jobs:
       - name: pytest
         working-directory: backend
         run: pytest -q
+
+  invariants:
+    # Deliberately its own job, own Postgres service, not a step tacked
+    # onto `test` above: these tests apply `db/schema.sql` directly
+    # (`tests/conftest.py`'s own `CREATE DATABASE` + raw SQL file), not
+    # through Alembic — mixing that into the `test` job's already-migrated
+    # database would mean two different schema-provisioning paths sharing
+    # one Postgres instance for no reason. Only `psycopg`/`pytest` are
+    # installed, not `backend`'s own package or `requirements-dev.txt`'s
+    # full legacy-app dependency set: `tests/test_invariants.py` and
+    # `tests/test_cashflow.py` import neither, by design (REBUILD.md §3 —
+    # "never import the app").
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postwarden
+          POSTGRES_PASSWORD: postwarden
+          POSTGRES_DB: postwarden
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postwarden -d postwarden"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTWARDEN_TEST_ADMIN_URL: postgresql://postwarden:postwarden@localhost:5432/postgres
+      POSTWARDEN_TEST_URL: postgresql://postwarden:postwarden@localhost:5432/postwarden_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install "psycopg[binary]>=3.2" "pytest>=8.0"
+
+      - name: pytest
+        run: pytest tests/test_invariants.py tests/test_cashflow.py -v
