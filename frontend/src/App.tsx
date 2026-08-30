@@ -12,6 +12,7 @@ import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
 import PayeesPage from './setup/PayeesPage'
+import ScenariosPage from './setup/ScenariosPage'
 import Shell from './shell/Shell'
 import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
@@ -107,6 +108,7 @@ function Dashboard() {
 function routeKey(pathname: string): string {
   if (pathname === '/app/tags') return 'tags'
   if (pathname === '/app/payees') return 'payees'
+  if (pathname === '/app/scenarios') return 'scenarios'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
@@ -126,6 +128,7 @@ function routeKey(pathname: string): string {
 const PAGE_TITLES: Record<string, string> = {
   tags: 'Tags',
   payees: 'Payees',
+  scenarios: 'Scenarios',
   tb: 'Trial Balance',
   entries: 'Journal',
   balance_sheet: 'Balance Sheet',
@@ -184,6 +187,7 @@ function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/payees" element={<PayeesPage />} />
+        <Route path="/app/scenarios" element={<ScenariosPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/cash-flow" element={<CashFlowPage />} />

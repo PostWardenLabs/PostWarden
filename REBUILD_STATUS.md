@@ -2488,6 +2488,43 @@ single-text-field form submission — confirmed to be a pre-existing
 harness quirk, not a regression, by reproducing the identical non-
 submission on the already-shipped TagsPage.tsx first).
 
+**Phase 4.2, screen 2 of 6 — Scenarios done.** `frontend/src/setup/
+ScenariosPage.tsx`, ported from `app/templates/scenarios.html`, no
+vanilla-JS counterpart beyond the inline `<script>` toggling two form
+fields when "income statement only" is checked (ported as a plain
+conditional render instead of a DOM `hidden` flip). No backend work —
+same `modules/reference/` leftover-bundling `PayeesPage.tsx`'s own
+write-up already explains. Structurally unlike Payees/Tags on purpose,
+not by omission: legacy's own table has exactly one per-row action
+(Lock/Unlock, no rename/archive/delete), and the "add" UI is a
+permanent `<div class="panel">` form, not a collapsible `<details>` —
+so this page has no Select/Merge bar and doesn't reach for
+`useSelectMode.ts`/`MergeDialog.tsx` at all, unlike every other 4.2
+screen so far. Reuses `useAccountLevels()` (`api/useAccountLevels.ts`)
+for the "Base level" picker — exactly the second caller that hook's own
+Phase 3.4 comment predicted.
+
+One real default worth flagging: the create form's "require balanced
+entries" checkbox starts unchecked, matching `scenarios.html`'s own
+checkbox with no `checked` attribute — even though `schemas.
+CreateScenarioRequest.enforce_balance` defaults to `True` at the
+Pydantic layer. No conflict in practice: a controlled checkbox always
+sends an explicit `false` on first submit, same as a legacy form POST
+with the box left unticked; the schema default only ever matters for a
+request that omits the field entirely, which this page's own submit
+handler never does.
+
+Verified with a real `docker compose up -d --build`: clean `tsc -b &&
+vite build`, `oxlint` 0 warnings/errors, then browser-driven against the
+running container (real seed data, not empty tables) — the three
+existing scenarios (Actual/Budget 2026/Staging) rendered with correct
+Kind/Balance rule/Base level derivations for all three real shapes
+(full ledger, income-statement-only, staging); the income-statement-only
+checkbox correctly hid/showed the balance-rule and base-level fields;
+created a real scenario end to end (defaults verified: `budget` type,
+"single-sided OK", "leaves only"); Lock/Unlock round-tripped and flipped
+the status badge. No console errors.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2650,8 +2687,8 @@ Largely configuration once the Phase 3 archetype components exist.
       the only screen this phase that wasn't just frontend against an
       already-existing route.
 - [~] **4.2** Remaining Management/CRUD: payees, scenarios,
-      account_levels, scheduled, entry_templates, settings. Payees
-      done — see Current status.
+      account_levels, scheduled, entry_templates, settings. Payees and
+      Scenarios done — see Current status.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates
