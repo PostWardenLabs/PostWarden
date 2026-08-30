@@ -2139,6 +2139,75 @@ grand total row reads "in balance" with Assets (122,544.51) exactly
 matching Liabilities + Equity; both `.csv`/`.xlsx` export URLs `200` with
 the right content-type over a real authenticated `curl` round trip.
 
+**Phase 4.1, screen 2 of 5 — Cash Flow done.**
+`frontend/src/reports/CashFlowPage.tsx` — the first Range/period screen
+(Income Statement/Cash Flow, per `UI_CONSISTENCY_AUDIT.md` §1), so the
+first to use URL-state `date_from`/`date_to` instead of a single `as_of`,
+and the first with no account hierarchy at all (flat sections, no
+`useCollapsibleTree`). No backend changes — `GET /reports/cash-flow` has
+existed since Phase 1.4/1.14.
+
+**New shared widget: `frontend/src/widgets/PeriodPresetPicker.tsx`** (+
+`periodPresets.ts` for the pure logic — split out once oxlint's
+`react(only-export-components)` flagged the combined file, same fix
+`journal/gridLines.ts`/`widgets/confirmContext.ts` already applied),
+ported from `app/static/js/period-picker.js`. Per
+`UI_CONSISTENCY_AUDIT.md` §4b's own recommendation to promote Income
+Statement's period-preset dropdown to both range reports, this lands
+with Cash Flow (its first caller) rather than waiting for Income
+Statement. A plain controlled component, not a port of legacy's own
+DOM-querying/on-load-reverse-match mechanism — React re-renders the
+right selection from whatever's already in the URL, so `matchPreset`
+just runs at render time instead of once on load. Every new picker this
+phase (this one included) is a `Combobox` from the start, never a raw
+`<select>` — the exact bug class the 2026-08-30 QA pass already found
+and fixed eight times over.
+
+Structural notes from reading `service.cash_flow_rows`/
+`cash_flow_tie_out` directly: `inflows`/`outflows`/`ledger_adjustments`
+are flat row lists (`account_code`, `account_name`, `parent_path`,
+`amount`, `flagged`, `netted_from: [{account_code, account_name,
+amount}]`), and `tie_out` is a nested object
+(`ok`/`statement_total`/`cash_leg_net`/`balance_delta`/`beginning`/
+`ending`). Ported `cash_flow.html`'s two independent `.flash-warn`
+banners (tie-out failure, shown only if `!tie_out.ok`; flagged
+multi-cash-leg transactions, shown only if non-empty) and its
+Beginning→Inflows→Outflows→optional-Ledger-adjustments→Net-change→Ending
+row order exactly, including the `netted_from` sub-line and the
+`·multi-cash` flag annotation.
+
+Legacy's `dateformat` filter (used on `flagged_entries[].entry_date`) has
+no port yet — same gap `format/money.ts`'s own comment already documents
+for a Settings screen that doesn't exist (Phase 4.2/4.7); rendered as
+plain ISO text instead, matching `JournalPage.tsx`'s own precedent for
+`entry_date` (Phase 3.4), not a new gap this screen introduces.
+`entry_link`'s drill-through to a filtered Journal also stays unwrapped,
+same "don't reach into a screen that doesn't exist yet"-shaped deferral
+Trial Balance's and Balance Sheet's own comments already carry forward
+even though `/app/entries` exists today — consistency with those two
+beats this screen alone jumping ahead.
+
+Wired into `App.tsx`/`nav.ts` (`cash_flow` → `/app/cash-flow`).
+
+**Verified for real**, same four checks as Balance Sheet: `docker compose
+up -d --build` clean; `tsc -b` + `vite build` + `oxlint` clean (`oxlint`
+via a throwaway `node:22-slim` container, same as Balance Sheet — this
+phase's own lint warning above was caught and fixed this way, not by the
+Docker build, which doesn't run lint); 532 backend tests + the 60
+pure-Postgres tests green (unchanged, no backend code touched); and a
+real browser pass — the flagged-entries banner rendering with its real
+transaction (a multi-cash-leg Opening Balance entry from
+`seed_demo.sql`), `netted_from` rendering under Salary Income, the
+Period Combobox correctly reverse-matching "This month" against the
+default `date_from`/`date_to` on load, selecting "Last quarter"
+recomputing the range to `2026-04-01`–`2026-06-30` and both sections
+correctly showing "No inflows/outflows in this range" with the banners
+disappearing, and both `.csv`/`.xlsx` exports `200`ing over a real
+authenticated `curl` round trip. No tie-out failure was reproducible
+against `seed_demo.sql`'s own data (it ties out clean), so that specific
+banner's real rendering is still unverified in-browser — noted rather
+than silently skipped.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2295,8 +2364,8 @@ Largely configuration once the Phase 3 archetype components exist.
 
 - [~] **4.1** Remaining Range/period + Point-in-time reports:
       income_statement, cash_flow, balance_sheet, variance, ledger.
-      Balance Sheet done (see Current status); income_statement,
-      cash_flow, variance, ledger remain — ledger also needs new
+      Balance Sheet and Cash Flow done (see Current status);
+      income_statement, variance, ledger remain — ledger also needs new
       backend work (no `/ledger`-equivalent route exists yet, see its
       own note when that commit lands).
 - [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
@@ -2375,6 +2444,12 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 4.1, screen 2 of 5: Cash Flow done,
+  `frontend/src/reports/CashFlowPage.tsx`, plus the new shared
+  `widgets/PeriodPresetPicker.tsx`/`periodPresets.ts` (promoted from
+  Income Statement to both range reports per
+  `UI_CONSISTENCY_AUDIT.md` §4b, landing with its first caller rather
+  than waiting). See Current status for the full write-up.
 - **2026-08-30** — Phase 4.1 started: Balance Sheet (screen 1 of 5) done,
   `frontend/src/reports/BalanceSheetPage.tsx`. First screen built since
   the Phase 3 go/no-go gate passed. Also the first phase verified with a

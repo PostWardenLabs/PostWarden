@@ -6,6 +6,7 @@ import { useSession } from './auth/sessionContext'
 import LoginPage from './auth/LoginPage'
 import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
+import CashFlowPage from './reports/CashFlowPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import Shell from './shell/Shell'
 import TagsPage from './tags/TagsPage'
@@ -104,6 +105,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
+  if (pathname === '/app/cash-flow') return 'cash_flow'
   return 'dashboard'
 }
 
@@ -118,6 +120,7 @@ const PAGE_TITLES: Record<string, string> = {
   tb: 'Trial Balance',
   entries: 'Journal',
   balance_sheet: 'Balance Sheet',
+  cash_flow: 'Cash Flow',
 }
 
 // Root component. As of Phase 3.1, this is the real end-to-end pipeline
@@ -170,6 +173,7 @@ function App() {
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
+        <Route path="/app/cash-flow" element={<CashFlowPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
       </Routes>
     </Shell>

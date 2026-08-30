@@ -50,7 +50,7 @@ export const NAV_GROUPS: NavGroup[] = [
     links: [
       { key: 'balance_sheet', label: 'Balance Sheet', href: '/app/balance-sheet', client: true },
       { key: 'income_statement', label: 'Income Statement', href: '/income-statement' },
-      { key: 'cash_flow', label: 'Cash Flow', href: '/cash-flow' },
+      { key: 'cash_flow', label: 'Cash Flow', href: '/app/cash-flow', client: true },
       { key: 'variance', label: 'Variance', href: '/variance' },
       { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance', client: true },
       { key: 'ledger', label: 'Ledger', href: '/ledger' },
