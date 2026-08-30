@@ -95,6 +95,29 @@ wrong, turn it into a real fix instead of just unchecking it.
       write-up for exactly what *was* verified. This is the last
       unverified item from Phase 4 — Phase 5 is where a full visual pass
       happens.
+- [ ] 2026-08-30 session (Retained Earnings tree + Balance Sheet raw
+      imbalance + app-wide dash-for-zero): no `node`/`npm` on `PATH` in
+      that sandbox at all (confirmed — `frontend/node_modules/.bin/tsc`
+      exists but its own shebang needs `node`, which isn't installed
+      anywhere on that machine), so none of that session's frontend
+      changes have been through a real `tsc -b`/build, let alone a
+      browser. Needs, in order: (1) a real typecheck/build — every
+      change was reviewed by hand for type-signature compatibility, but
+      hand review isn't a compiler; (2) Balance Sheet with `raw=1`
+      checked, to see the "Retained Earnings" node actually disappear
+      and the "*Balance sheet won't balance pre-close" note/red grand
+      total render correctly, on a scenario with real unclosed P&L; (3)
+      Trial Balance's own "Retained Earnings" parent row expand/collapse
+      (click-to-toggle, same as any real account) — this is the first
+      time a *synthetic* row has ever been collapsible, worth confirming
+      it behaves identically to a real one, not just compiles like one;
+      (4) a skim across Balance Sheet, Cash Flow, Income Statement,
+      Variance, Budget grid, Dashboard, and Journal/Staging's per-entry
+      badge for the new "—" on a genuinely zero figure, to confirm it
+      reads as intended rather than looking like a rendering glitch.
+      See REBUILD_STATUS.md's own changes-log entries for this session
+      (both dated 2026-08-30) for the full reasoning and exact commits
+      (`756ebbd`, `738c6a7`, `3e2d01f`, `4182ce2`).
 
 ---
 
