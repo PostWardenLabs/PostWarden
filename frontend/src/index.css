@@ -1954,6 +1954,70 @@ tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
 .small { font-size: 0.8rem; }
 
 /* =========================================================================
+   Phase 4.6 — Accounts (the chart-of-accounts management screen) CSS
+   ported from app/static/style.css, verbatim except one additive
+   selector (noted below). The tree/collapse mechanics themselves
+   (`.acct-name`/`.depth-N`/`.tree-toggle`/`data-postable`) already
+   landed in Phase 3.3 above — this is only what Accounts adds on top:
+   the two-column level browser and the inline "+" gap-add rows.
+
+   `.side-nav`'s per-item filters are plain `<button>`s in
+   AccountsPage.tsx, not `<a href>` — they re-filter the same
+   already-fetched account list by depth client-side rather than
+   navigating anywhere, so a real anchor would misrepresent them as
+   navigable resources the way legacy's own full-page `?level_id=`
+   links were. `.side-nav button` is added alongside every `.side-nav
+   a` selector for exactly that reason, with a small reset
+   (background/border/text-align) `<a>` never needed; "Manage levels…"
+   is a real `<Link>` (a genuine route change) and keeps using the `a`
+   selectors unchanged. */
+.two-col { display: flex; gap: 1.5rem; align-items: flex-start; }
+.side-nav {
+  flex: 0 0 12rem; display: flex; flex-direction: column; gap: 0.15rem;
+  border: 1px solid var(--rule); background: var(--surface); padding: 0.6rem;
+  position: sticky; top: 1rem;
+}
+.side-nav a, .side-nav button {
+  display: block; width: 100%; padding: 0.35rem 0.5rem; text-decoration: none;
+  color: var(--ink); border-radius: 2px; font-size: 0.9rem;
+  background: none; border: none; text-align: left; font-family: inherit; cursor: pointer;
+}
+.side-nav a:hover, .side-nav button:hover { background: var(--paper-deep); }
+.side-nav a.active, .side-nav button.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.side-nav a.dim { color: var(--ink-soft); font-size: 0.82rem; }
+.two-col-main { flex: 1; min-width: 0; }
+.two-col-main > h2:first-child { margin-top: 0; }
+
+/* Inline "add category here" gap rows, Actual Budget-style — ported
+   from accounts.js's own DOM-toggle version. AccountsPage.tsx
+   conditionally renders either the trigger button or the form instead
+   of toggling an `.open` class over both already-present elements, so
+   `.add-gap .add-gap-trigger`/`.add-gap-form`'s own `display: none`
+   defaults never actually have anything to hide here — kept anyway
+   since they're harmless and this stays a verbatim port rather than a
+   trimmed-down rewrite. */
+tr.add-gap td {
+  padding: 0; border: none; height: 0.45rem; position: relative;
+}
+tr.add-gap .add-gap-trigger {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 1.3rem; height: 1.3rem; padding: 0; line-height: 1;
+  border-radius: 999px; border: 1px solid var(--rule-strong);
+  background: var(--surface); color: var(--ink-soft); cursor: pointer;
+  font-size: 0.85rem; opacity: 0; transition: opacity 120ms ease;
+}
+tr.add-gap:hover .add-gap-trigger { opacity: 1; }
+tr.add-gap:hover td { background: var(--paper-deep); }
+tr.add-gap.open td { height: auto; padding: 0.45rem 0.6rem; background: var(--paper-deep); }
+tr.add-gap.open .add-gap-trigger { display: none; }
+tr.add-gap .add-gap-form {
+  display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+}
+tr.add-gap.open .add-gap-form { display: flex; }
+tr.add-gap .add-gap-form input[type="text"] { flex: 1; min-width: 10rem; }
+tr.add-gap .add-gap-type { max-width: 11rem; }
+
+/* =========================================================================
    Phase 3.4 — Journal (the hardest screen, and REBUILD.md §9's own go/
    no-go gate) CSS ported from app/static/style.css, verbatim.
 

@@ -8,21 +8,26 @@ import client from './client'
 // `{[key: string]: unknown}[]` — same gap `useScenarios.ts` already
 // documents for its own plain-dict route, cast through this local
 // interface instead. First caller is the Journal's `usePostableAccounts.ts`
-// (Phase 3.4), which needs `is_postable`/`is_active`/`depth` to reproduce
-// legacy's `postable_accounts_for_pickers`/`postable_accounts_by_scenario`
-// filtering client-side — every other field `v_dim_account` carries
-// (`parent_id`, `parent_path`, `sort_path`, `normal_side`, `account_type`,
-// `is_cashflow`) is real but unused here; Accounts' own CRUD screen
-// (Phase 4.6) is a more likely second caller than a reason to trim this
-// down further now.
+// (Phase 3.4), which only needed `is_postable`/`is_active`/`depth`;
+// `account_type`/`parent_id`/`is_cashflow`/`parent_path` were added in
+// Phase 4.6 for Accounts' own CRUD screen, the second caller this file's
+// own comment anticipated — `sort_path`/`normal_side` are still real but
+// unused by either caller (the former because `v_dim_account` already
+// arrives pre-sorted by it; the latter has no caller at all yet).
+export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+
 export interface Account {
   id: number
   code: string
   name: string
+  account_type: AccountType
+  parent_id: number | null
   path: string
+  parent_path: string | null
   depth: number
   is_postable: boolean
   is_active: boolean
+  is_cashflow: boolean
 }
 
 // A plain one-shot hook, same shape as `useScenarios.ts` — see that

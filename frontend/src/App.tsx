@@ -13,6 +13,7 @@ import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
 import AccountLevelsPage from './setup/AccountLevelsPage'
+import AccountsPage from './setup/AccountsPage'
 import EntryTemplatesPage from './setup/EntryTemplatesPage'
 import PayeesPage from './setup/PayeesPage'
 import ScenariosPage from './setup/ScenariosPage'
@@ -114,6 +115,7 @@ function Dashboard() {
 // one line per screen as Phase 4 moves each into `/app/*`, same as
 // nav.ts's own `client` flag.
 function routeKey(pathname: string): string {
+  if (pathname === '/app/accounts') return 'accounts'
   if (pathname === '/app/tags') return 'tags'
   if (pathname === '/app/payees') return 'payees'
   if (pathname === '/app/scenarios') return 'scenarios'
@@ -142,6 +144,7 @@ function routeKey(pathname: string): string {
 // own comment) rather than importing NAV_GROUPS' own labels, which
 // aren't keyed for a 1:1 lookup this cheap anyway.
 const PAGE_TITLES: Record<string, string> = {
+  accounts: 'Accounts',
   tags: 'Tags',
   payees: 'Payees',
   scenarios: 'Scenarios',
@@ -209,6 +212,7 @@ function App() {
            user={session.user} onLogout={session.logout} version={config.version || undefined}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/app/accounts" element={<AccountsPage />} />
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/payees" element={<PayeesPage />} />
         <Route path="/app/scenarios" element={<ScenariosPage />} />

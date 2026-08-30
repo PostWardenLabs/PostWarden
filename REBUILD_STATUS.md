@@ -50,6 +50,13 @@ wrong, turn it into a real fix instead of just unchecking it.
       its indeterminate state correctly (a DOM-only property, set
       imperatively). Only the API round trip was checked. See Current
       status's Phase 4.5 write-up for exactly what *was* verified.
+- [ ] Phase 4.6 (accounts): no browser tool was available to verify
+      `AccountsPage.tsx`'s tree — clicking a summary account's name to
+      collapse/expand it, the reserved-but-empty `.tree-toggle` arrow's
+      hover reveal, the inline "+" gap-add form's focus-on-open and
+      outside-click-close, and the side-nav's hover/active button
+      states. Only the API round trip was checked. See Current status's
+      Phase 4.6 write-up for exactly what *was* verified.
 
 ---
 
@@ -3104,6 +3111,105 @@ session, so the merge flow's own hover/focus behavior (both dialogs'
 button order, the group-level select-all's tri-state rendering) was not
 visually exercised — added to "Check when back at your computer" below.
 
+### Phase 4.6 — accounts
+
+Ported from `app/templates/accounts.html` + `app/static/accounts.js`
+(Phase 4.6) — backend already fully built and tested back in Phase 1.9/
+1.14 (`modules/reference/`'s `GET/POST /accounts`, `POST /accounts/
+quick-create`, both `toggle-active`/`toggle-cashflow` routes); this
+phase is frontend-only, one new file: `setup/AccountsPage.tsx`. Also
+promotes Accounts to `nav.ts`'s `client: true` (`/app/accounts`, was a
+bare `/accounts` full-page link) and extends the shared `Account`
+interface (`api/useAccounts.ts`) with the fields only this screen needs
+(`account_type`/`parent_id`/`is_cashflow`/`parent_path`) — exactly the
+second caller that file's own Phase 3.4 comment anticipated.
+
+**Management/CRUD, but the one member of that family shaped as a
+two-column level browser over a collapsible tree.**
+`UI_CONSISTENCY_AUDIT.md` §2e/§4b groups Accounts with Payees/Tags/
+Scenarios/Levels/Scheduled/Templates, and its own wording-unification
+pass (§4a) already shipped on `master` — the "Archive"/"Unarchive" verbs
+this page ports are already the *current* legacy text, not something
+this phase changed. "Mark as cash"/"Unmark cash" is ported verbatim
+despite §3.9 flagging it as unclear (`BACKLOG.md`) — that backlog item
+is still open and unshipped on `master`, so resolving it isn't this
+porting phase's call to make on the side.
+
+**No local fetch hook — a local `reload()`, same call
+`AccountLevelsPage.tsx` already made.** `useAccounts()`/
+`useAccountLevels()` are one-shot hooks with no reload capability, and
+every write route on this page (create, quick-create, both toggles)
+needs one; rather than reshape a shared hook's return type for every
+existing caller, `AccountsPage.tsx` does its own `client.GET('/accounts')`
++ local state, matching the exact call `AccountLevelsPage.tsx` made for
+the identical reason last phase. `useAccountLevels()` itself *is* reused
+as-is for the side-nav — nothing on this page ever mutates a level.
+
+**The tree/collapse mechanics (`.acct-name`/`.depth-N`/`.tree-toggle`,
+`data-postable`) were already ported in Phase 3.3** for Trial Balance/
+Balance Sheet's own report trees — this phase's new CSS is only
+`.two-col`/`.side-nav` (the level browser) and `.add-gap`/
+`.add-gap-trigger`/`.add-gap-form` (the inline "+" quick-add rows),
+ported verbatim from `style.css` with one additive change: `.side-nav`'s
+per-level filters are plain `<button>`s, not `<a href>` — they re-filter
+the same already-fetched account list by depth client-side (`v_dim_
+account` already carries `depth`, so no `level_id` query param is ever
+sent) rather than navigating to a second page, so a real anchor would
+misrepresent them as separately-linkable resources the way legacy's own
+`?level_id=` full-page links were. `.side-nav button` sits alongside
+every `.side-nav a` selector for that reason, with a small style reset
+(`background`/`border`/`text-align`) `<a>` never needed; "Manage
+levels…" — a genuine route change to `/app/account-levels` — stays a
+real `<Link>` and keeps the unmodified `a` selectors.
+
+**Two write paths, matching legacy's own two forms exactly:**
+`POST /accounts` (the bottom "New account" panel — an exact code typed
+in) and `POST /accounts/quick-create` (the tree's own inline "+" gap
+rows — a code generated server-side, `next_account_code`). Both share
+one `confirmTopLevel()` helper, ported from accounts.js's own
+`confirmIfDuplicateTopLevel` — a warning via `useConfirm()`, not a
+block, before creating a second top-level Asset/Liability/Equity/Income
+account (Expense is exempt; `db/seed.sql`'s own 5000-9000 expects
+several top-level roots there on purpose). The gap-add form's own
+prev/next-neighbor default-parent/type inference (`openGapForm`,
+ported from accounts.js's click handler almost line for line) walks a
+flat `Row[]` array built by `buildRows()` — the same interleaved
+gap-then-account shape `_accounts_with_gaps` (`app/main.py`) builds
+server-side — rather than the DOM sibling-walk legacy's own
+`nearestVisible` does, since there's no DOM to walk here until React has
+already rendered it.
+
+**Collapse state**: `localStorage`, same key
+(`postwarden-accounts-collapsed`) and same first-visit default (every
+summary account starts collapsed) as legacy — seeded once from the
+first successful fetch via a ref guard, so a later `reload()` after
+creating/toggling an account never resets a person's own expand/collapse
+choices back to the default computation.
+
+**Verified the same two ways** as every frontend-only phase since
+Staging: `tsc -b && vite build` and `oxlint` both clean on the first run,
+zero findings. Second, a real `docker compose -f backend/docker-
+compose.yml up -d --build` followed by an **authenticated** round trip
+— logged in as `david`/`devpassword`: `GET /accounts`/`GET
+/account-levels` matched `AccountsPage.tsx`'s own `Account`/
+`AccountLevel` interfaces field-for-field; `POST /accounts/quick-create`
+(a top-level Expense category, then a leaf child under it) and `POST
+/accounts` (an exact-code leaf) all created correctly; both `POST
+/accounts/{id}/toggle-active` and `POST /accounts/{id}/toggle-cashflow`
+flipped the right column — every one of these confirmed directly
+against Postgres, not just the response bodies. `GET /app/accounts`
+(authenticated) returned `200`. Cleaned up afterward with a direct
+`DELETE FROM accounts` (child row first, then its parent) — unlike
+Staging/Budget's own test data, there's no `POST /accounts/{id}/delete`
+route to exercise instead (accounts are archived, never deleted, both
+in legacy and here), so a raw `DELETE` was the only real option; no
+orphaned rows were left, confirmed by re-querying the same ids
+afterward. No interactive browser tool was available in this session,
+so the tree's own collapse/expand click behavior, the gap-add form's
+outside-click-close and focus-on-open, and the side-nav's hover/active
+states were not visually exercised — added to "Check when back at your
+computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3300,7 +3406,12 @@ Largely configuration once the Phase 3 archetype components exist.
       (`.duplicate-group`/`.duplicate-group-label`, plus the group-level
       select-all's `inline-flex` override). See Current status for the
       full write-up.
-- [ ] **4.6** accounts
+- [x] **4.6** accounts — `setup/AccountsPage.tsx`, ported from
+      `accounts.html`/`accounts.js`; backend already done (Phase 1.9/
+      1.14). Management/CRUD archetype's one two-column-level-browser
+      member; `.two-col`/`.side-nav`/`.add-gap` CSS added (tree/collapse
+      CSS itself already landed in Phase 3.3). `nav.ts` promoted to
+      `client: true`. See Current status for the full write-up.
 - [ ] **4.7** The rest: dashboard, connect_bi, import, import_mapped,
       import_mapped_review, account, help
 
