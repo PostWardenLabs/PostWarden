@@ -16,6 +16,7 @@ import AccountLevelsPage from './setup/AccountLevelsPage'
 import AccountsPage from './setup/AccountsPage'
 import ConnectBiPage from './setup/ConnectBiPage'
 import EntryTemplatesPage from './setup/EntryTemplatesPage'
+import ImportMappedPage from './setup/ImportMappedPage'
 import ImportPage from './setup/ImportPage'
 import PayeesPage from './setup/PayeesPage'
 import ScenariosPage from './setup/ScenariosPage'
@@ -42,6 +43,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/account-levels') return 'account_levels'
   if (pathname === '/app/scheduled') return 'scheduled'
   if (pathname === '/app/templates') return 'templates'
+  if (pathname === '/app/import/mapped') return 'import_mapped'
   if (pathname === '/app/import') return 'import'
   if (pathname === '/app/settings/account') return 'settings_account'
   if (pathname === '/app/settings/connect-bi') return 'settings_connect_bi'
@@ -74,6 +76,7 @@ const PAGE_TITLES: Record<string, string> = {
   scheduled: 'Scheduled Entries',
   templates: 'Templates',
   import: 'Import',
+  import_mapped: 'Import with rules',
   settings: 'Settings',
   settings_account: 'Account',
   settings_connect_bi: 'Connect Power BI / Excel',
@@ -144,6 +147,7 @@ function App() {
         <Route path="/app/scheduled" element={<ScheduledPage />} />
         <Route path="/app/templates" element={<EntryTemplatesPage />} />
         <Route path="/app/import" element={<ImportPage />} />
+        <Route path="/app/import/mapped" element={<ImportMappedPage />} />
         <Route path="/app/settings" element={<SettingsPage />} />
         <Route path="/app/settings/account" element={<SettingsAccountPage />} />
         <Route path="/app/settings/connect-bi" element={<ConnectBiPage />} />

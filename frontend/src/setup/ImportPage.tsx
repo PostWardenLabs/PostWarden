@@ -178,10 +178,7 @@ export default function ImportPage() {
         Have a single-entry export instead — one row per transaction, no debits/credits of its own (a budgeting
         app or bank export, say — ActualBudget&apos;s own CSV shape is the one this was built and tested
         against)?{' '}
-        {/* Plain `<a>` for the same reason the help icon above is —
-            Import with rules is this same phase's next screen, not built
-            yet as this one lands. */}
-        <a className="quiet-link" href="/import/mapped">Import with rules</a> maps it into double entry
+        <Link className="quiet-link" to="/app/import/mapped">Import with rules</Link> maps it into double entry
         first.
       </p>
 

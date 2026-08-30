@@ -78,6 +78,14 @@ wrong, turn it into a real fix instead of just unchecking it.
       itself was verified for real via `curl -F`, not a browser file
       picker. See Current status's Phase 4.7 write-up for exactly what
       *was* verified.
+- [ ] Phase 4.7 (import_mapped): no browser tool was available to verify
+      `ImportMappedPage.tsx`'s two-step wizard transition, the mapping
+      tables' `Combobox` rows rendering/filtering correctly at real
+      width, or the checkbox/button row's layout. Both steps' actual
+      requests (`POST /import/mapped/preview`, `POST /import/mapped`)
+      were verified for real via `curl`, not a browser file picker or
+      mouse clicks through the review step. See Current status's Phase
+      4.7 write-up for exactly what *was* verified.
 
 ---
 
@@ -3424,6 +3432,86 @@ behavior, the chosen-filename box updating live, and the panel/table
 layout were not visually exercised — added to "Check when back at your
 computer" below.
 
+**import_mapped + import_mapped_review, done — one screen, not two.**
+Read both legacy templates and `app/main.py`'s three route handlers
+(`import_mapped_page`, `import_mapped_preview`, `import_mapped_commit`)
+before writing anything, which surfaced the one real architectural
+decision here: `import_mapped_review.html` has no GET route of its own
+anywhere in legacy — it only ever renders as `POST /import/mapped/
+preview`'s direct response body. So `setup/ImportMappedPage.tsx` is a
+single component with internal `step: 'upload' | 'review'` state, not
+two React Router routes; there was never a second page for a second
+route to point at. Backend already fully built (`modules/imports/`,
+Phase 1.8/1.14), no new backend work — `POST /import/mapped/preview`
+(multipart, pure parsing, no DB) and `POST /import/mapped` (JSON body)
+were both already there.
+
+**The commit step is genuinely JSON-shaped**, a real wire-format
+improvement over legacy's own base64-in-hidden-form-fields round trip
+(`schemas.MappedImportCommitRequest`'s own docstring calls this out
+explicitly): `filename`, `target_scenario_id`, `file_content_b64`,
+`account_map`/`category_map` (`Record<string, string>`), `flip_sign`.
+The preview step hands back `file_content_b64` once; the frontend just
+holds it in component state through the review step instead of a second
+hidden `<input>`. Mapping-table option lists come from
+`usePostableAccounts(scenarios).forPickers`, and — matching
+`transform_mapped_rows`' own lookup — the map values are account
+*codes*, not ids, same convention `NewEntryPanel.tsx`'s own account
+`Combobox` already established (`{value: a.code, label: '${a.code} ·
+${a.name}'}`). `IMPORT_MAPPED_NO_CATEGORY` (an empty string) is the
+backend's own key for "(no category)" rows; the frontend just uses a
+literal `''` key in the same `category_map`, no named constant needed
+on this side since there's exactly one call site.
+
+A total-failure error (bad mapping, no rows produced) now keeps the
+user on the review step with an inline error flash instead of legacy's
+own bare redirect to `/import/mapped`, which threw away the uploaded
+file and every mapping choice (there's nothing server-side to restore
+from between the two steps — see the legacy review template's own
+comment on why the round trip is a hidden field, not a stored row).
+Staying put is a strict improvement, not a fidelity gap: the wire-level
+validation raising the error is identical either way.
+
+"Start over" is a real `<button type="button">`, not legacy's own `<a
+class="button-link quiet">` — checked `index.css` directly and
+`.quiet`'s only rule is `button.quiet`, so that class combination never
+did anything on an `<a>` in legacy; a real button both matches what the
+control actually does here (reset this component's own state, not
+navigate anywhere) and is the first version of it to get real `.quiet`
+styling. `ImportPage.tsx`'s own "Import with rules" link is now a real
+`<Link to="/app/import/mapped">` in the same commit; its help-icon link
+stays a plain `<a href="/help#import">` until Help itself ships, per
+that link's own existing deferral comment.
+
+**Verified the same way as Import**: `tsc -b && vite build` and
+`oxlint` both clean; no backend touched, so no new OpenAPI generation
+needed. A real `docker compose -f backend/docker-compose.yml up -d
+--build`, then an authenticated round trip exercising *both* steps for
+real, not just the surrounding routes: a two-row ActualBudget-shaped
+CSV (`Checking Test` / `Groceries Test` expense row, plus a second row
+with no `Category` at all) posted to `POST /import/mapped/preview` came
+back the exact `PreviewResult` shape this component expects
+(`accounts_found`, `categories_found`, `has_no_category_rows: true`,
+plus the `file_content_b64` round-trip payload); mapping `Checking Test`
+→ `1110`, `Groceries Test` → `5400`, and the empty-string "(no
+category)" key → `4100` and posting that to `POST /import/mapped` came
+back `{"staged_count": 2, "errors": []}`; `GET /staging` confirmed both
+entries landed with exactly the right accounts and the documented sign
+convention (expense: debit the category, credit the money account;
+income: debit the money account, credit the category); `GET /import`
+confirmed the same batch shows up in the plain Import screen's own
+"Recent imports" list, since both importers share one `import_batches`
+table. Test data cleaned up afterward via a direct SQL transaction
+(lines + entries + the batch row + the two payees, one `BEGIN`/`COMMIT`
+since `fn_entry_balanced` is a deferred constraint that fires at
+statement end under autocommit — a first attempt without an explicit
+transaction hit exactly that: `ERROR: Journal entry ... has no lines`
+after the lines were deleted but before the entries themselves were).
+No browser tool was available this session, so the two-step wizard
+transition, the mapping tables' `Combobox` rows, and the checkbox/button
+layout were not visually exercised — added to "Check when back at your
+computer" below.
+
 ---
 
 ## Phase 0 — Scaffolding
@@ -3630,7 +3718,7 @@ Largely configuration once the Phase 3 archetype components exist.
       import_mapped_review, account, help. `account` needs no work —
       Phase 4.2 already discovered it's `settings_account`, a different
       screen entirely (see that phase's own note); five real screens
-      remain. Screen 3 of 5 done:
+      remain. Screen 4 of 5 done:
   - [x] dashboard — `reports/DashboardPage.tsx`, ported from
         `dashboard.html`. The one item in this list with **new backend
         code**: `modules/dashboard/` (`repository.py`/`service.py`/
@@ -3676,6 +3764,34 @@ Largely configuration once the Phase 3 archetype components exist.
         deferral every prior phase's own forward reference already used;
         revisit both once their targets exist later this phase. See
         Current status for the full write-up.
+  - [x] import_mapped + import_mapped_review — one screen, not two:
+        `setup/ImportMappedPage.tsx`, a single component with internal
+        `step: 'upload' | 'review'` state, not two React Router routes.
+        Legacy's own `import_mapped_review.html` has no independent GET
+        route either — it's only ever rendered as `POST /import/mapped/
+        preview`'s direct response body, so there was never a second
+        page for a second route to point at. Backend already fully
+        built (`modules/imports/`, Phase 1.8/1.14); no new backend. The
+        commit step is genuinely JSON-bodied
+        (`MappedImportCommitRequest`), not legacy's own base64-in-
+        hidden-form-fields round trip — the preview step hands back
+        `file_content_b64` once, the frontend just holds it in
+        component state between steps instead of a second hidden field.
+        Account/category mapping tables source their "maps to" options
+        from `usePostableAccounts(scenarios).forPickers`, keyed by
+        account *code* (not id) to match `transform_mapped_rows`'
+        own lookup; the empty-string map key for "(no category)" rows
+        is `IMPORT_MAPPED_NO_CATEGORY` on the backend, reproduced as a
+        literal `''` key on the frontend side of the same map. "Start
+        over" is a real `<button>`, not legacy's `<a class="button-link
+        quiet">` — that combination of classes never did anything for
+        an `<a>` in `index.css` (`.quiet` only ever targets `button.
+        quiet`), so a real button both matches what "start over"
+        actually does (reset local state, not navigate) and is the
+        first version of this control to get real `.quiet` styling.
+        `ImportPage.tsx`'s own "Import with rules" link is now a real
+        `<Link>`; its help-icon link stays deferred until Help itself
+        ships. See Current status for the full write-up.
 
 ## Phase 5 — The long tail
 
