@@ -19,6 +19,7 @@ import ScheduledPage from './setup/ScheduledPage'
 import SettingsAccountPage from './setup/SettingsAccountPage'
 import SettingsPage from './setup/SettingsPage'
 import Shell from './shell/Shell'
+import StagingPage from './staging/StagingPage'
 import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
 import { useConfirm } from './widgets/confirmContext'
@@ -121,6 +122,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/settings') return 'settings'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
+  if (pathname === '/app/staging') return 'staging'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
   if (pathname === '/app/cash-flow') return 'cash_flow'
   if (pathname === '/app/income-statement') return 'income_statement'
@@ -146,6 +148,7 @@ const PAGE_TITLES: Record<string, string> = {
   settings_account: 'Account',
   tb: 'Trial Balance',
   entries: 'Journal',
+  staging: 'Staging',
   balance_sheet: 'Balance Sheet',
   cash_flow: 'Cash Flow',
   income_statement: 'Income Statement',
@@ -215,6 +218,7 @@ function App() {
         <Route path="/app/variance" element={<VariancePage />} />
         <Route path="/app/ledger" element={<LedgerPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
+        <Route path="/app/staging" element={<StagingPage />} />
       </Routes>
     </Shell>
   )

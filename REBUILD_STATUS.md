@@ -2741,6 +2741,112 @@ Phase 4.2 is now fully done — all six screens (Payees, Scenarios,
 Account levels, Scheduled entries, Entry templates, Settings) built,
 verified, and documented. Next up: Phase 4.3 (Staging).
 
+### Phase 4.3 — Staging
+
+Ported from `app/templates/staging.html` + `staging.js`/`staging-inline-
+edit.js` (Phase 4.3) — the Filterable transaction list archetype's
+second instance, `UI_CONSISTENCY_AUDIT.md` §4b's own call ("already the
+target shape; no change proposed") confirmed rather than revisited.
+`modules/staging/` (backend) was already fully built and tested back in
+Phase 1.6/1.14 — this phase is frontend-only, two new files:
+`staging/StagingPage.tsx` and `staging/StagingEditPanel.tsx`, plus a
+small `staging/useStagingPendingCount.ts` addendum (below).
+
+**Real reuse, not a rewrite of shapes that already exist.**
+`DescriptionCell.tsx`/`MemoCell.tsx`/`BulkTagsDialog.tsx` (all
+`journal/`) are imported into `StagingPage.tsx` unchanged — the routes
+they call (`/entries/{id}/edit-description`, `/entries/lines/{id}/edit-
+memo`, `/entries/tags`) carry no `is_staging` condition at all
+(confirmed directly in `modules/entries/repository.py`), matching
+`docs/ARCHITECTURE.md`'s own note that this parity is real, not
+incidental. `EntryGrid.tsx`/`gridLines.ts` (also `journal/`) are
+`StagingEditPanel.tsx`'s own line grid — the same cross-folder reuse
+`ScheduledPage.tsx`/`EntryTemplatesPage.tsx` already established in
+Phase 4.2, not a new pattern.
+
+**Real differences from the Journal, forked rather than shared** (same
+"a screen should be deletable on its own" reasoning `modules/staging/
+repository.py`'s own docstring gives for forking its backend filter
+fragments): Scenario here filters each entry's own *target* scenario
+(where it lands once approved — `target_scenario`, ported straight off
+`build_filter`'s own query param), not the scenario it's posted in,
+since every row already shares the one real Staging scenario. No hide-
+reversed checkbox (a pending entry can't be a reversal), no entry_id/
+account/payee "Showing only…" banners (nothing drills into Staging with
+those query params the way a report drills into the Journal), no
+Export/pager (`list_pending` was never paginated, matching legacy
+exactly). Approve/Reject replace Reverse and stay visible-but-disabled
+throughout rather than select-only — ported verbatim, same "read what
+they do without discovering Select first" reasoning legacy's own
+comment gives for those two specifically. Confirm wording for both
+(including bulk Reject's `danger` styling) is copied verbatim from
+`staging.js`'s own `msg` computation.
+
+**`StagingEditPanel.tsx`** is the one genuinely new component — the
+per-entry "Edit" grid, relocated in place of an entry's `.staging-view`
+once "Edit" is clicked, same in-place-swap `staging-inline-edit.js`
+already did rather than a separate page. It mirrors `NewEntryPanel.tsx`'s
+own state/handlers (`updateLine`/`addRow`/`distribute`/the balance bar)
+rather than factoring a shared hook out of the two — the same call
+`ScheduledPage.tsx`'s own Phase 4.2 write-up already made for the
+identical shape, for the same reason (real, small differences, not
+worth an abstraction). Three differences from `NewEntryPanel.tsx`,
+recorded in its own file comment: no scenario picker (fixed by whatever
+produced the staged entry, read off `GET /staging/{id}/edit`'s own
+`target_scenario_id`, with `enforce_balance` looked up against the
+`scenarios` list already in scope rather than legacy's `sr-only
+<select>` trick, which existed only so `app.js`'s shared code had *a*
+scenario element to read `data-enforce` off); loads existing data
+instead of starting blank (`isZeroAmount` tells a real 1-cent leg apart
+from `journal_lines`' own `NUMERIC NOT NULL DEFAULT 0` zero side before
+blanking it back out for the input — `entry_templates` lines have no
+such column default, so `EntryTemplatesPage.tsx`'s own load path never
+needed this check); no template loader, no Clear, no Alt+E (the panel
+is always already open by the time it mounts).
+
+**One addendum to a Phase 4.2 screen, closing a forward reference that
+phase's own write-up left open on purpose:** `ScheduledPage.tsx`'s file
+comment explicitly deferred porting legacy's `pending_count` Staging
+banner ("Staging itself doesn't have a JSON shape this page has ever
+read yet… revisit once Phase 4.3 gives this page something real to read
+and link to"). It now does — `useStagingPendingCount.ts` is a small
+one-shot hook reading `GET /staging`'s own `entries.length` (no bespoke
+count endpoint needed; `list_pending` was never paginated, so the full
+list is cheap enough for a personal ledger's queue), and the banner
+links to `/app/staging`, a real client route now instead of the bare
+`/staging` JSON response the deferred comment pointed at. Likely second
+caller: the Dashboard's identical banner (Phase 4.7).
+
+**Routing**: `nav.ts`'s Staging link becomes `client: true` /
+`/app/staging` (was a plain `/staging` full-page navigation into raw
+JSON); `App.tsx` gained the route, `routeKey`, and `PAGE_TITLES` entries,
+same three-line pattern every prior Phase 4 screen added.
+
+**Verified two ways.** First, `tsc -b && vite build` and `oxlint` both
+clean — run inside a throwaway `node:22-slim` container (`docker run
+--rm -v "$PWD":/repo -w /repo node:22-slim sh -c "npm ci && npm run
+build"`), since this machine has no Node on `PATH` at all outside the
+Dockerfile's own build stage (`backend/Dockerfile`'s "No Node at
+runtime" design, confirmed as the reason, not a gap). Second, a real
+`docker compose -f backend/docker-compose.yml up -d --build backend`
+followed by an **authenticated** round trip against the running
+container (per this repo's own "an unauthenticated sweep proves
+nothing" deploy-checklist rule) — logged in as `david`/`devpassword`,
+then: `GET /staging` listed a real pending schedule-materialized entry
+sitting in the dev DB; `GET /staging/{id}/edit` matched
+`StagingEditPanel.tsx`'s own `EditData` interface field-for-field;
+`POST /staging/{id}/edit` with the exact body shape the component sends
+(added a line memo) round-tripped correctly on a follow-up `GET`;
+`POST /staging/approve` posted it for real into `ACTUAL`, confirmed via
+`GET /entries?entry_id=<new id>` showing the new entry with the memo
+carried over and `posted_by: "david"`; a follow-up `GET /staging`
+correctly came back empty; `GET /staging/duplicates` returned
+`{"groups": []}` cleanly with nothing pending. No interactive browser
+tool was available in this session, so hover states, keyboard shortcuts
+(Alt+A/Alt+R/Alt+N/Alt+D/Alt+S), and focus management were not visually
+exercised the way this repo's own standing verification checklist asks
+— worth a manual pass before Phase 4.4.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2911,7 +3017,14 @@ Largely configuration once the Phase 3 archetype components exist.
       `pattern` regex under Chrome's newer `v`-flag compilation) plus a
       stale-session-state gap (`SessionValue` gained `setUsername`), all
       fixed and verified before this phase closed.
-- [ ] **4.3** staging (Filterable transaction list, second instance)
+- [x] **4.3** staging (Filterable transaction list, second instance) —
+      backend already done (Phase 1.6/1.14); frontend-only this phase.
+      `StagingPage.tsx` reuses `JournalPage.tsx`'s own `DescriptionCell`/
+      `MemoCell`/`BulkTagsDialog` unchanged, `StagingEditPanel.tsx` is the
+      one new component (mirrors `NewEntryPanel.tsx`, same "not a shared
+      abstraction" call `ScheduledPage.tsx` already made). Also closed a
+      forward reference from Phase 4.2: `ScheduledPage.tsx` now has its
+      pending-Staging banner. See Current status for the full write-up.
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates
 - [ ] **4.6** accounts

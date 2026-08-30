@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import client from '../api/client'
 import type { Payee } from '../api/usePayees'
@@ -13,6 +14,7 @@ import { usePostableAccounts } from '../widgets/usePostableAccounts'
 import TagInput from '../widgets/TagInput'
 import EntryGrid from '../journal/EntryGrid'
 import { ensureTrailingBlank, isLineUsed, makeBlankLine, type GridLine } from '../journal/gridLines'
+import { useStagingPendingCount } from '../staging/useStagingPendingCount'
 
 // Ported from app/templates/scheduled.html (Phase 4.2) — the New
 // schedule form is the same `table.ledger.entry-grid` + balance-bar
@@ -38,13 +40,12 @@ import { ensureTrailingBlank, isLineUsed, makeBlankLine, type GridLine } from '.
 // 3. No Clear button, no Alt+C — scheduled.html's own button row only
 //    ever had Save/Add line/Distribute.
 //
-// The `pending_count` Staging banner (scheduled.html's own
-// `flash-warn`) is deliberately not ported here — Staging itself
-// (Phase 4.3) doesn't have a JSON shape this page has ever read yet,
-// and `/staging`'s bare route isn't a client route either. Revisit once
-// Phase 4.3 gives this page something real to read and link to, same
-// "don't reach into a screen that doesn't exist yet" reasoning
-// `TagsPage.tsx`'s own Phase 3.2 write-up already applied to Journal.
+// The `pending_count` Staging banner (scheduled.html's own `flash-warn`)
+// is ported now, as a small addendum landing with Staging's own Phase
+// 4.3 rather than here — `useStagingPendingCount.ts` is the one-shot
+// count hook it reads, and `/app/staging` (Phase 4.3) is what it links
+// to, a real client route now instead of the bare `/staging` JSON
+// response this comment used to point at.
 type IntervalUnit = 'day' | 'week' | 'month'
 const INTERVAL_UNITS: IntervalUnit[] = ['day', 'week', 'month']
 
@@ -73,6 +74,7 @@ const today = new Date().toISOString().slice(0, 10)
 export default function ScheduledPage() {
   const [schedules, setSchedules] = useState<ScheduleRow[] | null>(null)
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
+  const pendingCount = useStagingPendingCount()
 
   const scenarios = useScenarios()
   const postableAccounts = usePostableAccounts(scenarios)
@@ -278,6 +280,13 @@ export default function ScheduledPage() {
 
   return (
     <>
+      {!!pendingCount && (
+        <div className="flash flash-warn" style={{ marginBottom: '1.2rem' }}>
+          <Link to="/app/staging">
+            {pendingCount} {pendingCount === 1 ? 'entry' : 'entries'} waiting in Staging for your approval →
+          </Link>
+        </div>
+      )}
       {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
       {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
