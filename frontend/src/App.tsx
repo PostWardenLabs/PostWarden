@@ -9,6 +9,7 @@ import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
 import IncomeStatementPage from './reports/IncomeStatementPage'
 import TrialBalancePage from './reports/TrialBalancePage'
+import VariancePage from './reports/VariancePage'
 import Shell from './shell/Shell'
 import TagsPage from './tags/TagsPage'
 import Combobox, { type ComboboxOption } from './widgets/Combobox'
@@ -108,6 +109,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
   if (pathname === '/app/cash-flow') return 'cash_flow'
   if (pathname === '/app/income-statement') return 'income_statement'
+  if (pathname === '/app/variance') return 'variance'
   return 'dashboard'
 }
 
@@ -124,6 +126,7 @@ const PAGE_TITLES: Record<string, string> = {
   balance_sheet: 'Balance Sheet',
   cash_flow: 'Cash Flow',
   income_statement: 'Income Statement',
+  variance: 'Variance',
 }
 
 // Root component. As of Phase 3.1, this is the real end-to-end pipeline
@@ -178,6 +181,7 @@ function App() {
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/cash-flow" element={<CashFlowPage />} />
         <Route path="/app/income-statement" element={<IncomeStatementPage />} />
+        <Route path="/app/variance" element={<VariancePage />} />
         <Route path="/app/entries" element={<JournalPage />} />
       </Routes>
     </Shell>

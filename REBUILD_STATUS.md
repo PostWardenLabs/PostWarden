@@ -2300,6 +2300,70 @@ toggle working identically inside the matrix table. Both `.csv`/`.xlsx`
 exports (with `split`+`compare` both set) `200`ing over a real
 authenticated `curl` round trip.
 
+**Phase 4.1, screen 4 of 5 — Variance done.**
+`frontend/src/reports/VariancePage.tsx` — the last Point-in-time report
+of the four (`UI_CONSISTENCY_AUDIT.md` §2c's Ledger reclassification
+puts it alongside Balance Sheet/Trial Balance/Ledger, not the range
+reports), and the only one with a genuinely different row shape
+depending on the request: native-depth (a real account tree, same
+`flatten_tree()` shape Trial Balance/Balance Sheet use) vs. rolled-up (a
+flat SQL-side aggregation with no `id`/`parent_id`/`depth` at all —
+confirmed by reading `service.compute_variance` directly, not assumed).
+No backend changes needed — `GET /reports/variance` has existed since
+Phase 1.4/1.14.
+
+**The same "let the id-less-row case degrade naturally" trick Balance
+Sheet's synthetic rows already established, applied here to a whole
+second row-shape rather than just a couple of rows**: `variance.html`'s
+own row markup already handles both shapes uniformly by checking `r.id
+is defined` — no `id` means no tree-toggle, no depth class, no
+`data-id` — which is exactly what `useCollapsibleTree` already does for
+an id-less row for free (never registered, so `isHidden` never hides it
+and `toggle` never applies). So this page always runs every row through
+the same `useCollapsibleTree` call, in both modes, with no branch of its
+own — rolled-up mode simply has nothing collapsible, the same way
+legacy's `report-tree.js` degrades on a `tr` with no `data-id`.
+
+Two dropdowns worth noting: **Scenario/Compare-to have no "None"
+option** (unlike Income Statement's Compare-to) — `variance.html`'s own
+`<select>`s loop over every scenario with no blank choice at all, since
+Variance always compares against *some* scenario (the service
+auto-picks one if the request left `compare` blank). **The Compare-to
+and Roll-up-to picker values are read from `result.compare`/`result.
+level_id`, not the raw URL params**, once a result exists — `service.
+compute_variance`'s own resolved values (an auto-picked compare
+scenario, or a level defaulted from that scenario's own base level) can
+differ from what the URL says, and the picker should reflect what
+actually ran, the same "read the response back, not the request" rule
+this phase's own Variance write-up in the plan called out ahead of time.
+Confirmed live against `seed_demo.sql`: with no `compare` in the URL,
+every non-staging/non-budget scenario turned out to be just `ACTUAL`
+itself, so the service left `compare` genuinely blank (a real, legacy-
+matching edge case, not a bug) — manually picking `BUD2026` and then a
+real "Roll up to" level (`seed_demo.sql`'s `BUD2026` has no `base_level_
+id` of its own, so the auto-default from decision path 2 in `compute_
+variance`'s docstring never fires here) exercised the rolled-up branch
+for real.
+
+`useAccountLevels()` (already existed, Phase 3.4's `usePostableAccounts.
+ts`) is reused as-is for the Roll-up-to picker's options — no new hook
+needed.
+
+Wired into `App.tsx`/`nav.ts` (`variance` → `/app/variance`).
+
+**Verified for real**, same checks as every screen this phase (no
+backend code touched, so no CI-shape rerun needed this time — 533 tests
+unchanged). Real browser pass covered both row shapes: native-depth's
+full tree (collapse/expand, depth indentation, chevrons) with a genuinely
+blank Compare-to (confirmed correct per the paragraph above, not
+mistaken for a bug); the rolled-up path selected by hand (real "Top
+Level Accounts" rows, no indentation, no chevrons, `.neg` rendering
+negative Liabilities/Equity/Income variances in red); and "Flip variance
+direction" toggled live, correctly inverting sign and switching every
+percentage between "—100.0%" and "100.0%" (matching the mathematically
+exact (0−baseline)/baseline swap). Both `.csv`/`.xlsx` exports `200`ing
+over a real authenticated `curl` round trip.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2456,8 +2520,8 @@ Largely configuration once the Phase 3 archetype components exist.
 
 - [~] **4.1** Remaining Range/period + Point-in-time reports:
       income_statement, cash_flow, balance_sheet, variance, ledger.
-      Balance Sheet, Cash Flow, and Income Statement done (see Current
-      status); variance, ledger remain — ledger also needs new backend
+      Balance Sheet, Cash Flow, Income Statement, and Variance done (see
+      Current status); only ledger remains — it also needs new backend
       work (no `/ledger`-equivalent route exists yet, see its own note
       when that commit lands).
 - [ ] **4.2** Remaining Management/CRUD: payees, scenarios,
@@ -2536,6 +2600,15 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 4.1, screen 4 of 5: Variance done,
+  `frontend/src/reports/VariancePage.tsx` — native-depth vs. rolled-up
+  discriminated by `result.rolled_up`, both rendered by the same
+  `useCollapsibleTree` call (an id-less rolled-up row degrades to
+  "never collapsible" for free, no branch needed). Compare-to/Roll-up-to
+  picker values read from the response's own resolved fields, not the
+  raw URL params, since the service can auto-pick/auto-default both. See
+  Current status for the full write-up, including a real (not buggy)
+  blank-Compare edge case found against `seed_demo.sql`.
 - **2026-08-30** — Phase 4.1, screen 3 of 5: Income Statement done,
   `frontend/src/reports/IncomeStatementPage.tsx` — rows mode and Split
   mode unified around one body-rendering path (`periodsOf`/
