@@ -66,6 +66,12 @@ wrong, turn it into a real fix instead of just unchecking it.
       side), and both tables' empty-state links. Only the API round trip
       (against real dev data, not synthetic) was checked. See Current
       status's Phase 4.7 write-up for exactly what *was* verified.
+- [ ] Phase 4.7 (connect_bi): no browser tool was available to verify
+      `ConnectBiPage.tsx`'s three panels' actual visual layout, or that
+      the `.pbids` download link really triggers a browser download
+      rather than navigating. Only the API round trip was checked. See
+      Current status's Phase 4.7 write-up for exactly what *was*
+      verified.
 
 ---
 
@@ -3219,7 +3225,7 @@ outside-click-close and focus-on-open, and the side-nav's hover/active
 states were not visually exercised — added to "Check when back at your
 computer" below.
 
-### Phase 4.7 — the rest (dashboard, screen 1 of 5)
+### Phase 4.7 — the rest
 
 The last checklist item, bundling five unrelated screens that share
 nothing but not fitting Phase 4.1-4.6's own archetype groupings:
@@ -3310,6 +3316,51 @@ locally. No interactive browser tool was available in this session, so
 the stat tiles/tables' actual visual rendering, the Staging banner's
 real appearance, and the empty-state links were not visually exercised
 — added to "Check when back at your computer" below.
+
+**connect_bi, done.** Ported from `app/templates/connect_bi.html` into
+`setup/ConnectBiPage.tsx` — no new backend at all, the opposite of
+dashboard: `GET /settings/connect-bi` and `GET /settings/connect-bi/
+download.pbids` were already built in `analytics/router.py` back in
+Phase 1.14, bundled there with the `/api/*` JSON mirror rather than
+given a dedicated module (that module's own docstring explains why).
+`SettingsPage.tsx`'s own comment claiming Connect BI "needed real
+backend work of its own (Phase 4.7)" was simply wrong from the moment
+Phase 1.14 landed — nobody had reason to check `analytics/` against it
+until this phase actually got here — corrected in the same commit that
+turned its link into a real `<Link to="/app/settings/connect-bi">`
+(was a plain `<a href="/settings/connect-bi">`).
+
+Three small departures from a mechanical port: the `.pbids` download
+link stays a plain `<a href="/settings/connect-bi/download.pbids">`,
+not a client-fetched route — it's a real file download (`Content-
+Disposition: attachment`), and a same-origin anchor already triggers
+the browser's own download handling with no JS needed. The route is
+`settings_connect_bi`, not `connect_bi`, in `App.tsx`'s own `routeKey`/
+`PAGE_TITLES` — `Topbar.tsx`'s existing `current?.startsWith('settings')`
+check (added for `settings_account` in Phase 4.2) picks up any key
+sharing that prefix, and there was no reason not to keep sharing it
+here too. And `bi_objects` — an array of `[name, description]` tuples
+server-side — comes back over JSON as a plain 2-element array per row
+(no Pydantic model on this route, same as every other bare-`dict`
+report/analytics route), so `ConnectBiPage.tsx` destructures each pair
+by position (`([name, desc]) => ...`) rather than by an object key.
+
+**Verified the same two ways as every frontend-only screen since
+Staging**: `tsc -b && vite build` and `oxlint` both clean, zero
+findings — no backend touched, so no new `pytest` run needed. Then a
+real `docker compose -f backend/docker-compose.yml up -d --build` and
+an authenticated round trip: `GET /settings/connect-bi` matched
+`ConnectBiInfo` field-for-field (including the real `bi_objects`
+catalog); `GET /settings/connect-bi/download.pbids` came back `200`
+with the real `Content-Disposition: attachment; filename="PostWarden.
+pbids"` header and a valid `.pbids` JSON body; `GET /app/settings/
+connect-bi` (authenticated) served the SPA shell at `200`; and the
+served JS bundle contains the screen's own real strings ("What's
+exposed", "Connecting from outside this machine", "Download .pbids for
+Power BI Desktop"). No interactive browser tool was available in this
+session, so the three panels' actual visual layout and the download
+link's real click-triggers-a-download behavior were not visually
+exercised — added to "Check when back at your computer" below.
 
 ---
 
@@ -3517,7 +3568,7 @@ Largely configuration once the Phase 3 archetype components exist.
       import_mapped_review, account, help. `account` needs no work —
       Phase 4.2 already discovered it's `settings_account`, a different
       screen entirely (see that phase's own note); five real screens
-      remain. Screen 1 of 5 done:
+      remain. Screen 2 of 5 done:
   - [x] dashboard — `reports/DashboardPage.tsx`, ported from
         `dashboard.html`. The one item in this list with **new backend
         code**: `modules/dashboard/` (`repository.py`/`service.py`/
@@ -3529,6 +3580,19 @@ Largely configuration once the Phase 3 archetype components exist.
         `.panel h2` and `.file-field`/`.file-field-name`, added early for
         this phase's remaining four screens. See Current status for the
         full write-up.
+  - [x] connect_bi — `setup/ConnectBiPage.tsx`, ported from
+        `connect_bi.html`. No new backend at all: `GET /settings/
+        connect-bi*` was already built in `analytics/router.py` back in
+        Phase 1.14 — `SettingsPage.tsx`'s own comment claiming this
+        "needed real backend work of its own (Phase 4.7)" was simply
+        stale, corrected in the same commit. `SettingsPage.tsx`'s own
+        link is now a real `<Link>` (`/app/settings/connect-bi`); the
+        `.pbids` download stays a plain `<a href>` since it's a real file
+        download, not a client-fetched route. Routed as
+        `settings_connect_bi` (not `connect_bi`) so `Topbar.tsx`'s
+        existing `current?.startsWith('settings')` username-link check
+        picks it up unchanged, same precedent `settings_account` already
+        set. See Current status for the full write-up.
 
 ## Phase 5 — The long tail
 

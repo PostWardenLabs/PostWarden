@@ -35,10 +35,12 @@ import { centsEntryEnabled, setCentsEntryEnabled } from '../format/centsEntry'
 //   `staging.html`, neither built yet). This panel is the first thing
 //   that writes either key.
 //
-// "Connect Power BI / Excel" stays a plain, bare `<a>` to `/settings/
-// connect-bi` — that screen is real backend work of its own (Phase 4.7),
-// same "don't reach into a screen that doesn't exist yet" reasoning
-// every prior phase's own not-yet-built link already followed.
+// "Connect Power BI / Excel" is a real `<Link>` to `/app/settings/
+// connect-bi` as of Phase 4.7's own `ConnectBiPage.tsx` — the backend it
+// needs (`analytics/router.py`'s `GET /settings/connect-bi*`) was
+// actually already built back in Phase 1.14, so this link's own
+// "not built yet" deferral, still worded that way immediately above
+// until this edit, was stale from the moment that landed.
 const THEMES: { value: string; label: string }[] = [
   { value: 'slate', label: 'Slate' },
   { value: 'ledger', label: 'Ledger' },
@@ -167,9 +169,9 @@ export default function SettingsPage() {
           Reporting views and a read-only database login, for connecting a BI tool straight to your
           data — no export step.
         </p>
-        <a className="button-link" href="/settings/connect-bi">
+        <Link className="button-link" to="/app/settings/connect-bi">
           Connection details
-        </a>
+        </Link>
       </div>
 
       <div className="panel">

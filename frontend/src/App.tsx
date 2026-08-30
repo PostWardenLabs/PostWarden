@@ -14,6 +14,7 @@ import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
 import AccountLevelsPage from './setup/AccountLevelsPage'
 import AccountsPage from './setup/AccountsPage'
+import ConnectBiPage from './setup/ConnectBiPage'
 import EntryTemplatesPage from './setup/EntryTemplatesPage'
 import PayeesPage from './setup/PayeesPage'
 import ScenariosPage from './setup/ScenariosPage'
@@ -41,6 +42,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/scheduled') return 'scheduled'
   if (pathname === '/app/templates') return 'templates'
   if (pathname === '/app/settings/account') return 'settings_account'
+  if (pathname === '/app/settings/connect-bi') return 'settings_connect_bi'
   if (pathname === '/app/settings') return 'settings'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
@@ -71,6 +73,7 @@ const PAGE_TITLES: Record<string, string> = {
   templates: 'Templates',
   settings: 'Settings',
   settings_account: 'Account',
+  settings_connect_bi: 'Connect Power BI / Excel',
   tb: 'Trial Balance',
   entries: 'Journal',
   staging: 'Staging',
@@ -139,6 +142,7 @@ function App() {
         <Route path="/app/templates" element={<EntryTemplatesPage />} />
         <Route path="/app/settings" element={<SettingsPage />} />
         <Route path="/app/settings/account" element={<SettingsAccountPage />} />
+        <Route path="/app/settings/connect-bi" element={<ConnectBiPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/cash-flow" element={<CashFlowPage />} />
