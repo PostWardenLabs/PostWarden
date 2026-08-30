@@ -5,7 +5,9 @@ import type { Payee } from '../api/usePayees'
 import type { Scenario } from '../api/useScenarios'
 import type { Template } from '../api/useTemplates'
 import { formatMoney } from '../format/money'
-import type { ComboboxOption } from '../widgets/Combobox'
+import { altLabel } from '../format/shortcut'
+import Combobox, { type ComboboxOption } from '../widgets/Combobox'
+import DatePicker from '../widgets/DatePicker'
 import type { PostableAccount } from '../widgets/usePostableAccounts'
 import TagInput from '../widgets/TagInput'
 import EntryGrid from './EntryGrid'
@@ -69,6 +71,13 @@ export default function NewEntryPanel({
   const [lines, setLines] = useState<GridLine[]>(() => [makeBlankLine(), makeBlankLine()])
   const [error, setError] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
+  // Payees created inline mid-form via the picker's own "+ Create" row
+  // (legacy: entry_new.html's `data-create-url="/payees/quick-create"`) —
+  // kept separate from the `payees` prop rather than pushed back up into
+  // it, since `usePayees()` is a one-shot fetch-on-mount hook with no
+  // setter; merged into the options list below so a payee created this
+  // way is immediately selectable without a re-fetch.
+  const [createdPayees, setCreatedPayees] = useState<Payee[]>([])
 
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -118,6 +127,23 @@ export default function NewEntryPanel({
     const list = postableByScenario.get(scenarioId) ?? []
     return list.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` }))
   }, [postableByScenario, scenarioId])
+
+  const payeeOptions: ComboboxOption[] = useMemo(
+    () => [
+      { value: '', label: 'None' },
+      ...payees.map((p) => ({ value: String(p.id), label: p.name })),
+      ...createdPayees.map((p) => ({ value: String(p.id), label: p.name })),
+    ],
+    [payees, createdPayees],
+  )
+
+  async function createPayee(name: string): Promise<ComboboxOption | null> {
+    const { data, error: err } = await client.POST('/payees/quick-create', { body: { name } })
+    if (err || !data) return null
+    const created = data as unknown as Payee
+    setCreatedPayees((prev) => [...prev, created])
+    return { value: String(created.id), label: created.name }
+  }
 
   // Re-filters every line's account picker to whatever the newly
   // selected scenario can actually post to — ported from app.js's
@@ -306,27 +332,24 @@ export default function NewEntryPanel({
 
   return (
     <details className="entry entry-new" id="new-entry-panel" ref={detailsRef}>
-      <summary>+ New entry (Alt+E)</summary>
+      <summary>+ New entry ({altLabel('E')})</summary>
       <div className="lines">
         {templates.length > 0 && (
           <div className="bar" style={{ marginBottom: '0.8rem' }}>
             <label className="field" style={{ maxWidth: '20rem' }}>
               Load template
-              <select
+              <Combobox
+                options={[
+                  { value: '', label: 'Choose a template' },
+                  ...templates.map((t) => ({ value: String(t.id), label: t.name })),
+                ]}
                 value={templateId}
-                onChange={(e) => {
-                  setTemplateId(e.target.value)
-                  const tpl = templates.find((t) => String(t.id) === e.target.value)
+                onChange={(v) => {
+                  setTemplateId(v)
+                  const tpl = templates.find((t) => String(t.id) === v)
                   if (tpl) loadTemplate(tpl)
                 }}
-              >
-                <option value="">Choose a template</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
         )}
@@ -337,18 +360,18 @@ export default function NewEntryPanel({
           <div className="bar">
             <label className="field">
               Date
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <DatePicker value={date} onChange={setDate} />
             </label>
             <label className="field">
               Scenario
-              <select value={scenarioId} onChange={(e) => setScenarioId(Number(e.target.value))}>
-                {eligibleScenarios.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code} — {s.name}
-                    {s.enforce_balance ? '' : ' (single-sided OK)'}
-                  </option>
-                ))}
-              </select>
+              <Combobox
+                options={eligibleScenarios.map((s) => ({
+                  value: String(s.id),
+                  label: `${s.code} — ${s.name}${s.enforce_balance ? '' : ' (single-sided OK)'}`,
+                }))}
+                value={String(scenarioId)}
+                onChange={(v) => setScenarioId(Number(v))}
+              />
             </label>
             <label className="field" style={{ flex: 1, minWidth: '16rem' }}>
               Description
@@ -372,14 +395,7 @@ export default function NewEntryPanel({
             </label>
             <label className="field">
               Payee
-              <select value={payeeId} onChange={(e) => setPayeeId(e.target.value)}>
-                <option value="">None</option>
-                {payees.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <Combobox options={payeeOptions} value={payeeId} onChange={setPayeeId} onCreate={createPayee} />
             </label>
             <label className="field" style={{ flex: 1, minWidth: '14rem' }}>
               Tags
@@ -413,10 +429,10 @@ export default function NewEntryPanel({
           <p className="bar" style={{ marginTop: '1rem', justifyContent: 'space-between' }}>
             <span className="bar" style={{ gap: '0.7rem', marginBottom: 0 }}>
               <button type="submit" disabled={postDisabled}>
-                Post entry (Alt+S)
+                Post entry ({altLabel('S')})
               </button>
               <button type="button" className="quiet" onClick={addRow}>
-                Add line (Alt+N)
+                Add line ({altLabel('N')})
               </button>
               <button
                 type="button"
@@ -424,11 +440,11 @@ export default function NewEntryPanel({
                 title="Fill the current line with whatever balances the entry"
                 onClick={distribute}
               >
-                Distribute (Alt+D)
+                Distribute ({altLabel('D')})
               </button>
             </span>
             <button type="button" className="quiet" title="Clear every field on this form" onClick={clear}>
-              Clear (Alt+C)
+              Clear ({altLabel('C')})
             </button>
           </p>
         </form>

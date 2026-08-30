@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
 import { formatMoney, isZeroAmount } from '../format/money'
+import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
@@ -146,13 +147,11 @@ export default function TrialBalancePage() {
       <div className="bar">
         <label className="field">
           Scenario
-          <select value={scenario} onChange={(e) => setParam('scenario', e.target.value)}>
-            {(scenarios ?? []).map((s) => (
-              <option key={s.code} value={s.code}>
-                {s.code} — {s.name}
-              </option>
-            ))}
-          </select>
+          <Combobox
+            options={(scenarios ?? []).map((s) => ({ value: s.code, label: `${s.code} — ${s.name}` }))}
+            value={scenario}
+            onChange={(v) => setParam('scenario', v)}
+          />
         </label>
         <label className="field">
           As of

@@ -2311,6 +2311,58 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — First real-browser QA pass (David, on his own
+  machine, against a real `docker compose up -d --build`) surfaced six
+  genuine bugs across Phase 3.2–3.4, all fixed same-session:
+  **(1)** `TrialBalancePage.tsx`'s Scenario field, and `JournalPage.tsx`'s
+  Scenario/Account/Payee/Amount-operator filters, and `NewEntryPanel.tsx`'s
+  Load-template/Scenario/Payee fields were still plain `<select>`s —
+  legacy's own `combobox.js` progressively enhances *every* `<select>` in
+  the app (`querySelectorAll("select:not([data-enhanced])")`, no
+  exceptions), so all eight became real `Combobox.tsx` instances instead;
+  the payee field also gained `onCreate` wired to `POST /payees/quick-
+  create` (already existed server-side, unused until now), matching
+  legacy's `data-create-url` on that one field specifically.
+  **(2)** `NewEntryPanel.tsx`'s Date field was a plain `<input
+  type="date">` instead of `DatePicker.tsx` — the one field in the
+  Journal that hadn't gotten the port `TrialBalancePage.tsx`'s "As of"
+  and the filter bar's From/To already had.
+  **(3)** The reversal/tag badges and "Clear filters" in `JournalPage.tsx`
+  were `<button>`s carrying `.badge`/`.button-link` classes — both
+  classes' CSS only has rules for `a.button-link`/no button-specific
+  `.badge` override at all, so a `<button>` fell through to the bare
+  `button` element rule and picked up filled accent-button chrome
+  neither was ever meant to have. Legacy's own markup for both is a
+  real `<a>`; switched to `<Link>`, relying on `Link`'s own
+  `preventDefault()` (same mechanism that already stops `<summary>`'s
+  native toggle for `DescriptionCell.tsx`) rather than a redundant
+  handler of our own, since a handler calling `preventDefault()` before
+  `Link`'s own click logic runs would have suppressed its navigation
+  outright.
+  **(4)** `Combobox.tsx`'s Tab-to-commit didn't commit an arrow-key
+  highlight: its `resolveAndClose()` treated "nothing typed" as "field is
+  empty, clear it" without checking whether the user had actually
+  arrow-key-navigated to a row first (`manualActive`) — since arrow keys
+  never touch `inputText`, tabbing away after ArrowDown-ing to an option
+  (never typing) silently discarded the highlighted pick. Fixed by
+  gating that branch on `manualActive === null` too.
+  **(5)** `format/shortcut.ts` (new) ports `option-key.js`'s Mac/iPad
+  detection — `altLabel('R')` returns `⌥R` on an Apple platform, `Alt+R`
+  otherwise — as a plain function called at render time instead of
+  legacy's client-side text-node sweep (a React re-render already
+  produces the right text from source data; no DOM walking needed).
+  Wired into every `Alt+X` hint in `NewEntryPanel.tsx`/`JournalPage.tsx`.
+  Combobox/scrollbar and `.badge`/tag-pill "black fill, cramped text"
+  were also flagged in the same pass but turned out to be the *same*
+  root cause as (1)/(3) rather than separate CSS bugs — the ported CSS
+  itself (`.combobox-panel`, `.badge`) was already byte-identical to
+  legacy's; only the JSX markup choosing the wrong element/component was
+  wrong. Verified: a real `docker compose up -d --build`, `tsc -b`,
+  `oxlint` (0 warnings), `vite build`, and an HTTP round trip exercising
+  login, `GET /entries`, and the new `POST /payees/quick-create` call —
+  all clean. Not re-verified in an actual browser (still no browser tool
+  in this session); that pass is what surfaced these in the first place
+  and needs to happen again once these fixes land.
 - **2026-08-30** — Phase 3.4 done, and with it `REBUILD.md` §9's own
   go/no-go gate: **pass, proceed to Phase 4.** `frontend/src/journal/`
   (`JournalPage.tsx`, `NewEntryPanel.tsx`, `EntryGrid.tsx`/`gridLines.ts`,
@@ -2892,3 +2944,23 @@ Carried forward until answered; move to the log once resolved.
   verified for real over HTTP this phase (see Current status) — same
   split as every phase before it, just with more surface than ever on
   the unverified side of it.
+  **Partially closed 2026-08-30**: David did a real hands-on pass against
+  a real `docker compose up -d --build` (see the decisions log's own
+  entry for that date) — the first actual browser click-through any of
+  Phase 3 has had. It found six real bugs (all fixed same-session: eight
+  plain `<select>`s that should have been `Combobox.tsx`, a plain
+  `<input type="date">` that should have been `DatePicker.tsx`, `<button>`s
+  wrongly wearing `.badge`/`.button-link` classes meant for `<a>`, a
+  Tab-to-commit bug in `Combobox.tsx` itself, and no Mac/iPad Option-key
+  label at all) and confirmed the rest of what it touched — login, Trial
+  Balance, and a first pass over the Journal's own keyboard flow
+  (Distribute, Add line, Post, Select mode, Reverse) — genuinely works,
+  "visually ~95% there." Distribute/Add line/Post/Select/Reverse are now
+  confirmed working keyboard-and-click, for real, not just by source
+  inspection. Still not exercised even by this pass: the tag chip
+  input's arrow-key nav, `<details>` expand/collapse, the description/
+  memo click-to-edit debounce, and whether the six fixes above actually
+  look/behave right now (this fix round shipped with only the HTTP/
+  build-level verification `Combobox.tsx`'s own docstring describes, not
+  a second browser pass) — genuinely close this gap once David's next
+  look confirms them.

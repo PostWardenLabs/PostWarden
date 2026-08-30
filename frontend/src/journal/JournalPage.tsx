@@ -8,6 +8,8 @@ import { useScenarios } from '../api/useScenarios'
 import { useTags } from '../api/useTags'
 import { useTemplates } from '../api/useTemplates'
 import { formatMoney, isZeroAmount } from '../format/money'
+import { altLabel } from '../format/shortcut'
+import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import TagInput from '../widgets/TagInput'
 import { useConfirm } from '../widgets/confirmContext'
@@ -288,16 +290,14 @@ export default function JournalPage() {
         <div className="bar">
           <label className="field">
             Scenario
-            <select value={scenario} onChange={(e) => applyFilters({ scenario: e.target.value })}>
-              <option value="">All</option>
-              {scenarios
-                .filter((s) => !s.is_staging)
-                .map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.code}
-                  </option>
-                ))}
-            </select>
+            <Combobox
+              options={[
+                { value: '', label: 'All' },
+                ...scenarios.filter((s) => !s.is_staging).map((s) => ({ value: s.code, label: s.code })),
+              ]}
+              value={scenario}
+              onChange={(v) => applyFilters({ scenario: v })}
+            />
           </label>
           <label className="field">
             From
@@ -334,36 +334,33 @@ export default function JournalPage() {
           </label>
           <label className="field" style={{ minWidth: '12rem' }}>
             Account
-            <select value={account} onChange={(e) => applyFilters({ account: e.target.value })}>
-              <option value="">All</option>
-              {postableAccounts.forPickers.map((a) => (
-                <option key={a.code} value={a.code}>
-                  {a.code} · {a.name}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              options={[
+                { value: '', label: 'All' },
+                ...postableAccounts.forPickers.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` })),
+              ]}
+              value={account}
+              onChange={(v) => applyFilters({ account: v })}
+            />
           </label>
           <label className="field" style={{ minWidth: '10rem' }}>
             Payee
-            <select value={payee} onChange={(e) => applyFilters({ payee: e.target.value })}>
-              <option value="">All</option>
-              {filterPayeeNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              options={[{ value: '', label: 'All' }, ...filterPayeeNames.map((name) => ({ value: name, label: name }))]}
+              value={payee}
+              onChange={(v) => applyFilters({ payee: v })}
+            />
           </label>
           <label className="field">
             Amount
-            <select value={amountOp} onChange={(e) => applyFilters({ amount_op: e.target.value })}>
-              <option value="">Any</option>
-              {Object.entries(AMOUNT_OPS).map(([op, label]) => (
-                <option key={op} value={op}>
-                  {label}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              options={[
+                { value: '', label: 'Any' },
+                ...Object.entries(AMOUNT_OPS).map(([op, label]) => ({ value: op, label })),
+              ]}
+              value={amountOp}
+              onChange={(v) => applyFilters({ amount_op: v })}
+            />
           </label>
           {amountOp && (
             <label className="field" style={{ flex: 'none' }}>
@@ -396,13 +393,19 @@ export default function JournalPage() {
             </label>
           )}
           {hasFilters ? (
-            <button type="button" className="button-link" onClick={() => setSearchParams(new URLSearchParams())}>
+            // A real <a> (via <Link>), not <button> — .button-link's CSS
+            // targets `a.button-link` specifically (see index.css); a
+            // <button> with this class instead falls through to the
+            // bare `button` element rule and picks up filled button
+            // chrome it was never meant to have. Matches legacy's own
+            // entries.html markup exactly.
+            <Link className="button-link" to="/app/entries">
               Clear filters
-            </button>
+            </Link>
           ) : (
-            <span className="button-link disabled" aria-disabled="true">
+            <a className="button-link disabled" aria-disabled="true">
               Clear filters
-            </span>
+            </a>
           )}
         </div>
       </form>
@@ -419,7 +422,7 @@ export default function JournalPage() {
             Edit tags
           </button>
           <button type="button" disabled={select.checkedIds.size === 0} onClick={handleReverse}>
-            Reverse (Alt+R)
+            Reverse ({altLabel('R')})
           </button>
         </p>
         <span className="bar" style={{ marginBottom: 0 }}>
@@ -496,43 +499,35 @@ export default function JournalPage() {
                 />
                 {e.payee_name && <span className="dim small">· {e.payee_name}</span>}
                 {e.reference && <span className="dim small">[{e.reference}]</span>}
+                {/* Real <a>s (via <Link>), not <button>s — .badge's CSS has
+                    no button-specific override, so a <button class="badge">
+                    falls through to the bare `button` element rule and
+                    picks up filled accent chrome instead of the plain
+                    outlined pill legacy's own `<a class="badge rev">`
+                    markup gets. Link's own click handling already
+                    preventDefault()s on a plain click before navigating,
+                    which is what stops <summary>'s native toggle here —
+                    same mechanism DescriptionCell's span relies on, no
+                    separate handler needed. */}
                 {e.reverses_entry_id && (
-                  <button
-                    type="button"
-                    className="badge rev"
-                    onClick={(ev) => {
-                      ev.preventDefault()
-                      applyFilters({ entry_id: e.reverses_entry_id! })
-                    }}
-                  >
+                  <Link className="badge rev" to={`?${buildParams({ entry_id: String(e.reverses_entry_id) }).toString()}`}>
                     reversal of #{e.reverses_entry_id}
-                  </button>
+                  </Link>
                 )}
                 {e.reversed_by && (
-                  <button
-                    type="button"
-                    className="badge rev"
-                    onClick={(ev) => {
-                      ev.preventDefault()
-                      applyFilters({ entry_id: e.reversed_by! })
-                    }}
-                  >
+                  <Link className="badge rev" to={`?${buildParams({ entry_id: String(e.reversed_by) }).toString()}`}>
                     reversed by #{e.reversed_by}
-                  </button>
+                  </Link>
                 )}
                 {e.posted_by && <span className="dim small">— {e.posted_by}</span>}
                 {e.tags.map((t) => (
-                  <button
+                  <Link
                     key={t}
-                    type="button"
                     className="badge tag"
-                    onClick={(ev) => {
-                      ev.preventDefault()
-                      applyFilters({ tags: t })
-                    }}
+                    to={`?${buildParams({ tags: t }).toString()}`}
                   >
                     {t}
-                  </button>
+                  </Link>
                 ))}
               </span>
               <span className="num mono">{formatMoney(e.total_debits)}</span>

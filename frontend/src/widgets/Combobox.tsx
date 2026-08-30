@@ -120,14 +120,22 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
   }
 
   // Losing focus without an explicit pick (Tab, or clicking elsewhere)
-  // resolves the same way Enter does: commit the best filtered match if
+  // resolves the same way Enter does: commit whatever's highlighted if
   // there is one (never a "+ Create" row — that only ever fires on a
   // deliberate Enter or click, not an incidental blur), clear the
   // selection outright if the field was emptied and this list actually
   // has a blank "unset" option to clear to, or just revert otherwise.
+  //
+  // The `manualActive === null` guard matters: arrow-key navigation
+  // never touches `inputText` (only real typing does, via onChange), so
+  // a field opened with nothing typed but a row picked by ArrowDown/Up
+  // still has inputText === '' at this point. Gating the "field is
+  // empty, clear it" branch on manualActive too — not just inputText —
+  // is what lets Tab commit an arrow-key highlight instead of discarding
+  // it as if the field had been left untouched.
   function resolveAndClose() {
     if (!open) return
-    if (inputText.trim() === '') {
+    if (manualActive === null && inputText.trim() === '') {
       if (value !== '' && options.some((o) => o.value === '')) onChange('')
       closePanel()
     } else {
