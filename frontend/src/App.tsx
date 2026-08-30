@@ -11,6 +11,7 @@ import IncomeStatementPage from './reports/IncomeStatementPage'
 import LedgerPage from './reports/LedgerPage'
 import TrialBalancePage from './reports/TrialBalancePage'
 import VariancePage from './reports/VariancePage'
+import AccountLevelsPage from './setup/AccountLevelsPage'
 import PayeesPage from './setup/PayeesPage'
 import ScenariosPage from './setup/ScenariosPage'
 import Shell from './shell/Shell'
@@ -109,6 +110,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/tags') return 'tags'
   if (pathname === '/app/payees') return 'payees'
   if (pathname === '/app/scenarios') return 'scenarios'
+  if (pathname === '/app/account-levels') return 'account_levels'
   if (pathname === '/app/trial-balance') return 'tb'
   if (pathname === '/app/entries') return 'entries'
   if (pathname === '/app/balance-sheet') return 'balance_sheet'
@@ -129,6 +131,7 @@ const PAGE_TITLES: Record<string, string> = {
   tags: 'Tags',
   payees: 'Payees',
   scenarios: 'Scenarios',
+  account_levels: 'Account levels',
   tb: 'Trial Balance',
   entries: 'Journal',
   balance_sheet: 'Balance Sheet',
@@ -188,6 +191,7 @@ function App() {
         <Route path="/app/tags" element={<TagsPage />} />
         <Route path="/app/payees" element={<PayeesPage />} />
         <Route path="/app/scenarios" element={<ScenariosPage />} />
+        <Route path="/app/account-levels" element={<AccountLevelsPage />} />
         <Route path="/app/trial-balance" element={<TrialBalancePage />} />
         <Route path="/app/balance-sheet" element={<BalanceSheetPage />} />
         <Route path="/app/cash-flow" element={<CashFlowPage />} />

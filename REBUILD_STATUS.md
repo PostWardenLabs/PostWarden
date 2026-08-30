@@ -2525,6 +2525,28 @@ created a real scenario end to end (defaults verified: `budget` type,
 "single-sided OK", "leaves only"); Lock/Unlock round-tripped and flipped
 the status badge. No console errors.
 
+**Phase 4.2, screen 3 of 6 — Account levels done.** `frontend/src/setup/
+AccountLevelsPage.tsx`, ported from `app/templates/account_levels.html`
+— no vanilla-JS counterpart at all. A third distinct shape from Payees/
+Scenarios: the rename input is permanently visible right in the row
+(a plain text input + "Save" button, not TagsPage.tsx's click-to-edit
+toggle and not Scenarios' single Lock/Unlock action), so this page
+carries no `editingId` state either. `next_depth` (the New level form's
+own default) isn't a backend field — ported as `Math.max(0, ...depths) +
+1` computed from the same `GET /account-levels` response, matching
+legacy `app/main.py`'s identical `max(depths, default=0) + 1`, since no
+route returns it as one either.
+
+Verified with a real `docker compose up -d --build`: clean `tsc -b &&
+vite build`, `oxlint` 0 warnings/errors, then browser-driven against the
+running container with real seed data (3 levels: Top Level Accounts/
+Subaccounts/Account Detail) — next_depth correctly showed 4; created a
+throwaway 4th level (next_depth then correctly advanced to 5, not
+reused), renamed it, and deleted it, watching next_depth fall back to 4
+each time rather than mutating the three real seeded levels; the delete
+confirm's copy matches legacy's own `Delete level {name}?` verbatim. No
+console errors.
+
 **Unrelated, and reverted, not part of this commit**: `git status` at the
 start of this phase's work showed an unexplained uncommitted change to
 `frontend/src/format/shortcut.ts` (`altLabel`'s `` `⌥${letter}` `` had
@@ -2687,8 +2709,8 @@ Largely configuration once the Phase 3 archetype components exist.
       the only screen this phase that wasn't just frontend against an
       already-existing route.
 - [~] **4.2** Remaining Management/CRUD: payees, scenarios,
-      account_levels, scheduled, entry_templates, settings. Payees and
-      Scenarios done — see Current status.
+      account_levels, scheduled, entry_templates, settings. Payees,
+      Scenarios, and Account levels done — see Current status.
 - [ ] **4.3** staging (Filterable transaction list, second instance)
 - [ ] **4.4** budget (Editable grid archetype)
 - [ ] **4.5** staging_duplicates
