@@ -193,7 +193,15 @@ export default function DatePicker({ value, onChange, disabled, id, name, placeh
         pattern="\d{4}-\d{2}-\d{2}"
         disabled={disabled}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        // The pattern attribute above is inert here — nothing in this app
+        // calls reportValidity()/checkValidity() on this field, since it's
+        // a controlled React input rather than a submitted native form
+        // control, so it was never actually stopping stray characters from
+        // landing in state. Filter at the source instead: only digits and
+        // hyphens are ever valid in YYYY-MM-DD, and it's never longer than
+        // 10 characters, so anything else (a trailing ".", pasted
+        // whitespace, ...) is dropped before it reaches onChange.
+        onChange={(e) => onChange(e.target.value.replace(/[^\d-]/g, '').slice(0, 10))}
         onFocus={() => {
           if (suppressOpenOnFocus.current) {
             suppressOpenOnFocus.current = false
