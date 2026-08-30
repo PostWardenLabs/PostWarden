@@ -1828,11 +1828,20 @@ tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: 
   font-family: var(--serif); font-weight: 600; font-size: 1rem;
   margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule-strong);
 }
-.t-account-grid { display: flex; flex-wrap: wrap; gap: 1.2rem; }
+/* align-items: flex-start — flex's own default (stretch) would otherwise
+   pad every card in a row to match the tallest one, so a 2-row account
+   next to a 15-row account got 13 rows of empty T. Cards size to their
+   own content; the grid just wraps them. */
+.t-account-grid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1.2rem; }
 table.ledger.t-account {
-  width: 20rem; flex: none; border: 1px solid var(--rule-strong); border-radius: 4px;
+  /* min-width, not width: a fixed width let a wide amount (money's own
+     nowrap, below) squeeze the unconstrained date columns until they
+     wrapped to two lines. Letting the card grow past 20rem when it
+     needs to keeps every column single-line instead. */
+  min-width: 20rem; flex: none; border: 1px solid var(--rule-strong); border-radius: 4px;
   overflow: hidden;
 }
+table.ledger.t-account td.dim, table.ledger.t-account th.dim { white-space: nowrap; }
 table.ledger.t-account caption {
   caption-side: top; text-align: left; padding: 0.5rem 0.7rem;
   font-weight: 600; border-bottom: 1px solid var(--rule-strong);
