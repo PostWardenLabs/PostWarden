@@ -507,7 +507,102 @@ since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
 the exact CI shape by hand (a bare `postgres:16` container, `alembic
 upgrade head`, `pytest`).
 
-**Next step:** 1.10 — `modules/scheduling/`.
+**Phase 1.10 done.** `modules/scheduling/` — scheduled entries and entry
+templates: `repository.py`, `schemas.py`, `service.py`, `router.py` (six
+routes: list/create schedules, toggle a schedule active, list/create/
+delete templates). Two lifecycles in one module, not two: a schedule
+advances its own `next_date` and periodically posts a staged occurrence,
+a template never posts anywhere on its own — but both are "reusable
+scaffolding for a future journal entry," each only a few dozen lines,
+the same "five near-empty triples would cost more than they buy"
+reasoning Phase 1.9 already applied to Accounts/Scenarios/Payees/Tags.
+Also added `domain/periods.py`'s `advance_date` — the one pure helper
+Phase 1.1 didn't port because nothing needed it yet (`_advance_date`'s
+day/week/month recurrence stepper, used only by this module).
+
+1. **`materialize_due_schedules` is ported and fully tested, but not
+   wired into anything.** Legacy runs the equivalent from its auth
+   middleware, on every authenticated request, wrapped in a bare
+   `try/except Exception: pass` (SPEC.md decision 9: "no task runner in
+   this deployment, so auto-post on the date is done lazily here instead
+   of a real cron"). Both the middleware and the session it reads are
+   `modules/auth/` (Phase 1.11) concerns; wiring a periodic or
+   per-request call to `service.materialize_due_schedules` into the new
+   app is that phase's job, or `main.py`'s (Phase 1.14) — same "don't
+   reach into a mechanism that doesn't exist yet" reasoning every prior
+   module already applies to CSRF. There is deliberately no `POST
+   /scheduled/materialize` route either — legacy has no explicit
+   invocation path for this at all, so adding one would be inventing
+   behavior, not porting it.
+2. **`check_deferred_constraints` is needed here for the same real
+   reason `modules/entries/repository.py`'s own docstring gives, not a
+   theoretical one — and it needed the same `Connection.begin_nested()`
+   SAVEPOINT-per-schedule treatment `reverse_entries_bulk` (Phase 1.5)
+   already established.** `materialize_due_schedules` inserts a full
+   `journal_entries` + `journal_lines` set into Staging, a real
+   `enforce_balance = TRUE` scenario subject to the same `DEFERRABLE
+   INITIALLY DEFERRED` balance/has-lines triggers as any manual posting.
+   Legacy gets per-schedule independence for free — each occurrence is
+   its own `with tx() as cur:`, committing (and so running the deferred
+   check) before the next schedule's block starts; `db.get_connection()`
+   gives the whole request one transaction, so without a SAVEPOINT per
+   schedule, one bad schedule would silently take every schedule after
+   it in the same `due` batch down too. Forked from `modules/entries/
+   repository.py`, not imported — same "a module should be deletable on
+   its own" test (`REBUILD.md` decision 3) every prior write module's
+   own docstring already applies, alongside a fork of `modules/imports/
+   repository.py`'s `staging_scenario_id`-shaped lookup.
+3. **The manual `total != 0` balance check in `create_schedule`/
+   `create_template` is real application logic here, not a leftover** —
+   unlike `modules.entries.service.create_entry`, which leaves that
+   check entirely to `journal_lines`' own deferred constraint trigger.
+   `scheduled_entry_lines`/`entry_template_lines` carry no such trigger
+   at all (only `CHECK (amount <> 0)` per line), so an unbalanced
+   schedule or template is caught in app code or not at all, same as
+   legacy.
+4. **Two write routes harmonized to check-and-raise on an unknown id,
+   where their legacy originals silently no-op'd** — `toggle_schedule`
+   and `delete_template`, both a bare `UPDATE`/`DELETE ... WHERE id =
+   %s` with no rowcount check in `app/main.py`. Same class of oversight
+   Phase 1.9 already found and fixed for five of *its* routes; nothing
+   in `SPEC.md`/`BACKLOG.md` singles either out as special.
+
+Other decisions, smaller:
+
+- **No `scenarios`/`accounts`/`payees` picker payload anywhere in this
+  module's responses** — same "don't reach into a module for rendering
+  convenience" reasoning every prior module applies to `modules/
+  reference/`, now sharpened by one thing: `postable_accounts_by_
+  scenario()`/`postable_accounts_for_pickers()` (legacy's own
+  scenario-aware account-picker helpers, used by `scheduled_page`) were
+  never ported into *any* module, and don't need to be — nothing here or
+  in `modules/entries/` ever validates "is this account legal for that
+  scenario" at write time (there is no `fn_line_account_guard`-
+  equivalent trigger on `scheduled_entry_lines`/`entry_template_lines`,
+  and even `journal_lines`' own version isn't pre-checked by the
+  write path, just enforced by the trigger at insert). It is purely a
+  combobox-filtering convenience, so it stays a frontend-only concern
+  once `modules/reference/`'s plain `GET /accounts` exists.
+- **`list_templates` nests each template's own `lines`/`tags` directly
+  under it** — not a deviation this time, unlike `modules/entries/
+  service.py`'s own contrast with legacy's three-parallel-dicts
+  precursor: legacy's `templates_full()` already built this exact
+  shape, so this is a straight port.
+- **No CSRF check, no user-attribution equivalent** — the same
+  `modules/auth/` (Phase 1.11) gap every prior write module documents,
+  narrower here than for `entries`/`staging`/`imports`: neither
+  `scheduled_entries` nor `entry_templates` has an attribution column at
+  all, so there's nothing to leave `NULL`, just no audit trail to add.
+
+50 new tests (16 `repository.py`, 19 `service.py`, 10 `router.py`, plus 5
+new `domain/periods.py` tests for `advance_date`) — 394 passed total.
+Verified for real, the same three ways as every phase since 1.4: a full
+`docker compose up -d --build` (clean log, `/healthz` 200), a local
+`docker compose up -d db` + `pytest` run, and separately the exact CI
+shape by hand (a bare `postgres:16` container, `alembic upgrade head`,
+`pytest`).
+
+**Next step:** 1.11 — `modules/auth/`.
 
 ---
 
@@ -584,7 +679,7 @@ directly.
       mapped/rules importer).
 - [x] **1.9** `modules/reference/` — accounts, payees, tags, scenarios,
       account levels (CRUD).
-- [ ] **1.10** `modules/scheduling/` — scheduled entries, entry
+- [x] **1.10** `modules/scheduling/` — scheduled entries, entry
       templates.
 - [ ] **1.11** `modules/auth/`
 - [ ] **1.12** `export/` — shared CSV/XLSX writers, consumed by
@@ -714,6 +809,15 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-29** — Phase 1.10 done: `modules/scheduling/` — see the
+  Current status section above for the full write-up (`materialize_due_
+  schedules` ported and tested but deliberately not wired into anything
+  until `modules/auth/` exists, a `SAVEPOINT`-per-schedule fork of
+  `check_deferred_constraints` for the same reason `reverse_entries_
+  bulk` needed one, the manual balance check staying real app logic here
+  unlike `modules/entries/`'s, `toggle_schedule`/`delete_template`
+  harmonized to check-and-raise the same way five `modules/reference/`
+  routes already were, and `domain/periods.py` gaining `advance_date`).
 - **2026-08-29** — Phase 1.9 done: `modules/reference/` — see the Current
   status section above for the full write-up (five legacy top-level
   resources in one module rather than five near-empty ones, five write

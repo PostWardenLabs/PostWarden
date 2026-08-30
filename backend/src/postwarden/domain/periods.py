@@ -73,6 +73,34 @@ def month_options(span: int = 36) -> list[str]:
     return [shift_month(today_month, d)[:7] for d in range(-span, span + 1)]
 
 
+def advance_date(d: date, unit: str, count: int) -> date:
+    """Steps a real date forward by `count` day/week/month units — ported
+    from `app/main.py`'s module-level `_advance_date`, `modules/
+    scheduling`'s own recurrence-rule stepper (`service.
+    materialize_due_schedules` calls this right after posting a
+    schedule's occurrence, to compute its next `next_date`). Month-
+    stepping clamps the day the same way `shift_month`/
+    `shift_date_by_month` already do above (Jan 31 plus a month is Feb
+    28 or 29, never an invalid Feb 31) — this is the third function in
+    this module with that exact clamp, ported separately only because
+    `_advance_date` also has to pick which of day/week/month applies,
+    which neither of the other two needs. Unlike every other function in
+    this module, this one takes and returns a real `date`, not an ISO
+    string — its one caller already has `scheduled_entries.next_date` as
+    a `date` (a DB column value, not a query-string param), so there is
+    no string round-trip to do."""
+    if unit == "day":
+        return d + timedelta(days=count)
+    if unit == "week":
+        return d + timedelta(weeks=count)
+    if unit == "month":
+        total = d.month - 1 + count
+        year, month = d.year + total // 12, total % 12 + 1
+        day = min(d.day, calendar.monthrange(year, month)[1])
+        return date(year, month, day)
+    raise ValueError(f"Unknown interval unit: {unit}")
+
+
 def split_periods(date_from: str, date_to: str, split: str) -> list[dict]:
     """Breaks [date_from, date_to] into calendar-aligned sub-periods for
     Income Statement's Split view (see the route's own `split` param) —

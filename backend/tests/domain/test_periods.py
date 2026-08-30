@@ -1,5 +1,10 @@
 """Unit tests for postwarden.domain.periods — no database, no app."""
+from datetime import date
+
+import pytest
+
 from postwarden.domain.periods import (
+    advance_date,
     month_options,
     shift_date_by_month,
     shift_month,
@@ -80,3 +85,24 @@ def test_split_periods_quarterly_labels():
 def test_split_periods_yearly_labels():
     periods = split_periods("2025-06-01", "2026-06-01", "yearly")
     assert [p["label"] for p in periods] == ["2025", "2026"]
+
+
+def test_advance_date_by_day():
+    assert advance_date(date(2026, 8, 29), "day", 3) == date(2026, 9, 1)
+
+
+def test_advance_date_by_week():
+    assert advance_date(date(2026, 8, 29), "week", 2) == date(2026, 9, 12)
+
+
+def test_advance_date_by_month_clamps_into_february():
+    assert advance_date(date(2026, 1, 31), "month", 1) == date(2026, 2, 28)
+
+
+def test_advance_date_by_month_across_year_boundary():
+    assert advance_date(date(2026, 12, 15), "month", 1) == date(2027, 1, 15)
+
+
+def test_advance_date_unknown_unit_raises():
+    with pytest.raises(ValueError, match="Unknown interval unit"):
+        advance_date(date(2026, 1, 1), "fortnight", 1)
