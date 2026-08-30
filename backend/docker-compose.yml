@@ -30,7 +30,14 @@ services:
       retries: 15
 
   backend:
-    build: .
+    # Context is the repo root, not this directory — Dockerfile's own
+    # frontend-build stage (Phase 2.1, REBUILD_STATUS.md) needs ../frontend
+    # in reach, which a backend/-scoped context can't provide. `dockerfile:`
+    # still points at this file since Docker doesn't otherwise look for one
+    # outside the context root.
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
       # +psycopg: the SQLAlchemy-flavored URL scheme (see alembic/env.py's
       # own comment) - not legacy app/db.py's plain postgresql://.

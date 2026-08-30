@@ -1,0 +1,11 @@
+/* Minimal reset only. The real 327 CSS custom properties and 21 themes
+   ported from app/static/style.css land in Phase 2.3 (REBUILD_STATUS.md) —
+   deliberately not here, since this file predates any of that work. */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+}

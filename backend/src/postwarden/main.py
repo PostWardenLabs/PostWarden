@@ -37,6 +37,7 @@ the wrong layer for it.
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from starlette.staticfiles import StaticFiles
 
 from .analytics.router import router as analytics_router
 from .config import get_settings
@@ -124,3 +125,30 @@ app.include_router(budget_router)
 app.include_router(reference_router)
 app.include_router(scheduling_router)
 app.include_router(analytics_router)
+
+# The built frontend (REBUILD_STATUS.md Phase 2.1) — mounted last and only
+# if it exists, both deliberately.
+#
+# **Last**: a Mount is matched by prefix, and Starlette tries routes in
+# registration order — every module's router above claims its own exact
+# path(s) first, so this only ever answers a request none of them did.
+# That matters concretely here: several of those routers already own a
+# path a client-side route will eventually want too (`GET /entries` is the
+# Journal's own JSON data route today; a future React Router path at the
+# same literal `/entries` would never reach this mount, the API answers
+# first). Deep-link/refresh support for the SPA's own client-side routes is
+# a real gap this phase does not close — there is no router to wire it for
+# yet (`REBUILD_STATUS.md` Phase 2.4/3), and closing it means deciding how
+# the app-shell HTML and the JSON API stop sharing a path at all, not
+# something to improvise here. `html=True` below covers what Phase 2.1
+# actually needs: `/` itself, and every hashed `/assets/...` file Vite's
+# own build produces.
+#
+# **Only if it exists**: `postwarden_static_dir` (`config.py`) is not
+# required to be there — a backend-only checkout (CI, any module's own test
+# suite, a developer who hasn't run `npm run build` yet) never had this
+# directory before this phase and stays unaffected; the 523 existing tests
+# assert nothing about `/` or `/assets/*`.
+_static_dir = get_settings().postwarden_static_dir
+if _static_dir.is_dir():
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="frontend")

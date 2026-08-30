@@ -1052,8 +1052,97 @@ actually *confirming* that, and confirming it the way that counts.
 built, tested, mounted, and now provably green in real CI alongside the
 60 pure-Postgres tests it was always supposed to sit beside.
 
-**Next step:** 2.1 — Vite + React + TypeScript scaffold under
-`frontend/`, per Phase 2's own roadmap below.
+**Phase 2.1 in progress.** `frontend/` — a Vite + React + TypeScript
+scaffold (`npm create vite@latest -- --template react-ts`), stripped of the
+template's own demo content (the counter, the React/Vite logos, the
+docs/social links) down to a placeholder `App.tsx`: a heading and a live
+`/healthz` check, the same "prove the pipeline, not the feature" role
+Phase 0's own trivial `/healthz` route played for the backend. Real UI
+(the shell, the CSS tokens, real screens) is Phase 2.2 onward, not this
+item.
+
+1. **`vite.config.ts`'s own `build.outDir` points straight at `backend/
+   src/postwarden/static/`, not this project's own `dist/`.** Deliberate:
+   `main.py` now mounts that exact path via `StaticFiles` if present
+   (`config.py`'s new `postwarden_static_dir` setting, defaulting to
+   `Path(__file__).resolve().parent / "static"`), and pointing the build
+   there directly means a plain local `npm run build` followed by a plain
+   `uvicorn postwarden.main:app` serves the SPA with zero copy step, and
+   `backend/Dockerfile`'s own multi-stage build (below) copies to the
+   identical relative spot — one convention, not a build-tool one and a
+   deploy one that happen to agree.
+2. **The static mount is registered last, and only if the directory
+   exists.** *Last*, because several module routers already own a path a
+   future client-side route will also want — `GET /entries` is the
+   Journal's own JSON data route today, and Starlette matches routes in
+   registration order, so a mount added after it can only ever answer a
+   request no router already claimed. *Only if it exists*, so a
+   backend-only checkout (CI, any module's own test suite, a developer who
+   hasn't run `npm run build` yet) is unaffected — confirmed, not assumed:
+   the full 523-test backend suite passes unchanged with the directory
+   present (built during this same phase) precisely because the mount
+   only adds routes no existing test path collides with.
+3. **A real, open gap, documented rather than quietly deferred:
+   deep-link/refresh support for the SPA's own future client-side routes
+   is not solved here.** `StaticFiles(..., html=True)` serves `/` and
+   every hashed `/assets/...` file, which is everything this phase's own
+   placeholder page needs — but it does not fall back to `index.html` for
+   an arbitrary unmatched path the way a real SPA router needs for a
+   direct browser navigation or refresh. Worse, several of the paths a
+   future client router will want (`/entries`, `/reports/trial-balance`,
+   `/staging`, ...) are already real backend JSON routes at that exact
+   path, so even a working fallback wouldn't reach them — the app-shell
+   HTML and the JSON API currently share a path namespace. Solving this
+   means deciding how those two stop colliding (an `/api` prefix on the
+   data routes being the obvious shape, but that is a real, cross-module
+   decision, not something to improvise inside a static-file mount) —
+   deferred to whichever phase actually wires in a client-side router
+   (Phase 2.4's shell, or Phase 3's own archetype screens), the same
+   "don't reach into a mechanism that doesn't exist yet" reasoning every
+   prior phase already applied to CSRF/attribution/default-scenario
+   lookups.
+4. **`backend/Dockerfile` is now two stages — a `node:22-slim` builder,
+   discarded before the final image — and `backend/docker-compose.yml`'s
+   `build.context` moved from `backend/` to the repo root** (`dockerfile:
+   backend/Dockerfile` still points at this file; a `backend/`-scoped
+   context can't reach `../frontend` for the builder stage's own `COPY`).
+   The builder stage's `WORKDIR` is `/repo`, deliberately mirroring the
+   real repo's own root layout (`frontend/` and `backend/` as siblings),
+   so `vite.config.ts`'s `outDir: '../backend/src/postwarden/static'`
+   resolves to the same legible path inside the image that it does on a
+   real checkout, rather than an absolute path a reader would have to
+   trace through a relative `..` to understand.
+
+**Verified for real, partially — the Docker step is the one open item.**
+`npm install` + `npm run build` (a real `vite build`, not a dry run)
+produced exactly the files `config.py`'s new setting expects, in the
+expected place; a real `uvicorn postwarden.main:app` (no Docker) then
+served `/` (200, the built `index.html`), a real hashed `/assets/*.js`
+file (200), `/favicon.svg` (200, ported from `app/static/icon.svg` rather
+than left as Vite's own default logo), and confirmed `/reports/
+trial-balance` still answers `401` unauthenticated — the static mount does
+not shadow the API. The full backend test suite (523 tests) passes
+unchanged with the built directory present. **`docker compose up -d
+--build` itself could not be completed this session**: pulling
+`node:22-slim` inside this sandboxed environment's Docker daemon fails
+immediately and reproducibly (`DeadlineExceeded: context deadline
+exceeded` on the image-metadata fetch, confirmed on three separate
+attempts, including one at a 10-minute timeout with no progress — and a
+plain `docker pull hello-world`, the smallest image that exists, hangs the
+same way), while `python:3.12-slim` and `postgres:16` — both already
+pulled in earlier phases — resolve instantly. This reads as a sandbox-level
+registry restriction on *new* image pulls specific to this session, not a
+problem with the Dockerfile or compose changes themselves: `curl`/`npm`
+from the same shell reach the public internet fine, and this exact
+`docker compose up -d --build` pattern is this project's own established,
+working local-dev loop on this machine outside this session (per
+`~/GitHub/CLAUDE.md`'s "local dev loop" notes). **Needs a real run on this
+machine outside the sandbox (or in CI) to close out** — flagged rather than
+skipped silently; see the Open questions section.
+
+**Next up:** close the Docker verification gap above, then continue
+through Phase 2's remaining items (2.2 typed API client, 2.3 CSS tokens/
+themes, 2.4 shell, 2.5 per-widget decisions).
 
 ---
 
@@ -1149,9 +1238,13 @@ directly.
 
 ## Phase 2 — Frontend foundations
 
-- [ ] **2.1** Vite + React + TypeScript scaffold under `frontend/`,
+- [~] **2.1** Vite + React + TypeScript scaffold under `frontend/`,
       built output served by FastAPI `StaticFiles`. Confirm no Node
-      process is required at runtime.
+      process is required at runtime. Scaffold built, wired into
+      `main.py`, verified outside Docker (real `npm run build` + real
+      `uvicorn` serving it, full backend suite green); the
+      `docker compose up -d --build` confirmation itself is blocked in
+      this sandbox — see Current status and Open questions.
 - [ ] **2.2** Typed API client generated from the backend's OpenAPI
       schema.
 - [ ] **2.3** Port the 327 CSS custom properties and 21 themes from
@@ -1262,6 +1355,19 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 2.1 in progress: `frontend/` scaffolded (Vite +
+  React + TypeScript), wired into `main.py` via a new `postwarden_
+  static_dir` setting and a `StaticFiles` mount registered last (after
+  every module router) and only when the directory exists. `backend/
+  Dockerfile` is now a two-stage build (a discarded `node:22-slim`
+  builder) and `backend/docker-compose.yml`'s build context moved to the
+  repo root to reach it. See the Current status section for the full
+  write-up, including a real, open gap (SPA deep-link/refresh support,
+  deferred to whichever phase wires in a client-side router) and the one
+  thing this session could not finish: a real `docker compose up -d
+  --build`, blocked by this sandbox's Docker daemon failing to pull
+  `node:22-slim` (reproducible `DeadlineExceeded`, unrelated to the
+  changes themselves — see Open questions).
 - **2026-08-30** — Phase 1.15 done, and Phase 1 as a whole: the gate —
   see the Current status section above for the full write-up. No module
   code changed; this phase pushed `rebuild` to `origin` for the first
@@ -1562,4 +1668,21 @@ that level get a line of their own.
 
 Carried forward until answered; move to the log once resolved.
 
-None currently open.
+- **Phase 2.1's `docker compose up -d --build` verification is still
+  outstanding.** Everything short of the actual Docker build was verified
+  for real this session (see Current status); the build itself couldn't
+  complete because this sandbox's Docker daemon can't pull `node:22-slim`
+  (or even `hello-world`) — reproducible `DeadlineExceeded` on the
+  image-metadata fetch, while already-cached images (`python:3.12-slim`,
+  `postgres:16`) resolve instantly. Reads as a sandbox-specific
+  registry restriction, not a real problem with `backend/Dockerfile` or
+  `backend/docker-compose.yml`, since this exact command is this
+  project's own established working local-dev loop on this machine
+  outside the sandbox. **Needs**: run `cd backend && docker compose down
+  -v && docker compose up -d --build` for real (outside this session, or
+  once registry access is available), confirm a clean build log, `GET /`
+  serves the built SPA, `/healthz` still 200, and the existing
+  authenticated-flow spot-check (login -> a protected route -> a CSRF-
+  protected write) from Phase 1.14's own write-up still holds. Close this
+  out (move to the log) once that run happens, before treating Phase 2.1
+  as fully done rather than in-progress.

@@ -10,6 +10,7 @@ three request handlers deep, and every consumer (routers, `db.py`, tests)
 gets the same parsed/typed value instead of re-parsing the raw string.
 """
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,6 +67,21 @@ class Settings(BaseSettings):
     # same Postgres instance (docker-compose maps this externally; the app
     # itself never connects out on it, just displays it).
     postwarden_bi_port: str = Field(default="5432", alias="POSTWARDEN_BI_PORT")
+
+    # Where main.py looks for the built frontend (REBUILD_STATUS.md Phase
+    # 2.1) — `frontend/`'s own vite.config.ts `build.outDir` points at this
+    # exact path by convention, so a plain `npm run build` followed by a
+    # plain `uvicorn postwarden.main:app` serves the SPA with zero wiring
+    # locally, and the Dockerfile's multi-stage build (a Node build stage,
+    # discarded before the final image — "no Node process at runtime" is the
+    # actual gate) copies to this same relative spot inside the image. Not
+    # required to exist: main.py only mounts it if the directory is actually
+    # there, so a backend-only checkout (CI, a module's own tests, anyone
+    # who hasn't run `npm run build` yet) is unaffected.
+    postwarden_static_dir: Path = Field(
+        default=Path(__file__).resolve().parent / "static",
+        alias="POSTWARDEN_STATIC_DIR",
+    )
 
 
 @lru_cache
