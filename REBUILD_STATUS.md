@@ -118,6 +118,19 @@ wrong, turn it into a real fix instead of just unchecking it.
       See REBUILD_STATUS.md's own changes-log entries for this session
       (both dated 2026-08-30) for the full reasoning and exact commits
       (`756ebbd`, `738c6a7`, `3e2d01f`, `4182ce2`).
+- [ ] Ledger page (`LedgerPage.tsx`) T-account cards: fixed two
+      `.t-account-grid`/`table.ledger.t-account` CSS bugs reported from a
+      real screenshot (cards stretching to match the tallest sibling in
+      the row; wide amounts squeezing the Date columns into wrapping) —
+      `align-items: flex-start`, `min-width` instead of `width`, and
+      `white-space: nowrap` on the date cells. No browser tool was
+      available to confirm the fix visually; only verified that the
+      rebuilt CSS bundle (via `backend/Dockerfile`'s frontend-build
+      stage — no local `node`/`npm` either) actually contains the new
+      rules. Needs a real look at `/app/reports/ledger` on an account
+      with many rows next to one with few, and on an account with large
+      amounts, to confirm both are actually fixed and nothing else
+      regressed.
 - [ ] Phase 5 visual pass: the 21 themes × 26 screens sweep (every theme
       switch actually looks right, not just the default) and the
       Apple-hardware confirmation that `option-key.js`'s ⌥ relabeling
