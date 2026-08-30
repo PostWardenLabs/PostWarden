@@ -65,6 +65,35 @@ def test_list_entries_returns_decimal_totals_as_strings(book, conn):
     assert body["entries"][0]["lines"][0]["debit"] == "500.00"
 
 
+def test_export_csv_endpoint(book, conn):
+    client = client_for(conn)
+    client.post("/entries", json=_entry_body(book))
+    resp = client.get("/entries/export.csv")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "text/csv; charset=utf-8"
+    assert "postwarden-journal.csv" in resp.headers["content-disposition"]
+    text = resp.text
+    assert "Entry #,Date,Scenario" in text
+    assert "500" in text
+
+
+def test_export_xlsx_endpoint_respects_the_same_filters_as_the_list(book, conn):
+    client = client_for(conn)
+    client.post("/entries", json=_entry_body(book))
+    resp = client.get("/entries/export.xlsx", params={"account": "9999-no-such-account"})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == \
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # No entry has a line on that account, so the workbook comes back
+    # with a zero grand total rather than the one entry we just posted —
+    # same build_filter() the paged list itself uses.
+    from openpyxl import load_workbook
+    import io
+    ws = load_workbook(io.BytesIO(resp.content)).active
+    values = [tuple(row) for row in ws.iter_rows(values_only=True)]
+    assert values[-1][8] == 0  # Debit total
+
+
 def test_reverse_entry_endpoint(book, conn):
     client = client_for(conn)
     entry_id = client.post("/entries", json=_entry_body(book)).json()["entry_id"]

@@ -72,3 +72,52 @@ def test_variance_endpoint_defaults_to_native_depth(book, conn):
     body = resp.json()
     assert body["rolled_up"] is False
     assert body["total_baseline"] == "0.00"
+
+
+# ---------------------------------------------------------------------------
+# Exports — one status/content-type/filename smoke test per CSV+XLSX
+# pair; `test_export.py` already covers each one's actual row/formula
+# content against `export.py` directly, so these only prove the router
+# wiring (query params -> service -> export -> Response) holds end to
+# end over real HTTP.
+# ---------------------------------------------------------------------------
+
+
+def test_trial_balance_csv_and_xlsx_endpoints(book, conn):
+    csv_resp = client_for(conn).get("/reports/trial-balance.csv", params={"as_of": "2026-02-28", "raw": 1})
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"] == "text/csv; charset=utf-8"
+
+    xlsx_resp = client_for(conn).get("/reports/trial-balance.xlsx", params={"as_of": "2026-02-28", "raw": 1})
+    assert xlsx_resp.status_code == 200
+    assert xlsx_resp.headers["content-type"] == \
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def test_balance_sheet_csv_and_xlsx_endpoints(book, conn):
+    assert client_for(conn).get("/reports/balance-sheet.csv", params={"as_of": "2026-02-28"}).status_code == 200
+    assert client_for(conn).get("/reports/balance-sheet.xlsx", params={"as_of": "2026-02-28"}).status_code == 200
+
+
+def test_income_statement_csv_and_xlsx_endpoints_default_to_an_unbounded_range(book, conn):
+    """No date_from/date_to at all — unlike `GET /reports/income-
+    statement`, the export siblings don't default a blank range to the
+    current month (this file's own module docstring), so this also
+    proves that difference actually holds over HTTP, not just when
+    calling `_income_statement_result` directly."""
+    csv_resp = client_for(conn).get("/reports/income-statement.csv")
+    assert csv_resp.status_code == 200
+    xlsx_resp = client_for(conn).get("/reports/income-statement.xlsx")
+    assert xlsx_resp.status_code == 200
+
+
+def test_cash_flow_csv_and_xlsx_endpoints(book, conn):
+    params = {"date_from": "2026-01-01", "date_to": "2026-02-28"}
+    assert client_for(conn).get("/reports/cash-flow.csv", params=params).status_code == 200
+    assert client_for(conn).get("/reports/cash-flow.xlsx", params=params).status_code == 200
+
+
+def test_variance_csv_and_xlsx_endpoints(book, conn):
+    params = {"as_of": "2026-02-28"}
+    assert client_for(conn).get("/reports/variance.csv", params=params).status_code == 200
+    assert client_for(conn).get("/reports/variance.xlsx", params=params).status_code == 200

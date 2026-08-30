@@ -699,7 +699,95 @@ since 1.4: a full `docker compose up -d --build` (clean log, `/healthz`
 the exact CI shape by hand (a bare `postgres:16` container, `alembic
 upgrade head`, `pytest`).
 
-**Next step:** 1.12 — `export/`.
+**Phase 1.12 done.** `export/` — the shared CSV/XLSX writers, plus the
+CSV/XLSX export routes on the two modules that actually need them
+(`modules/reports/`, `modules/entries/`). Ported from `app/main.py`'s
+~260-line shared export-plumbing block (`csv_response`, the `_xlsx_*`
+style/formula helpers, `xlsx_response`) and its six `/export/*` route
+pairs (Trial Balance, Balance Sheet, Income Statement, Cash Flow,
+Variance, Journal), unchanged in shape — the "12 exports (812 lines)"
+REBUILD.md §4 measured as the single largest "mechanical" bucket in the
+old app.
+
+1. **`export/` holds only the two files of genuinely shared plumbing —
+   `csv.py` (`csv_response`) and `xlsx.py` (the style palette,
+   `xlsx_data_row`/`xlsx_header_row`/`xlsx_variance_formulas`/
+   `xlsx_sum_formula`/`xlsx_response`) — every report-specific and
+   Journal-specific row-building function lives in a new `export.py`
+   inside `modules/reports/`/`modules/entries/` themselves, not in
+   `export/`.** REBUILD.md §6's tree diagram lists `export/` as one
+   shared directory, but a literal reading — every export function for
+   every report living in one un-scoped package — would mean `export/`
+   knows the exact shape of every other module's own report/journal
+   data, failing REBUILD.md decision 3's "deletable on its own" test in
+   the *other* direction: deleting `modules/reports/` should not require
+   also editing a shared `export/` file that has no reason to know
+   Income Statement exists. `export/` stays exactly as generic as
+   `csv.writer`/`openpyxl` themselves — "write this cell with this
+   style" — and each module's own `export.py` is where "here is what an
+   Income Statement row/Journal leg becomes on a spreadsheet" lives,
+   same vertical-slice boundary every prior module already draws for its
+   own `service.py`/`repository.py` split.
+2. **Every `_xlsx_*` helper drops its leading underscore.** Legacy's
+   functions were private to one 5,908-line file; here the module
+   boundary (`export.xlsx`) *is* the privacy boundary, and two other
+   modules are meant to import these directly — the same "shared
+   infrastructure, imported not forked" exception `modules/auth/deps.py`
+   (Phase 1.11) already established, extended here to a second case.
+3. **The CSV/XLSX export routes deliberately do NOT apply the read
+   route's own "blank date range defaults to the current month" step**
+   — ported forward from `income_statement_export_csv`/`cash_flow_
+   export_csv`'s own established legacy behavior: a blank `date_from`/
+   `date_to` on an export means unbounded, not "this month." A real, if
+   easy-to-miss, page-vs-export difference that predates this rebuild
+   and is preserved rather than "fixed" (REBUILD.md decision 4).
+   `modules/reports/router.py`'s own module docstring calls this out so
+   it doesn't read as an oversight later.
+4. **Every account row's own base/compare figure in an XLSX export
+   stays a literal, never a `SUM()` over a row range** — a rolled-up
+   multi-level account tree would silently double-count under a range.
+   Only cell-by-cell references are ever live formulas (Variance/%
+   Variance pairs, Income Statement's "Net income after X" running
+   rows) — each one names its own row's cells individually
+   (`xlsx.xlsx_sum_formula`/`xlsx_variance_formulas`), the exact same
+   safety property legacy's own comments on this called a hard
+   requirement, not a style choice.
+
+Other decisions, smaller:
+
+- **Reports' export routes are mounted as `.csv`/`.xlsx` siblings under
+  the existing `/reports/<name>` path** (`GET /reports/trial-balance.csv`),
+  not legacy's flat top-level `/export/<name>.csv` namespace — natural
+  once `modules/reports/router.py` already owns the `/reports` prefix;
+  the Journal's own export keeps legacy's exact path shape instead
+  (`GET /entries/export.csv`) since that already equals `/entries` +
+  `/export.csv`, no renaming needed.
+- **`modules/entries/repository.py` gained one function,
+  `export_rows`**, and `service.py` gained the thin `export_rows`
+  wrapper around it (mirroring `list_entries`'s own `build_filter` ->
+  repository call shape) — same filters, same `WHERE` clause
+  `list_entries` uses, just no pagination and, optionally
+  (`group_legs=True`), debits-before-credits ordering for the XLSX
+  export's traditional general-journal presentation instead of
+  `line_no`'s original posting order.
+- **`modules/reports/export.py`'s income-statement functions branch on
+  `"periods" in result`** (present only in a `income_statement_matrix`
+  result) rather than taking an extra `is_split` flag — the two
+  service functions' return shapes already disambiguate themselves, so
+  a caller (`router.py`) never has to pass along which one it called.
+
+47 new tests (13 in `export/` itself — `test_csv.py`/`test_xlsx.py`, pure
+unit tests with no database; 14 in `modules/reports/test_export.py`
+plus 5 export-route smoke tests added to its own `test_router.py`; 9 in
+a new `modules/entries/test_export.py` plus 2 each added to `entries/
+test_repository.py`/`test_service.py`/`test_router.py`) — 492 passed
+total. Verified for real, the same three ways as every phase since 1.4:
+a full `docker compose up -d --build` (clean log, `/healthz` 200), a
+local `docker compose up -d db` + `pytest` run, and separately the exact
+CI shape by hand (a bare `postgres:16` container, `alembic upgrade
+head`, `pytest`).
+
+**Next step:** 1.13 — `analytics/`.
 
 ---
 
@@ -779,10 +867,12 @@ directly.
 - [x] **1.10** `modules/scheduling/` — scheduled entries, entry
       templates.
 - [x] **1.11** `modules/auth/`
-- [ ] **1.12** `export/` — shared CSV/XLSX writers, consumed by
-      `entries`, `reports`, and `imports` alike. XLSX carries live
-      Excel formulas (cell-by-cell sums, not ranges) — port that
-      behavior deliberately, not incidentally.
+- [x] **1.12** `export/` — shared CSV/XLSX writers, consumed by
+      `entries` and `reports` (not `imports` — that module only ever
+      *reads* a CSV, it never writes one, so it has no reason to depend
+      on this package; corrected on completion, see the Current status
+      write-up). XLSX carries live Excel formulas (cell-by-cell sums,
+      not ranges) — ported deliberately, not incidentally.
 - [ ] **1.13** `analytics/` — star-schema views + the documented
       `/api/*` contract (the 5 existing routes).
 - [ ] **1.14** `main.py` cut down to app factory + router mounting only.
@@ -905,6 +995,14 @@ above:
 Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
+
+- **2026-08-29** — Phase 1.12 done: `export/` — see the Current status
+  section above for the full write-up (the shared CSV/XLSX writer
+  package, plus new export routes on `modules/reports/`/`modules/
+  entries/`). `export/` itself ended up scoped to two files of pure
+  writer plumbing rather than every report's own export logic — each
+  consuming module owns its own `export.py`, the same vertical-slice
+  boundary every module already draws for `service.py`/`repository.py`.
 
 - **2026-08-29** — Phase 1.11 done: `modules/auth/` — see the Current
   status section above for the full write-up (login/logout/session/

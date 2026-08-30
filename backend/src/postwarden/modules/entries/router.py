@@ -9,10 +9,10 @@ Deliberately not yet mounted into `app` — same as `modules/reports/
 router.py`; real mounting is Phase 1.14, once every module in
 `modules/` has built one.
 
-**Two things this router does NOT do yet, both documented gaps a later
-phase closes rather than something reached into now** (same "don't
-depend on a module that doesn't exist yet" reasoning `modules/reports/
-router.py` already applied to `modules/reference/`):
+**One thing this router does NOT do yet, a documented gap a later phase
+closes rather than something reached into now** (same "don't depend on
+a module that doesn't exist yet" reasoning `modules/reports/router.py`
+already applied to `modules/reference/`):
 
 - **No CSRF check, no real `created_by_user_id`/reversed-by
   attribution.** Legacy's `require_csrf`/`auth.current_user(request)`
@@ -20,24 +20,26 @@ router.py` already applied to `modules/reference/`):
   posts with `created_by_user_id = NULL` — the column is nullable for
   exactly this reason (`db/schema.sql`'s own comment: "nullable so
   direct psql/import inserts don't need a user, but the app always sets
-  it from the session"). Phase 1.11 wires a real dependency in here;
-  until then, anyone who can reach this router can post as this app
+  it from the session"). Phase 1.11 built the `modules/auth/` mechanism
+  itself but deliberately deferred wiring it into every existing write
+  module (this one included) to Phase 1.14 (`main.py`), where every
+  router is already being touched to be mounted for the first time —
+  see `modules/auth/__init__.py`'s own docstring for the full reasoning.
+  Until then, anyone who can reach this router can post as this app
   layer's own version of a direct-SQL insert.
-- **No CSV/XLSX export routes.** `entries_export_csv`/`entries_export_
-  xlsx` share `_entries_filter` with the paged view but write through
-  `csv.writer`/openpyxl helpers that belong to the shared `export/`
-  module (Phase 1.12). `service.list_entries`/`repository.build_filter`
-  are already shaped so 1.12 can reuse them unchanged — same filters,
-  same WHERE clause — the way legacy's own `_entries_filter` was shared
-  three ways.
-"""
+
+**CSV/XLSX export routes landed in Phase 1.12**, alongside the shared
+`export/` module: `GET /entries/export.csv`/`.xlsx` reuse `service.
+export_rows`/`repository.build_filter` — the exact same filters and
+`WHERE` clause `GET /entries` itself uses — so what's on screen is
+always what gets exported."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
 
 from ...db import get_connection
 from ...errors import pg_message
-from . import schemas, service
+from . import export, schemas, service
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 
@@ -53,6 +55,34 @@ def list_entries(scenario: str = "", date_from: str = "", date_to: str = "", qte
         account=account, payee=payee, amount_op=amount_op, amount_value=amount_value,
         amount_value2=amount_value2, hide_reversed=bool(hide_reversed), entry_id=entry_id,
         page=page)
+
+
+@router.get("/export.csv")
+def export_csv(scenario: str = "", date_from: str = "", date_to: str = "", qtext: str = "",
+                tags: str = "", account: str = "", payee: str = "", amount_op: str = "",
+                amount_value: str = "", amount_value2: str = "", hide_reversed: int = 0,
+                entry_id: str = "", conn: Connection = Depends(get_connection)):
+    """Every entry matching the current filters (not just the current
+    page) — one row per journal line, so it opens straight into a
+    spreadsheet without the entry/line grouping `GET /entries` itself
+    returns."""
+    rows = service.export_rows(
+        conn, scenario=scenario, date_from=date_from, date_to=date_to, qtext=qtext, tags=tags,
+        account=account, payee=payee, amount_op=amount_op, amount_value=amount_value,
+        amount_value2=amount_value2, hide_reversed=bool(hide_reversed), entry_id=entry_id)
+    return export.journal_csv(rows)
+
+
+@router.get("/export.xlsx")
+def export_xlsx(scenario: str = "", date_from: str = "", date_to: str = "", qtext: str = "",
+                 tags: str = "", account: str = "", payee: str = "", amount_op: str = "",
+                 amount_value: str = "", amount_value2: str = "", hide_reversed: int = 0,
+                 entry_id: str = "", conn: Connection = Depends(get_connection)):
+    rows = service.export_rows(
+        conn, scenario=scenario, date_from=date_from, date_to=date_to, qtext=qtext, tags=tags,
+        account=account, payee=payee, amount_op=amount_op, amount_value=amount_value,
+        amount_value2=amount_value2, hide_reversed=bool(hide_reversed), entry_id=entry_id, group_legs=True)
+    return export.journal_xlsx(rows, scenario, date_from, date_to)
 
 
 @router.post("", status_code=201)

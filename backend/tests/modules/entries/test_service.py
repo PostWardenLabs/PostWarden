@@ -78,6 +78,23 @@ def test_list_entries_nests_lines_and_tags_under_each_entry(book, conn):
     assert {l["account_code"] for l in entry["lines"]} == {"1100", "4100"}
 
 
+def test_export_rows_returns_every_matching_leg_not_just_a_page(book, conn):
+    # Each entry has two legs (Checking debit, Salary credit); filtering
+    # by account narrows which *entries* match (same build_filter()
+    # every other caller uses) but still returns every leg of a matching
+    # entry, not just the one on the filtered account.
+    for i in range(3):
+        service.create_entry(conn, **_make(book, description=f"Entry {i}"))
+    rows = service.export_rows(conn, account="1100")
+    assert len(rows) == 6  # 3 entries x 2 legs each, no pagination unlike list_entries
+
+
+def test_export_rows_group_legs_orders_debits_before_credits(book, conn):
+    entry_id = service.create_entry(conn, **_make(book))
+    rows = service.export_rows(conn, entry_id=entry_id, group_legs=True)
+    assert [bool(r["credit"]) for r in rows] == [False, True]
+
+
 def test_reverse_entry_flips_amounts_and_carries_tags(book, conn):
     entry_id = service.create_entry(conn, **_make(book, tags="payroll"))
     new_id = service.reverse_entry(conn, entry_id)

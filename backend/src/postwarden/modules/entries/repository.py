@@ -271,6 +271,43 @@ def list_entries(conn: Connection, where: list[str], params: dict, limit: int, o
     return [dict(r) for r in rows]
 
 
+def export_rows(conn: Connection, where: list[str], params: dict, group_legs: bool = False) -> list[dict]:
+    """Every journal *line* matching `where`/`params` (`build_filter`'s
+    own output) — one row per leg, joined out to its entry/scenario/
+    account/payee — ported from `entries_export_csv`'s inline query
+    (shared verbatim by `entries_export_xlsx` in legacy too). Not the
+    same shape as `list_entries` above (one row per *entry*): an export
+    opens straight into a spreadsheet with no entry/line grouping the
+    JSON response's nested `lines` gets for free, so a caller (`export.py`,
+    Phase 1.12) works from a flat leg list instead.
+
+    `group_legs` orders debits before credits within each entry
+    (`l.credit > 0` sorts false-before-true) rather than each line's own
+    posting order — the XLSX export's traditional general-journal
+    presentation (`modules/reports/export.py`'s counterpart on the
+    reports side documents its own "why" for reports; here it's simply
+    "debits first, same as a printed journal always reads") — while the
+    CSV export keeps `line_no`'s original posting order, matching
+    legacy's own two slightly different ORDER BYs for the same query."""
+    order = "e.entry_date DESC, e.seq DESC, l.credit > 0, l.line_no" if group_legs \
+        else "e.entry_date DESC, e.seq DESC, l.line_no"
+    sql = f"""
+        SELECT e.id AS entry_id, e.entry_date, s.code AS scenario_code,
+               e.description, e.reference, p.name AS payee_name,
+               a.code AS account_code, a.name AS account_name,
+               l.debit, l.credit, l.memo
+          FROM journal_lines l
+          JOIN journal_entries e ON e.id = l.entry_id
+          JOIN scenarios s ON s.id = e.scenario_id
+          JOIN accounts a ON a.id = l.account_id
+          LEFT JOIN payees p ON p.id = e.payee_id
+         WHERE {' AND '.join(where)}
+         ORDER BY {order}
+    """
+    rows = conn.execute(text(sql), params).mappings()
+    return [dict(r) for r in rows]
+
+
 def lines_for_entries(conn: Connection, entry_ids: list[str]) -> list[dict]:
     rows = conn.execute(text("""
         SELECT l.id, l.entry_id, l.line_no, l.debit, l.credit, l.memo,

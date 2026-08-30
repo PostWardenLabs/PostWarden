@@ -13,6 +13,8 @@ from sqlalchemy.exc import DBAPIError
 
 from postwarden.modules.entries import repository as repo
 
+from ...conftest import mk_entry, mk_line
+
 
 def test_account_ids_by_code_returns_only_what_exists(book, conn):
     found = repo.account_ids_by_code(conn, ["1100", "4100", "9999"])
@@ -154,3 +156,29 @@ def test_build_filter_and_list_entries_end_to_end(book, conn, posted_entry):
     assert rows[0]["total_debits"] == Decimal("500.00")
     assert rows[0]["total_credits"] == Decimal("500.00")
     assert rows[0]["reversed_by"] is None
+
+
+def test_export_rows_returns_one_row_per_leg(book, conn, posted_entry):
+    where, params = repo.build_filter()
+    rows = repo.export_rows(conn, where, params)
+    assert [r["account_code"] for r in rows] == ["1100", "4100"]  # line_no order, debit leg first anyway
+    assert rows[0]["debit"] == Decimal("500.00")
+    assert rows[1]["credit"] == Decimal("500.00")
+
+
+def test_export_rows_group_legs_puts_every_debit_before_every_credit(book, conn):
+    # A three-leg entry with the credit leg posted (line_no) ahead of one
+    # of the two debit legs — group_legs=False preserves that original
+    # posting order; group_legs=True (the XLSX export's own presentation)
+    # reorders it debits-first regardless of line_no.
+    entry_id = mk_entry(conn, book["scenario"]["id"], "2026-03-02", "Split paycheck")
+    mk_line(conn, entry_id, book["salary"]["id"], -500, 1)   # credit, line_no 1
+    mk_line(conn, entry_id, book["checking"]["id"], 300, 2)  # debit, line_no 2
+    mk_line(conn, entry_id, book["checking"]["id"], 200, 3)  # debit, line_no 3
+
+    where, params = repo.build_filter()
+    posting_order = repo.export_rows(conn, where, params)
+    assert [bool(r["credit"]) for r in posting_order] == [True, False, False]
+
+    grouped = repo.export_rows(conn, where, params, group_legs=True)
+    assert [bool(r["credit"]) for r in grouped] == [False, False, True]

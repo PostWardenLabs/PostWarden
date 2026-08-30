@@ -76,6 +76,29 @@ def list_entries(conn: Connection, *, scenario: str = "", date_from: str = "", d
             "has_next": has_next, "has_prev": page > 1}
 
 
+def export_rows(conn: Connection, *, scenario: str = "", date_from: str = "", date_to: str = "",
+                 qtext: str = "", tags: str = "", account: str = "", payee: str = "",
+                 amount_op: str = "", amount_value: str = "", amount_value2: str = "",
+                 hide_reversed: bool = False, entry_id: str = "", group_legs: bool = False) -> list[dict]:
+    """Every journal line matching the current filters — not just the
+    current page, unlike `list_entries` above — ported from
+    `entries_export_csv`/`entries_export_xlsx`'s shared `_entries_filter`
+    call. Same filters, same `WHERE` clause as `list_entries`, so what a
+    caller sees in the Journal is exactly what they'd export (the reason
+    `build_filter` lives in `repository.py` rather than being duplicated
+    here)."""
+    try:
+        tag_list = parse_tags(tags) if tags else []
+    except ValueError:
+        tag_list = []  # a hand-edited query string with a malformed tag; ignore, matches legacy
+    where, params = repo.build_filter(
+        scenario=scenario, date_from=date_from or None, date_to=date_to or None, qtext=qtext,
+        tag_list=tag_list, account=account, payee=payee, amount_op=amount_op,
+        amount_value=amount_value, amount_value2=amount_value2, hide_reversed=hide_reversed,
+        entry_id=entry_id)
+    return repo.export_rows(conn, where, params, group_legs=group_legs)
+
+
 def create_entry(conn: Connection, *, entry_date: date | None, scenario_id: int, description: str,
                   reference: str | None, tags: str, payee_id: int | None, accounts: list[str],
                   debits: list[str], credits: list[str], memos: list[str],
