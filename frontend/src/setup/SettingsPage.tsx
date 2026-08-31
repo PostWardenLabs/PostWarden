@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { useSession } from '../auth/sessionContext'
 import { centsEntryEnabled, setCentsEntryEnabled } from '../format/centsEntry'
+import Combobox from '../widgets/Combobox'
 
 // A hub of small, mostly-independent panels, not a single CRUD entity,
 // so this reads differently from every other screen. Account is genuine
@@ -75,6 +76,20 @@ interface MoneyPrefs {
   decimal: string
   thousands: string
 }
+const POSITIONS: { value: string; label: string }[] = [
+  { value: 'prefix', label: 'Before ($1)' },
+  { value: 'suffix', label: 'After (1$)' },
+]
+const DECIMAL_MARKS: { value: string; label: string }[] = [
+  { value: '.', label: 'Period (1.50)' },
+  { value: ',', label: 'Comma (1,50)' },
+]
+const THOUSANDS_MARKS: { value: string; label: string }[] = [
+  { value: ',', label: 'Comma (1,000)' },
+  { value: '.', label: 'Period (1.000)' },
+  { value: ' ', label: 'Space (1 000)' },
+  { value: '', label: 'None (1000)' },
+]
 const MONEY_KEY = 'postwarden-number-format'
 const MONEY_DEFAULTS: MoneyPrefs = { symbol: '', position: 'prefix', decimal: '.', thousands: ',' }
 const DATE_KEY = 'postwarden-date-format'
@@ -166,23 +181,11 @@ export default function SettingsPage() {
         <div className="bar">
           <label className="field" style={{ maxWidth: '16rem' }}>
             Theme
-            <select value={theme} onChange={(e) => applyTheme(e.target.value)}>
-              {THEMES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            <Combobox options={THEMES} value={theme} onChange={applyTheme} />
           </label>
           <label className="field" style={{ maxWidth: '16rem' }}>
             Font
-            <select value={font} onChange={(e) => applyFont(e.target.value)}>
-              {FONTS.map((f) => (
-                <option key={f.value} value={f.value}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
+            <Combobox options={FONTS} value={font} onChange={applyFont} />
           </label>
         </div>
         <p className="dim small" style={{ marginTop: '0.6rem', marginBottom: 0 }}>
@@ -226,39 +229,27 @@ export default function SettingsPage() {
           </label>
           <label className="field" style={{ maxWidth: '9rem' }}>
             Position
-            <select
+            <Combobox
+              options={POSITIONS}
               value={money.position}
-              onChange={(e) => applyMoney({ position: e.target.value as MoneyPrefs['position'] })}
-            >
-              <option value="prefix">Before ($1)</option>
-              <option value="suffix">After (1$)</option>
-            </select>
+              onChange={(v) => applyMoney({ position: v as MoneyPrefs['position'] })}
+            />
           </label>
           <label className="field" style={{ maxWidth: '9rem' }}>
             Decimal mark
-            <select value={money.decimal} onChange={(e) => applyMoney({ decimal: e.target.value })}>
-              <option value=".">Period (1.50)</option>
-              <option value=",">Comma (1,50)</option>
-            </select>
+            <Combobox options={DECIMAL_MARKS} value={money.decimal} onChange={(v) => applyMoney({ decimal: v })} />
           </label>
           <label className="field" style={{ maxWidth: '10rem' }}>
             Thousands mark
-            <select value={money.thousands} onChange={(e) => applyMoney({ thousands: e.target.value })}>
-              <option value=",">Comma (1,000)</option>
-              <option value=".">Period (1.000)</option>
-              <option value=" ">Space (1 000)</option>
-              <option value="">None (1000)</option>
-            </select>
+            <Combobox
+              options={THOUSANDS_MARKS}
+              value={money.thousands}
+              onChange={(v) => applyMoney({ thousands: v })}
+            />
           </label>
           <label className="field" style={{ maxWidth: '11rem' }}>
             Date format
-            <select value={dateFormat} onChange={(e) => applyDateFormat(e.target.value)}>
-              {DATE_FORMATS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+            <Combobox options={DATE_FORMATS} value={dateFormat} onChange={applyDateFormat} />
           </label>
         </div>
         <p className="dim small" style={{ marginTop: '0.6rem', marginBottom: 0 }}>
