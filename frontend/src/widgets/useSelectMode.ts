@@ -63,6 +63,31 @@ export function useSelectMode<T>(
     el.indeterminate = checkedIds.size > 0 && checkedIds.size < ids.length
   }, [checkedIds, ids, selectAllRef])
 
+  // Drops any checked id that's no longer in `ids` — a merge or a delete
+  // can shrink the id list out from under an existing selection (Staging
+  // Duplicates' own Merge stays in select mode afterward so a person can
+  // merge several groups in one sitting, rather than forcing a fresh
+  // Select each time), and a stale checked id past that point would
+  // silently over-count against the shrunk list: the page-level
+  // select-all checkbox comparing checkedIds.size to ids.length above
+  // would never show fully-checked again, and a caller's own "N checked"
+  // math would read wrong. Tags/Payees' own merge already clears
+  // checkedIds outright via toggleSelectMode(), so this is a no-op there
+  // in practice — this only actually does something for a caller that
+  // keeps select mode on across a mutation.
+  useEffect(() => {
+    setCheckedIds((prev) => {
+      const idSet = new Set(ids)
+      let changed = false
+      const next = new Set<T>()
+      for (const id of prev) {
+        if (idSet.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [ids])
+
   function toggleSelectMode() {
     setSelectMode((on) => {
       const next = !on

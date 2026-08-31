@@ -199,12 +199,8 @@ export default function StagingDuplicatesPage() {
 
   const groups = result?.groups ?? []
   const allEntryIds = groups.flatMap((g) => g.entries.map((e) => e.id))
-  // No page-level "select all" checkbox exists on this screen (only each
-  // group's own, rendered by `GroupSelectAll` above) — this ref is never
-  // attached to an element, which is fine: `useSelectMode`'s own
-  // indeterminate-setting effect just no-ops when `.current` is null.
-  const unusedSelectAllRef = useRef<HTMLInputElement>(null)
-  const select = useSelectMode<string>(allEntryIds, unusedSelectAllRef)
+  const selectAllRef = useRef<HTMLInputElement>(null)
+  const select = useSelectMode<string>(allEntryIds, selectAllRef)
 
   function checkedCountIn(group: DuplicateGroup): number {
     return group.entries.filter((e) => select.checkedIds.has(e.id)).length
@@ -381,7 +377,15 @@ export default function StagingDuplicatesPage() {
     const kept = (data as unknown as { kept_entry_id: string }).kept_entry_id
     setMergeDetail(null)
     setFlash({ ok: `Merged into #${kept}` })
-    select.toggleSelectMode()
+    // Select mode stays on (unlike Tags/Payees' own Merge, which always
+    // exits it) — checking several duplicate sets and clicking Merge
+    // used to only ever process the first one, since exiting select mode
+    // wiped every other group's checked entries along with it. `reload()`
+    // recomputes `groups`, and `mergeableGroup` picks up whichever
+    // group (if any) still has 2+ checked — Merge just works again on
+    // it immediately, no re-selecting needed. useSelectMode's own effect
+    // prunes the merged/removed entries out of checkedIds once `groups`
+    // (and therefore `allEntryIds`) reflects the merge.
     await reload()
   }
 
@@ -405,6 +409,10 @@ export default function StagingDuplicatesPage() {
         <button type="button" className="quiet" onClick={select.toggleSelectMode}>
           {select.selectMode ? 'Deselect' : 'Select'}
         </button>
+        <label className="checkline select-only">
+          <input ref={selectAllRef} type="checkbox" onChange={select.toggleSelectAll} />
+          select all
+        </label>
         <button type="button" disabled={!mergeableGroup} onClick={handleMergeClick}>
           Merge
         </button>
