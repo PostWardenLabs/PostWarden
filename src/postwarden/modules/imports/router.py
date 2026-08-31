@@ -83,6 +83,11 @@ def recent_batches(limit: int = 10, conn: Connection = Depends(get_connection)) 
 async def import_csv(target_scenario_id: int = Form(...), file: UploadFile = File(...),
                       session: dict = Depends(require_csrf_header),
                       conn: Connection = Depends(get_connection)) -> dict:
+    """Unchanged multipart contract (IMPORT_WIZARD.md §7 Phase 4 item 4)
+    — only `service.import_csv`'s own internals moved onto the unified
+    pipeline, a thin shim now rather than its own parsing logic. Retired
+    outright in Phase 4 item 5 once `ImportPlainPanel.tsx` stops calling
+    it."""
     try:
         content = service.decode_upload(await file.read())
         result = service.import_csv(

@@ -1,10 +1,13 @@
 """The import wizard's pipeline (`parse_file`/`transform_rows`/`preview_
 file`/`validate_file`/`import_file`, IMPORT_WIZARD.md §7 Phase 4) plus
-the still-separate plain importer (`parse_csv_import`/`import_csv` —
-until Phase 4 item 4 turns it into a thin shim over the same pipeline),
-and the shared Staging-landing step behind both. Every function that
-touches the database takes a SQLAlchemy `Connection` and reads/writes
-through `repository.py`, same convention every prior module established.
+the plain CSV importer's own request body (`import_csv` — a thin shim
+over that same pipeline since Phase 4 item 4, `IMPORT_PLAIN_SHAPE`/
+`IMPORT_PLAIN_COLUMN_MAP`/`IMPORT_PLAIN_COLUMN_KINDS` its own fixed
+wizard configuration; `POST /import`, its one route, is deleted outright
+in Phase 4 item 5 once `ImportPlainPanel.tsx` stops calling it), and the
+shared Staging-landing step behind both. Every function that touches the
+database takes a SQLAlchemy `Connection` and reads/writes through
+`repository.py`, same convention every prior module established.
 
 **`stage_import_groups` is the one function every importer funnels
 through**: one `import_batches` row, then one `journal_entries` + its
@@ -47,7 +50,6 @@ from sqlalchemy.engine import Connection
 
 from . import repository as repo
 
-IMPORT_REQUIRED_COLUMNS = ["Entry #", "Date", "Description", "Account code"]
 IMPORT_MAX_ERRORS_SHOWN = 20
 
 # Step 1 of IMPORT_WIZARD.md's spine (§3) — Phase 2. A "dialect" is the
@@ -325,11 +327,11 @@ def _sniff_date_format(lines: list[str], delimiter: str) -> str:
 
 def _dict_reader(content: str, dialect: dict) -> csv.DictReader:
     """The one place `csv.DictReader` gets constructed — every row-reading
-    function below (`parse_rows`, `sniff_mapped_columns`, `parse_file`,
-    `parse_csv_import`) goes through this rather than building its own,
-    so `dialect['delimiter']`/`dialect['header_row']` are honored
-    everywhere consistently and a future second file format (R7) only
-    has to plug in here. Private, not `parse_rows`, because a caller
+    function below (`parse_rows`, `sniff_mapped_columns`, `parse_file`)
+    goes through this rather than building its own, so `dialect['delimiter']`/
+    `dialect['header_row']` are honored everywhere consistently and a
+    future second file format (R7) only has to plug in here. Private, not
+    `parse_rows`, because a caller
     that needs `.fieldnames` without first exhausting the rows (`sniff_
     mapped_columns`, `parse_file`) still needs the reader object itself,
     not the plain list `parse_rows` hands back."""
@@ -383,100 +385,6 @@ def recent_batches(conn: Connection, limit: int = 10) -> list[dict]:
     return repo.recent_batches(conn, limit)
 
 
-def parse_csv_import(conn: Connection, content: str) -> tuple[list[dict], list[str]]:
-    """(groups, errors) — every group in `groups` already passed every
-    check (a real account code, exactly one of debit/credit per line, and
-    the whole entry nets to zero) and is ready to stage. `errors`
-    describes every row/group that didn't, by original CSV row number,
-    and never touches the database beyond the one account-code lookup.
-    The "Entry #"/"Scenario"/"Account name" columns an export produces are read only
-    to group rows and are otherwise ignored — the id isn't reused, and
-    the scenario a batch lands in comes from the import form, never
-    trusted from inside the file itself. Reads through `_dict_reader`
-    with the plain importer's own fixed dialect — this importer has no
-    dialect-panel UI of its own (that's the mapped importer's Phase 2,
-    IMPORT_WIZARD.md §7), but sharing the one row-reading entry point is
-    real R7 groundwork at zero behavior cost: same comma delimiter, same
-    header-on-row-1 assumption this always had."""
-    reader = _dict_reader(content, IMPORT_DEFAULT_DIALECT)
-    if not reader.fieldnames:
-        return [], ["The file is empty"]
-    missing = [c for c in IMPORT_REQUIRED_COLUMNS if c not in reader.fieldnames]
-    if missing:
-        return [], [f"Missing required column(s): {', '.join(missing)}"]
-
-    raw_groups: dict[str, list[tuple[int, dict]]] = {}
-    order: list[str] = []
-    errors = []
-    for i, row in enumerate(reader, start=2):  # header is row 1
-        key = (row.get("Entry #") or "").strip()
-        if not key:
-            errors.append(f"Row {i}: missing Entry #")
-            continue
-        if key not in raw_groups:
-            raw_groups[key] = []
-            order.append(key)
-        raw_groups[key].append((i, row))
-
-    codes = {(row.get("Account code") or "").strip()
-             for rows in raw_groups.values() for _, row in rows}
-    codes.discard("")
-    found = repo.account_ids_by_code(conn, list(codes)) if codes else {}
-
-    groups = []
-    for key in order:
-        rows = raw_groups[key]
-        first_row_no, first = rows[0]
-        lines, ok = [], True
-        for row_no, row in rows:
-            code = (row.get("Account code") or "").strip()
-            if not code:
-                errors.append(f"Row {row_no} (entry {key}): missing Account code")
-                ok = False
-                continue
-            if code not in found:
-                errors.append(f"Row {row_no} (entry {key}): unknown account code {code!r}")
-                ok = False
-                continue
-            d, c = (row.get("Debit") or "").strip(), (row.get("Credit") or "").strip()
-            try:
-                dv = Decimal(d) if d else Decimal("0")
-                cv = Decimal(c) if c else Decimal("0")
-            except InvalidOperation:
-                errors.append(f"Row {row_no} (entry {key}): Debit/Credit must be numeric")
-                ok = False
-                continue
-            if dv < 0 or cv < 0 or (dv > 0) == (cv > 0):
-                errors.append(f"Row {row_no} (entry {key}): enter exactly one positive Debit or Credit")
-                ok = False
-                continue
-            lines.append({"code": code, "amount": (dv - cv).quantize(Decimal("0.01")),
-                          "memo": (row.get("Memo") or "").strip() or None})
-        if not ok:
-            continue
-        total = sum(ln["amount"] for ln in lines)
-        if total != 0:
-            errors.append(f"Entry {key} (row {first_row_no}): doesn't balance (off by {total:+.2f})")
-            continue
-        entry_date = (first.get("Date") or "").strip()
-        try:
-            date.fromisoformat(entry_date)
-        except ValueError:
-            errors.append(f"Entry {key} (row {first_row_no}): invalid Date {entry_date!r} — expected YYYY-MM-DD")
-            continue
-        description = (first.get("Description") or "").strip()
-        if not description:
-            errors.append(f"Entry {key} (row {first_row_no}): missing Description")
-            continue
-        groups.append({
-            "entry_date": entry_date, "description": description,
-            "reference": (first.get("Reference") or "").strip() or None,
-            "payee_name": (first.get("Payee") or "").strip() or None,
-            "lines": lines,
-        })
-    return groups, errors
-
-
 def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
                          target_scenario_id: int, user_id: int | None) -> int:
     """Shared by both importers — see this module's own docstring.
@@ -486,15 +394,17 @@ def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
     finished setting up).
 
     **Every account code across every group is resolved up front,
-    before any row is written.** An unknown code is impossible from
-    `parse_csv_import`, whose groups are pre-validated, but *not*
-    impossible from `import_file`, whose `value_maps` values are
+    before any row is written.** Every caller — the wizard's own
+    `import_file`, and `import_csv`'s own shim over it since Phase 4
+    item 4 — has `value_maps`/`column_kinds` values that are ultimately
     caller-supplied and never checked against real accounts unless the
     caller also supplied `known_codes` (`transform_rows`' own optional,
-    caller-assembled diagnostic — see `known_account_codes`) — resolving
-    up front here means a bad mapping value always fails with a clear
-    message regardless, the same explicit "unknown account code" check
-    `modules.
+    caller-assembled diagnostic — see `known_account_codes`); `import_
+    csv` always does (a `"code"`-kind column is its only lookup-capable
+    field), but a bad mapping value could still slip through if it
+    didn't. Resolving up front here means a bad mapping value always
+    fails with a clear message regardless, the same explicit "unknown
+    account code" check `modules.
     entries.service.create_entry` and `modules.staging.service.save_edit`
     already both do, rather than surfacing later as a bare `journal_
     lines.account_id` `NOT NULL` violation."""
@@ -522,18 +432,84 @@ def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
     return batch_id
 
 
+# `import_csv`'s own fixed wizard configuration (IMPORT_WIZARD.md §7
+# Phase 4 item 4) — the historical Export-CSV shape (grouped rows, one
+# leg per row, a Debit/Credit pair, `Account code` cells already holding
+# real codes) expressed as `shape`/`column_map`/`column_kinds` instead of
+# `parse_csv_import`'s own bespoke parsing logic. `IMPORT_PLAIN_COLUMN_
+# MAP` covers every field `target_fields_for_shape` offers for this shape
+# — `group_key`/`date`/`account`/`debit`/`credit`/`description`
+# (required) and `reference`/`payee`/`memo` (optional) — under the exact
+# column names `IMPORT_REQUIRED_COLUMNS` (now retired) used to check for
+# by hand. `IMPORT_PLAIN_REQUIRED_KEYS` is the subset `import_csv` always
+# maps regardless of what the file actually has — see its own docstring
+# on why the three optional ones aren't always included verbatim.
+IMPORT_PLAIN_SHAPE = {"rows_per_entry": "grouped", "group_key_column": "Entry #", "amount_style": "debit_credit"}
+IMPORT_PLAIN_COLUMN_MAP = {
+    "group_key": "Entry #", "date": "Date", "description": "Description", "account": "Account code",
+    "debit": "Debit", "credit": "Credit", "reference": "Reference", "payee": "Payee", "memo": "Memo",
+}
+IMPORT_PLAIN_REQUIRED_KEYS = {"group_key", "date", "description", "account", "debit", "credit"}
+IMPORT_PLAIN_COLUMN_KINDS = {"account": IMPORT_COLUMN_KIND_CODE}
+
+
 def import_csv(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
                 user_id: int | None = None) -> dict:
-    """The plain double-entry CSV importer's full request body. Raises
-    `ValueError` when there's nothing valid to stage at all (a
-    missing-column file, or every group failing validation); a partial
-    success (some groups good, some not) stages the good ones and
-    reports the rest in `errors` instead of raising."""
-    groups, errors = parse_csv_import(conn, content)
-    if not groups:
-        raise ValueError("; ".join(errors[:IMPORT_MAX_ERRORS_SHOWN]) or "No valid entries found in the file")
-    batch_id = stage_import_groups(conn, groups, filename, target_scenario_id, user_id)
-    return {"batch_id": batch_id, "staged_count": len(groups), "errors": errors}
+    """The plain double-entry CSV importer's full request body — a thin
+    shim over `import_file` (IMPORT_WIZARD.md §7 Phase 4 item 4) rather
+    than its own parsing logic, `IMPORT_PLAIN_SHAPE`/`IMPORT_PLAIN_
+    COLUMN_MAP`/`IMPORT_PLAIN_COLUMN_KINDS` fixing every wizard choice a
+    real user of the mapped importer would otherwise make by hand.
+
+    **The three optional fields (`reference`/`payee`/`memo`) only join
+    `column_map` when the file's own header actually has that column** —
+    `parse_file`'s structural check treats every `column_map` entry
+    (required or not) as a promise the file has to keep, unlike `parse_
+    csv_import`'s old bare `row.get("Reference")`, which silently read
+    `None` from a column that simply wasn't there. Sniffing the file's
+    real columns first (`sniff_mapped_columns`, cheap and pure — this
+    module's own established "re-read rather than thread extra state"
+    shape, see `known_account_codes`'s docstring) and filtering `IMPORT_
+    PLAIN_COLUMN_MAP` down to `IMPORT_PLAIN_REQUIRED_KEYS` plus whichever
+    optional ones are actually present keeps every plain-importer CSV
+    that never had a Reference/Payee/Memo column working exactly as
+    before; a genuinely empty or header-less file just falls through to
+    `parse_file`'s own "The file is empty" error a moment later.
+
+    `known_account_codes` resolves `Account code`'s real values in one
+    bulk query first, restoring `parse_csv_import`'s old per-row "unknown
+    account code" diagnostic (`_resolve_leg_account`'s own docstring).
+
+    **`skip_bad_rows` is left at `import_file`'s own default (`False`,
+    blocks on any row error) — a deliberate behavior change from `parse_
+    csv_import`'s old always-partial-stage habit**, confirmed before
+    Phase 4 implementation started (`IMPORT_WIZARD.md` §7 Phase 4's own
+    write-up, decision 1): every shape now requires the same explicit
+    "stage the rest, skip these" opt-in a row error used to skip
+    automatically for this importer alone. `POST /import` has no such
+    opt-in in its own request body — this route is retired outright in
+    Phase 4 item 5 (`ImportPlainPanel.tsx` never gets a validation-report
+    step of its own), so the practical effect is a CSV with any bad row
+    now fails outright rather than partially staging, for the short
+    window until that removal lands.
+
+    Raises `ValueError` when there's nothing valid to stage at all (a
+    required column the file itself is missing, every row failing to
+    resolve, or the whole file balancing to nothing) — same contract
+    `parse_csv_import`+`import_file`'s own combination already give
+    every wizard shape."""
+    try:
+        present = set(sniff_mapped_columns(content, IMPORT_DEFAULT_DIALECT)["columns"])
+    except ValueError:
+        present = set()  # empty/header-less file — parse_file raises its own clear error below
+    column_map = {k: v for k, v in IMPORT_PLAIN_COLUMN_MAP.items()
+                  if k in IMPORT_PLAIN_REQUIRED_KEYS or v in present}
+    known_codes = known_account_codes(conn, content, IMPORT_PLAIN_SHAPE, column_map, IMPORT_PLAIN_COLUMN_KINDS)
+    return import_file(
+        conn, content=content, filename=filename, target_scenario_id=target_scenario_id,
+        shape=IMPORT_PLAIN_SHAPE, column_map=column_map, column_kinds=IMPORT_PLAIN_COLUMN_KINDS,
+        value_maps={}, flip_sign=False, dialect=IMPORT_DEFAULT_DIALECT, skip_bad_rows=False,
+        known_codes=known_codes, user_id=user_id)
 
 
 def sniff_mapped_columns(content: str, dialect: dict = IMPORT_DEFAULT_DIALECT, sample_size: int = 5) -> dict:

@@ -47,6 +47,10 @@ def test_recent_batches_endpoint_returns_empty_when_nothing_imported_yet(book, c
 
 
 def test_import_csv_endpoint_stages_entries(book, conn):
+    # No Reference/Payee/Memo columns here — exercises `import_csv`'s own
+    # shim filtering those optional fields out of its `column_map` before
+    # calling `parse_file`, rather than the file actually having them
+    # (IMPORT_WIZARD.md §7 Phase 4 item 4, `import_csv`'s own docstring).
     content = _csv(
         "Entry #,Date,Description,Account code,Debit,Credit",
         f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
@@ -66,11 +70,14 @@ def test_import_csv_endpoint_stages_entries(book, conn):
 
 
 def test_import_csv_endpoint_rejects_a_file_missing_required_columns(book, conn):
+    # `import_csv`'s shim routes through `parse_file`'s own structural
+    # check now, not `parse_csv_import`'s old bespoke "Missing required
+    # column(s)" message (IMPORT_WIZARD.md §7 Phase 4 item 4).
     resp = client_for(conn).post(
         "/import", data={"target_scenario_id": str(book["actual"]["id"])},
         files={"file": ("bad.csv", "Date,Description\n2026-08-01,Nope\n", "text/csv")})
     assert resp.status_code == 400
-    assert "Missing required column" in resp.json()["detail"]
+    assert "Mapped column(s) not found in the file" in resp.json()["detail"]
 
 
 MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",

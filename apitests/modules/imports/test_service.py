@@ -13,13 +13,30 @@ def _csv(*rows: str) -> str:
     return "\n".join(rows) + "\n"
 
 
-def test_parse_csv_import_groups_rows_by_entry_number(book, conn):
+def _plain_column_map() -> dict:
+    """`IMPORT_PLAIN_COLUMN_MAP` filtered down to its required fields only
+    — mirrors what `import_csv`'s own shim computes by sniffing the real
+    file (see its docstring), for tests exercising `parse_file`/
+    `transform_rows` directly against CSVs that skip the optional
+    Reference/Payee/Memo columns, same as `import_csv` itself would."""
+    return {k: v for k, v in service.IMPORT_PLAIN_COLUMN_MAP.items() if k in service.IMPORT_PLAIN_REQUIRED_KEYS}
+
+
+def test_parse_file_and_transform_rows_group_rows_by_entry_number_for_the_plain_shape(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 item 4 — `import_csv`'s own fixed
+    # `IMPORT_PLAIN_SHAPE`/`IMPORT_PLAIN_COLUMN_MAP`/`IMPORT_PLAIN_
+    # COLUMN_KINDS`, exercised directly at the parse/transform level
+    # rather than through the full `import_csv` request (which now
+    # stages or raises — nothing in between, decision 1 below).
     content = _csv(
         "Entry #,Date,Description,Account code,Debit,Credit",
         f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
         f"1,2026-08-01,Imported entry,{book['salary']['code']},,40",
     )
-    groups, errors = service.parse_csv_import(conn, content)
+    rows, parse_errors = service.parse_file(content, service.IMPORT_PLAIN_SHAPE, _plain_column_map())
+    assert parse_errors == []
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_PLAIN_SHAPE, service.IMPORT_PLAIN_COLUMN_KINDS, value_maps={}, flip_sign=False)
     assert errors == []
     [group] = groups
     assert group["entry_date"] == "2026-08-01"
@@ -29,7 +46,7 @@ def test_parse_csv_import_groups_rows_by_entry_number(book, conn):
     assert amounts[book["salary"]["code"]] == Decimal("-40.00")
 
 
-def test_parse_csv_import_reports_bad_rows_and_keeps_the_valid_ones(book, conn):
+def test_transform_rows_reports_bad_rows_and_keeps_the_valid_ones_for_the_plain_shape(book, conn):
     content = _csv(
         "Entry #,Date,Description,Account code,Debit,Credit",
         # Entry 1: valid.
@@ -38,24 +55,43 @@ def test_parse_csv_import_reports_bad_rows_and_keeps_the_valid_ones(book, conn):
         # Entry 2: unbalanced.
         f"2,2026-08-02,Bad entry,{book['checking']['code']},50,",
         f"2,2026-08-02,Bad entry,{book['salary']['code']},,30",
-        # Entry 3: unknown account code.
+        # Entry 3: unknown account code — needs a real `known_codes` set
+        # to catch at this level (`import_csv`'s own shim always supplies
+        # one via `known_account_codes`; a bare `transform_rows` call
+        # with `known_codes=None` would trust "NOPE999" verbatim instead,
+        # deferring to `stage_import_groups`'s own blanket check).
         "3,2026-08-03,Unknown account,NOPE999,10,",
     )
-    groups, errors = service.parse_csv_import(conn, content)
+    column_map = _plain_column_map()
+    rows, _ = service.parse_file(content, service.IMPORT_PLAIN_SHAPE, column_map)
+    known_codes = service.known_account_codes(
+        conn, content, service.IMPORT_PLAIN_SHAPE, column_map, service.IMPORT_PLAIN_COLUMN_KINDS)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_PLAIN_SHAPE, service.IMPORT_PLAIN_COLUMN_KINDS, value_maps={}, flip_sign=False,
+        known_codes=known_codes)
     assert [g["description"] for g in groups] == ["Good entry"]
-    assert any("doesn't balance" in e for e in errors)
-    assert any("unknown account code" in e for e in errors)
+    messages = [e["message"] for e in errors]
+    assert any("doesn't balance" in m for m in messages)
+    assert any("Unknown account code" in m for m in messages)
 
 
-def test_parse_csv_import_rejects_a_file_missing_required_columns(conn):
-    groups, errors = service.parse_csv_import(conn, "Date,Description\n2026-08-01,Nope\n")
-    assert groups == []
-    assert "Missing required column(s)" in errors[0]
+def test_parse_file_rejects_a_plain_shaped_file_missing_the_debit_credit_columns(conn):
+    # `IMPORT_PLAIN_COLUMN_MAP` maps every field to a fixed column name —
+    # a file lacking one of those names fails the structural "mapped
+    # column not found" check, same "reject the whole file outright"
+    # shape `parse_file` already gives the wizard's own mapping step, not
+    # `parse_csv_import`'s old bespoke "Missing required column(s)"
+    # message (IMPORT_WIZARD.md §7 Phase 4 item 4 — a deliberate, minor
+    # side effect of routing through the one shared structural check).
+    rows, errors = service.parse_file("Date,Description\n2026-08-01,Nope\n",
+                                       service.IMPORT_PLAIN_SHAPE, service.IMPORT_PLAIN_COLUMN_MAP)
+    assert rows == []
+    assert "Mapped column(s) not found in the file" in errors[0]
 
 
-def test_parse_csv_import_rejects_an_empty_file(conn):
-    groups, errors = service.parse_csv_import(conn, "")
-    assert groups == []
+def test_parse_file_rejects_an_empty_file_for_the_plain_shape(conn):
+    rows, errors = service.parse_file("", service.IMPORT_PLAIN_SHAPE, service.IMPORT_PLAIN_COLUMN_MAP)
+    assert rows == []
     assert errors == ["The file is empty"]
 
 
@@ -96,9 +132,28 @@ def test_import_csv_stages_entries_end_to_end(book, conn):
 
 
 def test_import_csv_raises_when_no_groups_parsed(book, conn):
-    with pytest.raises(ValueError, match="Missing required column"):
+    with pytest.raises(ValueError, match="Mapped column"):
         service.import_csv(conn, content="Date,Description\n2026-08-01,Nope\n",
                             filename="bad.csv", target_scenario_id=book["actual"]["id"])
+
+
+def test_import_csv_blocks_outright_on_a_bad_row_instead_of_partially_staging(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 decision 1 — a deliberate behavior
+    # change from `parse_csv_import`'s old always-partial-stage default:
+    # `import_csv`'s shim leaves `skip_bad_rows` at `import_file`'s own
+    # default (`False`), so one bad row now blocks the *whole* file,
+    # including the otherwise-good entry, rather than staging what it can
+    # and reporting the rest.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Good entry,{book['checking']['code']},40,",
+        f"1,2026-08-01,Good entry,{book['salary']['code']},,40",
+        f"2,2026-08-02,Bad entry,{book['checking']['code']},50,",
+        f"2,2026-08-02,Bad entry,{book['salary']['code']},,30",
+    )
+    with pytest.raises(ValueError, match="doesn't balance"):
+        service.import_csv(conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"])
+    assert repo.recent_batches(conn, 10) == []  # nothing staged, not even the good entry
 
 
 MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
@@ -212,26 +267,27 @@ GROUPED_COLUMN_MAP = {"group_key": "Entry #", "date": "Date", "description": "De
 DIRECT_CODE_KIND = {"account": service.IMPORT_COLUMN_KIND_CODE}
 
 
-def test_parse_file_and_transform_rows_match_parse_csv_import_for_a_grouped_debit_credit_direct_code_file(book, conn):
-    # The literal equivalence check IMPORT_WIZARD.md §7 Phase 4 calls
-    # for: today's Export-CSV shape (grouped, Debit/Credit, real account
-    # codes, no value_maps at all) must stage identically whether it goes
-    # through the old `parse_csv_import` or the new `parse_file` +
-    # `transform_rows`.
+def test_import_plain_shape_constants_describe_the_same_shape_as_the_general_grouped_debit_credit_fixtures(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 item 4 — `import_csv`'s own fixed
+    # `IMPORT_PLAIN_SHAPE`/`IMPORT_PLAIN_COLUMN_KINDS` describe exactly
+    # the same shape the general grouped/Debit-Credit/direct-code tests
+    # elsewhere in this file already exercise via `GROUPED_DEBIT_CREDIT_
+    # SHAPE`/`DIRECT_CODE_KIND` — the old separate `parse_csv_import`
+    # implementation is gone, but the shape it always parsed isn't a
+    # special case any more, it's just this one instance of the general
+    # pipeline.
+    assert service.IMPORT_PLAIN_SHAPE == GROUPED_DEBIT_CREDIT_SHAPE
+    assert service.IMPORT_PLAIN_COLUMN_KINDS == DIRECT_CODE_KIND
+    assert {k: v for k, v in service.IMPORT_PLAIN_COLUMN_MAP.items() if k in GROUPED_COLUMN_MAP} == GROUPED_COLUMN_MAP
+
     content = _csv(
         "Entry #,Date,Description,Account code,Debit,Credit",
         f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
         f"1,2026-08-01,Imported entry,{book['salary']['code']},,40",
     )
-    old_groups, old_errors = service.parse_csv_import(conn, content)
-    assert old_errors == []
-
-    rows, parse_errors = service.parse_file(content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP)
-    assert parse_errors == []
-    new_groups, new_errors = service.transform_rows(
-        rows, GROUPED_DEBIT_CREDIT_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False)
-    assert new_errors == []
-    assert new_groups == old_groups
+    result = service.import_csv(conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"])
+    assert result["staged_count"] == 1
+    assert result["errors"] == []
 
 
 def test_transform_rows_grouped_debit_credit_reports_one_balance_error_per_group_not_per_row(book):
