@@ -69,8 +69,17 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
     return base
   }, [options, filterText, onCreate])
 
-  let defaultActive = rows.findIndex((r) => !('create' in r) && r.value === value)
-  if (defaultActive === -1 && rows.length) defaultActive = 0
+  // Nothing highlighted on a fresh open — this used to jump straight to
+  // whichever row matched the current `value`, or, if there wasn't one
+  // (a blank field), fall back to row 0 regardless. Either way, a row
+  // showed up looking keyboard-selected before the user had touched
+  // anything, which reads as "this is what's chosen" even though it
+  // isn't — and Tab away from that state silently discarded it instead
+  // of committing it, the confusing half. Only once there's an actual
+  // search underway (filterText non-empty) does the first match become
+  // active, so Enter still picks the top result the way typeahead is
+  // expected to; arrowing down from -1 lands on row 0 same as before.
+  const defaultActive = filterText.trim() === '' ? -1 : 0
   const activeIndex = manualActive !== null && manualActive < rows.length ? manualActive : defaultActive
 
   function openPanel() {

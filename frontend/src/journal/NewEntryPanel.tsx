@@ -118,9 +118,15 @@ export default function NewEntryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only, defaultOpen is a prop snapshot from the URL at load
   }, [])
 
+  // A leading blank "None" option, same shape payeeOptions below already
+  // has — without it, a blank line's account picker had no way to
+  // explicitly land back on "unset" once you'd navigated elsewhere in
+  // the list (typing the field empty and tabbing away only clears the
+  // value if the options list actually has a blank one to clear to; see
+  // Combobox.tsx's own resolveAndClose comment).
   const accountOptions: ComboboxOption[] = useMemo(() => {
     const list = postableByScenario.get(scenarioId) ?? []
-    return list.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` }))
+    return [{ value: '', label: 'None' }, ...list.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` }))]
   }, [postableByScenario, scenarioId])
 
   const payeeOptions: ComboboxOption[] = useMemo(
