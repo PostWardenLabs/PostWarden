@@ -940,6 +940,125 @@ def _transform_grouped_rows(rows: list[dict], shape: dict, column_kinds: dict[st
     return groups, errors
 
 
+def known_account_codes(conn: Connection, content: str, shape: dict, column_map: dict[str, str],
+                         column_kinds: dict[str, str], dialect: dict = IMPORT_DEFAULT_DIALECT) -> set[str] | None:
+    """The one DB-touching step behind an otherwise-pure `/mapped/
+    validate` or commit request: resolves every `"code"`-kind lookup-
+    capable column's distinct raw values against the real ledger in one
+    bulk query, so `transform_rows` can give a precise per-row "unknown
+    account code" error instead of only ever finding out at `stage_
+    import_groups`'s own end-of-commit blanket check (see `_resolve_leg_
+    account`'s own docstring on why that matters).
+
+    Re-parses the file via `parse_file` itself rather than taking
+    already-parsed `rows` — cheap (pure, in-memory) and keeps this the
+    *only* place in a `/mapped/validate` request that needs a
+    `Connection` at all, the same "one clearly-marked DB step, everything
+    else pure" shape `stage_import_groups` already gives the commit side.
+    The router calls this once, then passes its result into `validate_
+    file`/`import_file`'s own `known_codes` parameter — it's the caller's
+    choice to make this extra round trip, not something either of those
+    two functions decides on their own.
+
+    Returns `None` — "skip the check, defer to `stage_import_groups`" —
+    when no `column_kinds` entry is `"code"` at all (the common case:
+    every lookup-capable column is a label), or when `parse_file` can't
+    produce rows at all (a structural error `validate_file`/`import_
+    file`'s own re-parse will raise on a moment later — this function
+    only ever yields fewer diagnostics on a bad file, never raises)."""
+    code_keys = [k for k, kind in column_kinds.items() if kind == IMPORT_COLUMN_KIND_CODE]
+    if not code_keys:
+        return None
+    rows, errors = parse_file(content, shape, column_map, dialect)
+    if errors:
+        return None
+    codes = {r[k] for k in code_keys for r in rows if r.get(k)}
+    if not codes:
+        return set()
+    return set(repo.account_ids_by_code(conn, list(codes)).keys())
+
+
+def preview_file(content: str, shape: dict, column_map: dict[str, str], column_kinds: dict[str, str],
+                  dialect: dict = IMPORT_DEFAULT_DIALECT) -> dict:
+    """Replaces `preview_mapped`. What the review step's own pickers need
+    before any value map exists: `row_count` (raw rows read — for a
+    `"grouped"` shape this counts rows, not the entries they'll combine
+    into, since grouping itself is `transform_rows`' job and hasn't run
+    yet), and `values_found` — one entry per `lookup_capable` target field
+    whose `column_kinds` says `"label"` (never one for a `"code"`-kind
+    column — there's nothing to map, same zero-friction "just Stage"
+    immediacy a direct-code column has always had). Each entry is
+    `{distinct: sorted list of the file's own raw values, has_blank_rows:
+    bool}` — generalizes `preview_mapped`'s hardcoded `accounts_found`/
+    `categories_found`/`has_no_category_rows` into "however many
+    lookup-needing columns the mapping declares" (0, 1, or 2 in practice,
+    since only `account`/`category` are ever `lookup_capable`).
+
+    Raises `ValueError` on a bad file or an incomplete `column_map`, same
+    contract `preview_mapped` always had."""
+    rows, errors = parse_file(content, shape, column_map, dialect)
+    if errors:
+        raise ValueError("; ".join(errors))
+    if not rows:
+        raise ValueError("No rows found in the file")
+    values_found = {}
+    for f in target_fields_for_shape(shape):
+        key = f["key"]
+        if not f["lookup_capable"] or column_kinds.get(key, IMPORT_DEFAULT_COLUMN_KIND) == IMPORT_COLUMN_KIND_CODE:
+            continue
+        values_found[key] = {
+            "distinct": sorted({r[key] for r in rows if r.get(key)}),
+            "has_blank_rows": any(not r.get(key) for r in rows),
+        }
+    return {"row_count": len(rows), "values_found": values_found}
+
+
+def validate_file(content: str, shape: dict, column_map: dict[str, str], column_kinds: dict[str, str],
+                   value_maps: dict[str, dict[str, str]], flip_sign: bool,
+                   dialect: dict = IMPORT_DEFAULT_DIALECT, known_codes: set[str] | None = None) -> dict:
+    """Replaces `validate_mapped`. The review step's own pre-commit
+    validation report (IMPORT_WIZARD.md §3 step 5) — runs the exact
+    `parse_file` + `transform_rows` pipeline `import_file` commits with,
+    against the same maps, but never touches the database itself and
+    never stages anything (`known_codes`, if the caller wants precise
+    per-`"code"`-column diagnostics, is caller-supplied data — see
+    `known_account_codes` — not something this function goes and fetches
+    on its own). Raises `ValueError` on the same structural (pre-row)
+    failures `preview_file` already raises for; only row-level failures
+    come back as data, in `errors`."""
+    rows, errors = parse_file(content, shape, column_map, dialect)
+    if errors:
+        raise ValueError("; ".join(errors))
+    groups, row_errors = transform_rows(rows, shape, column_kinds, value_maps, flip_sign, dialect, known_codes)
+    return {"groups_count": len(groups), "errors": row_errors}
+
+
+def import_file(conn: Connection, *, content: str, filename: str, target_scenario_id: int, shape: dict,
+                 column_map: dict[str, str], column_kinds: dict[str, str],
+                 value_maps: dict[str, dict[str, str]], flip_sign: bool,
+                 dialect: dict = IMPORT_DEFAULT_DIALECT, skip_bad_rows: bool = False,
+                 known_codes: set[str] | None = None, user_id: int | None = None) -> dict:
+    """Replaces `import_mapped` and, from Phase 4 item 4 on, `import_csv`
+    — the wizard's one commit step for every shape. Same "`skip_bad_rows`
+    makes a partial import an explicit choice, not an implicit default"
+    contract `import_mapped` established (IMPORT_WIZARD.md §7 Phase 3
+    item 2), now the rule for a grouped/Debit-Credit file too — a
+    deliberate behavior change from `import_csv`'s old always-partial-
+    stage default, confirmed before Phase 4 implementation started (see
+    `IMPORT_WIZARD.md` §7 Phase 4's own write-up)."""
+    rows, errors = parse_file(content, shape, column_map, dialect)
+    if errors:
+        raise ValueError("; ".join(errors))
+    groups, row_errors = transform_rows(rows, shape, column_kinds, value_maps, flip_sign, dialect, known_codes)
+    if row_errors and not skip_bad_rows:
+        messages = [e["message"] for e in row_errors[:IMPORT_MAX_ERRORS_SHOWN]]
+        raise ValueError("; ".join(messages))
+    if not groups:
+        raise ValueError("No valid entries produced — check the mapping")
+    batch_id = stage_import_groups(conn, groups, filename, target_scenario_id, user_id)
+    return {"batch_id": batch_id, "staged_count": len(groups), "errors": row_errors}
+
+
 def parse_mapped_file(content: str, column_map: dict[str, str],
                        dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
     """(rows, errors). `column_map` is target-field-key -> the file's own

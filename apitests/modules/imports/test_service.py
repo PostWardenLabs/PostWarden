@@ -349,6 +349,132 @@ def test_transform_rows_known_codes_supplied_reports_an_unknown_code_per_row(boo
     assert "Unknown account code 'NOPE999'" in errors[0]["message"]
 
 
+def test_known_account_codes_returns_none_when_no_column_is_code_kind(conn):
+    assert service.known_account_codes(conn, "content", GROUPED_SIGNED_SHAPE, {}, {}) is None
+
+
+def test_known_account_codes_resolves_real_codes_in_one_bulk_lookup(book, conn):
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,x,{book['checking']['code']},40,",
+        f"1,2026-08-01,x,{book['salary']['code']},,40",
+    )
+    codes = service.known_account_codes(conn, content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP,
+                                         DIRECT_CODE_KIND)
+    assert codes == {book["checking"]["code"], book["salary"]["code"]}
+
+
+def test_known_account_codes_returns_none_on_a_structural_parse_error(conn):
+    assert service.known_account_codes(conn, "", GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP,
+                                        DIRECT_CODE_KIND) is None
+
+
+def test_preview_file_reports_distinct_values_for_label_kind_lookup_columns():
+    content = _csv(
+        "Account,Date,Amount,Category",
+        "Checking,2026-08-01,-500,Rent",
+        "Checking,2026-08-02,1000,",
+    )
+    column_map = {"account": "Account", "date": "Date", "amount": "Amount", "category": "Category"}
+    preview = service.preview_file(content, service.IMPORT_DEFAULT_SHAPE, column_map, column_kinds={})
+    assert preview["row_count"] == 2
+    assert preview["values_found"]["account"] == {"distinct": ["Checking"], "has_blank_rows": False}
+    assert preview["values_found"]["category"] == {"distinct": ["Rent"], "has_blank_rows": True}
+
+
+def test_preview_file_omits_a_code_kind_column_entirely(book):
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,x,{book['checking']['code']},40,",
+        f"1,2026-08-01,x,{book['salary']['code']},,40",
+    )
+    preview = service.preview_file(content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP, DIRECT_CODE_KIND)
+    assert preview["values_found"] == {}  # nothing to map — same zero-friction round trip as always
+
+
+def test_preview_file_raises_on_a_file_with_no_rows():
+    content = "Account,Date,Amount,Category\n"
+    column_map = {"account": "Account", "date": "Date", "amount": "Amount", "category": "Category"}
+    with pytest.raises(ValueError, match="No rows found"):
+        service.preview_file(content, service.IMPORT_DEFAULT_SHAPE, column_map, column_kinds={})
+
+
+def test_validate_file_reports_row_errors_without_touching_the_database(book):
+    content = _csv(
+        "Account,Date,Amount,Category",
+        "Checking,2026-08-01,-500,Mystery",
+    )
+    column_map = {"account": "Account", "date": "Date", "amount": "Amount", "category": "Category"}
+    result = service.validate_file(
+        content, service.IMPORT_DEFAULT_SHAPE, column_map, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}}, flip_sign=False)
+    assert result["groups_count"] == 0
+    assert "No mapping chosen for category 'Mystery'" in result["errors"][0]["message"]
+
+
+def test_validate_file_returns_zero_errors_for_a_clean_grouped_file(book):
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,x,{book['checking']['code']},40,",
+        f"1,2026-08-01,x,{book['salary']['code']},,40",
+    )
+    result = service.validate_file(content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP,
+                                    column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False)
+    assert result == {"groups_count": 1, "errors": []}
+
+
+def test_import_file_stages_a_grouped_debit_credit_file_end_to_end(book, conn):
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
+        f"1,2026-08-01,Imported entry,{book['salary']['code']},,40",
+    )
+    result = service.import_file(
+        conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"],
+        shape=GROUPED_DEBIT_CREDIT_SHAPE, column_map=GROUPED_COLUMN_MAP, column_kinds=DIRECT_CODE_KIND,
+        value_maps={}, flip_sign=False)
+    assert result["staged_count"] == 1
+    assert result["errors"] == []
+    [batch] = repo.recent_batches(conn, 10)
+    assert batch["id"] == result["batch_id"]
+
+
+def test_import_file_blocks_a_grouped_file_without_confirmation_when_a_row_fails(book, conn):
+    # Confirms the Phase 4 decision made before implementation started:
+    # `skip_bad_rows` blocks by default for the grouped shape too, not
+    # just the one-row shape — a deliberate behavior change from
+    # `import_csv`'s old always-partial-stage default.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Good,{book['checking']['code']},40,",
+        f"1,2026-08-01,Good,{book['salary']['code']},,40",
+        "2,2026-08-02,Unknown account,NOPE999,10,",
+    )
+    known = {book["checking"]["code"], book["salary"]["code"]}
+    with pytest.raises(ValueError, match="Unknown account code 'NOPE999'"):
+        service.import_file(
+            conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"],
+            shape=GROUPED_DEBIT_CREDIT_SHAPE, column_map=GROUPED_COLUMN_MAP, column_kinds=DIRECT_CODE_KIND,
+            value_maps={}, flip_sign=False, known_codes=known)
+    assert repo.recent_batches(conn, 10) == []
+
+
+def test_import_file_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn):
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Good,{book['checking']['code']},40,",
+        f"1,2026-08-01,Good,{book['salary']['code']},,40",
+        "2,2026-08-02,Unknown account,NOPE999,10,",
+    )
+    known = {book["checking"]["code"], book["salary"]["code"]}
+    result = service.import_file(
+        conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"],
+        shape=GROUPED_DEBIT_CREDIT_SHAPE, column_map=GROUPED_COLUMN_MAP, column_kinds=DIRECT_CODE_KIND,
+        value_maps={}, flip_sign=False, skip_bad_rows=True, known_codes=known)
+    assert result["staged_count"] == 1
+    assert len(result["errors"]) == 1
+
+
 def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
     # A file whose own column names don't match ActualBudget's at all —
     # the whole point of the mapping step: any header works once mapped.
