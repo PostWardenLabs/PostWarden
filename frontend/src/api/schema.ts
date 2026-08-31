@@ -711,6 +711,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/mapped/columns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Mapped Columns
+         * @description No `conn`/database at all — sniffing a file's own column names is
+         *     pure (`service.sniff_mapped_columns`). `fields` is `service.
+         *     IMPORT_MAPPED_FIELDS` verbatim, so the mapping step's own target-field
+         *     list lives in exactly one place; `target_scenario_id`/`filename` are
+         *     handed back unchanged alongside `file_content_b64` purely so the
+         *     frontend can carry them forward through the rest of the wizard
+         *     without holding separate state of its own.
+         */
+        post: operations["import_mapped_columns_import_mapped_columns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/mapped/preview": {
         parameters: {
             query?: never;
@@ -723,10 +749,13 @@ export interface paths {
         /**
          * Import Mapped Preview
          * @description No `conn`/database at all — parsing and grouping the file's own
-         *     Account/Category values is pure (`service.preview_mapped`).
-         *     `target_scenario_id`/`filename` are handed back unchanged alongside
-         *     `file_content_b64` purely so the frontend can carry them forward
-         *     into the commit step without holding separate state of its own.
+         *     Account/Category values (once mapped onto real columns via `payload.
+         *     column_map`) is pure (`service.preview_mapped`). `filename`/
+         *     `target_scenario_id`/`file_content_b64`/`column_map` are all handed
+         *     back unchanged so the frontend can carry them forward into the
+         *     commit step without holding separate state of its own — same
+         *     round-trip-everything-forward shape the old multipart version of
+         *     this route already had.
          */
         post: operations["import_mapped_preview_import_mapped_preview_post"];
         delete?: never;
@@ -1406,8 +1435,8 @@ export interface components {
             /** File */
             file: string;
         };
-        /** Body_import_mapped_preview_import_mapped_preview_post */
-        Body_import_mapped_preview_import_mapped_preview_post: {
+        /** Body_import_mapped_columns_import_mapped_columns_post */
+        Body_import_mapped_columns_import_mapped_columns_post: {
             /** Target Scenario Id */
             target_scenario_id: number;
             /** File */
@@ -1693,14 +1722,14 @@ export interface components {
         };
         /**
          * MappedImportCommitRequest
-         * @description Body of `POST /import/mapped` — the mapping step's Confirm. The
-         *     client round-trips the uploaded file and the two mappings between
-         *     `GET /import/mapped/preview`'s response and this commit step: the
-         *     raw file re-encoded as base64 (`file_content_b64`), plus
-         *     `account_map`/`category_map` dicts for each mapping choice. Nothing
-         *     is ever persisted server-side between the two steps — there's
-         *     nothing to save, expire, or clean up, so the round trip is the
-         *     simplest correct design.
+         * @description Body of `POST /import/mapped` — the review step's own Confirm.
+         *     Carries forward the same `column_map` the preview step validated
+         *     (re-applied on the backend, not trusted from the preview response —
+         *     see `service.import_mapped`'s own docstring) plus the two mappings
+         *     the review step itself collects, `account_map`/`category_map`.
+         *     Nothing is ever persisted server-side between any of these steps —
+         *     there's nothing to save, expire, or clean up, so the round trip is
+         *     the simplest correct design.
          */
         MappedImportCommitRequest: {
             /** Filename */
@@ -1709,6 +1738,13 @@ export interface components {
             target_scenario_id: number;
             /** File Content B64 */
             file_content_b64: string;
+            /**
+             * Column Map
+             * @default {}
+             */
+            column_map: {
+                [key: string]: string;
+            };
             /**
              * Account Map
              * @default {}
@@ -1728,6 +1764,33 @@ export interface components {
              * @default false
              */
             flip_sign: boolean;
+        };
+        /**
+         * MappedImportPreviewRequest
+         * @description Body of `POST /import/mapped/preview` — the column-mapping step's
+         *     own Confirm. `column_map` is target-field-key -> the file's own
+         *     column name for it (`service.IMPORT_MAPPED_FIELDS`' `key`s), chosen
+         *     against the columns/samples `POST /import/mapped/columns` handed
+         *     back. `filename`/`target_scenario_id`/`file_content_b64` are the same
+         *     three round-tripped values that step already returned, carried
+         *     forward unchanged — nothing is persisted server-side between any of
+         *     these steps, so every step's request body is whatever the previous
+         *     step hasn't finished using yet.
+         */
+        MappedImportPreviewRequest: {
+            /** Filename */
+            filename: string;
+            /** Target Scenario Id */
+            target_scenario_id: number;
+            /** File Content B64 */
+            file_content_b64: string;
+            /**
+             * Column Map
+             * @default {}
+             */
+            column_map: {
+                [key: string]: string;
+            };
         };
         /**
          * MergeDuplicatesRequest
@@ -3386,6 +3449,41 @@ export interface operations {
             };
         };
     };
+    import_mapped_columns_import_mapped_columns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_mapped_columns_import_mapped_columns_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_mapped_preview_import_mapped_preview_post: {
         parameters: {
             query?: never;
@@ -3395,7 +3493,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_import_mapped_preview_import_mapped_preview_post"];
+                "application/json": components["schemas"]["MappedImportPreviewRequest"];
             };
         };
         responses: {

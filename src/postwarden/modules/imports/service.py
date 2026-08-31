@@ -45,11 +45,34 @@ from . import repository as repo
 IMPORT_REQUIRED_COLUMNS = ["Entry #", "Date", "Description", "Account code"]
 IMPORT_MAX_ERRORS_SHOWN = 20
 
-# ActualBudget-style single-entry export columns the mapped importer
-# reads: no built-in double entry, an Account column and a Category
-# column instead, mapped into real double-entry postings by
-# `transform_mapped_rows` below.
-IMPORT_MAPPED_COLUMNS = ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
+# The mapped importer's own target fields — what a single-entry export's
+# real columns (whatever they're actually called: "Memo", "Merchant",
+# "Transaction Date", ActualBudget's own "Account"/"Payee"/etc., or
+# anything else) get mapped *onto* by the wizard's column-mapping step,
+# before any of `transform_mapped_rows`' Account/Category logic runs.
+# Replaces the old `IMPORT_MAPPED_COLUMNS` exact-name requirement, which
+# only ever worked because ActualBudget's own export happened to already
+# use these literal header names — any other export needed a rename
+# before it could be imported at all. `key` is the internal field name
+# every downstream function (`parse_mapped_file` and on) still uses;
+# `label` is what the mapping step's own picker shows, deliberately
+# "Money Account"/"Category" rather than bare "Account" — the mapping
+# step's whole job is picking *which* of the file's account-shaped
+# columns is the money side versus the category side, and two options
+# both labeled "Account" would defeat that. `required` gates preview/
+# commit validation the same way the old exact-column-name check did:
+# money account, date, and amount are the three fields a double-entry
+# posting can't exist without; payee/notes/category are all optional,
+# same as they always were (a blank Category row is exactly what
+# `IMPORT_MAPPED_NO_CATEGORY` below already exists to handle).
+IMPORT_MAPPED_FIELDS = [
+    {"key": "account", "label": "Money Account", "required": True},
+    {"key": "date", "label": "Entry Date", "required": True},
+    {"key": "amount", "label": "Amount", "required": True},
+    {"key": "payee", "label": "Payee", "required": False},
+    {"key": "notes", "label": "Notes", "required": False},
+    {"key": "category", "label": "Category", "required": False},
+]
 IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
 
 
@@ -206,39 +229,72 @@ def import_csv(conn: Connection, *, content: str, filename: str, target_scenario
     return {"batch_id": batch_id, "staged_count": len(groups), "errors": errors}
 
 
-def parse_mapped_file(content: str) -> tuple[list[dict], list[str]]:
-    """(rows, errors). Unlike `parse_csv_import`, this never validates
-    account codes or balances — there's no double entry yet at this
-    point, just raw single-entry rows waiting on the mapping step. Pure
-    — no database."""
+def sniff_mapped_columns(content: str, sample_size: int = 5) -> dict:
+    """What the mapping step's own picker needs before any target field
+    can be chosen: the file's real column names, in file order (so the
+    picker's dropdowns read the same left-to-right order the user's own
+    file already has), plus a few real sample rows so a column can be
+    matched by looking at its actual data, not just guessing from a
+    header like "Memo" or "Desc". Pure — no database. Raises `ValueError`
+    on an empty file, same contract every other parse-step function in
+    this module already has."""
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        raise ValueError("The file is empty")
+    columns = list(reader.fieldnames)
+    sample_rows = []
+    for row in reader:
+        sample_rows.append({c: (row.get(c) or "") for c in columns})
+        if len(sample_rows) >= sample_size:
+            break
+    return {"columns": columns, "sample_rows": sample_rows}
+
+
+def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[dict], list[str]]:
+    """(rows, errors). `column_map` is target-field-key -> the file's own
+    column name for it (`IMPORT_MAPPED_FIELDS`' `key`s — "account",
+    "date", ... — gathered by the mapping step, `sniff_mapped_columns`
+    above), an empty/missing value meaning "not mapped." Unlike
+    `parse_csv_import`, this never validates account codes or balances —
+    there's no double entry yet at this point, just raw single-entry rows
+    waiting on the review step's Account/Category mapping. Pure — no
+    database."""
     reader = csv.DictReader(io.StringIO(content))
     if not reader.fieldnames:
         return [], ["The file is empty"]
-    missing = [c for c in IMPORT_MAPPED_COLUMNS if c not in reader.fieldnames]
-    if missing:
-        return [], [f"Missing required column(s): {', '.join(missing)} — this importer "
-                     f"expects an ActualBudget-style export (Account, Date, Payee, Notes, "
-                     f"Category, Amount)"]
+    missing_required = [f["label"] for f in IMPORT_MAPPED_FIELDS
+                         if f["required"] and not column_map.get(f["key"])]
+    if missing_required:
+        return [], [f"Choose a column for: {', '.join(missing_required)}"]
+    mapped_columns = {col for col in column_map.values() if col}
+    unknown = mapped_columns - set(reader.fieldnames)
+    if unknown:
+        return [], [f"Mapped column(s) not found in the file: {', '.join(sorted(unknown))}"]
+
+    def get(row: dict, key: str) -> str:
+        col = column_map.get(key)
+        return (row.get(col) or "").strip() if col else ""
+
     rows = []
     for i, row in enumerate(reader, start=2):  # header is row 1
         rows.append({
             "row_no": i,
-            "account": (row.get("Account") or "").strip(),
-            "date": (row.get("Date") or "").strip(),
-            "payee": (row.get("Payee") or "").strip(),
-            "notes": (row.get("Notes") or "").strip(),
-            "category": (row.get("Category") or "").strip(),
-            "amount": (row.get("Amount") or "").strip(),
+            "account": get(row, "account"),
+            "date": get(row, "date"),
+            "payee": get(row, "payee"),
+            "notes": get(row, "notes"),
+            "category": get(row, "category"),
+            "amount": get(row, "amount"),
         })
     return rows, []
 
 
-def preview_mapped(content: str) -> dict:
-    """What the mapping step's picker lists need — `postable` is left
+def preview_mapped(content: str, column_map: dict[str, str]) -> dict:
+    """What the review step's picker lists need — `postable` is left
     out, a `modules/reference/` concern the frontend fetches separately,
     same reasoning every prior module applies. Raises `ValueError` on a
-    bad file."""
-    rows, errors = parse_mapped_file(content)
+    bad file or an incomplete `column_map`."""
+    rows, errors = parse_mapped_file(content, column_map)
     if errors:
         raise ValueError("; ".join(errors))
     if not rows:
@@ -309,13 +365,16 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
 
 
 def import_mapped(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
-                   account_map: dict[str, str], category_map: dict[str, str], flip_sign: bool,
-                   user_id: int | None = None) -> dict:
+                   column_map: dict[str, str], account_map: dict[str, str], category_map: dict[str, str],
+                   flip_sign: bool, user_id: int | None = None) -> dict:
     """The mapped importer's commit step — ported from `import_mapped_
     commit`'s try block, minus the base64/hidden-form-field round-trip
     (see `router.py`'s own docstring on why the wire shape changed, not
-    the behavior)."""
-    rows, errors = parse_mapped_file(content)
+    the behavior). `column_map` is re-applied here rather than trusted
+    from the preview step's own response, same "never trust caller-
+    supplied structure without re-deriving it" reasoning `stage_import_
+    groups`' own account-code re-resolution already documents."""
+    rows, errors = parse_mapped_file(content, column_map)
     if errors:
         raise ValueError("; ".join(errors))
     groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign)

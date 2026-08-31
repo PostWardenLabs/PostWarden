@@ -101,21 +101,63 @@ def test_import_csv_raises_when_no_groups_parsed(book, conn):
                             filename="bad.csv", target_scenario_id=book["actual"]["id"])
 
 
-def test_parse_mapped_file_reads_every_row(conn):
+MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
+                      "notes": "Notes", "category": "Category", "amount": "Amount"}
+
+
+def test_sniff_mapped_columns_returns_headers_in_file_order_and_sample_rows():
     content = _csv(
-        "Account,Date,Payee,Notes,Category,Amount",
-        "Checking,2026-08-01,Landlord,,Rent,-500",
+        "Merchant,When,Amount,Bucket",
+        "Landlord,2026-08-01,-500,Rent",
+        "Employer,2026-08-02,1000,",
     )
-    rows, errors = service.parse_mapped_file(content)
+    sniff = service.sniff_mapped_columns(content)
+    assert sniff["columns"] == ["Merchant", "When", "Amount", "Bucket"]
+    assert sniff["sample_rows"] == [
+        {"Merchant": "Landlord", "When": "2026-08-01", "Amount": "-500", "Bucket": "Rent"},
+        {"Merchant": "Employer", "When": "2026-08-02", "Amount": "1000", "Bucket": ""},
+    ]
+
+
+def test_sniff_mapped_columns_caps_the_sample_at_sample_size():
+    content = _csv("X", "1", "2", "3")
+    sniff = service.sniff_mapped_columns(content, sample_size=2)
+    assert len(sniff["sample_rows"]) == 2
+
+
+def test_sniff_mapped_columns_rejects_an_empty_file():
+    with pytest.raises(ValueError, match="The file is empty"):
+        service.sniff_mapped_columns("")
+
+
+def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
+    # A file whose own column names don't match ActualBudget's at all —
+    # the whole point of the mapping step: any header works once mapped.
+    content = _csv(
+        "Merchant,When,Amount,Bucket",
+        "Landlord,2026-08-01,-500,Rent",
+    )
+    column_map = {"account": "Merchant", "date": "When", "amount": "Amount", "category": "Bucket"}
+    rows, errors = service.parse_mapped_file(content, column_map)
     assert errors == []
-    assert rows == [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
+    assert rows == [{"row_no": 2, "account": "Landlord", "date": "2026-08-01", "payee": "",
                       "notes": "", "category": "Rent", "amount": "-500"}]
 
 
-def test_parse_mapped_file_rejects_missing_columns(conn):
-    rows, errors = service.parse_mapped_file("Date,Amount\n2026-08-01,10\n")
+def test_parse_mapped_file_rejects_an_incomplete_column_map():
+    content = _csv("Account,Date,Amount", "Checking,2026-08-01,10")
+    rows, errors = service.parse_mapped_file(content, {"account": "Account"})
     assert rows == []
-    assert "Missing required column(s)" in errors[0]
+    assert "Choose a column for" in errors[0]
+    assert "Entry Date" in errors[0] and "Amount" in errors[0]
+
+
+def test_parse_mapped_file_rejects_a_column_map_pointing_at_a_column_the_file_lacks():
+    content = _csv("Account,Date,Amount", "Checking,2026-08-01,10")
+    column_map = {"account": "Account", "date": "Date", "amount": "Nope"}
+    rows, errors = service.parse_mapped_file(content, column_map)
+    assert rows == []
+    assert "Mapped column(s) not found in the file: Nope" in errors[0]
 
 
 def test_preview_mapped_summarizes_accounts_and_categories():
@@ -124,7 +166,7 @@ def test_preview_mapped_summarizes_accounts_and_categories():
         "Checking,2026-08-01,Landlord,,Rent,-500",
         "Checking,2026-08-02,Employer,,,1000",
     )
-    preview = service.preview_mapped(content)
+    preview = service.preview_mapped(content, MAPPED_COLUMN_MAP)
     assert preview["row_count"] == 2
     assert preview["accounts_found"] == ["Checking"]
     assert preview["categories_found"] == ["Rent"]
@@ -134,7 +176,7 @@ def test_preview_mapped_summarizes_accounts_and_categories():
 def test_preview_mapped_raises_on_a_file_with_no_rows():
     content = "Account,Date,Payee,Notes,Category,Amount\n"
     with pytest.raises(ValueError, match="No rows found"):
-        service.preview_mapped(content)
+        service.preview_mapped(content, MAPPED_COLUMN_MAP)
 
 
 def test_transform_mapped_rows_maps_an_expense_row_debit_positive(book):
@@ -196,7 +238,23 @@ def test_import_mapped_stages_entries_end_to_end(book, conn):
     )
     result = service.import_mapped(
         conn, content=content, filename="export.csv", target_scenario_id=book["actual"]["id"],
-        account_map={"Checking": book["checking"]["code"]},
+        column_map=MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
+        category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
+    assert result["staged_count"] == 1
+    assert result["errors"] == []
+
+
+def test_import_mapped_stages_entries_via_an_arbitrary_column_map(book, conn):
+    # Same file shape as above, but with the bank's own column names
+    # instead of ActualBudget's — the actual point of the mapping step.
+    content = _csv(
+        "Merchant,When,Amount,Bucket",
+        "Landlord,2026-08-01,-500,Rent",
+    )
+    column_map = {"account": "Merchant", "date": "When", "amount": "Amount", "category": "Bucket"}
+    result = service.import_mapped(
+        conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"],
+        column_map=column_map, account_map={"Landlord": book["checking"]["code"]},
         category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
     assert result["staged_count"] == 1
     assert result["errors"] == []
@@ -209,16 +267,27 @@ def test_import_mapped_raises_row_errors_when_the_mapping_is_incomplete(book, co
     )
     with pytest.raises(ValueError, match="no mapping chosen for account"):
         service.import_mapped(conn, content=content, filename="export.csv",
-                               target_scenario_id=book["actual"]["id"], account_map={},
-                               category_map={}, flip_sign=False)
+                               target_scenario_id=book["actual"]["id"], column_map=MAPPED_COLUMN_MAP,
+                               account_map={}, category_map={}, flip_sign=False)
+
+
+def test_import_mapped_raises_when_the_column_map_is_incomplete(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    with pytest.raises(ValueError, match="Choose a column for"):
+        service.import_mapped(conn, content=content, filename="export.csv",
+                               target_scenario_id=book["actual"]["id"], column_map={"account": "Account"},
+                               account_map={}, category_map={}, flip_sign=False)
 
 
 def test_import_mapped_raises_the_fallback_message_when_the_file_has_no_data_rows(book, conn):
     content = "Account,Date,Payee,Notes,Category,Amount\n"  # header only, zero rows -> zero row_errors
     with pytest.raises(ValueError, match="No valid entries produced"):
         service.import_mapped(conn, content=content, filename="export.csv",
-                               target_scenario_id=book["actual"]["id"], account_map={},
-                               category_map={}, flip_sign=False)
+                               target_scenario_id=book["actual"]["id"], column_map=MAPPED_COLUMN_MAP,
+                               account_map={}, category_map={}, flip_sign=False)
 
 
 def test_decode_upload_strips_a_bom():

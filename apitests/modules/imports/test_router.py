@@ -1,8 +1,10 @@
 """End-to-end tests of modules.imports.router — real HTTP requests
 through a throwaway FastAPI() + include_router(), the same pattern
 `modules/entries/test_router.py` established. `POST /import` and `POST
-/import/mapped/preview` exercise real multipart file uploads (`files=`),
-not JSON bodies — the one shape no prior module's own router needed."""
+/import/mapped/columns` exercise real multipart file uploads (`files=`),
+not JSON bodies — the one shape no prior module's own router needed;
+every later mapped-importer step (`/mapped/preview`, `/mapped`) is JSON,
+round-tripping `file_content_b64` (and now `column_map`) forward."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -68,14 +70,49 @@ def test_import_csv_endpoint_rejects_a_file_missing_required_columns(book, conn)
     assert "Missing required column" in resp.json()["detail"]
 
 
-def test_import_mapped_preview_endpoint_returns_pickers_and_the_roundtrip_content(book, conn):
+MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
+                      "notes": "Notes", "category": "Category", "amount": "Amount"}
+
+
+def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip_content(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
     resp = client_for(conn).post(
-        "/import/mapped/preview", data={"target_scenario_id": str(book["actual"]["id"])},
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
         files={"file": ("export.csv", content, "text/csv")})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["columns"] == ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
+    assert body["sample_rows"][0]["Account"] == "Checking"
+    assert {f["key"] for f in body["fields"]} == {"account", "date", "payee", "notes", "category", "amount"}
+    assert body["target_scenario_id"] == book["actual"]["id"]
+    assert body["filename"] == "export.csv"
+    assert "file_content_b64" in body
+
+
+def test_import_mapped_columns_endpoint_rejects_an_empty_file(book, conn):
+    resp = client_for(conn).post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("bad.csv", "", "text/csv")})
+    assert resp.status_code == 400
+
+
+def test_import_mapped_preview_endpoint_returns_pickers_and_the_roundtrip_content(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+    })
     assert resp.status_code == 200
     body = resp.json()
     assert body["row_count"] == 1
@@ -83,13 +120,24 @@ def test_import_mapped_preview_endpoint_returns_pickers_and_the_roundtrip_conten
     assert body["categories_found"] == ["Rent"]
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
+    assert body["column_map"] == MAPPED_COLUMN_MAP
     assert "file_content_b64" in body
 
 
-def test_import_mapped_preview_endpoint_rejects_a_bad_file(book, conn):
-    resp = client_for(conn).post(
-        "/import/mapped/preview", data={"target_scenario_id": str(book["actual"]["id"])},
-        files={"file": ("bad.csv", "Date,Amount\n2026-08-01,10\n", "text/csv")})
+def test_import_mapped_preview_endpoint_rejects_an_incomplete_column_map(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": {"account": "Account"},
+    })
     assert resp.status_code == 400
 
 
@@ -99,13 +147,17 @@ def test_import_mapped_commit_endpoint_stages_from_a_preview_response(book, conn
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
     c = client_for(conn)
-    preview = c.post(
-        "/import/mapped/preview", data={"target_scenario_id": str(book["actual"]["id"])},
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
         files={"file": ("export.csv", content, "text/csv")}).json()
+    preview = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+    }).json()
 
     resp = c.post("/import/mapped", json={
         "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
-        "file_content_b64": preview["file_content_b64"],
+        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
         "account_map": {"Checking": book["checking"]["code"]},
         "category_map": {"Rent": book["rent"]["code"]},
         "flip_sign": False,
@@ -122,13 +174,17 @@ def test_import_mapped_commit_endpoint_rejects_an_unmapped_account(book, conn):
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
     c = client_for(conn)
-    preview = c.post(
-        "/import/mapped/preview", data={"target_scenario_id": str(book["actual"]["id"])},
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
         files={"file": ("export.csv", content, "text/csv")}).json()
+    preview = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+    }).json()
 
     resp = c.post("/import/mapped", json={
         "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
-        "file_content_b64": preview["file_content_b64"],
+        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
         "account_map": {}, "category_map": {}, "flip_sign": False,
     })
     assert resp.status_code == 400

@@ -103,11 +103,14 @@ instance.
   round-trips the same column layout Export CSV produces, so export →
   edit in a spreadsheet → re-import is a real workflow. A second
   importer, **Import with rules**, handles files that were never
-  double-entry to begin with — one row per transaction, an Account and
-  a Category column (an ActualBudget export is the concrete shape) —
-  by mapping each distinct Account/Category value to a real account
-  once per import, then turning every row into a proper balanced
-  posting for the same Staging review. **Find Duplicates** scans every pending entry at once for the classic
+  double-entry to begin with — one row per transaction, a money-account
+  column and a category column, whatever the export actually calls them
+  (an ActualBudget export is the concrete shape this was built against,
+  but any single-entry CSV works: a first wizard step maps its own
+  column names onto Money Account/Entry Date/Amount/Payee/Notes/
+  Category) — by then mapping each distinct Account/Category value to a
+  real PostWarden account once per import, and turning every row into a
+  proper balanced posting for the same Staging review. **Find Duplicates** scans every pending entry at once for the classic
   overlapping-import mistake — the same transaction proposed twice,
   same accounts/amounts/date — groups whatever it finds, and merges
   a group down to one entry with your choice of which description,

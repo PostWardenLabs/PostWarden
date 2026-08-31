@@ -1124,21 +1124,43 @@ example this was built against). `/import` already expects a file that
 columns); this needed a second importer that builds the double entry
 first, from a file that never had it.
 
-**A "rule" is two mapping tables scoped to one file, not a saved,
-named, reusable ruleset.** `/import/mapped` reads the uploaded file's
-own distinct Account and Category values and asks, once per distinct
-value: which real PostWarden account is this? Account values map to
-the "money" leg (the checking account, the credit card); Category
-values map to the "other" leg (an expense/income account, or a single
-chosen catch-all for whatever the export left blank). That mapping
-never touches the database — it round-trips as ordinary form fields on
-the review page, alongside the file's own content (base64, in a hidden
-field), so there is nothing to name, save, version, or clean up between
-"here's my file" and "here's how to read it." This is the literal
-reading of the feature's own ask: a screen to add rules for *this*
-import, not a rules-library feature — and it means no new table, which
-a persistent named-ruleset version would have needed (one for the
-ruleset, one for its conditions/actions).
+**A "rule" is three mapping tables scoped to one file, not a saved,
+named, reusable ruleset.** `/import/mapped` walks the wizard in three
+steps, each its own mapping: which of *this file's own* columns (in
+whatever the export actually calls them — "Merchant," "When," "Memo,"
+anything) is the Money Account, the Entry Date, the Amount, and
+optionally the Payee/Notes/Category; then, once those are known, which
+real PostWarden account each distinct Account value and each distinct
+Category value represents. Account values map to the "money" leg (the
+checking account, the credit card); Category values map to the "other"
+leg (an expense/income account, or a single chosen catch-all for
+whatever the export left blank). None of this ever touches the
+database — every step's choices round-trip as ordinary JSON fields
+between screens, alongside the file's own content (base64), so there is
+nothing to name, save, version, or clean up between "here's my file"
+and "here's how to read it." This is the literal reading of the
+feature's own ask: a screen to add rules for *this* import, not a
+rules-library feature — and it means no new table, which a persistent
+named-ruleset version would have needed (one for the ruleset, one for
+its conditions/actions).
+
+**The column-mapping step is what makes "any CSV shaped like this"
+actually true, not just "any CSV ActualBudget happens to produce."**
+The importer originally required the file's own header row to read
+literally `Account,Date,Payee,Notes,Category,Amount` — true of
+ActualBudget's export by construction, false of a bank's own CSV or
+anything else with different column names, which needed a manual
+header rename before this importer would even parse them. `POST
+/import/mapped/columns` sniffs the uploaded file's real headers (plus a
+few real sample rows, so a column can be matched by looking at its
+data, not just guessing from a header like "Desc") and hands them to
+the wizard's first screen; the six target fields it offers
+(`service.IMPORT_MAPPED_FIELDS` — Money Account/Entry Date/Amount
+required, Payee/Notes/Category optional) are the one place that list is
+defined, read by both the mapping-step picker and the parse step's own
+validation. "Money Account"/"Category" are deliberately not both just
+"Account" here, the one place in the wizard where a plain reader could
+otherwise confuse which leg a mapping choice is picking.
 
 **Sign convention is fixed, not configurable per rule**: a negative
 `Amount` debits the Category account and credits the Account (money
