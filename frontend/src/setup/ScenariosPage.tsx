@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useAccountLevels } from '../api/useAccountLevels'
 import client from '../api/client'
+import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 
 // Structurally unlike Payees/Tags: no Select/Merge bar, no inline
 // rename, no Archive/Delete — this table has exactly one per-row action
@@ -15,6 +16,7 @@ import client from '../api/client'
 // — `usePostableAccounts.ts` is the first.
 type ScenarioType = 'budget' | 'forecast' | 'what_if'
 const SCENARIO_TYPES: ScenarioType[] = ['budget', 'forecast', 'what_if']
+const SCENARIO_TYPE_OPTIONS: ComboboxOption[] = SCENARIO_TYPES.map((t) => ({ value: t, label: t }))
 
 interface ScenarioRow {
   id: number
@@ -56,6 +58,11 @@ export default function ScenariosPage() {
   const [scenarios, setScenarios] = useState<ScenarioRow[] | null>(null)
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
   const levels = useAccountLevels()
+
+  const baseLevelOptions: ComboboxOption[] = useMemo(
+    () => [{ value: '', label: 'Leaves only (default)' }, ...(levels ?? []).map((lv) => ({ value: String(lv.id), label: lv.name }))],
+    [levels],
+  )
 
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
@@ -203,13 +210,11 @@ export default function ScenariosPage() {
           </label>
           <label className="field">
             Type
-            <select value={scenarioType} onChange={(e) => setScenarioType(e.target.value as ScenarioType)}>
-              {SCENARIO_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+            <Combobox
+              options={SCENARIO_TYPE_OPTIONS}
+              value={scenarioType}
+              onChange={(v) => setScenarioType(v as ScenarioType)}
+            />
           </label>
           <label className="checkline">
             <input
@@ -237,14 +242,7 @@ export default function ScenariosPage() {
           {!incomeStatementOnly && (
             <label className="field">
               Base level
-              <select value={baseLevelId} onChange={(e) => setBaseLevelId(e.target.value)}>
-                <option value="">Leaves only (default)</option>
-                {levels.map((lv) => (
-                  <option key={lv.id} value={lv.id}>
-                    {lv.name}
-                  </option>
-                ))}
-              </select>
+              <Combobox options={baseLevelOptions} value={baseLevelId} onChange={setBaseLevelId} />
             </label>
           )}
           <label className="field" style={{ gridColumn: '1 / -1' }}>
