@@ -3974,9 +3974,13 @@ list to grow as items are discovered, not just shrink.
 - [ ] This is the cutover, not a staged rollout — no parallel Jinja
       instance is kept running anywhere once beta is confirmed good
       (`REBUILD.md` decision 6)
-- [ ] Rewrite `docs/ARCHITECTURE.md` to describe the new tree (it is
+- [x] Rewrite `docs/ARCHITECTURE.md` to describe the new tree (it is
       deliberately stale until this point — see `CLAUDE.md`)
-- [ ] Bump `VERSION`
+- [x] Bump `VERSION` — `0.31.0`, not `1.0.0`: this is still the same
+      pre-1.0 "still evolving" series every other feature bump has used,
+      not a claim of new API stability under semver. Asked the user
+      directly rather than guessing, since REBUILD.md/CLAUDE.md only say
+      "bump it," not what to bump it to.
 
 ---
 
@@ -4006,6 +4010,81 @@ above:
 Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
+
+- **2026-08-30** — Cutover, most of it. Two commits:
+  - `Promote backend/+frontend/ to repo root; retire the legacy Jinja
+    app` — `backend/src`, `backend/alembic(.ini)`, `backend/pyproject.
+    toml`, and `backend/tests` move to the repo root (`src`, `alembic`,
+    `pyproject.toml`, `apitests` — **not** `tests/api`, see below);
+    `app/` (every legacy template, static file, `main.py`/`auth.py`/
+    `db.py`/`cli.py`/`migrate.py`) deleted outright, along with the
+    legacy root `Dockerfile`/`docker-compose.yml`/`requirements*.txt`.
+    Why promote rather than merge with the new stack still under
+    `backend/`: `PostWardenPublic`'s `deploy-beta.sh` runs `docker
+    compose up -d --build` at the repo root — left under `backend/`,
+    beta would have kept silently redeploying the *old* app forever.
+    Verified live via `gcloud compute ssh` before touching docker-
+    compose.yml that beta's actual service name (`app`) and its `.env`
+    port overrides survive the rewrite unchanged, so Cloudflare Tunnel
+    routing doesn't break on deploy.
+
+    `backend/tests` → `apitests/` at the repo root, not `tests/api/` as
+    first tried: pytest loads every `conftest.py` from the repo root
+    down to each collected path, so nesting under `tests/` means
+    `tests/conftest.py`'s own `pytest_configure` (which dials a `db`
+    hostname that only resolves inside Docker) fires on every run of
+    the app-layer suite too — caught by actually running `pytest
+    tests/api -q` post-promotion and watching it fail before collecting
+    a single test, not by trusting the rename. Would have broken
+    `backend-ci.yml`'s `test` job identically. `apitests/conftest.py`
+    has the full writeup.
+
+    Two real path-depth bugs found by tracing `.parent`/`parents[N]`
+    arithmetic by hand rather than trusting the rename: `config.py`'s
+    `postwarden_version_file` (collapsed a two-candidate `parents[3]`/
+    `parents[2]` lookup to one `parents[2]`, since promotion made the
+    repo root and the Docker image root the same distance up) and the
+    Alembic baseline migration's `SCHEMA_SQL` path (`parents[3]` →
+    `parents[2]`). Both would have silently resolved to the wrong file
+    with no import error to catch them.
+
+    Also ported `postwarden.cli` (create-user/reset-password) — the one
+    piece of legacy `app/cli.py` the new backend had no equivalent of
+    at all, closing a real account-recovery gap. Reuses `modules.auth.
+    {repository,service}` rather than reimplementing password hashing.
+
+    Verified against the actually-running promoted stack, not just a
+    clean build: `docker compose down -v && up -d --build` starts clean
+    (`alembic stamp head` succeeding is itself proof the `SCHEMA_SQL`
+    path fix is right), `pytest apitests` (563 passed, 1 skipped) and
+    `pytest tests/test_invariants.py tests/test_cashflow.py` (60
+    passed) both green against the live container, real browser login
+    (`david`/`devpassword`, created through the new CLI) reaches the
+    dashboard. One local-dev-only wrinkle surfaced and fixed along the
+    way: a stale, git-ignored `src/postwarden/static/` left on disk
+    from before this session's frontend edits was getting merged into
+    built images ahead of the fresh `frontend-build` output (`COPY src
+    ./src` in `Dockerfile`, and separately shadowed again by `docker-
+    compose.override.yml`'s bind mount) — a locally *running* container
+    could serve yesterday's JS despite the image itself being correct.
+    Doesn't touch beta/demo, which never load the override file.
+
+  - `Add legacy's entry_link/cell_link drill-through to the 5 remaining
+    screens` — Trial Balance, Balance Sheet, Cash Flow, Ledger, Tags
+    were the last screens missing legacy's "click a non-zero amount,
+    land on the Journal pre-filtered to it" pattern (Payees already had
+    it, Phase 4.2). Each screen's exact date-bounding rule extracted
+    from the actual legacy Jinja macros (`git show HEAD:app/templates/
+    <file>.html`, recoverable from history even after the previous
+    commit deleted `app/`) rather than assumed shared — they genuinely
+    differ (see the commit body, or each page's own `entryLink`/
+    `cellLink` comment).
+
+  Also this session: `docs/ARCHITECTURE.md` rewritten from scratch for
+  the new tree (was deliberately stale throughout the branch — see
+  `CLAUDE.md`); `VERSION` bumped to `0.31.0`. Remaining Cutover items —
+  the actual merge to `master`, tag, beta deploy, authenticated
+  verification — not yet done as of this entry.
 
 - **2026-08-30** — Phase 5 item 8 (distinct empty states), implemented
   the copy drafted earlier the same day (see the "second pass" entry

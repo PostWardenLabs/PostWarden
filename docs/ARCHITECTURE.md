@@ -3,892 +3,277 @@
 How the code is organized and the conventions repeated across it. For
 *what the database enforces and why*, see [`SPEC.md`](SPEC.md); for
 *what the tables are*, see [`SCHEMA.md`](SCHEMA.md). This document is
-about the FastAPI app, the templates, and the static JS/CSS layered on
-top of the schema those two describe.
+about the FastAPI backend and the React + TypeScript frontend layered
+on top of the schema those two describe.
+
+Rewritten at cutover (`REBUILD.md`/`CLAUDE.md`'s own standing rule —
+this file describes the *old* Jinja2 app throughout the `rebuild`
+branch's life, deliberately stale until the branch actually lands).
+Everything below describes the tree as it exists after that cutover:
+a vertical-slice FastAPI backend (SQLAlchemy Core, no ORM) serving a
+JSON API, and a separate React SPA consuming it through a generated,
+typed client. `SPEC.md`'s decisions and the Postgres schema itself are
+unchanged by any of this — this rebuild only ever touched the
+application layer.
 
 ## The shape of it
 
-No ORM, no build step, no SPA framework — server-rendered Jinja2 HTML,
-plain SQL through psycopg3, and small vanilla-JS files that each
-progressively enhance one specific thing (a `<select>` becomes a
-searchable combobox, a `<input type="date">` gets a calendar popup, a
-table gets collapsible rows) rather than one big client-side framework
-owning the page. A page works — link-navigable, forms submit — with
-JS disabled; JS makes it nicer, never load-bearing for anything but a
-few real-time conveniences (live budget-grid recompute, the live balance
-bar on New entry) that have no meaningful no-JS equivalent anyway.
+No server-rendered HTML anywhere in the app itself (the SPA's own
+`index.html` is a static file FastAPI hands out once, not a template
+FastAPI renders per request). The backend is a pure JSON API — every
+route returns a plain dict or a Pydantic model, `Decimal`-safe by
+construction (see `json.py`). The frontend is a single-page app built
+with Vite, routed client-side, talking to that API through a client
+generated from the backend's own OpenAPI schema — a route that doesn't
+exist, or a request body missing a required field, is a TypeScript
+compile error, not a 404/422 discovered by clicking around.
 
 ```
 db/schema.sql        tables, triggers, views, functions — the single source of truth
-db/seed.sql          starter chart of accounts + ACTUAL/STAGING/BUD2026 scenarios
-db/seed_demo.sql     optional sample entries (skippable)
-db/migrations/       NNN_*.sql — applied to an *existing* database only, see app/migrate.py
+db/seed.sql           starter chart of accounts + ACTUAL/STAGING/BUD2026 scenarios
+db/seed_demo.sql      optional sample entries (skippable)
+alembic/              schema migrations forward from here — schema.sql stays the
+                       baseline for a fresh install (REBUILD.md decision 5)
 
-app/main.py          every route, in one file (see the map below)
-app/auth.py          sessions, password hashing, CSRF, login rate-limiting
-app/db.py            the psycopg3 connection pool — q()/q1()/tx() helpers main.py calls
-app/migrate.py       run_migrations() — called once from main.py's lifespan, before the app serves traffic
-app/cli.py           create-user / reset-password (see scripts/create_user.sh)
-app/templates/*.html one file per screen, all extending base.html
-app/static/*.js      one small file per progressive enhancement (catalog below)
-app/static/style.css theme variables + every component's styling, hand-written, no framework
+src/postwarden/main.py       app factory, router mounting, SPA serving — see below
+src/postwarden/config.py     Settings — every env var the app reads, pydantic-settings
+src/postwarden/db.py         the SQLAlchemy Core engine (lazy, process-wide, cached)
+src/postwarden/errors.py     pg_message() — turns a raw Postgres trigger error into
+                               the same user-facing string legacy's app/main.py used
+src/postwarden/json.py       Decimal-safe JSON encoding, patched into FastAPI once
+src/postwarden/cli.py        create-user / reset-password (see scripts/create_user.sh)
+src/postwarden/domain/       pure business logic — money, periods, accounts, entry;
+                               zero framework or IO imports, unit-testable with no DB
+src/postwarden/modules/      one vertical slice per feature — see "Backend modules" below
+src/postwarden/analytics/    the /api/* BI-consumer mirror + Connect Power BI/Excel
+src/postwarden/export/       shared CSV/XLSX writers every module's own export.py calls
+src/postwarden/static/       the built frontend (git-ignored — `npm run build` writes here)
 
-tests/test_invariants.py  hits Postgres directly — the schema's own rules, bypassing the app entirely
-tests/test_auth.py        drives the actual FastAPI app (TestClient) — routes, sessions, CSRF, rendering
-tests/test_migrations.py  app/migrate.py's own mechanism — real files, real Postgres, no mocking
-deploy/gcp/               Google Cloud deployment (Compute Engine + IAP tunnel) — see its own README
+frontend/                    the React + TypeScript SPA — see frontend/README.md and
+                               "Frontend" below
+
+apitests/                    the app layer's own suite — routes, services, repositories,
+                               the domain layer (own top-level dir, not tests/api/ — see
+                               apitests/conftest.py for why nesting under tests/ doesn't work)
+tests/test_invariants.py     the schema's own rules, asserted straight against Postgres,
+tests/test_cashflow.py        never importing the app — REBUILD.md §3's "60 pure-Postgres
+                               tests," the actual safety net this rebuild leaned on
+
+scripts/init_db.sh                 local database bootstrap
+scripts/create_user.sh             create or reset a login
+scripts/dump_openapi_schema.py     regenerates frontend/'s typed API client
+deploy/gcp/                        a fully-worked example of running this on Google
+                                     Cloud — not how demo/beta are actually run
 ```
 
-`app/main.py` is deliberately one file (~2100 lines as of the Budget grid). That's a real tradeoff, not an oversight: every route is
-`grep`-able in one place, there's no question of which module owns a
-helper, and "thin application, no ORM" (SPEC.md decision 7) has held up
-well enough in practice that splitting it hasn't paid for itself yet. If
-it ever does get split, the section markers below are the natural seams.
+## Backend: vertical-slice modules over SQLAlchemy Core
 
-## `app/main.py`, by section
+`REBUILD.md` decision 3 is the one structural choice everything else in
+`src/postwarden/` follows from: **Core, not the ORM** — Postgres itself
+already enforces the real invariants (double-entry balance, immutability,
+account hierarchy) through triggers, and an ORM's identity map/unit-of-
+work would fight that rather than help it. Every module composes typed,
+explicit SQL through Core instead.
 
-The file is organized top-to-bottom as: shared helpers → one section per
-screen, each with its route(s) and any private `_helper` functions that
-section alone needs → the JSON `/api/*` mirror at the very end. In
-reading order:
+Each feature under `modules/` is a **vertical slice**, own subdirectory,
+consistent internal shape:
 
-| Section | Routes | Notes |
-|---|---|---|
-| Auth | `/login`, `/logout` | `require_csrf()` here is called by every other state-changing route; "Remember me" only changes whether the session cookie carries a `Max-Age` (see README's Security notes), the session row itself is always 30 days. `POSTWARDEN_DEMO_MODE=true` (off by default, only set on the public demo) shows a banner on `login.html` and pre-fills the username/password fields with `POSTWARDEN_ADMIN_USER`/`PASSWORD` — server-rendered `value=` attributes, no JavaScript, so the credentials are genuinely visible in the page rather than silently injected. Deliberately a *second* flag rather than triggering off `POSTWARDEN_ADMIN_USER`/`PASSWORD` being set alone — those two are also the normal self-hoster first-boot convenience, and this keeps a self-hoster's own real password from ever appearing on their own login page |
-| Settings | `/settings`, `/settings/account`, `/settings/connect-bi`, `/settings/connect-bi/download.pbids` | theme/amount-entry/number-format preferences on the first; username and password change split onto the second (`account.html`) — security-sensitive actions, kept off the page you land on by default. `connect_bi.html` shows the `postwarden_bi` read-only role's host/port/database (SPEC.md decision 14) — host/port come from `request.url.hostname`/`POSTWARDEN_BI_PORT` since they're the only two things that vary per install; the `.pbids` route hands back the same two as a downloadable Power BI Data Source file, no credentials in it |
-| Dashboard | `/` | always ACTUAL — "how are my real finances doing," no scenario picker. Recent activity and Upcoming transactions are the same widget shape twice (journal_lines vs. scheduled_entry_lines) — both reuse one `flow_side()` closure to build the "Salary Income → Cash" label, batched per widget the same way (one query for every row's lines rather than N+1) |
-| Trial balance | `/trial-balance`, `/export/trial-balance.csv`, `/export/trial-balance.xlsx` | Prev/next month links either side of "As of" — see [Prev/next navigation, one pattern per archetype](#prevnext-navigation-one-pattern-per-archetype). `_build_account_tree`/`_flatten_tree` (defined here) are reused by Balance Sheet, Income Statement, and the Budget grid. Its `.xlsx` export is the first to use the "subtotal"/"grand" row styles added to `_xlsx_data_row` alongside Income Statement's own "group"/"line"/"running" — a bold section-title row per account type, that type's own per-type subtotal row only when it actually has more than one top-level account (`g["show_type_total"]`), and a bottom "In balance"/"Out of balance" row with the accountant's double-rule border, red instead of ink when it doesn't |
-| Ledger | `/ledger` | Renamed from "T-Accounts" once it shipped (BACKLOG.md follow-up) — a Journal (`/entries`) records transactions in order, a Ledger is each account's own page, which is exactly the classic T-account box this screen draws. Postable accounts only (a T-account is one real account's own ledger card, not a rolled-up summary — no tree, no depth, no children), same as always — but a genuine point-in-time report now (**As of**/zero balances/raw, prev-next month links — see [Prev/next navigation](#prevnext-navigation-one-pattern-per-archetype)), reversing its original "always month-to-date, no as-of picker at all" shape (reasoned then as a teaching aid for double-entry, not a working report — see `_ledger_rows()`'s own comment in `main.py` for the full reversal writeup and what "raw"/simulated close means applied to individual lines rather than an aggregate balance: Asset/Liability/Equity accounts always run from inception through as_of, Income/Expense accounts are simulated-closed each month by default same as Trial Balance's merged_balances). `_ledger_rows()` groups accounts by `ACCOUNT_TYPES` same as Trial Balance's own sections, and per account pairs its debit/credit lines index-for-index purely for the four-column table layout (Date/Debit/Credit/Date, each side keeping its own line's date) — the pairing carries no meaning, same as a real T-account's two sides are independent running lists that just happen to share a page. Each individual debit/credit amount now links through to the Journal filtered to that account and that one line's own exact date (decision 11, SPEC.md — every leaf amount links through to what produced it; previously only this page's own caption/account-header did, not the individual cells), `back=` returning to this report with its own state preserved; the total row stays plain text, same as every other report's own grand/subtotal rows never linking. A `.t-divider` rule between the Debit and Credit columns, same *intended* weight as the card's own caption border (2px, not literally the caption's own 1px — a vertical rule built from stacked per-row border-lefts renders visibly thinner than a horizontal one at an equal nominal width on a standard-density display, confirmed via `getComputedStyle`, so matching the number doesn't actually match the perceived weight), is what actually draws the T — the ordinary `.money-first` hint border every other report's money column gets was never meant to read as a structural divider. `.money-last` mirrors `.money-first` onto Credit's own trailing edge (against the Date column after it) — the cards' own "dates on the outside" symmetry previously only actually existed on the Debit side, since `.money-first`'s hint border only ever covered a money column's *leading* edge. The total row writes to whichever of Debit/Credit matches the account's net for the window (never both, never either on an exact wash), styled with the same `tr.grand` double-rule every other report's own grand-total row uses. No export (CSV/XLSX) — nothing here a BI tool or a spreadsheet would want that Trial Balance/the Journal don't already give it in a more useful shape; this page exists for a person reading it, not a pipeline |
-| Income statement | `/income-statement`, `/export/income-statement.csv`, `/export/income-statement.xlsx` | Prev/next period links below the filter fields (range-archetype shape — see [Prev/next navigation](#prevnext-navigation-one-pattern-per-archetype)). the only report with a date *range* (not "as of") and a two-scenario compare column; `_build_account_tree`'s optional `compare_by_id` rolls both scenarios up in one tree, one group per top-level income/expense account (`_income_statement_groups()`) for the waterfall — see the module comment above `_pct_variance`. Its own `split` param (`""`/`monthly`/`quarterly`/`yearly`) turns the single range into a column-per-period matrix — see [Split: multiple periods at once](#split-multiple-periods-at-once). The `.xlsx` export is a styled `openpyxl` rendering of the exact same `_income_statement_rows()`/`_income_statement_matrix()` data the `.csv` export writes — same rows, same figures, just with fonts/fills/borders/frozen panes and account-depth indentation standing in for the CSV's separate Path column. Every cell is a literal, not a formula (see the route's own docstring for why a `SUM()` over a visible row range isn't safe against this tree's rollup); the shared styling constants (`_XLSX_*`) and helpers (`_xlsx_header_row`, `_xlsx_data_row`, `xlsx_response`) live just above `csv_response()` for reuse by any other report's own XLSX export later |
-| Balance sheet | `/balance-sheet`, `/export/balance-sheet.csv`, `/export/balance-sheet.xlsx` | Prev/next month links either side of "As of," same as Trial Balance/Variance — see [Prev/next navigation](#prevnext-navigation-one-pattern-per-archetype). its `.xlsx` export uses the same bold section-title + depth-1-root-row-as-total pattern Income Statement's groups use; "Total assets"/"Total liabilities + equity" are a real cross-section identity rather than a duplicate of any row above them, so they keep their own "grand"/"grand_bad" row |
-| Cash flow statement | `/cash-flow`, `/export/cash-flow.csv`, `/export/cash-flow.xlsx` | Flat (no operating/investing/financing split — out of scope, SPEC.md decision 20), grouped by contra-account rather than the account-tree rollup every other report here uses. `fn_cash_flow_lines` (`db/schema.sql`) does the real per-transaction attribution at full granularity — every non-cash leg, its own posted amount, sign-flipped, unchanged regardless of how the report above it groups things. `_cash_flow_rows()` (`app/main.py`) is where that grouping happens, per-entry, in three rules (see its own docstring and SPEC.md decision 20's addenda for the full reasoning): an equity-typed contra leg always lands in its own **Ledger adjustments** section, never blended into Inflows/Outflows (opening-balance seeding is real cash movement, but not real economic activity); an entry with exactly one income-typed leg and at least one expense-typed leg collapses into a single row under the income leg's own account, valued at their net, with the folded legs demoted to a `netted_from` annotation rather than deleted (two or more income legs on one entry is left un-netted — no principled way to say which leg a shared deduction belongs to); everything else (asset/liability legs always, any leg the other two rules didn't consume) itemizes exactly as `fn_cash_flow_lines` returned it. None of this changes `net_change`'s own arithmetic — the three rules only ever regroup rows that already summed to the same total — so `_cash_flow_tie_out()`'s three-way check (statement total vs. net cash-account leg activity vs. balance-sheet roll-forward) is unaffected by any of it, and now also returns `beginning`/`ending` balances that the report renders unconditionally (previously computed only for the failure-banner case). A mismatch still renders as a `.flash-warn` banner (same amber "needs a look" treatment as the Dashboard's pending-Staging banner, not a hard error — the report still renders) and logs via the module's one `logger.error()` call. A transaction with more than one cash leg (a payroll deposit split checking/savings) is attributed correctly with no actual ambiguity — see the function's own comment — but still surfaces in a second banner for manual review, per the spec's explicit ask. Date range is inclusive on both ends, same convention as Income Statement, not the half-open range the original feature request described — kept consistent with every other report's own date handling instead. Filter bar has the same Period preset dropdown (This month/Last quarter/...) Income Statement's own does now (`UI_CONSISTENCY_AUDIT.md` — both pages ask the identical "what happened in this range" question, so this shouldn't have been Income-Statement-only) — `period-picker.js` needed no changes at all, already fully generic against `#period-preset`/`#date_from`/`#date_to` and a no-op on anything Split-specific that doesn't exist here. Same Prev/next period links as Income Statement too — see [Prev/next navigation](#prevnext-navigation-one-pattern-per-archetype). Its `.xlsx` export has no account tree to walk (every row here is already flat, one per contra account), so no depth/indent and no group-row-as-total concern the tree-shaped reports have — Beginning/Net change/Ending get a bold "group" headline row each, and the closing Tie-out row reuses the grand/grand_bad split, green ink for PASS, red for FAIL |
-| Budget grid | `/budget`, `/budget/cell` | `_budget_rows()` builds two account-trees (budgeted, actual) and merges them node-for-node — see [the pattern below](#the-account-tree--rollup-pattern). Each leaf's merged node also carries a `quickfill` dict (last month's/3-month-average's ACTUAL and this scenario's own value, one extra `fn_account_balances`/`budget_lines` query each, computed once here rather than per click) — BACKLOG.md's own chevron menu (`budget-grid.js`) reads it straight off each cell's `data-*` attributes, no round trip when a menu option is picked. Month is a real `<select>` now (`_month_options()`, ±36 months around today, plus the currently-selected month if paging ever lands outside that window), not `<input type="month">` — user-reported: an out-of-range month (`2026-13`) reached `date.fromisoformat()` as a raw `ValueError` and 500'd, since browsers don't uniformly reject an invalid month client-side before submitting one; a `<select>` can't submit a value that isn't one of its own options, closing that off entirely. `budget_page()` also wraps the date parse itself in a `try/except`, falling back to the current month, as defense in depth against any other bad/hand-edited `month=` value reaching it the same way |
-| Variance | `/variance`, `/export/variance.csv`, `/export/variance.xlsx` | Prev/next month links either side of "As of," same as Trial Balance/Balance Sheet — see [Prev/next navigation](#prevnext-navigation-one-pattern-per-archetype). general two-scenario diff. Two modes: no rollup (native depth) builds a real `_build_account_tree` for chevrons + zero-balances, same as Trial Balance/Balance Sheet/Income Statement; a chosen `account_levels` depth stays on `fn_rollup_balance`'s SQL-side aggregation instead (accounts posted at different native depths reconciled into one row — no tree to walk there, so no chevrons, and the zeros checkbox is a no-op with a tooltip saying so). Its `.xlsx` export is built from `v["grouped"]` rather than the CSV's flat `v["merged"]` list, so it can add section headers, a per-type subtotal (native mode: only when a section has more than one top-level account, same reasoning as Trial Balance; rolled-up mode: always, since no row there is ever "the" section total the way a tree's own root row is), a real % Variance column the CSV omits, and the same red/green conditional-formatting Income Statement's own Variance/% Variance columns use. Each side's own leaf amount links through to the Journal, filtered to *that side's own scenario* (Baseline's own figure and Compare's own figure are each a real balance in a different scenario, never the same postings) — `date_to` only, no `date_from`, since `_compute_variance()` never applies the simulated-close split (`fn_account_balances`'s own `p_from` is always left `NULL` here), unlike Trial Balance. In rolled-up mode a row's `account_code` is very often a summary account (rolling up to "Top Level Accounts" pools everything under e.g. "1000 Assets" itself, and nothing is ever posted directly to a branch) — `has_children` gets set from a plain `SELECT is_postable FROM accounts` lookup there (rollup mode has no real tree to ask), reusing the same "not `r.has_children`" guard native mode already gets from `_build_account_tree` for free, so a pooled figure never links to an exact-account-code Journal filter that can only ever come back empty. Variance/% Variance themselves stay unlinked, same as every other report — a derived difference isn't a balance in its own right |
-| Chart of accounts | `/accounts`, `/accounts/quick-create` | |
-| Journal entry create | `/entries` POST | `_parse_lines()` turns the grid's parallel `account[]/debit[]/credit[]` arrays into line dicts |
-| Journal browser | `/entries` GET, `/entries/export.csv`, `/entries/export.xlsx`, `/entries/reverse`, `/entries/{id}/reverse`, `/entries/tags`, `/entries/{id}/edit-description`, `/entries/lines/{id}/edit-memo` | `_entries_filter()` builds the one WHERE clause the HTML view and both exports share; its date/search/tags/account/payee/amount fragments live in `_shared_journal_filters()`, reused as-is by Staging's own filter bar (`_staging_filter()`) — only Scenario differs between the two (the Journal's own posted scenario vs. Staging's target scenario, since every Staging row already shares one real scenario). `_entries_filter()`'s WHERE clause starts unconditionally with `NOT s.is_staging`, not just "no scenario filter selected" — the Journal never shows a pending Staging entry regardless of filter state, even a hand-edited `scenario=STAGING` query string. Its Scenario `<select>` (Staging-filtered same as the WHERE clause) has a real, genuinely-selected "All" option for a blank `scenario` — it used to fake ACTUAL as selected instead (sorts first, scenario_type enum order), which was actively misleading: an unfiltered Journal shows every non-staging scenario mixed together, but the dropdown looked like "just ACTUAL" was showing, and anything reading the filter state off the page — the XLSX export's own title among them — inherited that same wrong impression. `entry_id` is a third exact-match filter alongside account/payee (`e.id = %s`, no search) — BACKLOG.md's "every time an entry's id is displayed it should be a hyperlink to it," first applied to the "reversal of #X"/"reversed by #X" badges, which are real `<a>` links now instead of plain text. Same shape as account/payee otherwise: its own `entry_row`/`clear_entry_qs`/"Showing only entry #X — clear" banner, folded into `has_filters`, and threaded through to both exports so an export taken from a single-entry-filtered view stays scoped to it. **Select entries** (`entries-select.js`) reveals a checkbox per entry, same mechanism as Staging's bulk Approve/Reject — `/entries/reverse` is the bulk sibling of the single-entry route, both backed by one `_reverse_one_entry()` helper; confirms via `confirm.js`'s `ask()` with a count-aware message before submitting, Alt+R triggers it. The old per-entry "Reverse this entry" button is gone, same consolidation as Staging's Reject. Its outer `<form id="entries-select-form">` wraps only the toolbar, not the entries below it — a `<form>` can't nest inside another one — every checkbox still belongs to it via `form="entries-select-form"` (an input can be associated with a form anywhere in the document that way, not just one it's a DOM descendant of) rather than literal nesting. **Edit tags** posts to `/entries/tags` once per chip added/removed (`action=add`/`remove`, one tag, the checked `entry_id`s) — `_add_tag_to_entries()`/`_remove_tag_from_entries()` touch only `journal_entry_tags` (no immutability trigger there — see SPEC.md decision 16), additively, never a full replace like `_sync_entry_tags()` does for a single entry's own tags, since different selected entries can have different existing tags. **Description** (in the summary line) and each line's own **memo** are both click-to-edit now (`description-edit.js`/`memo-edit.js` — see the pattern table below), replacing an always-visible per-entry `<form>` this used to be — same decision 16 reasoning either way (organizational, not a fact about the transaction, fair game to fix on something already posted). `/entries/{id}/edit-description` and `/entries/lines/{id}/edit-memo` are both JSON in/out (same shape as `/entries/tags`), and both work on any entry/line, posted or still pending in Staging, since decision 16's own addendum carves the exception into `fn_entries_guard`/`fn_lines_immutable` directly rather than conditioning on Staging status. `/entries/export.xlsx` is a styled counterpart to `export.csv` — same filters, same rows, same DESC-by-date order — but grouped back into entries rather than one flat line per row: each entry's legs are debits-then-credits (not `line_no`'s original posting order), every entry-level column (Entry #, Date, Scenario, Description, Reference, Payee) merged and centered down every leg — written once, on the entry's first leg row, since `merge_cells()` discards whatever's in a merged range's other cells on save regardless — credit legs indented under the debits (account columns and the Credit amount cell alike), and a rule drawn only under an entry's last leg so two legs of the same transaction never show an internal line between them. It doesn't reuse `_xlsx_data_row`'s tree-shaped row model — the per-leg indent only ever applies to two of the eleven columns, and the entry-level columns are merged rather than repeated, neither of which fits that helper's "everything but the first label column" depth convention — but does reuse the shared `_XLSX_*` palette (fonts, money format, grand-total border/coloring, title/subtitle style) so it still reads as one of this app's own exports. Bottom row is a bold Debit/Credit total with the accountant's double-rule, live `SUM()` formulas over the two amount columns (safe here — unlike a tree-shaped report, every row is already a real leaf, so a range sum can't double-count), red instead of ink if a scenario in the filter allows single-sided entries |
-| Scenarios | `/scenarios`, `/scenarios/{id}/toggle-lock` | create + lock-toggle only — no edit, no delete (see SCHEMA.md) |
-| Account levels | `/account-levels` | |
-| Payees | `/payees`, `/payees/quick-create`, `/payees/{id}/toggle-active`, `/payees/{id}/rename`, `/payees/{id}/delete`, `/payees/merge` | quick-create is called via `fetch()` from the New entry payee combobox. Archive/Unarchive (`toggle-active`) only hides a payee from that combobox and the Scheduled/Staging pickers (`WHERE is_active` in each of their own queries) — it never touches history. Delete is a real `DELETE`, safe by construction since every FK onto `payees(id)` (`journal_entries`, `scheduled_entries`, `entry_templates`) is `ON DELETE SET NULL`. Merge folds two or more selected payees into one (`entity-manage.js`'s popup, prefilled with the first selected payee's name, editable before confirming) — the first selected id survives, every other selected payee's FK references get repointed to it (deleting the other rows *before* renaming the survivor, so the typed name can't collide with a row about to be deleted), then the survivor is renamed to whatever was typed. Select/Merge and the inline Edit-in-place rename are both `entity-manage.js` — [see the pattern below](#entity-manager-payees-tags) |
-| Tags | `/tags`, `/tags/{id}/toggle-active`, `/tags/{id}/rename`, `/tags/{id}/delete`, `/tags/merge` | A management page for the tag entity itself, not for tagging one entry (that's `tags.js`, on `entries.html`/`scheduled.html`/`entry_templates.html`) — same shape as Payees (`entity-manage.js` again), including Archive/Unarchive: `all_tags()` (the tag-input's own suggestion source) filters `WHERE is_active`, and `_sync_tags()`/`_add_tag_to_entries()` both reactivate on `ON CONFLICT` the same way `quick_create_payee` does, so typing an archived tag's name while tagging something is exactly the "back in use" signal it already is for payees. Merge dedupes across three many-to-many junction tables (`journal_entry_tags`, `scheduled_entry_tags`, `entry_template_tags`) instead of one FK column — each gets an "insert the survivor's own association wherever a merged-away tag had one, `ON CONFLICT DO NOTHING`" pass before the old tag rows are deleted, since a plain `UPDATE ... SET tag_id` could collide with a row that already exists (something tagged with *both* the survivor and a tag being folded into it) and violate the junction table's own primary key |
-| Scheduled entries | `/scheduled` | `materialize_due_schedules()` runs lazily on request (no cron in this deployment), posting each due occurrence into Staging |
-| Staging | `/staging`, `/staging/approve`, `/staging/reject`, `/staging/{id}/edit` (GET: JSON data, POST: save), `/staging/{id}/reject` | review/approve page for whatever's sitting in the one `is_staging` scenario, filterable by the same fields as the Journal (see the row above) — checkboxes + "Approve" (Alt+A) copies each into its real target scenario and sets `promoted_entry_id`. Its checkboxes are select-only now, same mechanism (and the same `body.select-mode`/`.select-only` CSS, `staging.js`'s own `setSelectMode`) as the Journal's own "Select entries" — Approve/Reject themselves stay visible throughout, just disabled until something's checked, so discovering Select isn't a prerequisite for knowing what they do. The top-of-page **Reject** button (Alt+R) is the only UI path to rejecting now — one entry checked or many, same checkboxes Approve uses — calling `/staging/reject`, its own bulk permanent-delete loop mirroring Approve's; `/staging/{id}/reject` (singular) still exists underneath and is still fully tested, just with no button pointing at it anymore since the bulk route already covers a single id. `pending_staging_entries()` is the shared query the Dashboard's banner count also uses (called with no filter args there); it now returns `(entries, lines_by_entry, tags_by_entry)` — the third feeds an **Edit tags** button (between Select and Approve, same disabled-until-checked treatment) that opens `tags-bulk-edit.js`'s popup, shared with the Journal's own (see `/entries/tags` above and the pattern table below) — `staging.html`'s own `entry-tags-data` JSON blob is `tags_by_entry`, same shape as the Journal's. Per-entry **Edit** opens inline (see `staging-inline-edit.js`/`app.js` below) — a trimmed-down New-entry grid, one fixed target scenario instead of a picker, everything else the same `app.js`/`combobox.js`/`datepicker.js` machinery — rather than navigating to a separate page; `GET /staging/{id}/edit` is what it fetches for that entry's own data, `POST` to the same path is unchanged from before (still redirects back to `/staging` on success). Edit and both Reject routes only work on a still-pending entry — see SPEC.md decision 15 for why that's even possible given decision 4's append-only rule. Each entry's own expanded panel also shows where it came from, bottom right next to Edit, dim and italic ("Created from schedule 'Rent'"/"Imported from file 'march.csv' on 2026-08-26") — `pending_staging_entries()` already LEFT JOINs `scheduled_entries`/`import_batches` for the target-scenario lookup, so this only needed two more columns (`se.description`, `ib.filename`/`ib.created_at::date`) off joins that already existed, no schema change. Description and each line's own memo are click-to-edit here too, same `description-edit.js`/`memo-edit.js` as the Journal — parity work (BACKLOG.md's own "Journal/Staging homologation") that also caught a real bug: `pending_staging_entries()`'s own lines query never selected `l.id` at all (nothing needed it before), so `.memo-cell`'s `data-line-id` silently rendered empty until that one column was added |
-| Find duplicates | `/staging/duplicates` (GET), `/staging/duplicates/merge` (POST) | `_find_staging_duplicate_groups()` fingerprints every pending entry by `(entry_date, sorted (account_id, amount) pairs across all its lines)` and groups by that — see SPEC.md decision 22 for the full matching rule and why merging deletes the losing entries rather than reversing them. Redirects straight back to `/staging` with "No duplicate entries found" when nothing matches, rather than landing on an empty results page. `staging-duplicates.js` owns the whole UI: checking 2+ entries in one `<section class="duplicate-group">` enables the single top Merge button; clicking it resolves the first qualifying group only (decision 22), showing a hand-built three-button Proceed/Select remaining/Cancel popup first if that group had unchecked siblings (`.confirm-overlay`/`.confirm-modal` CSS, since confirm.js's own `ask()` only ever offers two buttons), then the actual merge-detail popup (Description/Reference/Payee/Tags plus one memo field per line on the surviving entry) built from a `groups_json` blob passed alongside the Jinja-rendered `groups` — two separate context variables because `tojson`'s plain `json.dumps` can't serialize the Decimal/date values the template's own `money`/`selectattr` filters need to stay raw (same reason `templates_full()` already `str()`s its own debit/credit before its tojson blob). Saving fills in the page's real `<form>` with hidden inputs (`keep_id`, `remove_id` × N, `memo_<line_id>` per survivor line) and submits it for real — a flash-redirect round trip like every other Merge in this app, not a fetch. Each group's own header also carries a "select all in this section" checkbox (`.group-check-all`, live feedback after shipping) — same tri-state checked/indeterminate/unchecked convention every other select-all here already uses, scoped to that one group only. The merge-detail popup's Payee field is a real combobox (`window.PostWardenCombobox.enhance()`), not a plain `<select>` — also live feedback, matching every other payee picker in the app |
-| Import | `/import` | uploads a CSV in `/entries/export.csv`'s own column layout; `_parse_csv_import()` groups rows by `Entry #` and fully validates every group in Python before anything touches the database, then stages the valid ones in Staging under a new `import_batches` row. `_stage_import_groups()` is the shared insert path both this and the mapped importer below use — one `import_batches` row, one `journal_entries`+lines per group |
-| Import with rules | `/import/mapped` (upload), `/import/mapped/preview` (parse + show the mapping form), `/import/mapped` POST (transform + stage) | for single-entry exports with no debit/credit of their own — ActualBudget's CSV export is the concrete shape (`Account, Date, Payee, Notes, Category, Amount`). `_parse_mapped_import_file()` just reads raw rows; `preview` computes the file's own distinct Account/Category values and renders a mapping form (a plain `<select>` per distinct value, populated from `postable_accounts_for_pickers()`, progressively enhanced by `combobox.js` like every other `<select>` on the page — no bespoke JS needed for the mapping UI itself). The uploaded file's bytes round-trip through the mapping form as a hidden base64 field rather than being kept server-side, so there's no new table and nothing to clean up between the two steps (SPEC.md decision 23). The final POST's `_transform_mapped_rows()` applies both mappings and produces the same `(groups, errors)` shape `_parse_csv_import` does, then reuses `_stage_import_groups()` — same destination, same validation-before-insert discipline, different producer |
-| Entry templates | `/templates` | scaffolding only — loading one is client-side, nothing tracked server-side |
-| Help | `/help` | static reference content, one `<h2 id="...">` section per screen — the explanatory prose that used to sit atop every page individually now lives here once, in a two-column layout (`.two-col`/`.side-nav`, [see below](#sticky-side-nav-layout)) with its own jump-to nav; every other page links back with a small "?" icon in its own top-right corner (`.page-head`/`.help-icon`) rather than a sentence of caption text |
-| `/api/*` | JSON mirror | same data as the HTML screens, for scripts; not used by the app's own pages |
-
-## Templates
-
-Every template `{% extends "base.html" %}`, which owns the `<head>`
-(theme pre-paint script, so a saved theme applies before first paint),
-the sidebar nav, the flash-message banner, and three blocks a page fills
-in: `title`, `content`, and `scripts` (page-specific `<script src>` tags
-— a page needs this block only for something `base.html` doesn't already
-load unconditionally: `combobox.js`, `datepicker.js`, `sidebar.js`,
-`theme.js`, `font.js`, `cents-entry.js`, `money-format.js`, `date-format.js`, `auto-refresh.js`,
-`confirm.js`, `option-key.js`.
-`tags.js` is the one common enhancement that *isn't* always-on — only
-pages with an actual tag input (`entries.html`, `scheduled.html`, ...)
-load it themselves).
-
-`request.state.user` (set by the auth middleware) carries `csrf_token` —
-every state-changing `<form>` reads it directly as
-`{{ request.state.user.csrf_token }}` rather than the route passing it
-through the template context explicitly.
-
-## Static JS, one enhancement per file
-
-| File | Enhances |
+| File | Owns |
 |---|---|
-| `app.js` | The journal-entry line grid, shared by New entry, Scheduled, Entry templates, and Staging's inline Edit panel — keyboard flow (Tab moves account → debit → credit → memo → next row; Enter/Shift+Enter move vertically instead, same column, next/previous row, overriding a plain text input's default of submitting the form), live balance bar, fetch-based submit so a rejected entry doesn't lose what you typed, and Distribute (fills whichever line has focus with whatever amount, on whichever side, zeroes the entry out — always overwrites that line rather than adding to it). Global shortcuts via `e.code` rather than `e.key` (Option+letter types an accented character on a Mac, so `e.key` never matches there): Alt+N adds a line, Alt+D triggers Distribute, Alt+E toggles New entry's `<details>` open/closed, focusing the first line on open (Journal page only). Clear (Journal only, no keyboard shortcut on purpose — see entries.html's own comment on why) resets every field back to its page-load default: description/reference/tags empty, payee unset, date/scenario back to their original `defaultValue`/`selectedIndex`, grid back to two blank rows — same shape as `entry_templates.js`'s "Load template" (loading the blank template, in effect). |
-| `auto-refresh.js` | Every `<form class="bar" method="get">` — a delegated `change` listener submits the form the moment a `<select>`, date/month field, checkbox, or the tag picker's hidden value field changes (tags.js dispatches `change` on it exactly once per add/remove, not per keystroke) — so a report or the Journal's filters refresh without a separate button. Free-typed text (Search, Amount) stays out of this on purpose; Search has its own submit icon, Amount just needs Enter. One listener on `document`, not one per form (see its own comment) — resolves each field's form via `element.form`, which follows a `form="id"` association exactly like native submission does, not just DOM nesting; needed once the Journal's own "hide reversed/reversals" moved below a different `<form>` visually while still submitting with the filter form. |
-| `budget-grid.js` | The Budget grid's editable cells — live client-side subtotal recompute plus per-cell autosave on blur. Quick fill (BACKLOG.md's own ask): each cell's own chevron opens a shared, repositioned-per-click menu (`.combobox-panel`/`.combobox-option`, the same popover look `combobox.js` uses, reused wholesale rather than a parallel style) offering "Set to ACTUAL/`<scenario>` value of last month" and "...3 month average of ACTUAL/`<scenario>`", reading the cell's own `data-last-actual`/`data-last-scenario`/`data-avg3-actual`/`data-avg3-scenario` attributes (`_budget_rows()`'s own `quickfill` dict, computed server-side). The page-level "Set all values" button now offers the same four sources (user-reported: it used to offer only two of the four, with no principled reason for which pair), via `openMenu()`'s new `align` option (`"below-left"`, left-aligned under the button rather than the per-cell chevron's own right-aligned-below default) — that button sits near the sidebar's own left edge, where the default right-aligned-below pulled the menu further left, back toward the sidebar; `.quickfill-menu`'s own `z-index` also had to move from the shared combobox-panel default (20) to 65, clearing the sidebar (55) and its toggle (60), for the same reason. Both this button and the per-cell chevron end at `fillAndSave()` — set the value, `recompute()`, `save()` — the identical sequence typing into a cell and blurring it already triggers, just invoked from a menu pick instead of a keystroke, behind a real `confirm.js` `ask()` first for the page-level version since it overwrites the whole grid. |
-| `combobox.js` | Every `<select>` on the page, into a searchable/filterable dropdown. On focus, a still-unset field (select.value === "") clears the input outright rather than select()-ing the placeholder text to type over — BACKLOG.md bug, round 2 (round 1, v0.28.3, deferred select() by one tick for a same-tick-as-focus() WebKit no-op; re-tested directly here and still holds on a real click/Tab focus, but doesn't rule out iOS Safari, where select() is documented to need an explicit user gesture and can silently no-op on a script-driven call regardless of timing) — clearing the unset case outright removes the dependency on selection actually taking effect on any platform. A field that already holds a real value keeps the original select()-and-overtype behavior, where highlighting what's there to type over still matters. |
-| `option-key.js` | BACKLOG.md's own ask — on a Mac/iPad/iPhone, every server-rendered "Alt+X" shortcut hint (button labels, and the Help page's own walkthrough prose) reads as "⌥X" instead, no "+" (macOS's own menu convention). A `document.createTreeWalker` text-node sweep run once on load, not a template change at each of the ~15 spots "Alt+" is hardcoded across `entries.html`/`staging.html`/`scheduled.html`/`entry_templates.html`/`help.html` — a future new shortcut hint anywhere just works without remembering to wire this in again. Detects Apple platforms via `navigator.userAgentData.platform === "macOS"` where available, falling back to a `navigator.userAgent` sniff otherwise; iPadOS Safari's own UA has said "Macintosh" since iPadOS 13's default desktop-class UA, indistinguishable here from a real Mac — deliberately not disambiguated further, since both should show the same ⌥ symbol. Label-only: every actual shortcut listener still checks `e.altKey`, the real key this swaps the *display* of, never the key itself. |
-| `confirm.js` | Replaces the browser's own `confirm()` with a styled modal matching the app (`window.PostWardenConfirm.ask(message, opts) → Promise<boolean>`). Also wires up `<form data-confirm="...">` / `<button data-confirm="...">` generically: intercepts the submit, awaits the modal, and — only if confirmed — resubmits via `form.requestSubmit(submitter)` (preserves a button's own `formaction`/`formmethod` override, if it has one). A message computed at click time (Staging's "Approve N entries" and its bulk Reject) calls `ask()` directly instead of using the attribute — see `staging.js`. `opts.danger` renders OK in red, reserved for something that actually deletes data (Delete template/level, Reject); Reverse and Approve stay the default color. |
-| `datepicker.js` | Every `<input type="date">`, into a calendar popup (still submits a plain `YYYY-MM-DD`) — arrow keys/Home/End/PageUp/PageDown move around the open grid via a roving tabindex (one day is ever a real Tab stop; the rest are reachable by arrow key but not by Tab), closes on Escape or on focus actually leaving the whole widget (checked a tick after focusout, not from its relatedTarget — re-rendering the grid on every move destroys the old focused button first, which fires focusout with no relatedTarget yet). |
-| `number-stepper.js` | Every `<input type="number">` (Account levels' Depth, Scheduled's "Repeats every") — hides the browser's native spinner and adds the site's own chevron up/down buttons; typing and the keyboard's own arrow keys still work, input stays `type="number"` throughout. |
-| `tags.js` | The tag chip input (select-or-create, comma-separated hidden value underneath). |
-| `entry_templates.js` | "Load template" on New entry — fills the grid client-side from a page-embedded JSON blob. |
-| `import-file.js` | Import's CSV file field — proxies the visible "Choose file" button's click to the real (`.sr-only`) `<input type="file">`, and keeps the visible name box in sync with whatever's actually chosen (or the placeholder, if the picker was cancelled with nothing selected). |
-| `entries-select.js` | The Journal's "Select entries" mode — toggles a checkbox per entry and the bulk Edit tags/Reverse buttons (`.select-only` in style.css, hidden until toggled on), same select-all/disabled-until-checked/count-aware-confirm shape as `staging.js`'s Approve/Reject. Alt+R clicks Reverse. Edit tags itself is `tags-bulk-edit.js`'s popup (see its own row below) — this file only supplies the Journal-specific bits `attach()` needs: `getEntryIds()` reading whatever's checked, and where the CSRF token lives. Queries checkboxes document-wide (`document.querySelectorAll(".entry-check")`), not scoped to the form — they're associated with it via `form=""` (see the Journal browser row above), not DOM nesting, so `form.querySelectorAll(...)` would never find them. |
-| `tags-bulk-edit.js` | The "Edit tags" popup itself — shared by the Journal's `entries-select.js` and Staging's `staging.js`, factored out once Staging grew the identical need (one popup instead of two copies that could drift apart, same reasoning as `period-picker.js`'s Income Statement → Cash Flow generalization). `window.PostWardenBulkTags.attach({button, csrfToken, getEntryIds, entryTagsData})` — each caller supplies its own checkbox/CSRF wiring, the module owns the popup itself: built from confirm.js's own `.confirm-overlay`/`.confirm-modal` CSS (same look, no `ask()` call — an "Edit Tags" `<h3>` and `tags.js`'s pill box instead of a message and buttons, plus a lower-left Done button in a `.confirm-actions` row that just closes the popup, since there's nothing to save behind it), prefilled with the union of tags across whatever's checked (`entryTagsData`, keyed by entry id — the Journal's own `entry-tags-data` JSON blob, Staging's identically-shaped one built from `pending_staging_entries()`'s new third return value). Each chip add/remove diffs against that starting set and posts to `/entries/tags` immediately (shared by both pages — see the Journal browser route row; that route carries no Journal-only restriction, since tags live on `journal_entries`/`journal_entry_tags` regardless of `is_staging`), no Save button to batch behind. Closing the popup (Escape or the backdrop) reloads the page if anything actually changed, since tag badges/state are server-rendered either way. |
-| `description-edit.js` | Click-to-edit for an entry's own description (`.description-cell`, in the summary line of both the Journal and Staging), on both pages replacing what used to be an always-visible per-entry `<form>`. Same shape as `memo-edit.js` — autosave-on-debounce, blur/Enter commits, Escape reverts with a corrective POST if a draft already landed — but a deliberately separate file, not a shared abstraction: two differences matter enough to keep them apart. `.description-cell` lives *inside* `<summary>` (nested inside the row's own single grid-item `<span>`, not a sibling — the summary's `grid-template-columns` is one column per direct child, see style.css), so its click listener calls `e.preventDefault()` to stop `<summary>`'s native toggle before it fires — `memo-edit.js` never needed this, its table lives in the entry's body, never inside `<summary>`. And a description can never save blank (server-enforced already), so an emptied field just cancels back to the original rather than sending a doomed request. A third widget this similar would be the point to actually factor something out. |
-| `memo-edit.js` | Click-to-edit for a journal line's own memo (`.memo-cell`, one per line in the Journal's expanded entry panels) — swaps the cell's text for a plain `<input>` in place, Enter/blur saves via fetch to `/entries/lines/{id}/edit-memo`, Escape cancels. Deliberately *not* `entity-manage.js`'s own click-to-edit shape (a real rename `<form>`, POST + flash-redirect) despite looking like the same interaction — a memo lives inside a `<details>` panel, and a real page navigation would silently collapse every entry panel the user had open (`<details open>` isn't preserved server-side) just to save one line's memo; fetch avoids that, same reasoning `entries-select.js`'s own Edit tags already has for this exact page. Every `.memo-cell` wires up independently via one delegated document-level click listener rather than per-cell listeners — there's no shared "currently editing" state to track, unlike `staging-inline-edit.js`'s grid. Also autosaves on a 600ms debounce while typing (BACKLOG.md's iPad fix — a hardware-keyboard setup reported the final blur/Enter save never landing) — the exit-editing save on blur/Enter still runs for the normal case, but a keystroke's own value reaches the server on its own shortly after, independent of whatever eventually closes the input. Because a draft can land before the edit is committed, Escape does a corrective POST of the pre-edit value whenever a draft already went out, rather than only repainting the old text locally — otherwise "cancel" would leave the last debounced draft sitting in Postgres. |
-| `entity-manage.js` | Payees and Tags' shared page script (`payees.html`/`tags.html`) — one file for both rather than two near-identical ones, since the two entities differ only in route/label, not interaction. Select mode reuses `entries-select.js`'s exact `body.select-mode`/`.select-only` mechanism, just over `<td>`s instead of a details-summary gutter. Merge (enabled at 2+ checked) opens a popup built the same way `entries-select.js`'s Edit tags does (confirm.js's own `.confirm-overlay`/`.confirm-modal` CSS), holding a text field pre-filled with the first checked row's name — but unlike Edit tags' live-diffing fetches, confirming here fills in the page's own hidden `#merge-form` (one hidden input per checked id, plus the typed name) and does a real `form.requestSubmit()`, since a merge is one atomic action with one flash-redirect result, not a stream of small edits. Edit swaps a row's name `<span>` for its own small `<form>` in place (a real `<input>`, not a popup) — Enter submits it natively (a single-text-field form's standard implicit-submission behavior, no JS needed for that part), Escape reverts without saving. |
-| `cents-entry.js` | Optional "digits fill in from the right" amount entry (POS-terminal style), toggled in Settings. |
-| `accounts.js` | The Chart of Accounts page's collapsible tree, plus its inline "+" add-category form. Also guards both places a top-level account can be created (this inline form and the "New account" panel at the bottom of the page) against adding a second top-level Asset/Liability/Equity/Income account — confirm.js's `ask()` first, not a hard block, since a second one is a legitimate power-user pattern (splitting "Personal Assets" from "Business Assets"); Expense is excluded from the check entirely, since it's *meant* to have several top-level roots (`db/seed.sql`'s own 5000-9000). Nothing DB-level enforces this — see `accounts_page`'s own comment in `main.py`. |
-| `report-tree.js` | The same collapse/expand interaction, reused on Trial Balance/Balance Sheet/Income Statement/Budget grid — smaller than `accounts.js` since reports don't need the add-category form. Defaults *expanded* (reports are for reading numbers); Accounts defaults *collapsed* (browsing structure). |
-| `period-picker.js` | The date-range preset dropdown on Income Statement and Cash Flow — fills in the two real `date_from`/`date_to` inputs; the backend never sees the preset itself. Fully generic against `#period-preset`/`#date_from`/`#date_to` ids, so Cash Flow needed zero JS changes to pick it up (`UI_CONSISTENCY_AUDIT.md`) — it no-ops harmlessly on anything Income Statement Split-specific (`#totals-period-label`) that a given page doesn't have. |
-| `money-format.js` | Rewrites every `{{ x | money }}` span's displayed text using the symbol/decimal/thousands preference saved in Settings. Also exposed as `window.PostWardenMoney.format()` for the handful of places (the New entry balance bar, `budget-grid.js`) that compute a total client-side and need the same formatting without a `{{ }}` span to rewrite. |
-| `date-format.js` | Same pattern, one filter over: rewrites every `{{ x | dateformat }}` span (Dashboard's Recent activity, Journal, Staging, Scheduled's Next date) using the format saved in Settings — ISO/US/EU/long. Parses the ISO string by hand rather than `new Date(...)`, which would parse as UTC and can shift the displayed day in a timezone behind UTC; every date here is a plain DATE column, so this only ever reorders y/m/d. |
-| `sidebar.js` | Hover-to-preview / click-to-pin hamburger nav. |
-| `sidebar-collapse.js` | Each labeled sidebar group (Books/Reports/Setup — the bare Dashboard link at top has no label and isn't collapsible) toggles independently via its own real `<button class="sidebar-label">`, collapsed state persisted per browser in `localStorage` under its own key (`data-sidebar-key`, one entry per group — collapsing Reports never touches Books' own saved state; the key itself stays the literal string `"ledger"` for this group, an internal identifier with no visible-text coupling, unrelated to what the group is actually labeled on screen). Doesn't auto-expand a group just because the current page lives in it — same tradeoff a repo sidebar or an IDE's file tree accepts, a collapsed section stays collapsed across navigation regardless of where you are. No head-script preload the way theme/font/sidebar-pin get (see `base.html`'s own inline `<script>`) — those avoid a real layout-shifting flash; this is only a few nav links briefly visible before collapsing, low enough stakes not to need running before the stylesheet does. |
-| `staging.js` | The Staging page — "select all" toggles every entry checkbox; Approve, Reject, and Edit tags all stay disabled until at least one is checked. Approve/Reject confirm via `confirm.js`'s `ask()` (count-aware message, so it can't be a static `data-confirm` — the check for that attribute on `e.submitter` is what tells this listener apart from a hypothetical future button that confirms itself the ordinary way). Alt+A clicks Approve, Alt+R clicks Reject. Edit tags is `tags-bulk-edit.js`'s shared popup (see its own row above) — this file supplies the Staging-specific bits: `.staging-check` for whatever's checked (real DOM descendants of `#staging-form`, unlike the Journal's `form=""`-associated ones) and the same CSRF hidden input Approve/Reject already submit. |
-| `staging-duplicates.js` | The whole Find Duplicates UI (`/staging/duplicates` — see that route's own row above and SPEC.md decision 22). Merge button sync, the hand-built three-button Proceed/Select remaining/Cancel popup, and the merge-detail popup (Description/Reference/Payee/Tags/per-line memos, memo candidates borrowed only from the same (account, amount) leg on another checked entry) all live here. Reads two JSON blobs the template embeds — `duplicates-data` (`groups_json`, pre-stringified Decimal/date values) and `payees-data` — plus the ordinary `tags-data` blob `tags.js` already knows how to read for the Tags field's suggestions. Every checkbox here (per-entry and each group's own "select all in this section") sits behind a Select toggle now (`UI_CONSISTENCY_AUDIT.md`) — the same `body.select-mode`/`.select-only` mechanism as Journal/Staging/Payees/Tags, this page's own late addition to bring it in line; Merge itself was never part of that, staying visible throughout and only disabled until enough is checked, same as every other bulk-action button in the app. |
-| `staging-inline-edit.js` | Staging's "Edit" — relocates one shared `app.js` grid panel (`#staging-edit-panel`, parked hidden next to `#staging-edit-panel-home` when nothing's open) into whichever pending entry's own `.lines` div was just clicked, in place of navigating to a separate page. Fetches that entry's own data from `GET /staging/{id}/edit` (a JSON endpoint now, not a page) and fills the panel in — description/reference/payee/tags fields directly, the grid via `PostWardenEntryGrid.setAccounts()` + `clear()` + `addRow()` per line, same shape `entry_templates.js`'s "Load template" uses. Only one entry can be mid-edit at a time (one grid on the page); opening a second one closes whichever was already open first, restoring that entry's read-only view. Save (`app.js`'s own submit handler, unchanged) still does a real redirect back to `/staging` — this only removes the navigation it used to take just to *open* an entry for editing. |
-| `theme.js` | The theme `<select>` in Settings; the pre-paint switch itself lives inline in `base.html`. |
-| `font.js` | The font-bundle `<select>` in Settings — same shape as `theme.js` (own `localStorage` key `postwarden-font`, own `data-font` attribute, own pre-paint switch in `base.html`'s `<head>`), a deliberately separate, independent choice from Theme. Picks one of a handful of named bundles (System/Classic Serif/Modern Sans/Monospace), each overriding some subset of `--serif`/`--sans`/`--mono` in `style.css`'s `:root[data-font="..."]` blocks — never a single free-text typeface. Classic Serif also repoints `--figures` (see below) at `--serif`, which is what actually renders ledger numbers in serif rather than the app's usual monospace figures. |
+| `router.py` | The `APIRouter` — route signatures, query/path param parsing, calls into `service.py`, returns the result. No SQL, no business logic. |
+| `service.py` | The actual logic — validation, orchestration across multiple repository calls, anything that isn't "shape an HTTP request into a function call" or "run one query." |
+| `repository.py` | Raw SQL access through the shared `Connection` (`db.get_connection()`) — `text()` calls, not `Table`/`select()` Core constructs, wherever the schema's enum types/generated columns/set-returning functions would model awkwardly through Core with nothing gained (`reports/repository.py`'s own docstring is the fullest statement of this — reports read the existing `fn_trial_balance`/`fn_cash_flow_lines`/etc. Postgres functions directly rather than reinventing them in Core). |
+| `schemas.py` | Pydantic request-body models, where a module actually has a POST/PATCH body worth validating declaratively. Several modules (`reports`, `analytics`) have none at all — a GET with plain query params needs no schema, and response shapes stay plain dicts throughout (no response-model layer) since the OpenAPI generation step (`frontend/`'s `generate:api`) only ever needed request-side types to produce a useful client. |
 
-## Patterns used more than once
+`REBUILD.md` decision 3's other half — "a module should be deletable on
+its own" — is why sibling modules each fork a small private copy of a
+helper (an account-id lookup, a filter-fragment builder) rather than
+import it from another business module. The one deliberate exception is
+`modules/auth/` (`deps.py`, `service.py`): every other module
+unconditionally depends on there being a logged-in user at all, so
+importing auth's session/CSRF helpers directly — rather than forking
+them nine times over — is the honest expression of that dependency, not
+a violation of it. See `modules/auth/deps.py`'s own docstring.
 
-Rather than re-explain these at every call site, here's each one, once.
+**Current modules** (`src/postwarden/modules/`): `auth` (sessions, CSRF,
+account settings), `entries` (the Journal), `staging` (import review +
+duplicates), `reports` (Trial Balance, Balance Sheet, Income Statement,
+Cash Flow, Variance, Ledger — the ~450 lines `REBUILD.md` §6 calls out
+as "genuinely hard," ported close to verbatim), `imports` (plain-CSV and
+mapped/rules importers), `budget` (budget lines + variance), `reference`
+(Accounts, Payees, Tags, Scenarios, Account Levels — reference-data
+CRUD), `scheduling` (scheduled entries + entry templates), `dashboard`
+(the landing page — the one module with no legacy JSON precedent at
+all, built fresh in Phase 4.7). `src/postwarden/analytics/` sits
+alongside `modules/` rather than inside it — it's not one feature but a
+cross-cutting mirror (`GET /api/accounts`, `/api/entries`, `/api/trial-
+balance`, etc.) plus the Connect Power BI/Excel settings routes, a real
+external contract (saved `.pbids` files point at these exact URLs)
+that predates and outlives any one module.
 
-### The account-tree / rollup pattern
+`domain/` (`money.py`, `periods.py`, `accounts.py`, `entry.py`) is
+different in kind from `modules/`: pure functions, no `Connection`
+parameter, no FastAPI import, nothing that needs Postgres running to
+test. Account-tree building/flattening, period-splitting, and the pure
+half of the reports logic all live here rather than in `modules/
+reports/service.py`, specifically so they stay unit-testable in
+milliseconds. This is also why `apitests/domain/` has no database
+fixtures at all, unlike every other `apitests/` subdirectory.
 
-Trial Balance, Balance Sheet, Income Statement, Variance (at native
-depth — see its own route table entry above for the rolled-up case),
-and the Budget grid all show the same kind of thing: a hierarchical
-chart of accounts where a summary account (e.g. "Current Assets") needs
-to display the *sum* of everything under it, not just its own direct
-postings, and the whole thing needs to collapse/expand.
+## Auth: per-route dependency, not global middleware
 
-- **Server side** (`app/main.py`): `_build_account_tree(accounts,
-  balances_by_id, compare_by_id=None)` takes the flat account list (from
-  `v_dim_account`) and a `{account_id: balance}` map, builds the
-  parent/child forest, and rolls each node's `subtotal` up from its own
-  balance plus every descendant's. The optional second map rolls up
-  alongside the first into `compare_subtotal` — Income Statement's own
-  second-scenario column, so one tree drives both a plain report and a
-  two-scenario comparison; ordinary callers that pass nothing get
-  `compare_subtotal` fixed at 0 on every node. `_flatten_tree(nodes,
-  zeros)` walks it depth-first for template rendering, dropping a
-  subtree whose `subtotal` *and* `compare_subtotal` are both zero unless
-  `zeros` (that "and" is what makes the parameter a no-op for callers
-  with no compare map — `compare_subtotal` is already always 0 there).
-  The Budget grid needs *two* numbers per node too (Budgeted and
-  Actual), but merges them differently — `_budget_rows()` calls
-  `_build_account_tree` twice, once per side, and merges the two trees
-  node-for-node, since Budget always shows every account regardless of
-  either side being zero (it's an entry form, not a report) rather than
-  hiding anything. Income Statement's `_income_statement_groups()`
-  builds one group per top-level income/expense account (its own
-  waterfall — see the module comment above `_pct_variance`), each
-  group's rows being that root's own `_flatten_tree([root], zeros)` —
-  the root itself is a normal (possibly collapsible) row opening the
-  group, not just implied by the header text above it.
-- **Markup**: every row carries `data-id`, `data-parent`, and
-  `data-has-children` on the `<tr>`, and an (initially empty) `<span
-  class="tree-toggle">` in the name cell — the chevron itself is pure
-  CSS (a solid `.chevron` clip-path triangle, not a font glyph; see
-  `style.css`'s `.tree-toggle::before`), shown only via a
-  `tr[data-has-children="1"]` selector so a leaf row's span stays empty
-  but still reserves the indent width.
-- **Client side**: `report-tree.js` (or `accounts.js` on the Accounts
-  page) reads those `data-*` attributes to hide/show descendant rows and
-  persist collapse state in `localStorage`, keyed by a
-  `data-collapse-key` on the `<table>`.
+Legacy's `auth_gate` was a single piece of ASGI middleware ahead of
+every route. The rebuilt backend does the equivalent per-route instead:
+every module's `APIRouter` sets `get_current_session` (`modules/auth/
+deps.py`) at its own router-level `dependencies=[...]`, and every write
+route additionally depends on `require_csrf_header`. An absent/expired
+session is a plain `401` JSON body — there's no login *page* on the
+backend side for it to redirect to; the frontend's `SessionProvider`
+(below) is what turns a `401` into the login screen.
 
-### The `pct_of_base` variance-convention toggle
+The one piece of `auth_gate` that doesn't fit a per-route dependency —
+lazily materializing due schedules on every authenticated request
+(`SPEC.md` decision 9: no task runner, so "auto-post on the date"
+happens inline) — is the one real middleware `main.py` still adds
+(`advance_due_schedules`), gated on there being a valid session cookie,
+otherwise a no-op. See `main.py`'s own module docstring for the full
+reasoning, including why this is the *only* thing kept as middleware.
 
-Income Statement, Variance, and Budget Grid all show a % variance
-column, and all three share one "Flip variance direction" checkbox (next
-to Hide zero balances, or on its own in Budget Grid's filter bar, which
-has no zeros checkbox) that swaps which of the two figures being
-compared plays "new" vs. "old" in the underlying percent-change reading
-— flipping the numerator direction *and* which figure is the
-denominator together, not just the sign.
+## `main.py`: mounting, not logic
 
-- **Server side**: `_pct_variance(base, compare_val, pct_of_base=False)`
-  and its dollar-figure counterpart `_variance_amount(base, compare_val,
-  pct_of_base=False)` are the one shared implementation — the standard
-  `(new - old) / old` percent-change formula. Default (unchecked):
-  `base` plays "new," `compare_val` plays "old" — `(base - compare_val)
-  / abs(compare_val)`. Checked: the two swap roles — `(compare_val -
-  base) / abs(base)`. Every call site passes `base` = that report's own
-  primary figure and `compare_val` = whatever it's measured against, in
-  the *same* positional order everywhere — Income Statement's `scenario`
-  then `compare`, Variance's `baseline` then `compare`, Budget Grid's
-  `actual` then `budgeted` — a deliberate uniformity: an earlier version
-  of Variance passed these two in the opposite order from the other two
-  reports (baseline second, meant to always land in the denominator
-  position regardless of checkbox state) — a real, intentional design
-  choice at the time, not a bug, but one this session's own explicit
-  request revised in favor of one consistent rule everywhere: `base` is
-  always this report's own primary figure, full stop, and each route
-  reads `pct_of_base: int = 0` from the query string and threads it
-  through to `_income_statement_rows()`/`_compute_variance()`/
-  `_budget_rows()` and on to every level (row, subtotal, grand total)
-  that computes a variance.
-- **Markup**: a plain `<label class="checkline"><input type="checkbox"
-  name="pct_of_base" value="1" ...>` inside the report's own `form.bar`
-  (or `form[data-auto-refresh]` — see auto-refresh.js), same as `zeros`
-  — no dedicated JS needed for the checkbox itself, auto-refresh.js's
-  existing delegated `change` listener already resubmits on any checkbox
-  inside a covered form. Income Statement hides the checkbox entirely
-  when there's no `compare` scenario picked (`{% if compare %}`), since
-  there's no variance concept to toggle without one; Variance and Budget
-  Grid always have both sides, so theirs is unconditional. Every
-  Export CSV/XLSX link and Budget Grid's month prev/next links carry
-  `pct_of_base` forward so it survives navigation, same treatment every
-  other filter already gets. The query parameter itself keeps its
-  original name (`pct_of_base`) even though "of base" no longer quite
-  describes the new formula — renaming a public, bookmarkable query
-  string wasn't worth it for what's ultimately an internal identifier;
-  only the checkbox's own visible label changed.
-- **Budget Grid's client side**: `budget-grid.js` reads the toggle once
-  from a `data-pct-of-base` attribute the template stamps onto the
-  `<table>` (server-rendered from the same query param) and mirrors both
-  formulas in JS, so typing into a Budgeted cell recomputes Variance/%
-  variance live using whichever convention the page loaded with —
-  Actual never changes client-side, so there's nothing to keep the
-  toggle itself in sync with; only a full page reload (the checkbox's
-  own auto-refresh) ever changes which formula is live.
+`main.py` owns no routes of its own beyond `/healthz`, `/config`, and
+the SPA-serving routes below — every module's router is `include_
+router`'d in, and that's the whole of what this file does route-wise.
+Two things worth knowing if you're tracing a request:
 
-### Split: multiple periods at once
+- **`/app/*`, not `/api/*`, is the SPA's namespace.** The obvious-
+  looking choice — prefixing every JSON route with `/api` — turns out
+  to collide with `analytics/router.py`'s own real, already-shipped
+  `/api/accounts`, `/api/entries`, etc. (a different, flatter shape
+  than the module routes of the same name). So the SPA's client-side
+  routes live under `/app/*` instead, a namespace no backend router has
+  ever used; zero module routes changed to make room for it. `GET
+  /entries` is still the Journal's own JSON data route; `/app/entries`
+  is the page a browser navigates to.
+- **The SPA is served last, and only if built.** `StaticFiles(html=True)`
+  is mounted at `/` after every module router, so a module's own path
+  always wins a collision; `postwarden_static_dir` not existing (a
+  backend-only checkout, CI, a module test suite) is a supported state,
+  not an error — nothing 500s over a missing `static/`. Two small
+  routes (`/app`, `/app/{path:path}`) exist solely to serve the same
+  `index.html` for a direct browser navigation/refresh at a client-side
+  route with no matching file on disk — React Router takes over from
+  there once the bundle loads; the `path` param itself is never
+  inspected.
 
-Income Statement's `split` query param (`""`/`monthly`/`quarterly`/
-`yearly`, a `<select name="split">` next to Period) turns the report
-from one date range into a matrix — one column group per calendar
-period instead of one for the whole range. Scoped to Income Statement
-only: it's the only report built around a date *range* to begin with —
-Variance takes a single `as_of` date (a snapshot, like Balance Sheet)
-and Budget Grid already steps one calendar month at a time via its own
-prev/next links, so neither has a range to split without a separate
-redesign of its own filter model first.
+## Frontend: React SPA, one component per archetype
 
-- **`_split_periods(date_from, date_to, split)`** turns the range into a
-  list of `{label, date_from, date_to, partial}` dicts — real calendar
-  months/quarters/years (`date_trunc`-style boundaries computed in
-  Python, not even day-slicing), each **clipped** to the requested range
-  at both ends rather than expanded outward to a whole calendar period:
-  a custom range of Aug 15–Oct 3 split quarterly produces a Q3 column
-  covering only Aug 15–Sep 30 and a Q4 column covering only Oct 1–3,
-  `partial=True` on both, rather than silently pulling in days outside
-  what date_from/date_to actually asked for. The template marks a
-  partial period's label with a `<sup>*</sup>` and shows one shared
-  footnote below the table explaining it, rather than a parenthetical
-  date range inline on every such header (an earlier cut of this that
-  read as more confusing than informative). Returns `[]` — the same
-  "nothing to do" signal `compare=""` already is elsewhere — for an
-  unrecognized/empty `split`, an inverted range, or (income-statement-
-  export-csv only, since that route doesn't default blank dates to this
-  month the way the page route does) an empty date_from/date_to; capped
-  at 60 periods as a sanity limit, not a real one.
-- **`_income_statement_matrix(scenario, periods, date_from, date_to,
-  compare, zeros, pct_of_base)`** is the split-view counterpart to
-  `_income_statement_rows()`, built as a thin wrapper around that same
-  single-period function rather than a parallel calculation. Every real
-  period gets its own full `_income_statement_rows()` call with `zeros`
-  forced on, which guarantees every account row/group exists in every
-  period aligned by account id — a plain lookup merge from there, with
-  no risk of August ending up with a different set of rows than
-  September because one had a zero-balance account the other didn't. A
-  separate "combined activity" tree (the same `_build_account_tree`/
-  `_income_statement_groups` machinery the single-period report already
-  uses, fed the sum of `|base_net|`/`|compare_net|` across every *real*
-  period) decides which rows/groups actually render under the *real*
-  `zeros` flag — a row shows if it had activity in *any* period, hiding
-  only if it was zero everywhere, the same meaning "show zero balances"
-  already has, just extended across the whole matrix. Each surviving
-  row/group then gets its real per-period figures overlaid via a
-  `periods` list, keyed by account id (a group's own id is its root
-  account's, `rows[0]`) — matched within its own income/expense list
-  specifically, not a combined search across both, since nothing stops
-  two top-level accounts of different types sharing a name.
-- **The trailing Totals and Average columns**: Totals is one more
-  whole-range `_income_statement_rows()` call (`date_from`/`date_to`,
-  not any one period's own bounds), appended to `periods`/
-  `periods_totals` *after* the zero-activity union check above — it
-  only ever restates rows the real periods already decided to show, so
-  it never gets a vote in that check itself (redundant at best, an
-  unnecessary second source of truth at worst). Average follows right
-  after it: `_scale_income_statement_result(totals_result, len(periods))`
-  divides every dollar figure in Totals' own result by the real period
-  count and carries every percentage/ratio field through unchanged — a
-  plain division is *exact* here, not an approximation, because Split's
-  periods partition the date range with no overlap or gap (so
-  Totals.base_net already equals the sum of every period's own
-  base_net) and every percentage field is a ratio of two such amounts,
-  which stays identical whether or not both sides get divided by the
-  same n. Because both are just one more entry each in `periods`, the
-  template's own `{% for p in periods %}` renders them with zero
-  special casing anywhere in the row/subtotal/net-income markup — only
-  the period-label header needs to know which is which (see next
-  bullet). Totals' default label is the plain, JS-free-safe "Total";
-  `period-picker.js` rewrites a `#totals-period-label` span client-side
-  to match whatever the Period dropdown currently reads ("This
-  Quarter", "Custom range", ...) on load and on every change, since the
-  backend itself never learns which preset (if any) was picked, only
-  the date_from/date_to it resolved to (see that script's own comment —
-  a deliberate, pre-existing boundary this doesn't cross). CSV export
-  has no such client-side rewrite to lean on, so it always reads the
-  plain "Total". Average's own label is always the static "Average" —
-  it doesn't map onto a Period-dropdown preset the way Totals does, so
-  there's nothing for period-picker.js to rewrite it to.
-- **Template**: `income_statement.html` branches on whether `periods` is
-  set — the unsplit branch is the original single-range table, byte-for-
-  byte the same markup as before Split existed. The split branch mirrors
-  it almost line for line, with an extra `{% for p in periods %}` wrapped
-  around each column group and a two-row `<thead>` (period labels
-  spanning 1 or 4 columns, then the repeated sub-column labels
-  underneath) instead of one. The period-label row is centered
-  (`.period-label`, overriding `.num`'s own right-align by source order —
-  same specificity, later rule wins) rather than right-aligned like a
-  plain numeric header, since it spans every sub-column beneath it
-  instead of heading just one. Two classes get recomputed identically in
-  every `{% for p in periods %}` (Jinja has no shared closure across
-  separate loops, so both are deliberately repeated rather than factored
-  out):
-  - `col_cls`, on a period's *leftmost* sub-column only — `.period-start`
-    (a `var(--rule-strong)` left rule, not `.money-first`'s red one) for
-    every period after the first, the vertical divider between one
-    period's columns and the next, including before Totals and before
-    Average — computed once as `multi_period = periods | length > 1`
-    (which Totals+Average being always-present means is true the moment
-    there's at least one real period, so a single-period split still
-    gets dividers before its own Total/Average columns). With only one
-    column group total there's nothing to divide from, so no divider
-    renders.
-  - `agg_cls`, on *every* sub-column of a period (not just the
-    leftmost) — `.period-agg` (bold, plus a `color-mix(in srgb,
-    var(--rule-strong) 22%, var(--paper-deep))` tint richer than the
-    plain `.money` background) marks Totals and Average as aggregates
-    rather than a real period's own figures; `.period-agg-average`
-    layers italic on top for Average specifically (applied instead of,
-    never alongside, `.period-agg`), so the two aggregate columns stay
-    visually distinguishable from *each other*, not just from the real
-    periods. Both colors derive from existing theme tokens via
-    `color-mix()` rather than a fixed value, so they stay correct across
-    all 22 themes and dark mode with no per-theme override needed.
+`frontend/src/App.tsx` is the router root — a three-way branch on
+session status (`loading` / `anonymous` → `LoginPage` / authenticated →
+the real `<Routes>`), wrapping every screen in `Shell` (topbar + sidebar
+navigation, `shell/`). `main.tsx` mounts `SessionProvider` and
+`BrowserRouter` above `App` itself.
 
-  Wrapped in its own `.table-scroll` (`overflow-x: auto`) — a year split
-  monthly with a compare scenario is 12 × 4 = 48 data columns (20 more
-  with Totals/Average), easily wider than even `main` can stretch to on
-  the widest realistic monitor (`main` relaxes its own default width cap
-  for any page holding a `.report-table` — see "Report tables size to
-  their own content" below — but that's "as wide as the viewport
-  allows," not unlimited), and without a scoped scroll container the
-  whole page would scroll sideways along with it, dragging the sidebar
-  out of view. Every other `table.ledger` stays a handful of fixed
-  columns that never approaches this regardless of window size, so only
-  this one table gets the wrapper.
-- **CSV export** (`/export/income-statement.csv?split=...`) gets its own
-  wide-format branch for the same reason a two-row HTML `<thead>`
-  wouldn't survive a CSV round trip: one row per account, one column per
-  period × sub-column (the trailing Totals and Average columns included,
-  same as the HTML table), headers prefixed with the period label
-  (`"2026-08 ACTUAL"`, `"2026-08 Variance"`, ..., `"Total ACTUAL"`,
-  `"Average ACTUAL"`) so a plain spreadsheet import stays legible with no
-  merged header to reconstruct — no bold/italic/tint to carry over, of
-  course, since a CSV cell has no such thing.
-- **XLSX export** (`/export/income-statement.xlsx?split=...`), unlike
-  the CSV, *can* carry the bold/tint/italic treatment over — every
-  sub-column of Totals and Average gets `_xlsx_period_agg_font()`
-  (forces bold, plus italic for Average — but never removes a row's own
-  italic, e.g. a "Net income after X" running row stays italic in a
-  Total column too, bold *and* italic together, the same way CSS layers
-  `.period-agg`'s font-weight alongside a running row's own font-style
-  rather than one overriding the other) and a fixed `_XLSX_PERIOD_AGG_FILL`
-  tint — a literal copy of `.period-agg`'s `color-mix()` result against
-  the default Slate theme's own tokens, same reasoning as every other
-  hardcoded `_XLSX_*` color (the export has no idea which of the 22
-  themes Settings has picked). Scoped to the data rows only
-  (`data_start`..`last_row`) — the merged period-label header cell
-  already reads as "Total"/"Average" rather than a date, so the same
-  pale tint underneath the header's own strong dark fill would be
-  invisible at best.
-- **money() normalizes negative zero**: a flipped-sign zero-balance
-  income row (`_income_statement_groups`' own `sign = -1 if flip else
-  1`, applied to a literal 0) is a genuine Decimal/float negative zero,
-  which `%.2f`-style formatting renders as a confusing `"-0.00"`.
-  Pre-existing, but Split's internal `zeros=1` (forced on every
-  per-period call, to keep rows aligned — see above) surfaces far more
-  zero-balance rows than the single-range report normally shows, so it
-  came up here first. Fixed at both ends: `_income_statement_groups`'
-  own `signed()` helper normalizes it at the source (covers the CSV
-  export, which writes raw figures with no formatting rescue), and
-  `money()` itself guards independently too (covers `data-value`
-  attributes and any other direct caller).
-
-### Click an amount → filtered Journal, with a back link
-
-Income Statement, Balance Sheet, Trial Balance, Cash Flow, and Payees
-all link a number through to the Journal filtered to exactly what
-produced it, with a way back.
-
-- Each report template defines an `entry_link(code, value)` Jinja macro
-  building `href="/entries?...&account={{ code }}&back={{ report_url |
-  urlencode }}"`, where `report_url` is that same template's own current
-  URL (`{% set report_url = "/trial-balance?scenario=" + ... %}`) —
-  every filter/toggle the report currently has applied comes back with
-  you. Payees does the same thing with `payee={{ name }}` instead of
-  `account`.
-- Only **leaf** rows link (`if not r.has_children`) — a summary row's
-  subtotal spans multiple accounts, and no single Journal filter
-  captures "everything under this node," so it stays plain text. This is
-  a deliberate v1 scope decision, applied consistently everywhere the
-  pattern appears.
-- `entries_page()` accepts `account`/`payee` and validates `back` is a
-  same-origin relative path (`back.startswith("/")` and not `"//"`,
-  ruling out an off-site redirect) before rendering `entries.html`'s "←
-  Back to report" link. `_entries_filter()` is the one place the
-  resulting WHERE clause is built, shared by the HTML view and the CSV
-  export so what you see is exactly what you'd export.
-
-### Sticky side-nav layout
-
-Accounts (browse by level) and Help (jump to a section) both need the
-same shape: a narrow list of links on the left that stays in view while
-a longer, scrollable body sits on the right. One CSS pattern covers
-both — `.two-col` (flex row) wrapping a `.side-nav` (`position: sticky`,
-fixed width) and a `.two-col-main` (`flex: 1`). `.side-nav a.active`
-marks the current entry; Accounts sets it server-side per request
-(which level is selected), Help has no equivalent since its nav links
-are same-page anchors, not separate pages, so it's left unset there.
-Named for what it is rather than its first caller (it started as
-Accounts-only, back when it was `.accounts-layout`/`.levels-panel`).
-
-### The page title lives in the topbar, not the content
-
-No template has its own `<h1>PageName</h1>` any more — `base.html`'s
-topbar-left renders `{{ self.title() }}` (Jinja's way to call a
-`{% block %}` from outside where it's defined) followed by a muted
-`<span class="wordmark-brand"> · PostWarden</span>`, reusing the exact same
-`{% block title %}` every page already sets for `<title>Dashboard ·
-PostWarden</title>`. One string, two places, always in sync — there's no
-second place to update when a page's name changes. A page that still
-needs a top-right "?" help icon keeps a `.page-head` div for it
-(`justify-content: flex-end` now that it has nothing to space against);
-a page with neither just starts straight into its content.
-
-`.topbar` itself is pure chrome (full-bleed background/border, no
-horizontal padding).
-
-`.topbar-inner` (wrapping `.topbar-left`/`.topbar-right`) used to mirror
-`main`'s own `max-width`/`margin: auto` box model exactly, on the theory
-that the title should line up with the page content beneath it — see
-this file's own git history for that version and why it was correct at
-the time. It stopped being correct once `main`'s own width became
-variable per page (see "Report tables size to their own content"
-below): matching `main` would mean `.topbar-right` (username/log out)
-sits a different distance from the true right edge depending on what
-that specific page's content needs, which reads as "stuck in the
-middle" on any page whose `main` doesn't need the full width — the
-original complaint this whole area of the CSS exists to fix, just
-recurring under a new trigger. So `.topbar-inner` is independent of
-`main` entirely now: no `max-width`, no `margin: auto`, just
-`padding: 0 1.25rem` — a plain block box, full-width by default (an
-auto-width block fills its containing block), so `.topbar-right` sits
-near the real right edge on every page, on every monitor, regardless of
-what `main` is doing. `html.sidebar-pinned .topbar-inner` still gets
-`margin-left: 14rem` same as `main`/`.footer` — with no explicit
-`width` set, a block box's `width: auto` absorbs a margin rather than
-overflowing past its container, so this still works with no `calc()`
-needed. `.topbar-left`'s own `padding-left` (2.55rem, clearing the
-fixed hamburger button) is now needed *unconditionally* when unpinned
-(no media query — there's no viewport width any more at which
-`.topbar-inner` naturally clears the button on its own, since it's
-always flush left) and zeroed only when pinned, where the sidebar's own
-opaque background covers that spot regardless.
-
-An earlier version of the "match main's box model instead of computing
-an equivalent" idea is worth remembering even though `.topbar-inner` has
-since moved past needing it: a version before *that* tried to
-*approximate* `main`'s centering with a `calc()` on `.topbar-left`
-instead of sharing `main`'s own properties, and got it wrong two ways at
-once — `100vw` includes the scrollbar where a real containing-block
-percentage doesn't, and the formula had no idea `html.sidebar-pinned`
-existed, so it drifted further off the wider the window got once a
-viewer pinned the sidebar. The lesson (share the real thing, don't
-reverse-engineer an equivalent) is why `.topbar-inner` today shares
-`main`/`.footer`'s pinned-margin behavior exactly rather than
-approximating *that* too, even though it no longer shares their width.
-
-### Report tables size to their own content
-
-`main`'s default `max-width` is `var(--content-max)`
-(`min(90vw, 1680px)`, shared with `.footer`) — fluid so a wide or
-ultrawide monitor gets used, capped so prose and forms don't stretch
-into unreadably long lines on a very wide (5120px+) display. That's the
-right default for every page *except* a report whose column count the
-viewer controls (Balance Sheet, Income Statement — both its no-split
-and Split views, Cash Flow, Trial Balance, Variance, Budget Grid): a
-fixed cap means a report with only a handful of columns gets stretched
-across it regardless (numbers spaced out, harder to scan across — the
-opposite of legible), while a report the viewer has genuinely widened
-(Income Statement's Split view, a full year monthly) hits the cap and
-falls back to `.table-scroll`'s horizontal scroll well before the
-screen itself ran out of room.
-
-Two rules, marked by one class (`.report-table`, added to exactly those
-report tables' `<table class="ledger ...">` tags — not
-`table.entry-grid`, which deliberately keeps `width: 100%` since an
-editable grid's input fields need the room a read-only report doesn't):
-
-1. `table.ledger.report-table { width: auto; }` — overrides
-   `table.ledger`'s own `width: 100%`, so the table sizes to its actual
-   content (`table-layout: auto`, the browser default, already does
-   this once nothing forces `width: 100%`) instead of stretching to
-   fill `main`.
-2. `main:has(table.report-table) { max-width: none; }` — relaxes
-   `main`'s cap on exactly the pages that might need it.
-
-These don't fight each other: rule 2 gives a report page's `main` more
-width to *offer*, but rule 1 means a table only actually uses it if its
-own content needs it — a 3-column Cash Flow report on a page with
-`max-width: none` still renders at its own natural (narrow) width, it
-just isn't being forced wider by a container cap that no longer applies
-to it. There's no per-page "wide" flag or JS column count involved;
-`:has()` reads the fact directly off the table that's already there.
-
-A report table sizing itself independently of `main` created a second
-problem: each report's Export CSV/XLSX links used to live in a flex row
-that spanned the *filter form's* width (effectively `main`'s width), so
-once `main` could be wider than a narrow report's own table, the export
-links drifted out to the right of the table they belong to — the same
-"reads as disconnected from what it's labeling" complaint the topbar
-fix above addresses for `.topbar-right`, just recurring one level down.
-`.report-frame` (a plain `<div>` wrapping just the Export links —
-`.report-export`, a `<p class="bar report-export">` — together with the
-table or `.table-scroll` beneath them, added around each of the six
-`.report-table` templates) fixes it the same way `main`/`.footer`
-already size themselves: `width: fit-content; max-width: 100%`. A block
-child (`.report-export`) fills its parent's width by default, so once
-`.report-frame` itself shrinks to the table's actual width, right-
-aligning the export links within `.report-export` (`justify-content:
-flex-end`, inherited from `.bar`) lands them exactly above the table's
-own upper-right corner — not `main`'s. For Income Statement's Split
-view, `.report-frame`'s `fit-content` sees straight through
-`.table-scroll`'s `overflow-x: auto` to the *table's* true (unclamped)
-max-content size, which is still whatever the split has grown to; when
-that exceeds the available width, `fit-content` clamps back down to it
-exactly like it always did, so `.table-scroll` still fills the
-available width and still scrolls — this case isn't a special branch,
-it falls out of the same one CSS rule. Every filter-only control (the
-scenario/date fields, "show zero balances" and similar checkboxes)
-stays inside `<form>`, outside `.report-frame` entirely — only the
-export links needed this, not the filters.
-
-### Sticky header row and leading Code/Account columns
-
-The same six `.report-table` templates (BACKLOG.md: "make header rows
-and columns sticky") keep their header row and their first two columns
-in view while scrolling, via CSS alone — `table.ledger.report-table
-thead { position: sticky; top: 0; }` for the row, and `th:first-child`/
-`:nth-child(2)`/`td:first-child`/`:nth-child(2)` pinned at `left: 0`/
-`left: 4.5rem` for Code/Account.
-
-Two things about this that aren't obvious from the rule itself:
-
-- **The header sticks as one `<thead>`, not per-cell.** Modern browsers
-  support `position: sticky` directly on a table-header-group, and it
-  carries every row inside along together with no per-row offset math —
-  which matters specifically because Income Statement Split's own
-  header is *two* rows (periods, then a `rowspan="2"` Code/Account), not
-  one. The sticky-column rules, by contrast, had to be scoped to
-  `thead tr:first-child` specifically: `:nth-child` counts per row, not
-  per table, and Split's second header row's own first two cells (the
-  first two periods' own "ACTUAL" sub-labels) would otherwise catch the
-  same rule — Code/Account's `rowspan` means they're never actually
-  *in* that second row at all, so naively `thead th:first-child` (no
-  `tr:first-child`) silently sticky-pinned the wrong cells to the left
-  edge, rendering as a stray "ACTUAL" bleeding under "CODE"/"ACCOUNT".
-  Caught by actually scrolling the Split view during this feature's own
-  testing, not by inspection.
-- **Code gets a hard-pinned width (`width`/`min-width`/`max-width` all
-  `4.5rem`), not just a hint.** `.report-table` is `table-layout: auto`
-  (sizes to content, see above) — a plain `width` on one cell there is
-  only ever a suggestion the browser can shrink past, which it did for
-  a short Code value in testing, opening a gap between the Code and
-  Account sticky columns that scrolled content would show through.
-  Account's own sticky `left: 4.5rem` has to assume some fixed width for
-  the column before it to line up against at all, so Code's width has
-  to actually be enforced, not just declared. `:nth-child(2)` (not
-  `.acct-name`) is what's targeted for the second column specifically so
-  a report's occasional plain label row that skips that class (Cash
-  Flow's "Beginning cash balance") still gets pinned like every other
-  row.
-- **`tr.type-head`'s own section-label row (`colspan`, "Flexible &
-  Lifestyle Expenses") needed a fourth rule, separate from Code/Account.**
-  It was deliberately left out of the `td:first-child` rule above at
-  first — that rule's hard-pinned 4.5rem width would have crushed a
-  `colspan` cell that's supposed to span the whole row — but that also
-  meant the one row a reader most needs pinned while scrolling right
-  ("which section am I even looking at") had no sticky treatment at
-  all. Fixed with `table.ledger.report-table td[colspan]:first-child {
-  position: sticky; left: 0; }` and nothing else — a `colspan` cell's
-  width already comes correctly from the columns it spans; sticky only
-  ever needed to stop its *left edge* sliding out from under the
-  viewport, not an opinion about its width.
-- **Income Statement Split's own `.table-scroll` wrapper (the one
-  report table wide enough to need it) doesn't just add horizontal
-  scroll — the header's vertical stickiness structurally depends on
-  what `.table-scroll` does now.** `position: sticky` sticks relative
-  to the nearest actual scroll container, and per the CSS overflow
-  spec, `overflow-x: auto` on its own silently promotes a `visible`
-  overflow-y to `auto` too — you can't keep one axis genuinely
-  `visible` once the other is scrollable. That promotion made
-  `.table-scroll` a real (if invisible, since it had no bounded height)
-  vertical scroll container, which intercepted the header's sticky
-  positioning before it ever reached the actual page — confirmed via
-  `getBoundingClientRect()` scrolling the header clean off the top of
-  the viewport instead of sticking to it, on this one page only. Since
-  neither axis can honestly stay non-scrolling once the other is,
-  `.table-scroll` now embraces both on purpose: `overflow-x: auto;
-  overflow-y: auto; max-height: 75vh;` — a bounded, independently-
-  scrolling pane (same shape as Google Sheets or GitHub's own diff
-  tables use for a grid too wide and too tall to carry on the page
-  itself), inside which the header correctly sticks to *this pane's*
-  own top edge. Every other `.report-table` has no such wrapper and
-  needs none of this — the header sticks straight to the page, exactly
-  as the section above describes; this pane behavior is specific to
-  whichever report actually needs `.table-scroll`.
-
-No JS at all — every report table here already reads its account name
-straight out of the DOM, and no report needed a *third* sticky column,
-so there was nothing dynamic left to compute.
-
-### Prev/next navigation, one pattern per archetype
-
-`UI_CONSISTENCY_AUDIT.md` §5.6 — Budget Grid had prev/next month links
-long before any other report did; nothing else here let you page
-through periods without hand-editing a date field. Two shared Python
-helpers in `main.py` (just above the Trial Balance route, their first
-user in file order), one per report archetype — **not** one generic
-function, because "the next period" means a structurally different
-thing depending on which question the report is answering:
-
-- **Point-in-time reports** (Trial Balance, Balance Sheet, Variance,
-  Ledger — each has a single "as of" date) use `_shift_date_by_month(date_iso,
-  delta_months)`: shifts a real date by whole calendar months, clamping
-  the day to the target month's actual length (Jan 31 minus a month is
-  Dec 31, not an invalid Feb 31) — the same job `_shift_month()` already
-  did for Budget Grid's own month field, generalized from "always day 1"
-  to an arbitrary day. Labeled with just the shifted date's own month
-  (`&larr; 2026-07`, `date[:7]` — same slice range reports use, see
-  below) rather than the exact shifted date: the day-of-month is
-  preserved/clamped, not reset to the 1st, and printing it read as
-  "step by a day" rather than "step by a month" at a glance
-  (user-reported). The As of date picker is still there for an exact
-  date. Rendered as its own row below the filter fields (originally
-  shipped flanking them on the same row via `justify-content:
-  space-between` on the outer `.bar`, Budget Grid's own prev/next shape
-  — reversed on user feedback that this read as disconnected from "As
-  of" rather than a paging control next to it, especially once Variance
-  wraps its own four fields, leaving the links floating alone at the far
-  right) — now the same own-row shape range reports use, just below.
-- **Range reports** (Income Statement, Cash Flow — a `date_from`/
-  `date_to` pair) use `_shift_range(date_from_iso, date_to_iso)`: slides
-  the whole window by its own inclusive length, so a calendar month
-  pages to the prior/next calendar month, a quarter to the prior/next
-  quarter, and an arbitrary custom range (a `date_from`/`date_to` a user
-  typed by hand, not from a preset) slides by exactly its own length
-  with no calendar-boundary assumption at all. Rendered as its own row
-  below the filter fields, not squeezed into the same line — these
-  filter bars already run to 5-6 fields and wrap on a normal-width
-  screen. Labeled with the shifted range's own starting month
-  (`prev_from`/`next_from` sliced to `YYYY-MM`, `&larr; 2026-07`) —
-  originally shipped as generic "Previous/Next period" text instead
-  (reasoned as: an arbitrary range can span many months, where printing
-  a date inline would read as noise), reversed on user feedback that a
-  single scannable month token is more useful than no date at all, even
-  for a range it doesn't fully describe.
-
-Both are plain `<a href>` navigations, not form fields — same as Budget
-Grid's own prev/next, which predates this pattern and was the model for
-it. Every other filter (scenario, zeros, raw, pct_of_base, ...) rides
-along in the link's own query string so paging through periods never
-silently resets an unrelated toggle.
-
-### Toggle switch vs checkbox
-
-Settings has both `input[type="checkbox"]` (a hand-drawn square check,
-see `style.css`'s "Custom checkbox/radio" comment) and `input[type=
-"checkbox"].switch` (a track/thumb pill, same underlying element and
-JS — `.switch` is purely `appearance`, no behavior change). Which one a
-given boolean gets is a judgment call, not a toggle-switches-everywhere
-rule: `.switch` is for a genuine Settings preference, a persistent mode
-the *app* is in (Amount entry's fill-direction toggle is the one so
-far) — not a data field an entity actually has (Accounts' "leaf"), a
-filter over a report/list (Trial Balance's "show zero balances"), a
-bulk-selection control (Staging's row checks), or a plain form checkbox
-with its own strong convention ("Remember me"). Those answer "what is
-this record" or "which rows do I mean"; a checkbox says that. A switch
-reads as "which mode is the app in right now," which only Settings
-actually holds today.
-
-### The theme picker is a searchable `<select>`, same as everywhere else
-
-Settings > Appearance is a plain `<select id="theme-select">` — no
-different from the payee/account/tag pickers elsewhere in the app —
-enhanced into a searchable dropdown by `combobox.js`, which every
-`<select>` on the page already gets automatically. Typing filters the
-22 options by name; the underlying `<select>` still holds the real
-value, so `theme.js`'s `change` listener (same `localStorage` key, same
-`data-theme` attribute, same pre-paint switch in `base.html`'s `<head>`)
-needed no changes to keep working.
-
-This briefly wasn't a `<select>` — a 2026-08-26 pass replaced it with a
-grid of color swatch buttons, on the theory that a theme is a palette
-and a name alone can't show you what one looks like. Reverted the same
-day: search-to-filter turned out to matter more in practice than seeing
-swatches up front, and a `<select>` keeps the theme picker consistent
-with every other "pick one of many named things" control in the app
-instead of being the one field styled differently. Each theme is just a
-`:root[data-theme="..."]` block in `style.css` either way — the picker
-UI has never been how theming itself works, only how one gets chosen.
-
-**Considered, rejected: one CSS file per theme** (2026-08-26, prompted by
-noticing monkeytype.com does this). Worth being precise about what
-monkeytype actually does first, since it's not quite "one file per
-theme": the real palettes (bg/main/sub/text/error/...) live in one
-central `themes.ts` object; `frontend/static/themes/*.css` is a much
-smaller, optional set of *extra* per-theme files (`hasCss: true`) for
-things a plain palette can't express — Matrix's scanline animation,
-Shadow's color-cycling keyframes — not the color definitions themselves.
-So the actual prior art here is "one manifest, plus opt-in extras," not
-"one file per palette." Splitting this app's `:root[data-theme="..."]`
-blocks into 22 separate files was rejected anyway, on this app's own
-merits:
-
-- The pre-paint script (`base.html`'s `<head>`, before the stylesheet
-  even loads) is what avoids a flash of the wrong theme on load — it
-  works today because every theme's CSS is already sitting in the one
-  stylesheet the page always loads. Splitting into 22 files only pays
-  off (skip loading the 21 themes not in use) if the pre-paint script
-  also picks which `<link>` to inject before first paint — real, but
-  meaningfully more moving parts than this app's "no build step, hand-
-  written CSS" stance (see this doc's own Stack table) asks for, to
-  save a few KB no self-hosted single-user install will ever notice.
-- Every other kind of styling in this app — components, layout, the
-  other patterns on this page — stays in the one `style.css` file by
-  deliberate choice; giving only themes a different file-per-item
-  convention would be the inconsistent choice, not the tidy one.
-
-If the theme roster keeps growing well past this, the cheaper next step
-is splitting `style.css` in two (component CSS / theme palettes) rather
-than one-file-per-theme — still one extra request, not twenty-two.
-
-### Opting out of the standard chrome
-
-Every page gets `base.html`'s topbar/main/footer for free — except
-Login, which wants a full-bleed split screen instead (brand on the
-left, the form on the right; see `.auth-split` in `style.css`). Rather
-than a second base template to keep in sync with the first, `base.html`
-wraps topbar+main+footer in `{% block chrome %}...{% endblock %}`; a
-page that needs something completely different just overrides that
-block instead of `{% block content %}`, and still inherits `<head>`
-(theme pre-paint script, stylesheet, `<title>`) for free. Login re-does
-the two flash-message `{% if %}`s itself since it isn't using `<main>`'s
-copy — the one bit of duplication this costs.
-
-New entry (`app.js`) and the Budget grid (`budget-grid.js`) both submit
-via `fetch()` with `Accept: application/json` instead of a normal form
-POST, specifically so a *rejected* submission (an unbalanced entry, an
-unknown account code) can show its error in place without a redirect
-losing everything already typed. The route itself checks
-`"application/json" in request.headers.get("accept", "")` and returns
-`JSONResponse({"ok": False, "error": ...})` instead of `flash_redirect()`
-when that header is present — every such route still supports a plain
-form POST too (the `wants_json` branch is additive), so it degrades
-gracefully without JS.
-
-### Auto-refreshing filter bars
-
-Every report's filter form and the Journal's are a plain GET
-(`method="get"`), so the current filters are always a
-bookmarkable/shareable URL, no client-side state involved. Staging is
-the only one still a single-row `<form class="bar">`; every other
-filter form (Journal, Balance Sheet, Trial Balance, Income Statement,
-Variance, Budget Grid) has a second row below its fields — a checkbox,
-Export CSV, Budget Grid's Go/prev-next — so those wrap their fields in
-a nested `<div class="bar">` and carry `data-auto-refresh` on the
-`<form>` itself instead of `class="bar"` (putting `.bar` on the form
-too would flex its own children — the fields div and the second row —
-side by side instead of stacking them; see auto-refresh.js's own
-comment). `auto-refresh.js` is one delegated `change` listener on
-`document` (found by `form.bar, form[data-auto-refresh]` for which
-forms count, no opt-in markup needed on individual fields) that calls
-`form.requestSubmit()` the moment a `<select>`, date/month field, or
-checkbox changes (Trial Balance's "show zero balances"/"show true
-balances", Balance Sheet's "show true balances"). Resolving each
-field's own form via `event.target.form` (not a per-form listener
-scoped to that form's own DOM subtree) means a field doesn't need to be
-a descendant of the form it submits with, only associated with it via
-`form="id"` — the Journal's own "hide reversed/reversals" checkbox uses
-exactly this to sit below a different `<form>` (the Select/Edit tags/
-Reverse toolbar) visually while still submitting with the filter form
-above it, same technique its own select-only checkboxes already used in
-the other direction (a form wrapping only the toolbar, its checkboxes
-living elsewhere in the DOM). combobox.js/datepicker.js swapping a
-plain `<select>`/`<input type="date">` for their own enhanced markup
-needs no special handling either way — both already dispatch a real
-bubbling `change` on the original element when a value is picked (see
-their own files), which resolves through `.form` the same as any native
-change would. Deliberately excludes text fields (Search, the Amount
-value) — typed into, not picked from, so including them would turn
-every keystroke into a mid-word navigation — but not the tag picker's
-own hidden value field, which behaves like a `<select>` here despite
-being an `<input type="hidden">`: tags.js dispatches `change` on it
-exactly once per chip add/remove, never while just typing toward one.
-
-### Flash messages
-
-`flash_redirect(url, ok=, err=)` / `flash_url(...)` append `?ok=...` or
-`?err=...` to a redirect target; `base.html` renders whichever is
-present as a banner. Stateless on purpose — no session-stored flash
-queue to forget to clear.
-
-A third banner color, `.flash-warn` (amber), exists in `style.css` but
-isn't wired into `flash_redirect`/`base.html`'s `ok=`/`err=` mechanism —
-there's no `warn=` query param. It's used exactly once, hand-coded
-directly in the two templates that need it (`dashboard.html`,
-`scheduled.html`, both `<div class="flash flash-warn">`) for "N entries
-waiting in Staging for your approval": not a success (nothing finished)
-and not an error (nothing failed), just a pending state asking for
-attention — green or red would both say the wrong thing. A route that
-ever needs the same "pending, not done, not failed" distinction through
-`flash_redirect` would need a real `warn=` param added there and to
-`base.html`'s render block; nothing currently does.
-
-### Entity manager (Payees, Tags)
-
-`payees.html`/`tags.html` share one shape and one script
-(`entity-manage.js` — see its own catalog entry above): a Select/Merge
-bar, a `<table class="entity-table">` with a `select-only` checkbox
-column, and per-row Edit (rename in place), Archive/Unarchive, and
-Delete — identical on both pages now (see the Payees route table row
-above for why Delete needed Archive kept alongside it rather than
-replacing it; the same reasoning applies to Tags).
-`details.entry-new.quiet` is the "+ Add payee"/"+ Add tag" bar —
-`.entry-new`'s own dashed-box/details-summary shape (same as
-the Journal's "+ New entry"), with `.quiet` dropping the `--accent`
-color: New entry's bar leads into a whole multi-line grid and earns the
-attention accent draws, this one leads into a single text field and
-reads better as a plain, secondary affordance.
-
-### CSRF
-
-`require_csrf(request, token)` (in `main.py`) compares the submitted
-`csrf_token` against `request.state.user.csrf_token` with
-`secrets.compare_digest`. Every state-changing route calls it as the
-first line of its `try:` block, so a bad/missing token fails exactly
-like any other validation error (a flashed `err=`, not a 500).
-
-## Tests
-
-`tests/test_invariants.py` talks to Postgres directly (no FastAPI
-involved) — it's asserting what SPEC.md and SCHEMA.md claim the
-*database itself* refuses, so it has to bypass the app to be meaningful.
-`tests/test_auth.py` drives the real app through `TestClient` — routes,
-templates, session/CSRF handling, the things only the app layer
-enforces. Both share `tests/conftest.py`'s `mk_*` row-builder helpers and
-get a disposable `postwarden_test` database per run (dropped and recreated
-from `db/schema.sql` + `db/seed.sql` — no demo data — via
-`pytest_configure`).
-
-Run them (from the repo root, with `docker compose up -d db` already
-running):
-
-```bash
-POSTWARDEN_TEST_ADMIN_URL=postgresql://postwarden:postwarden@localhost:5432/postgres \
-POSTWARDEN_TEST_URL=postgresql://postwarden:postwarden@localhost:5432/postwarden_test \
-pytest -q
+```
+frontend/src/
+  main.tsx, App.tsx        entry point, routing, session-gated branch
+  api/client.ts             the one openapi-fetch client every screen imports
+  api/schema.ts              generated — see frontend/README.md's generate:api
+  api/use*.ts                 small hooks wrapping one reference-data GET each
+                              (useAccounts, useScenarios, useTags, ...)
+  auth/                      SessionProvider, LoginPage, the session React context
+  shell/                     Shell, Sidebar, Topbar, FlashBanner, nav.ts's route table
+  widgets/                   shared building blocks — see "Widgets" below
+  format/                    money/date formatting, cents-entry parsing, shortcut keys
+  reports/                  DashboardPage + the six report screens
+  journal/, staging/, budget/, tags/, setup/   one directory per feature area,
+                                                  mirroring src/postwarden/modules/
+                                                  roughly 1:1 but not rigidly —
+                                                  setup/ bundles several small
+                                                  Management/CRUD screens together
 ```
 
-See the README's own "Tests" section for the Docker-network variant that
-needs no local Postgres client at all.
+**The typed API client** (`api/client.ts` + generated `api/schema.ts`)
+is what makes a backend route change a compile-time frontend event
+instead of a runtime surprise: `openapi-typescript` turns every route,
+query/path param, and Pydantic request body under `src/postwarden/
+modules/*/router.py` + `schemas.py` into TypeScript types; `client.ts`
+wraps them in an `openapi-fetch` client that also attaches
+`X-CSRF-Token` to every non-`GET` request and notifies `SessionProvider`
+on any `401` (the SPA's equivalent of legacy's redirect-to-`/login` on
+a stale cookie). See `frontend/README.md` for the regeneration command
+— this file stays a pointer, not a duplicate, of that doc's own
+mechanics.
+
+A route with no Pydantic response model (most of them — response
+shapes stay plain dicts backend-side, per the modules table above)
+types as `{[key: string]: unknown}` in the generated schema; every
+screen that reads one casts through a small local `interface` matching
+what the route's own docstring promises, rather than threading `unknown`
+through the component. This is a real, repeated, deliberate gap — not
+fixed by adding response models backend-side, since nothing about the
+Pydantic-free response shape has actually caused a bug.
+
+### Component archetypes
+
+`UI_CONSISTENCY_AUDIT.md` §1 named five page shapes before any of this
+was rebuilt; on this branch that stops being a review convention and
+becomes the actual build order — one component per archetype, then
+per-screen configuration, not a bespoke page per screen:
+
+| Archetype | Screens | Shared shape |
+|---|---|---|
+| Filterable transaction list | Journal, Staging | URL-state filters, a paginated/scrollable table |
+| Point-in-time report | Trial Balance, Balance Sheet, Variance, Ledger | scenario + "as of" date, `useCollapsibleTree` for the account tree (Ledger is flat cards instead — no hierarchy to collapse) |
+| Range/period report | Income Statement, Cash Flow | scenario + date-from/date-to, `PeriodPresetPicker` |
+| Editable grid | Budget | live client-side recompute, no full-page reload on edit |
+| Management / CRUD | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | Select/Merge/+Add/table/Status/Archive — `useSelectMode`, `MergeDialog` |
+
+Every Point-in-time and Range/period report screen also carries the
+`entry_link`/`cell_link` drill-through pattern ported from legacy's own
+Jinja macros: a non-zero (or, on Balance Sheet, any leaf) amount is a
+real `<Link className="amount-link">` to `/app/entries` pre-filtered to
+`scenario`/`date_from`/`date_to`/`account` — each report's own date-
+bounding rule differs (see each page's own `entryLink`/`cellLink`
+comment), ported exactly rather than unified into one shared rule.
+
+### Widgets
+
+`widgets/` holds the pieces reused across archetypes rather than tied
+to one screen: `Combobox`, `DatePicker`, `NumberStepper`, `TagInput`,
+`ConfirmDialog`, `MergeDialog`, `FileField`, `PeriodPresetPicker`, plus
+three hooks — `useCollapsibleTree` (account-tree expand/collapse state,
+persisted per report to `localStorage`), `useSelectMode` (the
+Management/CRUD archetype's row-selection state), `useInlineEdit`. Most
+of these exist specifically to reproduce a real browser-quirk fix the
+legacy vanilla-JS files already had and an off-the-shelf component
+would not: `DatePicker`'s digit/hyphen input filtering, explicit
+`tabIndex` for Safari's tab order, `option-key.js`'s `e.code`-not-`e.key`
+shortcut handling (`format/shortcut.ts` now).
+
+## Testing
+
+Three suites, deliberately never sharing a single pytest invocation
+(see `apitests/conftest.py` and `.github/workflows/backend-ci.yml`'s
+own comments for the mechanics of why):
+
+- **`tests/test_invariants.py` + `tests/test_cashflow.py`** — the 60
+  pure-Postgres tests, unchanged by this entire rebuild. Talk to
+  Postgres directly, never import the app package at all.
+- **`apitests/`** — the app layer's own suite: `domain/` (no database),
+  `modules/*/test_repository.py` + `test_service.py` + `test_router.py`
+  per module, `export/`, `analytics/`, plus `test_config.py`/`test_db.py`/
+  `test_main.py`/etc. for the small pieces outside any one module. Its
+  own `conftest.py` provisions a disposable `postwarden_backend_test`
+  database from `db/schema.sql` alone (no seed data) — every test
+  builds its own minimal fixture rows.
+- **Frontend** — no automated test runner as of cutover; verification is
+  manual browser checking against `db/seed_demo.sql`'s deterministic
+  data (`REBUILD_STATUS.md`'s own standing verification checklist),
+  plus `tsc -b` (part of `npm run build`) as the type-correctness gate.
+
+CI (`.github/workflows/backend-ci.yml`) runs the first two as two
+separate jobs against two separate Postgres service containers — kept
+apart because they provision their schema two different ways (raw SQL
+file vs. Alembic) and importing the app package in the same process as
+`tests/conftest.py`'s own `pytest_configure` would collide.
