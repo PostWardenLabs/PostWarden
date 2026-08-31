@@ -475,7 +475,7 @@ def test_import_file_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn)
     assert len(result["errors"]) == 1
 
 
-def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
+def test_parse_file_reads_every_row_via_an_arbitrary_column_map():
     # A file whose own column names don't match ActualBudget's at all —
     # the whole point of the mapping step: any header works once mapped.
     content = _csv(
@@ -483,13 +483,13 @@ def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
         "Landlord,2026-08-01,-500,Rent",
     )
     column_map = {"account": "Merchant", "date": "When", "amount": "Amount", "category": "Bucket"}
-    rows, errors = service.parse_mapped_file(content, column_map)
+    rows, errors = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, column_map)
     assert errors == []
     assert rows == [{"row_no": 2, "account": "Landlord", "date": "2026-08-01", "payee": "",
                       "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
 
 
-def test_parse_mapped_file_reads_a_description_column_distinct_from_payee():
+def test_parse_file_reads_a_description_column_distinct_from_payee():
     # §2.1 of IMPORT_WIZARD.md: Entry Description and Line Memo are their
     # own targets now, not just Payee/Notes wearing those hats implicitly.
     content = _csv(
@@ -497,53 +497,48 @@ def test_parse_mapped_file_reads_a_description_column_distinct_from_payee():
         "Landlord,Rent for August,2026-08-01,-500",
     )
     column_map = {"account": "Merchant", "description": "Memo line", "date": "When", "amount": "Amount"}
-    rows, errors = service.parse_mapped_file(content, column_map)
+    rows, errors = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, column_map)
     assert errors == []
     [row] = rows
     assert row["description"] == "Rent for August"
     assert row["payee"] == ""
 
 
-def test_parse_mapped_file_rejects_an_incomplete_column_map():
+def test_parse_file_rejects_an_incomplete_column_map():
     content = _csv("Account,Date,Amount", "Checking,2026-08-01,10")
-    rows, errors = service.parse_mapped_file(content, {"account": "Account"})
+    rows, errors = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, {"account": "Account"})
     assert rows == []
     assert "Choose a column for" in errors[0]
     assert "Entry Date" in errors[0] and "Amount" in errors[0]
 
 
-def test_parse_mapped_file_rejects_a_column_map_pointing_at_a_column_the_file_lacks():
+def test_parse_file_rejects_a_column_map_pointing_at_a_column_the_file_lacks():
     content = _csv("Account,Date,Amount", "Checking,2026-08-01,10")
     column_map = {"account": "Account", "date": "Date", "amount": "Nope"}
-    rows, errors = service.parse_mapped_file(content, column_map)
+    rows, errors = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, column_map)
     assert rows == []
     assert "Mapped column(s) not found in the file: Nope" in errors[0]
 
 
-def test_preview_mapped_summarizes_accounts_and_categories():
+def test_preview_file_summarizes_accounts_and_categories():
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
         "Checking,2026-08-02,Employer,,,1000",
     )
-    preview = service.preview_mapped(content, MAPPED_COLUMN_MAP)
+    preview = service.preview_file(content, service.IMPORT_DEFAULT_SHAPE, MAPPED_COLUMN_MAP, column_kinds={})
     assert preview["row_count"] == 2
-    assert preview["accounts_found"] == ["Checking"]
-    assert preview["categories_found"] == ["Rent"]
-    assert preview["has_no_category_rows"] is True
+    assert preview["values_found"]["account"]["distinct"] == ["Checking"]
+    assert preview["values_found"]["category"] == {"distinct": ["Rent"], "has_blank_rows": True}
 
 
-def test_preview_mapped_raises_on_a_file_with_no_rows():
-    content = "Account,Date,Payee,Notes,Category,Amount\n"
-    with pytest.raises(ValueError, match="No rows found"):
-        service.preview_mapped(content, MAPPED_COLUMN_MAP)
-
-
-def test_transform_mapped_rows_maps_an_expense_row_debit_positive(book):
+def test_transform_rows_one_row_signed_maps_an_expense_row_debit_positive(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
              "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert errors == []
     [group] = groups
     amounts = {ln["code"]: ln["amount"] for ln in group["lines"]}
@@ -551,12 +546,14 @@ def test_transform_mapped_rows_maps_an_expense_row_debit_positive(book):
     assert amounts[book["checking"]["code"]] == Decimal("-500.00")  # money decreases (credit)
 
 
-def test_transform_mapped_rows_maps_an_income_row_credit_positive(book):
+def test_transform_rows_one_row_signed_maps_an_income_row_credit_positive(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-02", "payee": "Employer",
              "description": "", "memo": "", "category": "", "amount": "1000"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]},
-        {service.IMPORT_MAPPED_NO_CATEGORY: book["salary"]["code"]}, flip_sign=False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]},
+                    "category": {service.IMPORT_NO_VALUE_KEY: book["salary"]["code"]}},
+        flip_sign=False)
     assert errors == []
     [group] = groups
     amounts = {ln["code"]: ln["amount"] for ln in group["lines"]}
@@ -564,29 +561,35 @@ def test_transform_mapped_rows_maps_an_income_row_credit_positive(book):
     assert amounts[book["salary"]["code"]] == Decimal("-1000.00")
 
 
-def test_transform_mapped_rows_flip_sign_inverts_every_amount(book):
+def test_transform_rows_one_row_signed_flip_sign_inverts_every_amount(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
              "description": "", "memo": "", "category": "Rent", "amount": "500"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=True)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=True)
     assert errors == []
     amounts = {ln["code"]: ln["amount"] for ln in groups[0]["lines"]}
     assert amounts[book["checking"]["code"]] == Decimal("-500.00")
 
 
-def test_transform_mapped_rows_skips_a_zero_amount_row(book):
+def test_transform_rows_one_row_signed_skips_a_zero_amount_row(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
              "description": "", "memo": "", "category": "Rent", "amount": "0"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert groups == []
     assert errors == []
 
 
-def test_transform_mapped_rows_reports_an_unmapped_account(book):
+def test_transform_rows_one_row_signed_reports_an_unmapped_account(book):
     rows = [{"row_no": 2, "account": "Savings", "date": "2026-08-01", "payee": "",
              "description": "", "memo": "", "category": "Rent", "amount": "-10"}]
-    groups, errors = service.transform_mapped_rows(rows, {}, {"Rent": book["rent"]["code"]}, False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {}, "category": {"Rent": book["rent"]["code"]}}, flip_sign=False)
     assert groups == []
     # IMPORT_WIZARD.md §7 Phase 3 item 1 — structured, not a pre-joined
     # "Row N: ..." string, so a validation-report table can render `raw`
@@ -596,70 +599,68 @@ def test_transform_mapped_rows_reports_an_unmapped_account(book):
     assert "No mapping chosen for account" in errors[0]["message"]
 
 
-def test_transform_mapped_rows_reports_an_unmapped_category(book):
-    rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
-             "description": "", "memo": "", "category": "Mystery", "amount": "-10"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {}, False)
-    assert groups == []
-    assert errors[0]["row_no"] == 2
-    assert "No mapping chosen for category 'Mystery'" in errors[0]["message"]
-
-
-def test_transform_mapped_rows_reports_a_non_numeric_amount(book):
+def test_transform_rows_one_row_signed_reports_a_non_numeric_amount(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
              "description": "", "memo": "", "category": "Rent", "amount": "not-a-number"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert groups == []
     assert errors[0]["row_no"] == 2
     assert "isn't numeric" in errors[0]["message"]
 
 
-def test_transform_mapped_rows_description_wins_over_the_payee_fallback(book):
+def test_transform_rows_one_row_signed_description_wins_over_the_payee_fallback(book):
     # §2.1 of IMPORT_WIZARD.md: an explicitly-mapped Entry Description
     # takes priority over the payee/category/fallback chain, which only
     # ever applies when nothing is mapped there.
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
              "description": "August rent", "memo": "", "category": "Rent", "amount": "-500"}]
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert errors == []
     assert groups[0]["description"] == "August rent"
 
 
-def test_transform_mapped_rows_falls_back_to_payee_then_category_then_a_fixed_string(book):
+def test_transform_rows_one_row_signed_falls_back_to_payee_then_category_then_a_fixed_string(book):
     base = {"row_no": 2, "account": "Checking", "date": "2026-08-01", "description": "", "memo": "", "amount": "-500"}
-    account_map = {"Checking": book["checking"]["code"]}
-    category_map = {"Rent": book["rent"]["code"], service.IMPORT_MAPPED_NO_CATEGORY: book["rent"]["code"]}
+    value_maps = {"account": {"Checking": book["checking"]["code"]},
+                  "category": {"Rent": book["rent"]["code"], service.IMPORT_NO_VALUE_KEY: book["rent"]["code"]}}
 
-    groups, _ = service.transform_mapped_rows(
-        [{**base, "payee": "Landlord", "category": "Rent"}], account_map, category_map, flip_sign=False)
+    groups, _ = service.transform_rows(
+        [{**base, "payee": "Landlord", "category": "Rent"}], service.IMPORT_DEFAULT_SHAPE,
+        column_kinds={}, value_maps=value_maps, flip_sign=False)
     assert groups[0]["description"] == "Landlord"
 
-    groups, _ = service.transform_mapped_rows(
-        [{**base, "payee": "", "category": "Rent"}], account_map, category_map, flip_sign=False)
+    groups, _ = service.transform_rows(
+        [{**base, "payee": "", "category": "Rent"}], service.IMPORT_DEFAULT_SHAPE,
+        column_kinds={}, value_maps=value_maps, flip_sign=False)
     assert groups[0]["description"] == "Rent"
 
-    groups, _ = service.transform_mapped_rows(
-        [{**base, "payee": "", "category": ""}], account_map, category_map, flip_sign=False)
+    groups, _ = service.transform_rows(
+        [{**base, "payee": "", "category": ""}], service.IMPORT_DEFAULT_SHAPE,
+        column_kinds={}, value_maps=value_maps, flip_sign=False)
     assert groups[0]["description"] == "Imported transaction"
 
 
-def test_import_mapped_stages_entries_end_to_end(book, conn):
+def test_import_file_stages_one_row_signed_entries_end_to_end(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
-    result = service.import_mapped(
+    result = service.import_file(
         conn, content=content, filename="export.csv", target_scenario_id=book["actual"]["id"],
-        column_map=MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
-        category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
+        shape=service.IMPORT_DEFAULT_SHAPE, column_map=MAPPED_COLUMN_MAP, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert result["staged_count"] == 1
     assert result["errors"] == []
 
 
-def test_import_mapped_stages_entries_via_an_arbitrary_column_map(book, conn):
+def test_import_file_stages_entries_via_an_arbitrary_column_map(book, conn):
     # Same file shape as above, but with the bank's own column names
     # instead of ActualBudget's — the actual point of the mapping step.
     content = _csv(
@@ -667,15 +668,16 @@ def test_import_mapped_stages_entries_via_an_arbitrary_column_map(book, conn):
         "Landlord,2026-08-01,-500,Rent",
     )
     column_map = {"account": "Merchant", "date": "When", "amount": "Amount", "category": "Bucket"}
-    result = service.import_mapped(
+    result = service.import_file(
         conn, content=content, filename="bank.csv", target_scenario_id=book["actual"]["id"],
-        column_map=column_map, account_map={"Landlord": book["checking"]["code"]},
-        category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
+        shape=service.IMPORT_DEFAULT_SHAPE, column_map=column_map, column_kinds={},
+        value_maps={"account": {"Landlord": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert result["staged_count"] == 1
     assert result["errors"] == []
 
 
-def test_import_mapped_blocks_without_confirmation_when_a_row_fails_validation(book, conn):
+def test_import_file_blocks_one_row_signed_without_confirmation_when_a_row_fails_validation(book, conn):
     # IMPORT_WIZARD.md §7 Phase 3 item 2 — a row error blocks the whole
     # commit by default now (`skip_bad_rows` defaults to False), rather
     # than the old implicit "stage what worked, report the rest."
@@ -684,72 +686,78 @@ def test_import_mapped_blocks_without_confirmation_when_a_row_fails_validation(b
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
     with pytest.raises(ValueError, match="No mapping chosen for account"):
-        service.import_mapped(conn, content=content, filename="export.csv",
-                               target_scenario_id=book["actual"]["id"], column_map=MAPPED_COLUMN_MAP,
-                               account_map={}, category_map={}, flip_sign=False)
+        service.import_file(conn, content=content, filename="export.csv",
+                             target_scenario_id=book["actual"]["id"], shape=service.IMPORT_DEFAULT_SHAPE,
+                             column_map=MAPPED_COLUMN_MAP, column_kinds={},
+                             value_maps={"account": {}, "category": {}}, flip_sign=False)
     assert repo.recent_batches(conn, 10) == []  # nothing staged
 
 
-def test_import_mapped_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn):
+def test_import_file_stages_the_good_one_row_signed_rows_when_skip_bad_rows_is_true(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
         "Checking,2026-08-02,Employer,,,1000",
     )
-    result = service.import_mapped(
+    # Only "Rent" is mapped — the second row's blank category has no
+    # mapping, so it should fail and the first row should still stage.
+    value_maps = {"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}}
+    result = service.import_file(
         conn, content=content, filename="export.csv", target_scenario_id=book["actual"]["id"],
-        column_map=MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
-        # Only "Rent" is mapped — the second row's blank category has no
-        # mapping, so it should fail and the first row should still stage.
-        category_map={"Rent": book["rent"]["code"]}, flip_sign=False, skip_bad_rows=True)
+        shape=service.IMPORT_DEFAULT_SHAPE, column_map=MAPPED_COLUMN_MAP, column_kinds={},
+        value_maps=value_maps, flip_sign=False, skip_bad_rows=True)
     assert result["staged_count"] == 1
     assert len(result["errors"]) == 1
     assert result["errors"][0]["row_no"] == 3
     assert "No mapping chosen for category" in result["errors"][0]["message"]
 
 
-def test_validate_mapped_reports_row_errors_without_touching_the_database(book, conn):
+def test_validate_file_one_row_signed_reports_row_errors_without_touching_the_database(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
-    result = service.validate_mapped(content, MAPPED_COLUMN_MAP, account_map={},
-                                      category_map={}, flip_sign=False)
+    result = service.validate_file(
+        content, service.IMPORT_DEFAULT_SHAPE, MAPPED_COLUMN_MAP, column_kinds={},
+        value_maps={"account": {}, "category": {}}, flip_sign=False)
     assert result["groups_count"] == 0
     assert len(result["errors"]) == 1
     assert "No mapping chosen for account" in result["errors"][0]["message"]
     assert repo.recent_batches(conn, 10) == []
 
 
-def test_validate_mapped_returns_zero_errors_for_a_clean_file(book, conn):
+def test_validate_file_one_row_signed_returns_zero_errors_for_a_clean_file(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
-    result = service.validate_mapped(
-        content, MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
-        category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
+    result = service.validate_file(
+        content, service.IMPORT_DEFAULT_SHAPE, MAPPED_COLUMN_MAP, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
     assert result["groups_count"] == 1
     assert result["errors"] == []
 
 
-def test_import_mapped_raises_when_the_column_map_is_incomplete(book, conn):
+def test_import_file_raises_when_the_column_map_is_incomplete(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
     with pytest.raises(ValueError, match="Choose a column for"):
-        service.import_mapped(conn, content=content, filename="export.csv",
-                               target_scenario_id=book["actual"]["id"], column_map={"account": "Account"},
-                               account_map={}, category_map={}, flip_sign=False)
+        service.import_file(conn, content=content, filename="export.csv",
+                             target_scenario_id=book["actual"]["id"], shape=service.IMPORT_DEFAULT_SHAPE,
+                             column_map={"account": "Account"}, column_kinds={},
+                             value_maps={"account": {}, "category": {}}, flip_sign=False)
 
 
-def test_import_mapped_raises_the_fallback_message_when_the_file_has_no_data_rows(book, conn):
+def test_import_file_raises_the_fallback_message_when_the_file_has_no_data_rows(book, conn):
     content = "Account,Date,Payee,Notes,Category,Amount\n"  # header only, zero rows -> zero row_errors
     with pytest.raises(ValueError, match="No valid entries produced"):
-        service.import_mapped(conn, content=content, filename="export.csv",
-                               target_scenario_id=book["actual"]["id"], column_map=MAPPED_COLUMN_MAP,
-                               account_map={}, category_map={}, flip_sign=False)
+        service.import_file(conn, content=content, filename="export.csv",
+                             target_scenario_id=book["actual"]["id"], shape=service.IMPORT_DEFAULT_SHAPE,
+                             column_map=MAPPED_COLUMN_MAP, column_kinds={},
+                             value_maps={"account": {}, "category": {}}, flip_sign=False)
 
 
 def test_decode_upload_strips_a_bom():
@@ -862,11 +870,11 @@ def test_sniff_mapped_columns_honors_an_overridden_dialect():
     assert sniff["sample_rows"] == [{"A": "x", "B": "y"}]
 
 
-def test_parse_mapped_file_honors_an_overridden_dialect_and_reports_real_file_row_numbers():
+def test_parse_file_honors_an_overridden_dialect_and_reports_real_file_row_numbers():
     content = "Exported 2026-08-31\n" + _csv("Konto;Datum;Betrag", "Girokonto;2026-08-01;-500")
     dialect = {"delimiter": ";", "header_row": 1}
     column_map = {"account": "Konto", "date": "Datum", "amount": "Betrag"}
-    rows, errors = service.parse_mapped_file(content, column_map, dialect)
+    rows, errors = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, column_map, dialect)
     assert errors == []
     # Header is real file line 2 (one junk line skipped), so the first
     # data row is real file line 3 — not line 2, what a `header_row: 0`
@@ -875,51 +883,55 @@ def test_parse_mapped_file_honors_an_overridden_dialect_and_reports_real_file_ro
     assert rows[0]["account"] == "Girokonto"
 
 
-def test_transform_mapped_rows_applies_a_european_decimal_dialect(book):
+def test_transform_rows_one_row_signed_applies_a_european_decimal_dialect(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
              "description": "", "memo": "", "category": "Rent", "amount": "1.234,56"}]
     dialect = {**service.IMPORT_DEFAULT_DIALECT, "decimal_separator": ",", "thousands_separator": "."}
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]},
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
         flip_sign=False, dialect=dialect)
     assert errors == []
     amounts = {ln["code"]: ln["amount"] for ln in groups[0]["lines"]}
     assert amounts[book["checking"]["code"]] == Decimal("1234.56")
 
 
-def test_transform_mapped_rows_applies_a_non_iso_date_dialect(book):
+def test_transform_rows_one_row_signed_applies_a_non_iso_date_dialect(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "25/03/2026", "payee": "Landlord",
              "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
     dialect = {**service.IMPORT_DEFAULT_DIALECT, "date_format": "eu"}
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]},
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
         flip_sign=False, dialect=dialect)
     assert errors == []
     assert groups[0]["entry_date"] == "2026-03-25"
 
 
-def test_transform_mapped_rows_reports_the_dialects_own_expected_date_format(book):
+def test_transform_rows_one_row_signed_reports_the_dialects_own_expected_date_format(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "not-a-date", "payee": "",
              "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
     dialect = {**service.IMPORT_DEFAULT_DIALECT, "date_format": "eu"}
-    groups, errors = service.transform_mapped_rows(
-        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]},
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
         flip_sign=False, dialect=dialect)
     assert groups == []
     assert "expected DD/MM/YYYY" in errors[0]["message"]
 
 
-def test_import_mapped_stages_a_semicolon_european_decimal_file_end_to_end(book, conn):
+def test_import_file_stages_a_semicolon_european_decimal_file_end_to_end(book, conn):
     content = _csv(
         "Konto;Datum;Zahlungsempfänger;Betrag",
         "Checking;2026-08-01;Landlord;-500,00",
     )
     column_map = {"account": "Konto", "date": "Datum", "payee": "Zahlungsempfänger", "amount": "Betrag"}
     dialect = {"delimiter": ";", "decimal_separator": ",", "thousands_separator": "."}
-    result = service.import_mapped(
+    result = service.import_file(
         conn, content=content, filename="export.csv", target_scenario_id=book["actual"]["id"],
-        column_map=column_map, account_map={"Checking": book["checking"]["code"]},
-        category_map={service.IMPORT_MAPPED_NO_CATEGORY: book["rent"]["code"]},
+        shape=service.IMPORT_DEFAULT_SHAPE, column_map=column_map, column_kinds={},
+        value_maps={"account": {"Checking": book["checking"]["code"]},
+                    "category": {service.IMPORT_NO_VALUE_KEY: book["rent"]["code"]}},
         flip_sign=False, dialect=dialect)
     assert result["staged_count"] == 1
     assert result["errors"] == []

@@ -3,8 +3,10 @@ through a throwaway FastAPI() + include_router(), the same pattern
 `modules/entries/test_router.py` established. `POST /import` and `POST
 /import/mapped/columns` exercise real multipart file uploads (`files=`),
 not JSON bodies — the one shape no prior module's own router needed;
-every later mapped-importer step (`/mapped/preview`, `/mapped`) is JSON,
-round-tripping `file_content_b64` (and now `column_map`) forward."""
+every later mapped-importer step (`/mapped/preview`, `/mapped/validate`,
+`/mapped`) is JSON, round-tripping `file_content_b64` (and now `shape`/
+`column_map`/`column_kinds`/`value_maps`, IMPORT_WIZARD.md §7 Phase 4)
+forward."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -75,7 +77,7 @@ MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
                       "memo": "Notes", "category": "Category", "amount": "Amount"}
 
 
-def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip_content(book, conn):
+def test_import_mapped_columns_endpoint_returns_shape_fields_and_the_roundtrip_content(book, conn):
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
@@ -87,7 +89,12 @@ def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip
     body = resp.json()
     assert body["columns"] == ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
     assert body["sample_rows"][0]["Account"] == "Checking"
-    assert {f["key"] for f in body["fields"]} == \
+    # IMPORT_WIZARD.md §7 Phase 4 item 1 — a one-row, no repeated-key file
+    # sniffs to the "one"/"signed" shape, same shape the old mapped
+    # importer always assumed implicitly.
+    assert body["shape"] == service.IMPORT_DEFAULT_SHAPE
+    fields = body["fields_by_shape"]["one:signed"]
+    assert {f["key"] for f in fields} == \
         {"account", "date", "payee", "description", "memo", "category", "amount"}
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
@@ -114,6 +121,25 @@ def test_import_mapped_columns_endpoint_sniffs_a_semicolon_european_dialect(book
     dialect = resp.json()["dialect"]
     assert dialect["delimiter"] == ";"
     assert dialect["decimal_separator"] == ","
+
+
+def test_import_mapped_columns_endpoint_sniffs_a_grouped_debit_credit_shape(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 item 1 — the old plain-importer's own
+    # Export-CSV shape, now just another sniff outcome for the one
+    # unified columns endpoint.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Rent,{book['checking']['code']},,40",
+        f"1,2026-08-01,Rent,{book['rent']['code']},40,",
+    )
+    resp = client_for(conn).post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")})
+    assert resp.status_code == 200
+    shape = resp.json()["shape"]
+    assert shape["rows_per_entry"] == "grouped"
+    assert shape["amount_style"] == "debit_credit"
+    assert shape["group_key_column"] == "Entry #"
 
 
 def test_import_mapped_columns_reparse_endpoint_re_reads_the_same_file_with_an_overridden_dialect(book, conn):
@@ -171,17 +197,38 @@ def test_import_mapped_preview_endpoint_returns_pickers_and_the_roundtrip_conten
 
     resp = c.post("/import/mapped/preview", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP,
     })
     assert resp.status_code == 200
     body = resp.json()
     assert body["row_count"] == 1
-    assert body["accounts_found"] == ["Checking"]
-    assert body["categories_found"] == ["Rent"]
+    assert body["values_found"]["account"] == {"distinct": ["Checking"], "has_blank_rows": False}
+    assert body["values_found"]["category"] == {"distinct": ["Rent"], "has_blank_rows": False}
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
     assert body["column_map"] == MAPPED_COLUMN_MAP
     assert "file_content_b64" in body
+
+
+def test_import_mapped_preview_endpoint_omits_a_code_kind_column(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        f"{book['checking']['code']},2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP, "column_kinds": {"account": "code"},
+    })
+    assert resp.status_code == 200
+    assert "account" not in resp.json()["values_found"]
+    assert "category" in resp.json()["values_found"]
 
 
 def test_import_mapped_preview_endpoint_rejects_an_incomplete_column_map(book, conn):
@@ -196,7 +243,8 @@ def test_import_mapped_preview_endpoint_rejects_an_incomplete_column_map(book, c
 
     resp = c.post("/import/mapped/preview", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": {"account": "Account"},
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": {"account": "Account"},
     })
     assert resp.status_code == 400
 
@@ -212,14 +260,16 @@ def test_import_mapped_commit_endpoint_stages_from_a_preview_response(book, conn
         files={"file": ("export.csv", content, "text/csv")}).json()
     preview = c.post("/import/mapped/preview", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP,
     }).json()
 
     resp = c.post("/import/mapped", json={
         "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
-        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
-        "account_map": {"Checking": book["checking"]["code"]},
-        "category_map": {"Rent": book["rent"]["code"]},
+        "file_content_b64": preview["file_content_b64"], "shape": preview["shape"],
+        "column_map": preview["column_map"],
+        "value_maps": {"account": {"Checking": book["checking"]["code"]},
+                        "category": {"Rent": book["rent"]["code"]}},
         "flip_sign": False,
     })
     assert resp.status_code == 200
@@ -239,13 +289,14 @@ def test_import_mapped_commit_endpoint_rejects_an_unmapped_account(book, conn):
         files={"file": ("export.csv", content, "text/csv")}).json()
     preview = c.post("/import/mapped/preview", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP,
     }).json()
 
     resp = c.post("/import/mapped", json={
         "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
-        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
-        "account_map": {}, "category_map": {}, "flip_sign": False,
+        "file_content_b64": preview["file_content_b64"], "shape": preview["shape"],
+        "column_map": preview["column_map"], "value_maps": {"account": {}, "category": {}}, "flip_sign": False,
     })
     assert resp.status_code == 400
     # IMPORT_WIZARD.md §7 Phase 3 item 2 — blocked outright, nothing
@@ -265,8 +316,8 @@ def test_import_mapped_validate_endpoint_reports_row_errors_without_staging_anyt
 
     resp = c.post("/import/mapped/validate", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
-        "account_map": {}, "category_map": {}, "flip_sign": False,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP, "value_maps": {"account": {}, "category": {}}, "flip_sign": False,
     })
     assert resp.status_code == 200
     body = resp.json()
@@ -275,7 +326,7 @@ def test_import_mapped_validate_endpoint_reports_row_errors_without_staging_anyt
     assert body["errors"][0]["row_no"] == 2
     assert "No mapping chosen for account" in body["errors"][0]["message"]
     assert body["column_map"] == MAPPED_COLUMN_MAP
-    assert body["account_map"] == {}
+    assert body["value_maps"] == {"account": {}, "category": {}}
     assert c.get("/import").json()["recent_batches"] == []
 
 
@@ -291,14 +342,42 @@ def test_import_mapped_validate_endpoint_returns_zero_errors_for_a_clean_file(bo
 
     resp = c.post("/import/mapped/validate", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
-        "account_map": {"Checking": book["checking"]["code"]},
-        "category_map": {"Rent": book["rent"]["code"]}, "flip_sign": False,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP,
+        "value_maps": {"account": {"Checking": book["checking"]["code"]},
+                        "category": {"Rent": book["rent"]["code"]}},
+        "flip_sign": False,
     })
     assert resp.status_code == 200
     body = resp.json()
     assert body["groups_count"] == 1
     assert body["errors"] == []
+
+
+def test_import_mapped_validate_endpoint_resolves_a_code_kind_column_against_the_database(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 item 2 — the one bulk `known_codes`
+    # lookup this route does before calling into `service.validate_file`,
+    # restoring a precise per-row "unknown account code" diagnostic.
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "NOTACODE,2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/validate", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP, "column_kinds": {"account": "code"},
+        "value_maps": {"category": {"Rent": book["rent"]["code"]}}, "flip_sign": False,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["groups_count"] == 0
+    assert len(body["errors"]) == 1
+    assert "Unknown account code 'NOTACODE'" in body["errors"][0]["message"]
 
 
 def test_import_mapped_commit_endpoint_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn):
@@ -314,21 +393,21 @@ def test_import_mapped_commit_endpoint_stages_the_good_rows_when_skip_bad_rows_i
     columns = c.post(
         "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
         files={"file": ("export.csv", content, "text/csv")}).json()
-    account_map = {"Checking": book["checking"]["code"]}
-    category_map = {"Rent": book["rent"]["code"]}  # blank-category row 2 is left unmapped on purpose
+    # blank-category row 2 is left unmapped on purpose
+    value_maps = {"account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}}
 
     validation = c.post("/import/mapped/validate", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
-        "account_map": account_map, "category_map": category_map, "flip_sign": False,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": MAPPED_COLUMN_MAP, "value_maps": value_maps, "flip_sign": False,
     }).json()
     assert validation["groups_count"] == 1
     assert len(validation["errors"]) == 1
 
     resp = c.post("/import/mapped", json={
         "filename": validation["filename"], "target_scenario_id": validation["target_scenario_id"],
-        "file_content_b64": validation["file_content_b64"], "column_map": validation["column_map"],
-        "account_map": validation["account_map"], "category_map": validation["category_map"],
+        "file_content_b64": validation["file_content_b64"], "shape": validation["shape"],
+        "column_map": validation["column_map"], "value_maps": validation["value_maps"],
         "flip_sign": validation["flip_sign"], "skip_bad_rows": True,
     })
     assert resp.status_code == 200
@@ -356,18 +435,47 @@ def test_import_mapped_commit_endpoint_carries_an_edited_dialect_through_preview
 
     preview = c.post("/import/mapped/preview", json={
         "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
-        "file_content_b64": columns["file_content_b64"], "column_map": column_map, "dialect": dialect,
+        "file_content_b64": columns["file_content_b64"], "shape": columns["shape"],
+        "column_map": column_map, "dialect": dialect,
     }).json()
-    assert preview["accounts_found"] == ["Checking"]
+    assert preview["values_found"]["account"]["distinct"] == ["Checking"]
     assert preview["dialect"]["decimal_separator"] == ","
 
     resp = c.post("/import/mapped", json={
         "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
-        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
-        "dialect": preview["dialect"],
-        "account_map": {"Checking": book["checking"]["code"]},
-        "category_map": {service.IMPORT_MAPPED_NO_CATEGORY: book["rent"]["code"]},
+        "file_content_b64": preview["file_content_b64"], "shape": preview["shape"],
+        "column_map": preview["column_map"], "dialect": preview["dialect"],
+        "value_maps": {"account": {"Checking": book["checking"]["code"]},
+                        "category": {service.IMPORT_NO_VALUE_KEY: book["rent"]["code"]}},
         "flip_sign": False,
     })
     assert resp.status_code == 200
     assert resp.json()["staged_count"] == 1
+
+
+def test_import_mapped_commit_endpoint_stages_a_grouped_debit_credit_file(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 4 — the plain importer's own shape,
+    # driven end to end through the unified `/mapped/*` endpoints.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Rent,{book['checking']['code']},,500",
+        f"1,2026-08-01,Rent,{book['rent']['code']},500,",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+    shape = columns["shape"]
+    assert shape["rows_per_entry"] == "grouped" and shape["amount_style"] == "debit_credit"
+    column_map = {"group_key": "Entry #", "account": "Account code", "date": "Date",
+                   "description": "Description", "debit": "Debit", "credit": "Credit"}
+
+    resp = c.post("/import/mapped", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "shape": shape, "column_map": column_map,
+        "column_kinds": {"account": "code"}, "value_maps": {}, "flip_sign": False,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["staged_count"] == 1
+    assert body["errors"] == []

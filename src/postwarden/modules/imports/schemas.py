@@ -1,12 +1,12 @@
-"""Pydantic request models for the mapped importer's own three-step
-wizard (upload -> map columns -> review Account/Category -> commit).
-`POST /import` and `POST /import/mapped/columns` are the only
-`multipart/form-data` routes left (a real file upload plus a
-`target_scenario_id` field), which FastAPI validates straight from
-`Form(...)`/`File(...)` parameters in `router.py`; every step after the
-initial upload is JSON, since there's no file to carry beyond that
-point — just `file_content_b64`, already-parsed strings and dicts,
-round-tripped as plain JSON same as everywhere else in this app."""
+"""Pydantic request models for the import wizard's own steps (upload ->
+shape + dialect + map columns -> review value maps -> commit). `POST
+/import/mapped/columns` is the only `multipart/form-data` route left (a
+real file upload plus a `target_scenario_id` field), which FastAPI
+validates straight from `Form(...)`/`File(...)` parameters in
+`router.py`; every step after the initial upload is JSON, since there's
+no file to carry beyond that point — just `file_content_b64`,
+already-parsed strings and dicts, round-tripped as plain JSON same as
+everywhere else in this app."""
 from pydantic import BaseModel
 
 
@@ -19,7 +19,14 @@ class MappedColumnsReparseRequest(BaseModel):
     (`service.resolve_dialect` fills in anything missing from `service.
     IMPORT_DEFAULT_DIALECT`) so a client only has to send what actually
     changed, though in practice `ImportMappedPanel.tsx` always sends the
-    full dict it already holds."""
+    full dict it already holds.
+
+    No `shape` here — editing `shape` (IMPORT_WIZARD.md §7 Phase 4 item
+    1) never needs a re-parse of the file itself, only `dialect`'s
+    delimiter/header-row does (`service.sniff_shape`'s own docstring);
+    it's a client-side-only setting that changes which target fields
+    `POST /import/mapped/preview` accepts, not anything about how the
+    file's cells get split."""
     filename: str
     target_scenario_id: int
     file_content_b64: str
@@ -28,10 +35,15 @@ class MappedColumnsReparseRequest(BaseModel):
 
 class MappedImportPreviewRequest(BaseModel):
     """Body of `POST /import/mapped/preview` — the column-mapping step's
-    own Confirm. `column_map` is target-field-key -> the file's own
-    column name for it (`service.IMPORT_MAPPED_FIELDS`' `key`s), chosen
-    against the columns/samples `POST /import/mapped/columns` handed
-    back. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
+    own Confirm. `shape` (`service.IMPORT_DEFAULT_SHAPE`'s keys — see
+    IMPORT_WIZARD.md §7 Phase 4 item 1) decides which target fields exist
+    at all (`service.target_fields_for_shape`); `column_map` is
+    target-field-key -> the file's own column name for it, chosen against
+    the columns/samples `POST /import/mapped/columns` handed back;
+    `column_kinds` (target-field-key -> `"code"`|`"label"`, Phase 4 item
+    2) says whether each `lookup_capable` field's column already holds a
+    real account code or a label needing a lookup table in the review
+    step. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
     are the same round-tripped values that step already returned
     (`dialect` possibly user-edited via `/mapped/columns/reparse` along
     the way), carried forward unchanged — nothing is persisted
@@ -40,48 +52,57 @@ class MappedImportPreviewRequest(BaseModel):
     filename: str
     target_scenario_id: int
     file_content_b64: str
+    shape: dict[str, str | None] = {}
     column_map: dict[str, str] = {}
+    column_kinds: dict[str, str] = {}
     dialect: dict[str, str | int] = {}
 
 
 class MappedImportValidateRequest(BaseModel):
     """Body of `POST /import/mapped/validate` — the review step's own
     pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run with the exact
-    account/category maps the user just chose. Same fields `MappedImport
-    CommitRequest` carries, minus `skip_bad_rows` — this endpoint's whole
-    point is finding out whether that's needed before the frontend has to
-    decide it. Never touches the database (`service.validate_mapped`)."""
+    value maps the user just chose. Same fields `MappedImportCommit
+    Request` carries, minus `skip_bad_rows` — this endpoint's whole point
+    is finding out whether that's needed before the frontend has to
+    decide it. Never touches the database itself (`service.validate_
+    file`) — see `router.py`'s own docstring on the one bulk `known_
+    codes` lookup this route does before calling it."""
     filename: str
     target_scenario_id: int
     file_content_b64: str
+    shape: dict[str, str | None] = {}
     column_map: dict[str, str] = {}
+    column_kinds: dict[str, str] = {}
     dialect: dict[str, str | int] = {}
-    account_map: dict[str, str] = {}
-    category_map: dict[str, str] = {}
+    value_maps: dict[str, dict[str, str]] = {}
     flip_sign: bool = False
 
 
 class MappedImportCommitRequest(BaseModel):
     """Body of `POST /import/mapped` — the review step's own Confirm.
-    Carries forward the same `column_map`/`dialect` the preview step
-    validated (both re-applied on the backend, not trusted from the
-    preview response — see `service.import_mapped`'s own docstring) plus
-    the two mappings the review step itself collects,
-    `account_map`/`category_map`. Nothing is ever persisted server-side
-    between any of these steps — there's nothing to save, expire, or
-    clean up, so the round trip is the simplest correct design.
+    Carries forward the same `shape`/`column_map`/`column_kinds`/
+    `dialect` the preview/validate steps used (all re-applied on the
+    backend, not trusted from an earlier response — see `service.import_
+    file`'s own docstring) plus `value_maps`, the review step's own
+    lookup tables (one per `lookup_capable` field whose `column_kinds`
+    says `"label"` — generalizes the old, separate `account_map`/
+    `category_map` fields into one dict, Phase 4 item 2). Nothing is
+    ever persisted server-side between any of these steps — there's
+    nothing to save, expire, or clean up, so the round trip is the
+    simplest correct design.
 
-    `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2) — defaults to
-    `False`: any row error blocks the whole commit unless the caller
-    explicitly opts in, once it's actually seen those errors (normally
-    via `POST /import/mapped/validate` first — see `service.import_
-    mapped`'s own docstring)."""
+    `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2, confirmed to
+    apply to every shape in Phase 4) — defaults to `False`: any row error
+    blocks the whole commit unless the caller explicitly opts in, once
+    it's actually seen those errors (normally via `POST /import/mapped/
+    validate` first — see `service.import_file`'s own docstring)."""
     filename: str
     target_scenario_id: int
     file_content_b64: str
+    shape: dict[str, str | None] = {}
     column_map: dict[str, str] = {}
+    column_kinds: dict[str, str] = {}
     dialect: dict[str, str | int] = {}
-    account_map: dict[str, str] = {}
-    category_map: dict[str, str] = {}
+    value_maps: dict[str, dict[str, str]] = {}
     flip_sign: bool = False
     skip_bad_rows: bool = False

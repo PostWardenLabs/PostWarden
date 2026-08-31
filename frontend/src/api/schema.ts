@@ -723,16 +723,18 @@ export interface paths {
         /**
          * Import Mapped Columns
          * @description No `conn`/database at all — sniffing a file's own column names,
-         *     and its dialect, is pure (`service.sniff_mapped_columns`, `service.
-         *     sniff_dialect`). `fields`/`delimiters`/`date_formats` are `service`'s
-         *     own canonical lists verbatim, so the mapping step's target-field list
-         *     and the dialect panel's own option lists each live in exactly one
-         *     place; `target_scenario_id`/`filename` are handed back unchanged
-         *     alongside `file_content_b64` purely so the frontend can carry them
-         *     forward through the rest of the wizard without holding separate
-         *     state of its own. `dialect` is a *guess* (R1) — the frontend's own
-         *     dialect panel starts from it, and `POST /import/mapped/columns/
-         *     reparse` is what a user edit re-parses against.
+         *     its dialect, and its shape is pure (`service.sniff_mapped_columns`,
+         *     `service.sniff_dialect`, `service.sniff_shape`). `fields_by_shape`/
+         *     `delimiters`/`date_formats` are `service`'s own canonical lists
+         *     verbatim, so the mapping step's target-field lists and the dialect
+         *     panel's own option lists each live in exactly one place;
+         *     `target_scenario_id`/`filename` are handed back unchanged alongside
+         *     `file_content_b64` purely so the frontend can carry them forward
+         *     through the rest of the wizard without holding separate state of its
+         *     own. `dialect`/`shape` are both *guesses* (R1) — the frontend's own
+         *     panels start from them, and `POST /import/mapped/columns/reparse` is
+         *     what a user's dialect edit re-parses against (a shape edit needs no
+         *     re-parse at all, see that route's own docstring).
          */
         post: operations["import_mapped_columns_import_mapped_columns_post"];
         delete?: never;
@@ -753,12 +755,14 @@ export interface paths {
         /**
          * Import Mapped Columns Reparse
          * @description The dialect panel's own live re-parse — same shape `/mapped/
-         *     columns` returns (minus `delimiters`/`date_formats`/`fields`, which
-         *     are static option lists the frontend already has from the first
-         *     call), against a user-edited `dialect` rather than a freshly sniffed
-         *     one. No sniffing here — a dialect the user just chose is trusted
-         *     as-is, not re-guessed out from under them the moment they touch a
-         *     control.
+         *     columns` returns (minus `delimiters`/`date_formats`/`fields_by_
+         *     shape`/`shape` itself, which are either static option lists the
+         *     frontend already has from the first call or a setting a dialect edit
+         *     never invalidates — see `schemas.MappedColumnsReparseRequest`'s own
+         *     docstring), against a user-edited `dialect` rather than a freshly
+         *     sniffed one. No sniffing here — a dialect the user just chose is
+         *     trusted as-is, not re-guessed out from under them the moment they
+         *     touch a control.
          */
         post: operations["import_mapped_columns_reparse_import_mapped_columns_reparse_post"];
         delete?: never;
@@ -778,14 +782,15 @@ export interface paths {
         put?: never;
         /**
          * Import Mapped Preview
-         * @description No `conn`/database at all — parsing and grouping the file's own
-         *     Account/Category values (once mapped onto real columns via `payload.
-         *     column_map`, split by `payload.dialect`) is pure (`service.preview_
-         *     mapped`). `filename`/`target_scenario_id`/`file_content_b64`/
-         *     `column_map`/`dialect` are all handed back unchanged so the frontend
-         *     can carry them forward into the commit step without holding separate
-         *     state of its own — same round-trip-everything-forward shape the old
-         *     multipart version of this route already had.
+         * @description No `conn`/database at all — parsing the file's own rows (once
+         *     mapped onto real columns via `payload.column_map`, split by
+         *     `payload.dialect`) and collecting each `"label"`-kind lookup column's
+         *     distinct values is pure (`service.preview_file`). `filename`/
+         *     `target_scenario_id`/`file_content_b64`/`shape`/`column_map`/
+         *     `column_kinds`/`dialect` are all handed back unchanged so the
+         *     frontend can carry them forward into the review/commit steps without
+         *     holding separate state of its own — same round-trip-everything-
+         *     forward shape this route has always had.
          */
         post: operations["import_mapped_preview_import_mapped_preview_post"];
         delete?: never;
@@ -805,13 +810,20 @@ export interface paths {
         put?: never;
         /**
          * Import Mapped Validate
-         * @description No `conn`/database at all — the review step's own pre-commit check
-         *     (`service.validate_mapped`), run with the exact account/category maps
-         *     the user just chose, same `dialect` re-application every other step
-         *     here does. Not a fourth wizard step (same reasoning `/mapped/columns/
-         *     reparse` already documents) — a clean file's `errors` comes back
-         *     empty and the frontend skips straight to `POST /import/mapped`
-         *     without ever showing a validation-report screen (R1).
+         * @description The review step's own pre-commit check (`service.validate_file`),
+         *     run with the exact value maps the user just chose, same `dialect`
+         *     re-application every other step here does — plus one bulk DB lookup
+         *     (`_known_codes_if_needed`, see this module's own docstring) when any
+         *     lookup column is `"code"`-kind, restoring per-row "unknown account
+         *     code" precision for it. Not a fourth wizard step (same reasoning
+         *     `/mapped/columns/reparse` already documents) — a clean file's
+         *     `errors` comes back empty and the frontend skips straight to `POST
+         *     /import/mapped` without ever showing a validation-report screen
+         *     (R1). Now takes a `conn` (unlike before Phase 4) purely for that one
+         *     lookup — `service.validate_file` itself still never sees it, still
+         *     never writes anything; same "every route pays for a transaction
+         *     uniformly, even a read-only one" reasoning `get_connection`'s own
+         *     docstring already gives, now actually exercised here for a real read.
          */
         post: operations["import_mapped_validate_import_mapped_validate_post"];
         delete?: never;
@@ -1787,6 +1799,13 @@ export interface components {
          *     IMPORT_DEFAULT_DIALECT`) so a client only has to send what actually
          *     changed, though in practice `ImportMappedPanel.tsx` always sends the
          *     full dict it already holds.
+         *
+         *     No `shape` here — editing `shape` (IMPORT_WIZARD.md §7 Phase 4 item
+         *     1) never needs a re-parse of the file itself, only `dialect`'s
+         *     delimiter/header-row does (`service.sniff_shape`'s own docstring);
+         *     it's a client-side-only setting that changes which target fields
+         *     `POST /import/mapped/preview` accepts, not anything about how the
+         *     file's cells get split.
          */
         MappedColumnsReparseRequest: {
             /** Filename */
@@ -1806,19 +1825,22 @@ export interface components {
         /**
          * MappedImportCommitRequest
          * @description Body of `POST /import/mapped` — the review step's own Confirm.
-         *     Carries forward the same `column_map`/`dialect` the preview step
-         *     validated (both re-applied on the backend, not trusted from the
-         *     preview response — see `service.import_mapped`'s own docstring) plus
-         *     the two mappings the review step itself collects,
-         *     `account_map`/`category_map`. Nothing is ever persisted server-side
-         *     between any of these steps — there's nothing to save, expire, or
-         *     clean up, so the round trip is the simplest correct design.
+         *     Carries forward the same `shape`/`column_map`/`column_kinds`/
+         *     `dialect` the preview/validate steps used (all re-applied on the
+         *     backend, not trusted from an earlier response — see `service.import_
+         *     file`'s own docstring) plus `value_maps`, the review step's own
+         *     lookup tables (one per `lookup_capable` field whose `column_kinds`
+         *     says `"label"` — generalizes the old, separate `account_map`/
+         *     `category_map` fields into one dict, Phase 4 item 2). Nothing is
+         *     ever persisted server-side between any of these steps — there's
+         *     nothing to save, expire, or clean up, so the round trip is the
+         *     simplest correct design.
          *
-         *     `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2) — defaults to
-         *     `False`: any row error blocks the whole commit unless the caller
-         *     explicitly opts in, once it's actually seen those errors (normally
-         *     via `POST /import/mapped/validate` first — see `service.import_
-         *     mapped`'s own docstring).
+         *     `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2, confirmed to
+         *     apply to every shape in Phase 4) — defaults to `False`: any row error
+         *     blocks the whole commit unless the caller explicitly opts in, once
+         *     it's actually seen those errors (normally via `POST /import/mapped/
+         *     validate` first — see `service.import_file`'s own docstring).
          */
         MappedImportCommitRequest: {
             /** Filename */
@@ -1828,10 +1850,24 @@ export interface components {
             /** File Content B64 */
             file_content_b64: string;
             /**
+             * Shape
+             * @default {}
+             */
+            shape: {
+                [key: string]: string | null;
+            };
+            /**
              * Column Map
              * @default {}
              */
             column_map: {
+                [key: string]: string;
+            };
+            /**
+             * Column Kinds
+             * @default {}
+             */
+            column_kinds: {
                 [key: string]: string;
             };
             /**
@@ -1842,18 +1878,13 @@ export interface components {
                 [key: string]: string | number;
             };
             /**
-             * Account Map
+             * Value Maps
              * @default {}
              */
-            account_map: {
-                [key: string]: string;
-            };
-            /**
-             * Category Map
-             * @default {}
-             */
-            category_map: {
-                [key: string]: string;
+            value_maps: {
+                [key: string]: {
+                    [key: string]: string;
+                };
             };
             /**
              * Flip Sign
@@ -1869,10 +1900,15 @@ export interface components {
         /**
          * MappedImportPreviewRequest
          * @description Body of `POST /import/mapped/preview` — the column-mapping step's
-         *     own Confirm. `column_map` is target-field-key -> the file's own
-         *     column name for it (`service.IMPORT_MAPPED_FIELDS`' `key`s), chosen
-         *     against the columns/samples `POST /import/mapped/columns` handed
-         *     back. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
+         *     own Confirm. `shape` (`service.IMPORT_DEFAULT_SHAPE`'s keys — see
+         *     IMPORT_WIZARD.md §7 Phase 4 item 1) decides which target fields exist
+         *     at all (`service.target_fields_for_shape`); `column_map` is
+         *     target-field-key -> the file's own column name for it, chosen against
+         *     the columns/samples `POST /import/mapped/columns` handed back;
+         *     `column_kinds` (target-field-key -> `"code"`|`"label"`, Phase 4 item
+         *     2) says whether each `lookup_capable` field's column already holds a
+         *     real account code or a label needing a lookup table in the review
+         *     step. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
          *     are the same round-tripped values that step already returned
          *     (`dialect` possibly user-edited via `/mapped/columns/reparse` along
          *     the way), carried forward unchanged — nothing is persisted
@@ -1887,10 +1923,24 @@ export interface components {
             /** File Content B64 */
             file_content_b64: string;
             /**
+             * Shape
+             * @default {}
+             */
+            shape: {
+                [key: string]: string | null;
+            };
+            /**
              * Column Map
              * @default {}
              */
             column_map: {
+                [key: string]: string;
+            };
+            /**
+             * Column Kinds
+             * @default {}
+             */
+            column_kinds: {
                 [key: string]: string;
             };
             /**
@@ -1905,10 +1955,12 @@ export interface components {
          * MappedImportValidateRequest
          * @description Body of `POST /import/mapped/validate` — the review step's own
          *     pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run with the exact
-         *     account/category maps the user just chose. Same fields `MappedImport
-         *     CommitRequest` carries, minus `skip_bad_rows` — this endpoint's whole
-         *     point is finding out whether that's needed before the frontend has to
-         *     decide it. Never touches the database (`service.validate_mapped`).
+         *     value maps the user just chose. Same fields `MappedImportCommit
+         *     Request` carries, minus `skip_bad_rows` — this endpoint's whole point
+         *     is finding out whether that's needed before the frontend has to
+         *     decide it. Never touches the database itself (`service.validate_
+         *     file`) — see `router.py`'s own docstring on the one bulk `known_
+         *     codes` lookup this route does before calling it.
          */
         MappedImportValidateRequest: {
             /** Filename */
@@ -1918,10 +1970,24 @@ export interface components {
             /** File Content B64 */
             file_content_b64: string;
             /**
+             * Shape
+             * @default {}
+             */
+            shape: {
+                [key: string]: string | null;
+            };
+            /**
              * Column Map
              * @default {}
              */
             column_map: {
+                [key: string]: string;
+            };
+            /**
+             * Column Kinds
+             * @default {}
+             */
+            column_kinds: {
                 [key: string]: string;
             };
             /**
@@ -1932,18 +1998,13 @@ export interface components {
                 [key: string]: string | number;
             };
             /**
-             * Account Map
+             * Value Maps
              * @default {}
              */
-            account_map: {
-                [key: string]: string;
-            };
-            /**
-             * Category Map
-             * @default {}
-             */
-            category_map: {
-                [key: string]: string;
+            value_maps: {
+                [key: string]: {
+                    [key: string]: string;
+                };
             };
             /**
              * Flip Sign

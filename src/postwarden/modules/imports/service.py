@@ -1,15 +1,18 @@
-"""Both importers, and the shared Staging-landing step behind them.
-Every function that touches the database takes a SQLAlchemy
-`Connection` and reads/writes through `repository.py`, same convention
-every prior module established.
+"""The import wizard's pipeline (`parse_file`/`transform_rows`/`preview_
+file`/`validate_file`/`import_file`, IMPORT_WIZARD.md §7 Phase 4) plus
+the still-separate plain importer (`parse_csv_import`/`import_csv` —
+until Phase 4 item 4 turns it into a thin shim over the same pipeline),
+and the shared Staging-landing step behind both. Every function that
+touches the database takes a SQLAlchemy `Connection` and reads/writes
+through `repository.py`, same convention every prior module established.
 
-**`stage_import_groups` is the one function both importers funnel
+**`stage_import_groups` is the one function every importer funnels
 through**: one `import_batches` row, then one `journal_entries` + its
-`journal_lines` per group, regardless of which parser produced
-`groups`. Both `groups` shapes (the raw double-entry CSV's, and the
-mapped single-entry CSV's post-`transform_mapped_rows` output) agree on
-the same dict shape — `entry_date`/`description`/`reference`/
-`payee_name`/`lines` (each line `{code, amount, memo}`).
+`journal_lines` per group, regardless of which parser produced `groups`.
+Every `groups` shape (the plain importer's, and `transform_rows`' own
+output for every wizard shape) agrees on the same dict shape —
+`entry_date`/`description`/`reference`/`payee_name`/`lines` (each line
+`{code, amount, memo}`).
 
 **Amounts are `Decimal` throughout, never `float`.** Same fix
 `domain.entry.parse_lines` and `modules.budget.service.save_budget_cell`
@@ -27,7 +30,7 @@ noted in `modules/entries/repository.py`'s docstring).
 
 **No scenario-picker payload anywhere in this module** — same "don't
 reach into a module that doesn't exist yet" reasoning `repository.py`'s
-own docstring gives for `recent_batches`. `import_csv`/`import_mapped`
+own docstring gives for `recent_batches`. `import_csv`/`import_file`
 both take `target_scenario_id` as a plain caller-supplied int, trusting
 whatever the frontend's own `modules/reference/`-backed picker sent —
 the foreign key `import_batches.target_scenario_id` is what actually
@@ -56,7 +59,7 @@ IMPORT_MAX_ERRORS_SHOWN = 20
 # uses. None of this is specific to *this* file's own column meanings —
 # it's specific to *which spreadsheet program or bank* produced the
 # export, which is exactly why it's sniffed once, up front, rather than
-# folded into `IMPORT_MAPPED_FIELDS`' column-mapping step.
+# folded into `target_fields_for_shape`'s column-mapping step.
 #
 # Deliberately excludes encoding. `decode_upload`'s `utf-8-sig` already
 # handles the one real-world case that matters here (a BOM'd Excel
@@ -84,48 +87,39 @@ IMPORT_DATE_FORMATS = [
 _DATE_FORMAT_STRPTIME = {"iso": "%Y-%m-%d", "us": "%m/%d/%Y", "eu": "%d/%m/%Y"}
 _DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 
-# The mapped importer's own target fields — what a single-entry export's
-# real columns (whatever they're actually called: "Memo", "Merchant",
-# "Transaction Date", ActualBudget's own "Account"/"Payee"/etc., or
-# anything else) get mapped *onto* by the wizard's column-mapping step,
-# before any of `transform_mapped_rows`' Account/Category logic runs.
-# Replaces the old `IMPORT_MAPPED_COLUMNS` exact-name requirement, which
-# only ever worked because ActualBudget's own export happened to already
-# use these literal header names — any other export needed a rename
-# before it could be imported at all. `key` is the internal field name
-# every downstream function (`parse_mapped_file` and on) still uses;
+# The wizard's own target fields — what a file's real columns (whatever
+# they're actually called: "Memo", "Merchant", "Transaction Date",
+# ActualBudget's own "Account"/"Payee"/etc., or anything else) get mapped
+# *onto* by the wizard's column-mapping step, before any of `transform_
+# rows`' leg-resolution logic runs. Originally a single fixed list here
+# (`IMPORT_MAPPED_FIELDS`, retired in Phase 4) — now `target_fields_for_
+# shape` below, since which fields exist at all is itself a function of
+# `shape` (a grouped file's rows don't have a `category` field; a
+# Debit/Credit file has no single `amount` field). `key` is the internal
+# field name every downstream function (`parse_file` and on) still uses;
 # `label` is what the mapping step's own picker shows, deliberately
 # "Money Account"/"Category" rather than bare "Account" — the mapping
 # step's whole job is picking *which* of the file's account-shaped
 # columns is the money side versus the category side, and two options
-# both labeled "Account" would defeat that. `required` gates preview/
-# commit validation the same way the old exact-column-name check did:
-# money account, date, and amount are the three fields a double-entry
-# posting can't exist without; payee/description/memo/category are all
-# optional, same as they always were (a blank Category row is exactly
-# what `IMPORT_MAPPED_NO_CATEGORY` below already exists to handle).
+# both labeled "Account" would defeat that. `required` gates `parse_
+# file`'s own structural validation the same way the old exact-column-
+# name check did: money account, date, and amount are the three fields a
+# double-entry posting can't exist without; payee/description/memo/
+# category are all optional, same as they always were for the mapped
+# importer's own shape (a blank Category row is exactly what `IMPORT_NO_
+# VALUE_KEY` below already exists to handle).
 #
 # `description` and `memo` are deliberately separate targets, not one
 # "Notes" field mapped onto two different downstream uses. The original
 # ask mapped a file's Notes column to the entry description; the shipped
 # code instead used Payee for that (falling back to Category, then a
 # fixed string) and Notes became the *line* memo — both are legitimate,
-# but leaving the choice implicit inside `transform_mapped_rows` meant a
-# user had no way to see or change it. `description` lets a user map a
-# column straight to the entry description when they have one; leaving
-# it unmapped keeps the same payee/category/fallback chain
-# `transform_mapped_rows` always used (documented there, and in the
-# mapping step's own UI, rather than only in this comment).
-IMPORT_MAPPED_FIELDS = [
-    {"key": "account", "label": "Money Account", "required": True},
-    {"key": "date", "label": "Entry Date", "required": True},
-    {"key": "amount", "label": "Amount", "required": True},
-    {"key": "payee", "label": "Payee", "required": False},
-    {"key": "description", "label": "Entry Description", "required": False},
-    {"key": "memo", "label": "Line Memo", "required": False},
-    {"key": "category", "label": "Category", "required": False},
-]
-IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
+# but leaving the choice implicit inside the transform meant a user had
+# no way to see or change it. `description` lets a user map a column
+# straight to the entry description when they have one; leaving it
+# unmapped keeps the same payee/category/fallback chain the transform
+# always used (documented there, and in the mapping step's own UI,
+# rather than only in this comment).
 
 # Step 2 of IMPORT_WIZARD.md's spine (§3) — Phase 4. "Shape" is the
 # structural difference between "one row = one entry, one signed Amount
@@ -331,14 +325,14 @@ def _sniff_date_format(lines: list[str], delimiter: str) -> str:
 
 def _dict_reader(content: str, dialect: dict) -> csv.DictReader:
     """The one place `csv.DictReader` gets constructed — every row-reading
-    function below (`parse_rows`, `sniff_mapped_columns`, `parse_mapped_
-    file`, `parse_csv_import`) goes through this rather than building its
-    own, so `dialect['delimiter']`/`dialect['header_row']` are honored
+    function below (`parse_rows`, `sniff_mapped_columns`, `parse_file`,
+    `parse_csv_import`) goes through this rather than building its own,
+    so `dialect['delimiter']`/`dialect['header_row']` are honored
     everywhere consistently and a future second file format (R7) only
     has to plug in here. Private, not `parse_rows`, because a caller
     that needs `.fieldnames` without first exhausting the rows (`sniff_
-    mapped_columns`, `parse_mapped_file`) still needs the reader object
-    itself, not the plain list `parse_rows` hands back."""
+    mapped_columns`, `parse_file`) still needs the reader object itself,
+    not the plain list `parse_rows` hands back."""
     lines = content.splitlines()[dialect.get("header_row", 0):]
     return csv.DictReader(io.StringIO("\n".join(lines)), delimiter=dialect.get("delimiter", ","))
 
@@ -494,10 +488,13 @@ def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
     **Every account code across every group is resolved up front,
     before any row is written.** An unknown code is impossible from
     `parse_csv_import`, whose groups are pre-validated, but *not*
-    impossible from `import_mapped`, whose `account_map`/`category_map`
-    values are caller-supplied and never checked against real accounts —
-    resolving up front means a bad mapping value fails with a clear
-    message, the same explicit "unknown account code" check `modules.
+    impossible from `import_file`, whose `value_maps` values are
+    caller-supplied and never checked against real accounts unless the
+    caller also supplied `known_codes` (`transform_rows`' own optional,
+    caller-assembled diagnostic — see `known_account_codes`) — resolving
+    up front here means a bad mapping value always fails with a clear
+    message regardless, the same explicit "unknown account code" check
+    `modules.
     entries.service.create_entry` and `modules.staging.service.save_edit`
     already both do, rather than surfacing later as a bare `journal_
     lines.account_id` `NOT NULL` violation."""
@@ -672,6 +669,29 @@ def target_fields_for_shape(shape: dict) -> list[dict]:
         {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
         {"key": "category", "label": "Category", "required": False, "lookup_capable": True},
     ]
+
+
+_SHAPE_COMBINATIONS = [
+    {"rows_per_entry": "one", "amount_style": "signed"},
+    {"rows_per_entry": "one", "amount_style": "debit_credit"},
+    {"rows_per_entry": "grouped", "amount_style": "signed"},
+    {"rows_per_entry": "grouped", "amount_style": "debit_credit"},
+]
+
+
+def target_fields_by_shape() -> dict[str, list[dict]]:
+    """Every `target_fields_for_shape` result, precomputed for all four
+    `rows_per_entry` x `amount_style` combinations, keyed
+    `f"{rows_per_entry}:{amount_style}"`. What `POST /import/mapped/
+    columns` hands back (alongside the sniffed `shape` itself) so the
+    frontend's own shape toggle never needs a network round trip to find
+    out what target fields a shape it just switched to offers —
+    `sniff_shape`'s own docstring already establishes that a shape edit
+    is 100% client-side, same as a `dialect` decimal/date-format edit
+    already is; this is what makes that true for the mapping table's own
+    contents too, not just for parsing."""
+    return {f"{s['rows_per_entry']}:{s['amount_style']}": target_fields_for_shape(s)
+            for s in _SHAPE_COMBINATIONS}
 
 
 def parse_file(content: str, shape: dict, column_map: dict[str, str],
@@ -1059,224 +1079,6 @@ def import_file(conn: Connection, *, content: str, filename: str, target_scenari
     return {"batch_id": batch_id, "staged_count": len(groups), "errors": row_errors}
 
 
-def parse_mapped_file(content: str, column_map: dict[str, str],
-                       dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
-    """(rows, errors). `column_map` is target-field-key -> the file's own
-    column name for it (`IMPORT_MAPPED_FIELDS`' `key`s — "account",
-    "date", ... — gathered by the mapping step, `sniff_mapped_columns`
-    above), an empty/missing value meaning "not mapped." `dialect`
-    decides the header row and the field delimiter, same as `sniff_
-    mapped_columns` — row numbers in the returned rows (and in any
-    error message) count from the file's own real line numbers, so they
-    still make sense to a user looking at their own file even when
-    `header_row` skipped a junk line or two above it. Unlike
-    `parse_csv_import`, this never validates account codes or balances —
-    there's no double entry yet at this point, just raw single-entry rows
-    waiting on the review step's Account/Category mapping. Pure — no
-    database.
-
-    This shape is single-valued per target by construction (a `dict` key
-    holds one value), which is exactly right for how this function reads
-    a row but means it can never see "two file columns both claiming the
-    Amount target" — whichever column the frontend's own column->target
-    state happened to serialize last is the only one that survives the
-    inversion into this shape, with no trace of the other. That's why
-    that check lives in `ImportMappedPanel.tsx`, at the point where the
-    raw per-column choices still exist, not here."""
-    reader = _dict_reader(content, dialect)
-    if not reader.fieldnames:
-        return [], ["The file is empty"]
-    missing_required = [f["label"] for f in IMPORT_MAPPED_FIELDS
-                         if f["required"] and not column_map.get(f["key"])]
-    if missing_required:
-        return [], [f"Choose a column for: {', '.join(missing_required)}"]
-    mapped_columns = {col for col in column_map.values() if col}
-    unknown = mapped_columns - set(reader.fieldnames)
-    if unknown:
-        return [], [f"Mapped column(s) not found in the file: {', '.join(sorted(unknown))}"]
-
-    def get(row: dict, key: str) -> str:
-        col = column_map.get(key)
-        return (row.get(col) or "").strip() if col else ""
-
-    rows = []
-    start = dialect.get("header_row", 0) + 2  # the header itself is one line past whatever got skipped
-    for i, row in enumerate(reader, start=start):
-        rows.append({
-            "row_no": i,
-            "account": get(row, "account"),
-            "date": get(row, "date"),
-            "payee": get(row, "payee"),
-            "description": get(row, "description"),
-            "memo": get(row, "memo"),
-            "category": get(row, "category"),
-            "amount": get(row, "amount"),
-        })
-    return rows, []
-
-
-def preview_mapped(content: str, column_map: dict[str, str], dialect: dict = IMPORT_DEFAULT_DIALECT) -> dict:
-    """What the review step's picker lists need — `postable` is left
-    out, a `modules/reference/` concern the frontend fetches separately,
-    same reasoning every prior module applies. Raises `ValueError` on a
-    bad file or an incomplete `column_map`."""
-    rows, errors = parse_mapped_file(content, column_map, dialect)
-    if errors:
-        raise ValueError("; ".join(errors))
-    if not rows:
-        raise ValueError("No rows found in the file")
-    return {
-        "row_count": len(rows),
-        "accounts_found": sorted({r["account"] for r in rows if r["account"]}),
-        "categories_found": sorted({r["category"] for r in rows if r["category"]}),
-        "has_no_category_rows": any(not r["category"] for r in rows),
-    }
-
-
-def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], category_map: dict[str, str],
-                           flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[dict]]:
-    """Applies the two mappings row by row, producing the same
-    (groups, errors) shape `parse_csv_import` returns — every group
-    already balanced by construction (two legs, one the negation of the
-    other), so it can go straight into `stage_import_groups`. A zero-
-    amount row (some exports include these for a pending/cleared marker
-    row) is silently skipped, not an error — there's nothing to post.
-    Pure — no database — see this module's own docstring on why amounts
-    stay `Decimal` throughout.
-
-    `dialect`'s `decimal_separator`/`thousands_separator`/`date_format`
-    drive `parse_amount`/`parse_date` here — this is the only place in
-    the mapped importer's pipeline that actually reads a raw Amount or
-    Date string as a number/date rather than a plain mapped string, so
-    it's the only place those three dialect fields matter at all.
-
-    `errors` is a list of `{row_no, raw, message}` dicts, one per failing
-    row (IMPORT_WIZARD.md §7 Phase 3 item 1) — not a pre-formatted
-    "Row N: ..." string. `raw` is the row's own dict exactly as `parse_
-    mapped_file` produced it (its already-mapped Account/Date/.../Amount
-    values, still unparsed strings), so a validation-report UI can show
-    what was actually in the file next to why it failed, rather than
-    only a joined message. Untruncated — `IMPORT_MAX_ERRORS_SHOWN`
-    truncation is a display concern now, applied by whatever renders
-    this list, not baked into the value a caller gets back."""
-    groups, errors = [], []
-    for r in rows:
-        money_code = account_map.get(r["account"])
-        if not money_code:
-            errors.append({"row_no": r["row_no"], "raw": r,
-                            "message": f"No mapping chosen for account {r['account']!r}"})
-            continue
-        cat_key = r["category"] or IMPORT_MAPPED_NO_CATEGORY
-        other_code = category_map.get(cat_key)
-        if not other_code:
-            label = r["category"] or "(no category)"
-            errors.append({"row_no": r["row_no"], "raw": r,
-                            "message": f"No mapping chosen for category {label!r}"})
-            continue
-        try:
-            amount = parse_amount(r["amount"], dialect).quantize(Decimal("0.01"))
-        except InvalidOperation:
-            errors.append({"row_no": r["row_no"], "raw": r,
-                            "message": f"Amount {r['amount']!r} isn't numeric"})
-            continue
-        if flip_sign:
-            amount = -amount
-        if amount == 0:
-            continue
-        try:
-            entry_date = parse_date(r["date"], dialect)
-        except ValueError:
-            date_label = _DATE_FORMAT_LABELS.get(dialect.get("date_format", "iso"), "YYYY-MM-DD")
-            errors.append({"row_no": r["row_no"], "raw": r,
-                            "message": f"Invalid Date {r['date']!r} — expected {date_label}"})
-            continue
-        memo = r["memo"] or None
-        # Standard expense-tracker sign convention (negative = money out):
-        # debit whichever side increases, credit whichever side decreases.
-        # An expense (amount < 0) increases the category/expense account
-        # and decreases the money account; income/a refund (amount > 0)
-        # is the mirror image. Same "debit-positive" amount convention
-        # journal_lines.amount already uses everywhere else in the app.
-        if amount < 0:
-            lines = [{"code": other_code, "amount": -amount, "memo": memo},
-                     {"code": money_code, "amount": amount, "memo": memo}]
-        else:
-            lines = [{"code": money_code, "amount": amount, "memo": memo},
-                     {"code": other_code, "amount": -amount, "memo": memo}]
-        # Explicit fallback chain (§2.1 of IMPORT_WIZARD.md): an
-        # `description`-mapped column wins outright when present; when
-        # nothing is mapped there, the entry description falls back to
-        # the payee, then the category, then a fixed placeholder — same
-        # chain this always used, just no longer buried unlabeled inside
-        # this one line.
-        groups.append({
-            "entry_date": entry_date.isoformat(),
-            "description": r["description"] or r["payee"] or r["category"] or "Imported transaction",
-            "reference": None, "payee_name": r["payee"] or None, "lines": lines,
-        })
-    return groups, errors
-
-
-def validate_mapped(content: str, column_map: dict[str, str], account_map: dict[str, str],
-                     category_map: dict[str, str], flip_sign: bool,
-                     dialect: dict = IMPORT_DEFAULT_DIALECT) -> dict:
-    """The review step's own pre-commit validation report (IMPORT_WIZARD.md
-    §3 step 5, §7 Phase 3) — runs the exact same `parse_mapped_file` +
-    `transform_mapped_rows` pipeline `import_mapped` commits with, against
-    the same account/category maps, but never touches the database and
-    never stages anything. Lets the frontend show every row that would
-    fail and why *before* the user decides whether to stage the rest and
-    skip them (`import_mapped`'s own `skip_bad_rows`) — R1's "sniff/check
-    first, ask second" applied to committing, not just to the earlier
-    sniffing steps. Raises `ValueError` on the same structural (pre-row)
-    failures `preview_mapped` already raises for — an incomplete or
-    wrong `column_map` is caught before any row is even attempted, same
-    as it always was; only row-level failures come back as data here."""
-    rows, errors = parse_mapped_file(content, column_map, dialect)
-    if errors:
-        raise ValueError("; ".join(errors))
-    groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign, dialect)
-    return {"groups_count": len(groups), "errors": row_errors}
-
-
-def import_mapped(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
-                   column_map: dict[str, str], account_map: dict[str, str], category_map: dict[str, str],
-                   flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT, skip_bad_rows: bool = False,
-                   user_id: int | None = None) -> dict:
-    """The mapped importer's commit step — ported from `import_mapped_
-    commit`'s try block, minus the base64/hidden-form-field round-trip
-    (see `router.py`'s own docstring on why the wire shape changed, not
-    the behavior). `column_map` is re-applied here rather than trusted
-    from the preview step's own response, same "never trust caller-
-    supplied structure without re-deriving it" reasoning `stage_import_
-    groups`' own account-code re-resolution already documents. `dialect`
-    gets the same treatment for the same reason.
-
-    **`skip_bad_rows` makes a partial import an explicit choice, not an
-    implicit default** (IMPORT_WIZARD.md §7 Phase 3 item 2). Row errors
-    used to mean "stage whatever worked, report the rest" unconditionally
-    — now, unless the caller explicitly opts in, any row error blocks the
-    whole commit, same as a structural `parse_mapped_file` error already
-    did. The intended caller (`ImportMappedPanel.tsx`) always calls
-    `validate_mapped` (via `POST /import/mapped/validate`) first and only
-    ever sets `skip_bad_rows=True` once a user has actually seen those
-    errors and chosen to skip them; a caller that posts straight here
-    with row errors present and `skip_bad_rows` left `False` gets exactly
-    the same block an API-only consumer should get — no silent partial
-    stage."""
-    rows, errors = parse_mapped_file(content, column_map, dialect)
-    if errors:
-        raise ValueError("; ".join(errors))
-    groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign, dialect)
-    if row_errors and not skip_bad_rows:
-        messages = [e["message"] for e in row_errors[:IMPORT_MAX_ERRORS_SHOWN]]
-        raise ValueError("; ".join(messages))
-    if not groups:
-        raise ValueError("No valid entries produced — check the mapping")
-    batch_id = stage_import_groups(conn, groups, filename, target_scenario_id, user_id)
-    return {"batch_id": batch_id, "staged_count": len(groups), "errors": row_errors}
-
-
 def decode_upload(raw: bytes) -> str:
     """`utf-8-sig` so an Excel-exported CSV's BOM doesn't end up glued to
     the first header name — shared by both importers. Translates a
@@ -1297,6 +1099,6 @@ def encode_for_roundtrip(raw: bytes) -> str:
 
 def decode_roundtrip(b64: str) -> str:
     """The inverse of `encode_for_roundtrip`, then `decode_upload`'s same
-    `utf-8-sig` handling — what `import_mapped`'s caller feeds it as
+    `utf-8-sig` handling — what `import_file`'s caller feeds it as
     `content`."""
     return decode_upload(base64.b64decode(b64))
