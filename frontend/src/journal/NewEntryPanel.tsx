@@ -118,15 +118,15 @@ export default function NewEntryPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only, defaultOpen is a prop snapshot from the URL at load
   }, [])
 
-  // A leading blank "None" option, same shape payeeOptions below already
-  // has — without it, a blank line's account picker had no way to
-  // explicitly land back on "unset" once you'd navigated elsewhere in
-  // the list (typing the field empty and tabbing away only clears the
-  // value if the options list actually has a blank one to clear to; see
-  // Combobox.tsx's own resolveAndClose comment).
+  // No leading blank option here (unlike payeeOptions below) — tried
+  // that, but it turned out unnecessary: Combobox.tsx no longer
+  // pre-highlights any row just from focusing, which was the actual
+  // source of the "an account looks selected, but Tab doesn't save it"
+  // confusion this was chasing. A synthetic "None" row would just be
+  // one more real option sitting in the list for no reason.
   const accountOptions: ComboboxOption[] = useMemo(() => {
     const list = postableByScenario.get(scenarioId) ?? []
-    return [{ value: '', label: 'None' }, ...list.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` }))]
+    return list.map((a) => ({ value: a.code, label: `${a.code} · ${a.name}` }))
   }, [postableByScenario, scenarioId])
 
   const payeeOptions: ComboboxOption[] = useMemo(
