@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import client from '../api/client'
 import type { Account, AccountType } from '../api/useAccounts'
 import { useAccountLevels } from '../api/useAccountLevels'
+import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 import { useConfirm } from '../widgets/confirmContext'
 
 // The Management/CRUD archetype (UI_CONSISTENCY_AUDIT.md §2e/§4b groups
@@ -31,6 +32,7 @@ const TYPE_LABELS: Record<AccountType, string> = {
   income: 'Income',
   expense: 'Expenses',
 }
+const TYPE_OPTIONS: ComboboxOption[] = ACCOUNT_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }))
 
 const STORAGE_KEY = 'postwarden-accounts-collapsed'
 
@@ -151,6 +153,14 @@ export default function AccountsPage() {
   }, [collapsed])
 
   const accountById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts])
+
+  const parentOptions: ComboboxOption[] = useMemo(
+    () => [
+      { value: '', label: 'None (top level)' },
+      ...(accounts ?? []).map((a) => ({ value: String(a.id), label: `${a.code} · ${a.path}` })),
+    ],
+    [accounts],
+  )
 
   const hiddenById = useMemo(() => {
     const m = new Map<number, boolean>()
@@ -439,17 +449,13 @@ export default function AccountsPage() {
                         {openGapKey === row.key ? (
                           <form className="add-gap-form" onSubmit={submitGapForm}>
                             {!gapParentId && (
-                              <select
-                                className="add-gap-type"
-                                value={gapType}
-                                onChange={(e) => setGapType(e.target.value as AccountType)}
-                              >
-                                {ACCOUNT_TYPES.map((t) => (
-                                  <option key={t} value={t}>
-                                    {TYPE_LABELS[t]}
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="add-gap-type">
+                                <Combobox
+                                  options={TYPE_OPTIONS}
+                                  value={gapType}
+                                  onChange={(v) => setGapType(v as AccountType)}
+                                />
+                              </div>
                             )}
                             <input
                               ref={gapNameRef}
@@ -548,24 +554,11 @@ export default function AccountsPage() {
               </label>
               <label className="field">
                 Type
-                <select value={accountType} onChange={(e) => setAccountType(e.target.value as AccountType)}>
-                  {ACCOUNT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </select>
+                <Combobox options={TYPE_OPTIONS} value={accountType} onChange={(v) => setAccountType(v as AccountType)} />
               </label>
               <label className="field">
                 Parent
-                <select value={parentId} onChange={(e) => setParentId(e.target.value)}>
-                  <option value="">None (top level)</option>
-                  {(accounts ?? []).map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.code} · {a.path}
-                    </option>
-                  ))}
-                </select>
+                <Combobox options={parentOptions} value={parentId} onChange={setParentId} />
               </label>
               <label className="checkline">
                 <input type="checkbox" checked={isPostable} onChange={(e) => setIsPostable(e.target.checked)} />{' '}
