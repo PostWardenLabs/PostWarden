@@ -29,7 +29,7 @@ Two importers, one shared landing point.
 | Produces | `groups` | `groups` |
 
 That last row is the important one. Both funnel through
-[`stage_import_groups`](src/postwarden/modules/imports/service.py:176),
+[`stage_import_groups`](src/postwarden/modules/imports/service.py:439),
 which takes a list of `{entry_date, description, reference, payee_name,
 lines: [{code, amount, memo}]}` and does everything else. **The wizard's
 entire job is to turn a file into that shape.** Merging the two
@@ -44,13 +44,15 @@ change for any of this.
 
 ### 1.1 The current target-field list is the importer's vocabulary, not the ledger's
 
-[`IMPORT_MAPPED_FIELDS`](src/postwarden/modules/imports/service.py:68)
-holds six targets — Money Account, Entry Date, Amount, Payee, Notes,
-Category. They aren't "PostWarden's fields" in any general sense: they
-are exactly the argument list of
-[`transform_mapped_rows`](src/postwarden/modules/imports/service.py:310),
+[`IMPORT_MAPPED_FIELDS`](src/postwarden/modules/imports/service.py:119)
+holds seven targets — Money Account, Entry Date, Amount, Payee, Entry
+Description, Line Memo, Category (six, and Entry Description/Line Memo
+as one implicit "Notes" field, before Phase 1 split them — §2.1). They
+aren't "PostWarden's fields" in any general sense: they are exactly the
+argument list of
+[`transform_mapped_rows`](src/postwarden/modules/imports/service.py:594),
 which needs a money account, a date, an amount, a category for the other
-leg, a payee for the description and payee record, and notes for the
+leg, a payee for the description and payee record, and a memo for the
 line memo. It's a leaky abstraction that is currently small enough not
 to look like one. It cannot describe an N-leg entry, a Debit/Credit
 pair, or a column holding real account codes — i.e. it cannot describe
@@ -107,7 +109,7 @@ neither should be implicit. The target list gets *Entry description* and
 *Line memo* as distinct options, with the fallback chain documented in
 the UI ("if nothing is mapped here, the payee is used") rather than
 buried in
-[`transform_mapped_rows`](src/postwarden/modules/imports/service.py:310).
+[`transform_mapped_rows`](src/postwarden/modules/imports/service.py:594).
 
 ---
 
@@ -116,9 +118,9 @@ buried in
 | Step | What it decides | Today |
 |---|---|---|
 | **0. File** | scenario + upload | ✅ |
-| **1. Dialect** | delimiter, quote char, encoding, header row / skip N leading rows, decimal + thousands separator, date format, currency symbols, sign convention | ❌ |
+| **1. Dialect** | delimiter, header row / skip N leading rows, decimal + thousands separator, date format | ✅ (quote char, encoding, currency symbols, sign convention not covered — see Phase 2's own "not done" note) |
 | **2. Shape** | one row per entry vs. rows grouped by a key column; one signed Amount vs. a Debit/Credit pair | ❌ hardcoded, one answer per importer |
-| **3. Column mapping** | §2's table; available targets depend on step 2 | ⚠️ wrong orientation, dialect-blind |
+| **3. Column mapping** | §2's table; available targets depend on step 2 | ✅ right orientation (Phase 1); dialect-aware (Phase 2) |
 | **4. Value mapping** | for each column flagged "needs lookup," every distinct value → a real account (or payee, or tag) | ⚠️ hardcoded to Account + Category |
 | **5. Validation report** | every row that couldn't be read, why, and "skip those N, import the other M" | ❌ one flat error banner |
 | **6. Confirm** | stage into Staging | ✅ |
@@ -126,9 +128,9 @@ buried in
 Step 2 is the structural key. **"Does one file row equal one entry, or
 do several rows combine into one?"** is the single question that
 separates the two importers today —
-[`parse_csv_import`](src/postwarden/modules/imports/service.py:87)
+[`parse_csv_import`](src/postwarden/modules/imports/service.py:345)
 groups on `Entry #`,
-[`parse_mapped_file`](src/postwarden/modules/imports/service.py:253)
+[`parse_mapped_file`](src/postwarden/modules/imports/service.py:520)
 doesn't group at all. Make it a wizard setting and the fork disappears.
 
 Step 4's generalization is the other half. Whether a column holds *real
@@ -155,7 +157,7 @@ with high confidence.
 1 shows parsed cells, step 3 shows mapped columns, step 5 shows the
 resulting **journal entries** with their legs and balance. Never an
 abstract summary. This is why
-[`sniff_mapped_columns`](src/postwarden/modules/imports/service.py:232)
+[`sniff_mapped_columns`](src/postwarden/modules/imports/service.py:495)
 already returns real sample rows and not just header names.
 
 **R3 — Per-row error reporting.** Today a bad file is one red banner of
@@ -198,7 +200,7 @@ function from step 2 onward keeps taking parsed rows, never raw bytes.
 
 **R8 — Stop base64-ing the whole file through every step, above some
 size.** The stateless round-trip
-([`encode_for_roundtrip`](src/postwarden/modules/imports/service.py:399))
+([`encode_for_roundtrip`](src/postwarden/modules/imports/service.py:697))
 is genuinely right at 200 rows and genuinely wrong for a five-year 20 MB
 XLSX. Above a threshold, park the upload server-side with a TTL and pass
 an id through the wizard instead.
@@ -306,33 +308,76 @@ fuller version.
 6. Docs: `SPEC.md` decision 23's column-mapping paragraph, `README.md`
    if the user-visible description changes.
 
-### Phase 2 — Step 1, the dialect controls (medium)
+### Phase 2 — Step 1, the dialect controls (medium) — ✅ shipped
 
 The single thing standing between "ActualBudget-shaped CSVs" and "any
-bank's CSV." A European export using `;` and `1.234,56` currently just
-fails, with no control anywhere to fix it.
+bank's CSV." A European export using `;` and `1.234,56` used to just
+fail, with no control anywhere to fix it.
 
-1. New pure `service.sniff_dialect(raw) -> dict` — delimiter, quote
-   char, encoding, header row index, decimal/thousands separator, date
-   format, each with the guess *and* enough sample evidence for the UI
-   to show why.
-2. New `parse_rows(raw, dialect) -> list[dict]` as the one entry point
-   everything downstream uses; `parse_mapped_file`/`parse_csv_import`
-   both refactored to consume its output rather than call
-   `csv.DictReader` themselves. This is R7's abstraction boundary, built
-   before there's a second format to justify it — cheap now, expensive
-   later.
-3. Amount parsing moves out of `transform_mapped_rows`' inline
-   `Decimal(r["amount"].replace(",", ""))` into a dialect-aware helper.
-   Same for the ISO-only `date.fromisoformat` calls.
-4. New route `POST /import/mapped/dialect`, or fold it into
-   `/mapped/columns`' response as `dialect` + let `/mapped/preview`
-   accept an overridden one. Prefer the latter — one fewer round trip,
-   and the wizard step is a client-side edit of a server-supplied guess.
-5. Frontend: a compact dialect panel above the sample-rows preview,
-   re-parsing live as the user changes a setting (R2).
-6. Tests: a semicolon/comma-decimal file, a `DD/MM/YYYY` file, a
-   BOM'd Excel export, a file with two junk rows above the header.
+Shipped close to this plan, with three deliberate deviations:
+
+- **Encoding stayed out of the dialect**, not one of its sniffed
+  fields. `decode_upload`'s existing `utf-8-sig` already handles the one
+  case that actually shows up (a BOM'd Excel export); real multi-encoding
+  detection (Latin-1/Windows-1252) has no second real-world case to test
+  against yet and waits for R7's own file-format boundary.
+- **`csv.DictReader` construction, not `parse_rows`, is the actual
+  shared entry point.** `parse_mapped_file`/`sniff_mapped_columns` both
+  need the reader's own `.fieldnames` without first consuming every row
+  (an empty-vs-header-only file has to be distinguishable), so the real
+  single choke point is a private `_dict_reader(content, dialect)`;
+  `parse_rows` is a public convenience wrapper over it for a caller that
+  just wants the plain list. `parse_csv_import` (the plain importer,
+  which still has no dialect UI of its own) also routes through
+  `_dict_reader` with `IMPORT_DEFAULT_DIALECT` — zero behavior change,
+  real R7 groundwork at no cost.
+- **`csv.Sniffer()` needed its own fallback, not just a `,;\t|`
+  allow-list.** A blank line anywhere in the sample is enough on its own
+  to make `Sniffer` raise `Could not determine delimiter` rather than
+  guess — which combines badly with a junk line above the header, since
+  real exports tend to have both together (a title line, then a blank
+  line, then the real table). `_sniff_delimiter` strips blank lines and
+  retries from progressively later starting points until one succeeds.
+  Found by browser-testing the combination, not by the unit tests alone
+  — `SPEC.md` decision 23's own account has the fuller story, and it's
+  now a regression test too.
+
+1. `service.sniff_dialect(content) -> dict` — delimiter, header row
+   index, decimal/thousands separator, date format, each a best guess
+   from the file's own sample rows. `IMPORT_DEFAULT_DIALECT`/`IMPORT_
+   DELIMITERS`/`IMPORT_DATE_FORMATS` are the canonical option lists,
+   same "one place, read by both validation and the picker" pattern
+   `IMPORT_MAPPED_FIELDS` already established.
+2. `parse_rows`/`_dict_reader` as the shared row-reading entry point
+   (see the deviation above) — `parse_mapped_file`/`sniff_mapped_
+   columns`/`parse_csv_import` all go through it now, not their own
+   `csv.DictReader` calls.
+3. `parse_amount`/`parse_date` — dialect-aware replacements for the old
+   inline `Decimal(r["amount"].replace(",", ""))` and `date.
+   fromisoformat`, used by `transform_mapped_rows`.
+4. `dialect` folded into `/mapped/columns`' response (the sniffed
+   guess) and `/mapped/preview`/`/mapped`'s request bodies (re-applied,
+   never trusted, same as `column_map`); a new `POST /import/mapped/
+   columns/reparse` re-reads the same already-uploaded file against a
+   user-edited dialect — not a fourth wizard step, the dialect panel
+   lives inside the "columns" step.
+5. Frontend: a "File format" panel above the mapping table in
+   `ImportMappedPanel.tsx`, re-parsing live (via `/columns/reparse`) as
+   the user changes any control; column targets only get cleared when
+   the columns a delimiter/header-row edit actually produced differ from
+   before — a decimal/date-format edit alone never invalidates an
+   in-progress mapping.
+6. Tests: 21 new backend tests (a semicolon/comma-decimal file, `DD/MM/
+   YYYY` and `MM/DD/YYYY` detection, junk-plus-blank leading lines, the
+   `_sniff_delimiter` regression above, dialect round-tripping through
+   `/mapped/preview`/`/mapped`); browser-verified end to end against a
+   real semicolon/German-decimal/junk-header file, including a live
+   in-UI dialect edit (not just the initial guess).
+
+Not done, and not attempted: dot-separated dates (`01.03.2026`, common
+in German exports) — only slash-separated `MM/DD/YYYY`/`DD/MM/YYYY` and
+ISO are recognized. `SPEC.md` decision 23 has the fuller reasoning for
+why that's an acceptable v1 gap rather than a blocker.
 
 ### Phase 3 — Step 5, the per-row validation report (small–medium)
 

@@ -722,15 +722,45 @@ export interface paths {
         put?: never;
         /**
          * Import Mapped Columns
-         * @description No `conn`/database at all — sniffing a file's own column names is
-         *     pure (`service.sniff_mapped_columns`). `fields` is `service.
-         *     IMPORT_MAPPED_FIELDS` verbatim, so the mapping step's own target-field
-         *     list lives in exactly one place; `target_scenario_id`/`filename` are
-         *     handed back unchanged alongside `file_content_b64` purely so the
-         *     frontend can carry them forward through the rest of the wizard
-         *     without holding separate state of its own.
+         * @description No `conn`/database at all — sniffing a file's own column names,
+         *     and its dialect, is pure (`service.sniff_mapped_columns`, `service.
+         *     sniff_dialect`). `fields`/`delimiters`/`date_formats` are `service`'s
+         *     own canonical lists verbatim, so the mapping step's target-field list
+         *     and the dialect panel's own option lists each live in exactly one
+         *     place; `target_scenario_id`/`filename` are handed back unchanged
+         *     alongside `file_content_b64` purely so the frontend can carry them
+         *     forward through the rest of the wizard without holding separate
+         *     state of its own. `dialect` is a *guess* (R1) — the frontend's own
+         *     dialect panel starts from it, and `POST /import/mapped/columns/
+         *     reparse` is what a user edit re-parses against.
          */
         post: operations["import_mapped_columns_import_mapped_columns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/import/mapped/columns/reparse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Mapped Columns Reparse
+         * @description The dialect panel's own live re-parse — same shape `/mapped/
+         *     columns` returns (minus `delimiters`/`date_formats`/`fields`, which
+         *     are static option lists the frontend already has from the first
+         *     call), against a user-edited `dialect` rather than a freshly sniffed
+         *     one. No sniffing here — a dialect the user just chose is trusted
+         *     as-is, not re-guessed out from under them the moment they touch a
+         *     control.
+         */
+        post: operations["import_mapped_columns_reparse_import_mapped_columns_reparse_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -750,12 +780,12 @@ export interface paths {
          * Import Mapped Preview
          * @description No `conn`/database at all — parsing and grouping the file's own
          *     Account/Category values (once mapped onto real columns via `payload.
-         *     column_map`) is pure (`service.preview_mapped`). `filename`/
-         *     `target_scenario_id`/`file_content_b64`/`column_map` are all handed
-         *     back unchanged so the frontend can carry them forward into the
-         *     commit step without holding separate state of its own — same
-         *     round-trip-everything-forward shape the old multipart version of
-         *     this route already had.
+         *     column_map`, split by `payload.dialect`) is pure (`service.preview_
+         *     mapped`). `filename`/`target_scenario_id`/`file_content_b64`/
+         *     `column_map`/`dialect` are all handed back unchanged so the frontend
+         *     can carry them forward into the commit step without holding separate
+         *     state of its own — same round-trip-everything-forward shape the old
+         *     multipart version of this route already had.
          */
         post: operations["import_mapped_preview_import_mapped_preview_post"];
         delete?: never;
@@ -1721,15 +1751,42 @@ export interface components {
             remember: boolean;
         };
         /**
+         * MappedColumnsReparseRequest
+         * @description Body of `POST /import/mapped/columns/reparse` — the dialect
+         *     panel's own live re-parse (IMPORT_WIZARD.md §7 Phase 2 item 5, R2's
+         *     "the preview is always the file's real data"). Same three
+         *     round-tripped values every step here carries forward, plus the
+         *     dialect the user just edited; `dialect`'s keys are all optional
+         *     (`service.resolve_dialect` fills in anything missing from `service.
+         *     IMPORT_DEFAULT_DIALECT`) so a client only has to send what actually
+         *     changed, though in practice `ImportMappedPanel.tsx` always sends the
+         *     full dict it already holds.
+         */
+        MappedColumnsReparseRequest: {
+            /** Filename */
+            filename: string;
+            /** Target Scenario Id */
+            target_scenario_id: number;
+            /** File Content B64 */
+            file_content_b64: string;
+            /**
+             * Dialect
+             * @default {}
+             */
+            dialect: {
+                [key: string]: string | number;
+            };
+        };
+        /**
          * MappedImportCommitRequest
          * @description Body of `POST /import/mapped` — the review step's own Confirm.
-         *     Carries forward the same `column_map` the preview step validated
-         *     (re-applied on the backend, not trusted from the preview response —
-         *     see `service.import_mapped`'s own docstring) plus the two mappings
-         *     the review step itself collects, `account_map`/`category_map`.
-         *     Nothing is ever persisted server-side between any of these steps —
-         *     there's nothing to save, expire, or clean up, so the round trip is
-         *     the simplest correct design.
+         *     Carries forward the same `column_map`/`dialect` the preview step
+         *     validated (both re-applied on the backend, not trusted from the
+         *     preview response — see `service.import_mapped`'s own docstring) plus
+         *     the two mappings the review step itself collects,
+         *     `account_map`/`category_map`. Nothing is ever persisted server-side
+         *     between any of these steps — there's nothing to save, expire, or
+         *     clean up, so the round trip is the simplest correct design.
          */
         MappedImportCommitRequest: {
             /** Filename */
@@ -1744,6 +1801,13 @@ export interface components {
              */
             column_map: {
                 [key: string]: string;
+            };
+            /**
+             * Dialect
+             * @default {}
+             */
+            dialect: {
+                [key: string]: string | number;
             };
             /**
              * Account Map
@@ -1771,11 +1835,12 @@ export interface components {
          *     own Confirm. `column_map` is target-field-key -> the file's own
          *     column name for it (`service.IMPORT_MAPPED_FIELDS`' `key`s), chosen
          *     against the columns/samples `POST /import/mapped/columns` handed
-         *     back. `filename`/`target_scenario_id`/`file_content_b64` are the same
-         *     three round-tripped values that step already returned, carried
-         *     forward unchanged — nothing is persisted server-side between any of
-         *     these steps, so every step's request body is whatever the previous
-         *     step hasn't finished using yet.
+         *     back. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
+         *     are the same round-tripped values that step already returned
+         *     (`dialect` possibly user-edited via `/mapped/columns/reparse` along
+         *     the way), carried forward unchanged — nothing is persisted
+         *     server-side between any of these steps, so every step's request body
+         *     is whatever the previous step hasn't finished using yet.
          */
         MappedImportPreviewRequest: {
             /** Filename */
@@ -1790,6 +1855,13 @@ export interface components {
              */
             column_map: {
                 [key: string]: string;
+            };
+            /**
+             * Dialect
+             * @default {}
+             */
+            dialect: {
+                [key: string]: string | number;
             };
         };
         /**
@@ -3459,6 +3531,41 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_import_mapped_columns_import_mapped_columns_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_mapped_columns_reparse_import_mapped_columns_reparse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MappedColumnsReparseRequest"];
             };
         };
         responses: {

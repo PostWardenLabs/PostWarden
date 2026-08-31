@@ -1249,6 +1249,55 @@ already established for the plain importer (decision 9's own
 `_stage_import_groups()` helper so both importers insert through
 identical code.
 
+**A "dialect" — delimiter, leading rows to skip, decimal/thousands
+separator, date format — is sniffed once, up front, and edited in place
+rather than becoming a fourth wizard step.** IMPORT_WIZARD.md §3's step
+1: nothing before this point in the wizard could read a European bank
+export at all (`;`-delimited, `1.234,56` amounts) or a file with a
+title/timestamp line above the real header — both just failed outright,
+with no control anywhere to fix them. `POST /import/mapped/columns`
+sniffs a guess (`service.sniff_dialect`) alongside the columns it always
+returned; the dialect panel that guess feeds sits *inside* the
+column-mapping step, not a separate screen, because changing the
+delimiter or how many rows to skip can change what the file's columns
+even are — `POST /import/mapped/columns/reparse` re-reads the same
+already-uploaded file (never a new upload) against whatever the user
+just edited, and the mapping table below updates live from its response
+(R2: always the file's real data, never a stale snapshot of the initial
+guess). `decimal_separator`/`date_format` never change what the columns
+are, only how `transform_mapped_rows` reads the Amount/Date cells later
+— editing either doesn't clear an in-progress column mapping, unlike a
+delimiter or leading-rows edit, which can.
+
+Sniffing the delimiter turned out to need its own fallback chain, not
+just a single `csv.Sniffer()` call: a blank line anywhere in the sample
+is enough on its own to make `Sniffer` raise `Could not determine
+delimiter` rather than fall back to a plausible guess, which combined
+badly with a junk line above the header (both are exactly the shapes a
+real export tends to have together, a title line followed by a blank
+line before the real table starts). `_sniff_delimiter` strips blank
+lines and retries from progressively later starting points until one
+succeeds, falling back to comma only once every starting point has
+failed — caught by browser-testing this exact combination against a
+real file, not by the unit tests alone, which is why that combination is
+now also a regression test (`test_sniff_dialect_detects_the_delimiter_
+past_a_junk_line_and_a_blank_line`).
+
+Deliberately excludes encoding. `decode_upload`'s `utf-8-sig` already
+strips a BOM'd Excel export's one real gotcha; true multi-encoding
+detection (Latin-1/Windows-1252 exports) waits for R7's second file
+format to justify the abstraction, rather than being guessed at now with
+no second format to test it against. Also out of scope for this phase:
+dot-separated dates (`01.03.2026`, common in German exports) — only
+slash-separated `MM/DD/YYYY`/`DD/MM/YYYY` are recognized; a file using
+dots falls back to the `iso` guess and reports a per-row date error
+until the user picks a different `date_format`, at which point it still
+won't parse (`_DATE_FORMAT_STRPTIME` has no dot-separated entry). Known,
+not fixed — the roadmap's four explicit Phase 2 test cases (semicolon/
+comma-decimal, `DD/MM/YYYY`, a BOM'd export, junk rows above the header)
+are all slash- or ISO-dated; a dot-date format is a small follow-up, not
+a blocker, whenever a real file surfaces the gap.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

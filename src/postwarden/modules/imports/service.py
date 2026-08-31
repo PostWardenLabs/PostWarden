@@ -35,7 +35,9 @@ enforces it's valid."""
 import base64
 import csv
 import io
-from datetime import date
+import re
+from collections import Counter
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy.engine import Connection
@@ -44,6 +46,43 @@ from . import repository as repo
 
 IMPORT_REQUIRED_COLUMNS = ["Entry #", "Date", "Description", "Account code"]
 IMPORT_MAX_ERRORS_SHOWN = 20
+
+# Step 1 of IMPORT_WIZARD.md's spine (§3) — Phase 2. A "dialect" is the
+# handful of low-level, per-file text-formatting choices that sit below
+# column mapping: which character separates fields, how many leading
+# lines to skip before the real header, which character is the decimal
+# point inside a number, which (if any) character groups thousands, and
+# which of a small fixed set of date layouts the file's own date column
+# uses. None of this is specific to *this* file's own column meanings —
+# it's specific to *which spreadsheet program or bank* produced the
+# export, which is exactly why it's sniffed once, up front, rather than
+# folded into `IMPORT_MAPPED_FIELDS`' column-mapping step.
+#
+# Deliberately excludes encoding. `decode_upload`'s `utf-8-sig` already
+# handles the one real-world case that matters here (a BOM'd Excel
+# export); true multi-encoding detection (Latin-1/Windows-1252 exports)
+# is out of scope until there's a second file format to justify the
+# abstraction R7 calls for.
+IMPORT_DEFAULT_DIALECT = {
+    "delimiter": ",",
+    "header_row": 0,           # how many leading lines to skip before the header
+    "decimal_separator": ".",
+    "thousands_separator": "",  # "" means "don't strip anything"
+    "date_format": "iso",       # a key into _DATE_FORMAT_STRPTIME below
+}
+IMPORT_DELIMITERS = [
+    {"key": ",", "label": "Comma ( , )"},
+    {"key": ";", "label": "Semicolon ( ; )"},
+    {"key": "\t", "label": "Tab"},
+    {"key": "|", "label": "Pipe ( | )"},
+]
+IMPORT_DATE_FORMATS = [
+    {"key": "iso", "label": "YYYY-MM-DD"},
+    {"key": "us", "label": "MM/DD/YYYY"},
+    {"key": "eu", "label": "DD/MM/YYYY"},
+]
+_DATE_FORMAT_STRPTIME = {"iso": "%Y-%m-%d", "us": "%m/%d/%Y", "eu": "%d/%m/%Y"}
+_DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 
 # The mapped importer's own target fields — what a single-entry export's
 # real columns (whatever they're actually called: "Memo", "Merchant",
@@ -88,6 +127,212 @@ IMPORT_MAPPED_FIELDS = [
 ]
 IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
 
+_DECIMAL_COMMA_STRICT = re.compile(r"^-?\d{1,3}(\.\d{3})+,\d{2}$")   # 1.234,56
+_DECIMAL_DOT_STRICT = re.compile(r"^-?\d{1,3}(,\d{3})+\.\d{2}$")     # 1,234.56
+_DECIMAL_COMMA_WEAK = re.compile(r"^-?\d+,\d{2}$")                   # 12,50 — decimal-comma, no thousands
+_DECIMAL_DOT_WEAK = re.compile(r"^-?\d+\.\d{2}$")                    # 12.50
+_DATE_ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DATE_SLASH_RE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+
+
+def resolve_dialect(overrides: dict | None) -> dict:
+    """Fills in `IMPORT_DEFAULT_DIALECT` for any key an `overrides` dict
+    (from the wire, where every field is optional — a client that never
+    touched the dialect panel sends `{}`) doesn't set. Every
+    dialect-consuming function below takes a fully-populated dict, never
+    a partial one — this is the one place that gets to assume that, so
+    nothing downstream needs its own `.get(key, fallback)` guard."""
+    return {**IMPORT_DEFAULT_DIALECT, **(overrides or {})}
+
+
+def sniff_dialect(content: str) -> dict:
+    """Best-guess dialect for a file the column-mapping step hasn't seen
+    yet (IMPORT_WIZARD.md §3 step 1) — delimiter, how many leading lines
+    to skip before the header, and the decimal/thousands separator and
+    date format used inside the data cells themselves. Pure string
+    sniffing with no column semantics at all (there's no `column_map`
+    yet at this point in the wizard) — it looks at every cell across a
+    sample of rows and votes, rather than assuming any one column is the
+    Amount or the Date.
+
+    Never raises for a merely-odd file — this is a *guess*, always
+    editable in the dialect panel (R1); only a genuinely empty file is
+    an error, same contract `sniff_mapped_columns` already has."""
+    lines = content.splitlines()
+    if not lines:
+        raise ValueError("The file is empty")
+
+    delimiter = _sniff_delimiter(lines)
+    header_row = _sniff_header_row(lines[:10], delimiter)
+    body_lines = lines[header_row + 1:header_row + 20]
+    decimal_separator, thousands_separator = _sniff_decimal_style(body_lines, delimiter)
+    date_format = _sniff_date_format(body_lines, delimiter)
+
+    return {
+        "delimiter": delimiter,
+        "header_row": header_row,
+        "decimal_separator": decimal_separator,
+        "thousands_separator": thousands_separator,
+        "date_format": date_format,
+    }
+
+
+def _sniff_delimiter(lines: list[str]) -> str:
+    """`csv.Sniffer` reads a whole sample as one candidate table, and a
+    genuinely blank line or a junk line above the real header (a title,
+    an export timestamp) is exactly the kind of thing that makes it give
+    up entirely (`csv.Error: Could not determine delimiter`) rather than
+    fall back to a wrong-but-plausible guess — a blank line in the
+    sample was enough to break it even on an otherwise unambiguous
+    semicolon-delimited file. So: strip blank lines (they carry no
+    delimiter evidence either way, and `_sniff_header_row` below still
+    sees them fine — it works from the un-stripped `lines`), then retry
+    from progressively later starting points, since the most common
+    real cause of a failed sniff is one or more junk lines still sitting
+    above the header in the sample. Falls back to comma only once every
+    starting point has been tried and none worked."""
+    non_blank = [line for line in lines[:20] if line.strip()]
+    for start in range(len(non_blank)):
+        sample = "\n".join(non_blank[start:start + 20])
+        try:
+            return csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+        except csv.Error:
+            continue
+    return ","
+
+
+def _sniff_header_row(lines: list[str], delimiter: str) -> int:
+    """How many leading lines to skip before the real header — handles a
+    file with a title line, a blank line, or an export timestamp above
+    the actual table (some bank exports do this), rather than failing
+    outright once the mapping step can't find any of its target fields
+    among what it thinks are the column names. Heuristic: the header is
+    the first line whose field count matches the mode among the next few
+    lines — a junk line above it usually has a different field count
+    (often 1, for a title or a blank line)."""
+    counts = [len(line.split(delimiter)) for line in lines]
+    if not counts:
+        return 0
+    body_counts = counts[1:] or counts
+    mode = Counter(body_counts).most_common(1)[0][0]
+    for i, c in enumerate(counts):
+        if c == mode and c > 1:
+            return i
+    return 0
+
+
+def _sniff_decimal_style(lines: list[str], delimiter: str) -> tuple[str, str]:
+    """Votes across every cell in a sample of data rows, not just one
+    presumed-Amount column — a strict match (`1.234,56`, with a full
+    thousands group) counts double over a weak one (`12,50`, which reads
+    the same whether or not there's a thousands separator in play) since
+    it's unambiguous evidence, and a thousands separator is only ever
+    reported once a strict match actually demonstrated one — a weak
+    match alone isn't enough to claim there's a grouping character at
+    all, only which side of the number the decimal fraction is on."""
+    comma_votes = dot_votes = 0
+    saw_comma_thousands = saw_dot_thousands = False
+    for line in lines:
+        for cell in line.split(delimiter):
+            cell = cell.strip()
+            if _DECIMAL_COMMA_STRICT.match(cell):
+                comma_votes += 2
+                saw_dot_thousands = True
+            elif _DECIMAL_DOT_STRICT.match(cell):
+                dot_votes += 2
+                saw_comma_thousands = True
+            elif _DECIMAL_COMMA_WEAK.match(cell):
+                comma_votes += 1
+            elif _DECIMAL_DOT_WEAK.match(cell):
+                dot_votes += 1
+    if comma_votes > dot_votes:
+        return ",", ("." if saw_dot_thousands else "")
+    return ".", ("," if saw_comma_thousands else "")
+
+
+def _sniff_date_format(lines: list[str], delimiter: str) -> str:
+    """Votes across every cell that looks date-shaped. `DD/MM/YYYY` and
+    `MM/DD/YYYY` are only distinguishable when a component is over 12 —
+    genuinely ambiguous otherwise, so ambiguous evidence never outvotes
+    real evidence for the other, and the fallback when nothing at all
+    matches is `iso`, the same format this importer only ever supported
+    before this function existed (a guess that changes nothing for a
+    file that gives no evidence either way)."""
+    us_votes = eu_votes = iso_votes = 0
+    for line in lines:
+        for cell in line.split(delimiter):
+            cell = cell.strip()
+            if _DATE_ISO_RE.match(cell):
+                iso_votes += 1
+                continue
+            m = _DATE_SLASH_RE.match(cell)
+            if not m:
+                continue
+            first, second = int(m.group(1)), int(m.group(2))
+            if first > 12:
+                eu_votes += 1
+            elif second > 12:
+                us_votes += 1
+    if iso_votes and iso_votes >= max(us_votes, eu_votes):
+        return "iso"
+    if eu_votes > us_votes:
+        return "eu"
+    if us_votes > 0:
+        return "us"
+    return "iso"
+
+
+def _dict_reader(content: str, dialect: dict) -> csv.DictReader:
+    """The one place `csv.DictReader` gets constructed — every row-reading
+    function below (`parse_rows`, `sniff_mapped_columns`, `parse_mapped_
+    file`, `parse_csv_import`) goes through this rather than building its
+    own, so `dialect['delimiter']`/`dialect['header_row']` are honored
+    everywhere consistently and a future second file format (R7) only
+    has to plug in here. Private, not `parse_rows`, because a caller
+    that needs `.fieldnames` without first exhausting the rows (`sniff_
+    mapped_columns`, `parse_mapped_file`) still needs the reader object
+    itself, not the plain list `parse_rows` hands back."""
+    lines = content.splitlines()[dialect.get("header_row", 0):]
+    return csv.DictReader(io.StringIO("\n".join(lines)), delimiter=dialect.get("delimiter", ","))
+
+
+def parse_rows(content: str, dialect: dict) -> list[dict]:
+    """`_dict_reader` above, fully consumed into plain `dict`s — the
+    entry point for a caller that just wants every row and doesn't need
+    the reader itself. Raises `ValueError` on a file with no header row
+    to find (empty, or `header_row` skips past the whole file)."""
+    reader = _dict_reader(content, dialect)
+    if not reader.fieldnames:
+        raise ValueError("The file is empty")
+    return [dict(row) for row in reader]
+
+
+def parse_amount(raw: str, dialect: dict) -> Decimal:
+    """A dialect-aware replacement for the old inline
+    `Decimal(r["amount"].replace(",", ""))` — strips the thousands
+    separator (if the dialect names one), then normalizes whatever the
+    dialect's own decimal separator is to `.` before handing off to
+    `Decimal`. Raises `decimal.InvalidOperation` on anything that still
+    isn't numeric, same as bare `Decimal(...)` always did — every caller
+    already catches that."""
+    text = raw.strip()
+    thousands = dialect.get("thousands_separator", "")
+    decimal_sep = dialect.get("decimal_separator", ".")
+    if thousands:
+        text = text.replace(thousands, "")
+    if decimal_sep != ".":
+        text = text.replace(decimal_sep, ".")
+    return Decimal(text)
+
+
+def parse_date(raw: str, dialect: dict) -> date:
+    """A dialect-aware replacement for the old ISO-only
+    `date.fromisoformat`. Raises `ValueError` on anything that doesn't
+    match the dialect's own `date_format`, same as `date.fromisoformat`
+    always did for a non-ISO string."""
+    fmt = _DATE_FORMAT_STRPTIME.get(dialect.get("date_format", "iso"), "%Y-%m-%d")
+    return datetime.strptime(raw.strip(), fmt).date()
+
 
 def recent_batches(conn: Connection, limit: int = 10) -> list[dict]:
     """Thin pass-through to `repository.recent_batches` — kept here, not
@@ -106,8 +351,13 @@ def parse_csv_import(conn: Connection, content: str) -> tuple[list[dict], list[s
     The "Entry #"/"Scenario"/"Account name" columns an export produces are read only
     to group rows and are otherwise ignored — the id isn't reused, and
     the scenario a batch lands in comes from the import form, never
-    trusted from inside the file itself."""
-    reader = csv.DictReader(io.StringIO(content))
+    trusted from inside the file itself. Reads through `_dict_reader`
+    with the plain importer's own fixed dialect — this importer has no
+    dialect-panel UI of its own (that's the mapped importer's Phase 2,
+    IMPORT_WIZARD.md §7), but sharing the one row-reading entry point is
+    real R7 groundwork at zero behavior cost: same comma delimiter, same
+    header-on-row-1 assumption this always had."""
+    reader = _dict_reader(content, IMPORT_DEFAULT_DIALECT)
     if not reader.fieldnames:
         return [], ["The file is empty"]
     missing = [c for c in IMPORT_REQUIRED_COLUMNS if c not in reader.fieldnames]
@@ -242,16 +492,20 @@ def import_csv(conn: Connection, *, content: str, filename: str, target_scenario
     return {"batch_id": batch_id, "staged_count": len(groups), "errors": errors}
 
 
-def sniff_mapped_columns(content: str, sample_size: int = 5) -> dict:
+def sniff_mapped_columns(content: str, dialect: dict = IMPORT_DEFAULT_DIALECT, sample_size: int = 5) -> dict:
     """What the mapping step's own picker needs before any target field
     can be chosen: the file's real column names, in file order (so the
     picker's dropdowns read the same left-to-right order the user's own
     file already has), plus a few real sample rows so a column can be
     matched by looking at its actual data, not just guessing from a
-    header like "Memo" or "Desc". Pure — no database. Raises `ValueError`
-    on an empty file, same contract every other parse-step function in
-    this module already has."""
-    reader = csv.DictReader(io.StringIO(content))
+    header like "Memo" or "Desc". `dialect` — a full dict, see `resolve_
+    dialect` — decides where the header row actually is and what splits
+    a line into cells; pass the file's own sniffed (or user-edited)
+    dialect once one exists, the default only for a caller (tests, a
+    first pre-dialect look) that doesn't have one yet. Pure — no
+    database. Raises `ValueError` on an empty file, same contract every
+    other parse-step function in this module already has."""
+    reader = _dict_reader(content, dialect)
     if not reader.fieldnames:
         raise ValueError("The file is empty")
     columns = list(reader.fieldnames)
@@ -263,11 +517,17 @@ def sniff_mapped_columns(content: str, sample_size: int = 5) -> dict:
     return {"columns": columns, "sample_rows": sample_rows}
 
 
-def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[dict], list[str]]:
+def parse_mapped_file(content: str, column_map: dict[str, str],
+                       dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
     """(rows, errors). `column_map` is target-field-key -> the file's own
     column name for it (`IMPORT_MAPPED_FIELDS`' `key`s — "account",
     "date", ... — gathered by the mapping step, `sniff_mapped_columns`
-    above), an empty/missing value meaning "not mapped." Unlike
+    above), an empty/missing value meaning "not mapped." `dialect`
+    decides the header row and the field delimiter, same as `sniff_
+    mapped_columns` — row numbers in the returned rows (and in any
+    error message) count from the file's own real line numbers, so they
+    still make sense to a user looking at their own file even when
+    `header_row` skipped a junk line or two above it. Unlike
     `parse_csv_import`, this never validates account codes or balances —
     there's no double entry yet at this point, just raw single-entry rows
     waiting on the review step's Account/Category mapping. Pure — no
@@ -281,7 +541,7 @@ def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[di
     inversion into this shape, with no trace of the other. That's why
     that check lives in `ImportMappedPanel.tsx`, at the point where the
     raw per-column choices still exist, not here."""
-    reader = csv.DictReader(io.StringIO(content))
+    reader = _dict_reader(content, dialect)
     if not reader.fieldnames:
         return [], ["The file is empty"]
     missing_required = [f["label"] for f in IMPORT_MAPPED_FIELDS
@@ -298,7 +558,8 @@ def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[di
         return (row.get(col) or "").strip() if col else ""
 
     rows = []
-    for i, row in enumerate(reader, start=2):  # header is row 1
+    start = dialect.get("header_row", 0) + 2  # the header itself is one line past whatever got skipped
+    for i, row in enumerate(reader, start=start):
         rows.append({
             "row_no": i,
             "account": get(row, "account"),
@@ -312,12 +573,12 @@ def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[di
     return rows, []
 
 
-def preview_mapped(content: str, column_map: dict[str, str]) -> dict:
+def preview_mapped(content: str, column_map: dict[str, str], dialect: dict = IMPORT_DEFAULT_DIALECT) -> dict:
     """What the review step's picker lists need — `postable` is left
     out, a `modules/reference/` concern the frontend fetches separately,
     same reasoning every prior module applies. Raises `ValueError` on a
     bad file or an incomplete `column_map`."""
-    rows, errors = parse_mapped_file(content, column_map)
+    rows, errors = parse_mapped_file(content, column_map, dialect)
     if errors:
         raise ValueError("; ".join(errors))
     if not rows:
@@ -331,7 +592,7 @@ def preview_mapped(content: str, column_map: dict[str, str]) -> dict:
 
 
 def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], category_map: dict[str, str],
-                           flip_sign: bool) -> tuple[list[dict], list[str]]:
+                           flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
     """Applies the two mappings row by row, producing the same
     (groups, errors) shape `parse_csv_import` returns — every group
     already balanced by construction (two legs, one the negation of the
@@ -339,7 +600,13 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
     amount row (some exports include these for a pending/cleared marker
     row) is silently skipped, not an error — there's nothing to post.
     Pure — no database — see this module's own docstring on why amounts
-    stay `Decimal` throughout."""
+    stay `Decimal` throughout.
+
+    `dialect`'s `decimal_separator`/`thousands_separator`/`date_format`
+    drive `parse_amount`/`parse_date` here — this is the only place in
+    the mapped importer's pipeline that actually reads a raw Amount or
+    Date string as a number/date rather than a plain mapped string, so
+    it's the only place those three dialect fields matter at all."""
     groups, errors = [], []
     for r in rows:
         money_code = account_map.get(r["account"])
@@ -353,7 +620,7 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
             errors.append(f"Row {r['row_no']}: no mapping chosen for category {label!r}")
             continue
         try:
-            amount = Decimal(r["amount"].replace(",", "")).quantize(Decimal("0.01"))
+            amount = parse_amount(r["amount"], dialect).quantize(Decimal("0.01"))
         except InvalidOperation:
             errors.append(f"Row {r['row_no']}: Amount {r['amount']!r} isn't numeric")
             continue
@@ -362,9 +629,10 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
         if amount == 0:
             continue
         try:
-            entry_date = date.fromisoformat(r["date"])
+            entry_date = parse_date(r["date"], dialect)
         except ValueError:
-            errors.append(f"Row {r['row_no']}: invalid Date {r['date']!r} — expected YYYY-MM-DD")
+            date_label = _DATE_FORMAT_LABELS.get(dialect.get("date_format", "iso"), "YYYY-MM-DD")
+            errors.append(f"Row {r['row_no']}: invalid Date {r['date']!r} — expected {date_label}")
             continue
         memo = r["memo"] or None
         # Standard expense-tracker sign convention (negative = money out):
@@ -395,18 +663,19 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
 
 def import_mapped(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
                    column_map: dict[str, str], account_map: dict[str, str], category_map: dict[str, str],
-                   flip_sign: bool, user_id: int | None = None) -> dict:
+                   flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT, user_id: int | None = None) -> dict:
     """The mapped importer's commit step — ported from `import_mapped_
     commit`'s try block, minus the base64/hidden-form-field round-trip
     (see `router.py`'s own docstring on why the wire shape changed, not
     the behavior). `column_map` is re-applied here rather than trusted
     from the preview step's own response, same "never trust caller-
     supplied structure without re-deriving it" reasoning `stage_import_
-    groups`' own account-code re-resolution already documents."""
-    rows, errors = parse_mapped_file(content, column_map)
+    groups`' own account-code re-resolution already documents. `dialect`
+    gets the same treatment for the same reason."""
+    rows, errors = parse_mapped_file(content, column_map, dialect)
     if errors:
         raise ValueError("; ".join(errors))
-    groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign)
+    groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign, dialect)
     if not groups:
         raise ValueError("; ".join(row_errors[:IMPORT_MAX_ERRORS_SHOWN])
                          or "No valid entries produced — check the mapping")

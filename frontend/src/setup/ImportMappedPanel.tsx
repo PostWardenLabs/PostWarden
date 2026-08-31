@@ -5,6 +5,7 @@ import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
 import Combobox from '../widgets/Combobox'
 import FileField from '../widgets/FileField'
+import NumberStepper from '../widgets/NumberStepper'
 import { usePostableAccounts } from '../widgets/usePostableAccounts'
 
 // The mapped importer's upload + column-mapping + review flow — split
@@ -55,14 +56,67 @@ interface MappedField {
   required: boolean
 }
 
+// `service.IMPORT_DELIMITERS`/`IMPORT_DATE_FORMATS` — a picker-ready
+// {key, label} pair, same shape `MappedField` already has.
+interface DialectOption {
+  key: string
+  label: string
+}
+
+// `service.IMPORT_DEFAULT_DIALECT`'s own shape — the wizard's Phase 1
+// step (IMPORT_WIZARD.md §3/§7 Phase 2): delimiter, how many leading
+// lines to skip before the header, and how the file's own numbers/dates
+// are written. Always a full object on this side of the wire — `service.
+// resolve_dialect`'s docstring is the reason nothing here needs a
+// partial-dialect type.
+interface Dialect {
+  delimiter: string
+  header_row: number
+  decimal_separator: string
+  thousands_separator: string
+  date_format: string
+}
+
+// The generated client types the wire's `dialect` as `dict[str, str |
+// int]` (`schemas.py`'s own type — Pydantic has no way to say "exactly
+// these five keys" over the wire), which TypeScript sees as an index
+// signature, not `Dialect`'s five named fields. Giving `Dialect` itself
+// that index signature would poison every `Partial<Dialect>` patch (an
+// omitted key reads as `undefined`, which the index signature's `string
+// | number` doesn't allow) — a plain cast at the three call sites that
+// actually send a `Dialect` over the wire is simpler than fighting that.
+type WireDialect = Record<string, string | number>
+
 // What `POST /import/mapped/columns` hands back — the file's own real
 // column names (in file order) plus a few real sample rows, so the
 // column-mapping step can show actual data next to each target field
-// instead of asking the user to guess from a header alone.
+// instead of asking the user to guess from a header alone. `dialect` is
+// the sniffed guess (R1); `delimiters`/`date_formats` are the dialect
+// panel's own two enumerable option lists — decimal/thousands separator
+// have no server-side option list because there are only ever two real
+// choices each, enumerated locally below (`DECIMAL_SEPARATOR_OPTIONS`/
+// `THOUSANDS_SEPARATOR_OPTIONS`).
 interface ColumnsResult {
   columns: string[]
   sample_rows: Record<string, string>[]
   fields: MappedField[]
+  dialect: Dialect
+  delimiters: DialectOption[]
+  date_formats: DialectOption[]
+  filename: string
+  target_scenario_id: number
+  file_content_b64: string
+}
+
+// What `POST /import/mapped/columns/reparse` hands back — a subset of
+// `ColumnsResult`: just what actually changes when the dialect does
+// (`columns`/`sample_rows`/`dialect` itself), not the static option
+// lists or the target-field list, which the first `/mapped/columns`
+// call already handed over and can't change file to file.
+interface ReparseResult {
+  columns: string[]
+  sample_rows: Record<string, string>[]
+  dialect: Dialect
   filename: string
   target_scenario_id: number
   file_content_b64: string
@@ -70,8 +124,8 @@ interface ColumnsResult {
 
 // What `POST /import/mapped/preview` hands back — the picker lists plus
 // the fields the commit step needs to carry forward unchanged
-// (`filename`/`target_scenario_id`/`file_content_b64`/`column_map`),
-// held in plain component state.
+// (`filename`/`target_scenario_id`/`file_content_b64`/`column_map`/
+// `dialect`), held in plain component state.
 interface PreviewResult {
   row_count: number
   accounts_found: string[]
@@ -81,10 +135,26 @@ interface PreviewResult {
   target_scenario_id: number
   file_content_b64: string
   column_map: Record<string, string>
+  dialect: Dialect
 }
 
 const CHOOSE = { value: '', label: '— choose —' }
 const IGNORE = { value: '', label: '— ignore —' }
+
+// `decimal_separator`/`thousands_separator` have no server-side option
+// list (`service.py` never enumerates them — see `ColumnsResult`'s own
+// comment above) because there are only ever two real-world choices
+// each; small enough to hardcode here rather than round-trip a list the
+// backend would just be echoing back unchanged.
+const DECIMAL_SEPARATOR_OPTIONS = [
+  { value: '.', label: 'Period ( 12.50 )' },
+  { value: ',', label: 'Comma ( 12,50 )' },
+]
+const THOUSANDS_SEPARATOR_OPTIONS = [
+  { value: '', label: '— none —' },
+  { value: ',', label: 'Comma ( 1,234 )' },
+  { value: '.', label: 'Period ( 1.234 )' },
+]
 
 interface ImportMappedPanelProps {
   // Called once a batch actually lands, so the container can re-fetch
@@ -126,6 +196,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   // side), so `duplicateTargetClaims` below has to be computed from this
   // state, not from the dict this state gets turned into.
   const [columnTargets, setColumnTargets] = useState<Record<string, string>>({})
+  const [reparsing, setReparsing] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
 
@@ -198,6 +269,37 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setStep('columns')
   }
 
+  // The dialect panel's own live re-parse (IMPORT_WIZARD.md §7 Phase 2
+  // item 5, R2) — re-reads the *same already-uploaded* file
+  // (`file_content_b64` never changes here) against `columns.dialect`
+  // patched with whatever control the user just touched. Column targets
+  // only get dropped when the columns a delimiter/header-row edit
+  // produced actually differ from before — a decimal-separator or
+  // date-format edit alone never changes what the columns are, so a
+  // mapping already made shouldn't vanish just because of it.
+  async function handleDialectChange(patch: Partial<Dialect>) {
+    if (!columns) return
+    const dialect = { ...columns.dialect, ...patch }
+    setReparsing(true)
+    setFlash(null)
+    const { data, error } = await client.POST('/import/mapped/columns/reparse', {
+      body: {
+        filename: columns.filename, target_scenario_id: columns.target_scenario_id,
+        file_content_b64: columns.file_content_b64, dialect: dialect as unknown as WireDialect,
+      },
+    })
+    setReparsing(false)
+    if (error) {
+      setFlash({ err: errorDetail(error, 'Could not re-read that file with this format') })
+      return
+    }
+    const result = data as unknown as ReparseResult
+    const columnsChanged = result.columns.length !== columns.columns.length
+      || result.columns.some((c, i) => c !== columns.columns[i])
+    setColumns((c) => c && { ...c, columns: result.columns, sample_rows: result.sample_rows, dialect: result.dialect })
+    if (columnsChanged) setColumnTargets({})
+  }
+
   async function handleColumnsSubmit(e: FormEvent) {
     e.preventDefault()
     if (!columns || missingRequiredFields.length || duplicateTargetClaims.length) return
@@ -217,6 +319,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
       body: {
         filename: columns.filename, target_scenario_id: columns.target_scenario_id,
         file_content_b64: columns.file_content_b64, column_map,
+        dialect: columns.dialect as unknown as WireDialect,
       },
     })
     setPreviewing(false)
@@ -241,6 +344,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
         target_scenario_id: preview.target_scenario_id,
         file_content_b64: preview.file_content_b64,
         column_map: preview.column_map,
+        dialect: preview.dialect as unknown as WireDialect,
         account_map: accountMap,
         category_map: categoryMap,
         flip_sign: flipSign,
@@ -335,6 +439,73 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
 
           {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
+          {/* The dialect panel (IMPORT_WIZARD.md §3 step 1, §7 Phase 2)
+              — sniffed on upload, editable here, re-parsing the same
+              already-uploaded file live on every change (R2: the
+              columns/sample values below are always this file's real
+              data under whatever dialect is currently chosen, never a
+              stale snapshot from the initial guess). Deliberately
+              outside `handleColumnsSubmit`'s own <form> below — these
+              controls have nothing to do with that form's own submit,
+              and keeping them separate means an Enter press in the
+              header-row stepper can't accidentally trigger it. */}
+          <div className="panel">
+            <h2>File format</h2>
+            <p className="dim small">
+              Sniffed from the file itself — usually right, always editable. Changing any of these re-reads the
+              file below, so you can see the effect immediately.
+            </p>
+            <div className="grid-form">
+              <label className="field">
+                Column delimiter
+                <Combobox
+                  options={columns.delimiters.map((d) => ({ value: d.key, label: d.label }))}
+                  value={columns.dialect.delimiter}
+                  onChange={(v) => handleDialectChange({ delimiter: v })}
+                  disabled={reparsing}
+                />
+              </label>
+              <label className="field" style={{ maxWidth: '11rem' }}>
+                Skip leading row(s)
+                <NumberStepper
+                  min={0}
+                  max={20}
+                  value={String(columns.dialect.header_row)}
+                  onChange={(v) => handleDialectChange({ header_row: Math.max(0, Number(v) || 0) })}
+                  disabled={reparsing}
+                />
+              </label>
+              <label className="field">
+                Decimal separator
+                <Combobox
+                  options={DECIMAL_SEPARATOR_OPTIONS}
+                  value={columns.dialect.decimal_separator}
+                  onChange={(v) => handleDialectChange({ decimal_separator: v })}
+                  disabled={reparsing}
+                />
+              </label>
+              <label className="field">
+                Thousands separator
+                <Combobox
+                  options={THOUSANDS_SEPARATOR_OPTIONS}
+                  value={columns.dialect.thousands_separator}
+                  onChange={(v) => handleDialectChange({ thousands_separator: v })}
+                  disabled={reparsing}
+                />
+              </label>
+              <label className="field">
+                Date format
+                <Combobox
+                  options={columns.date_formats.map((d) => ({ value: d.key, label: d.label }))}
+                  value={columns.dialect.date_format}
+                  onChange={(v) => handleDialectChange({ date_format: v })}
+                  disabled={reparsing}
+                />
+              </label>
+            </div>
+            {reparsing && <p className="dim small" style={{ marginTop: '0.5rem' }}>Re-reading…</p>}
+          </div>
+
           <form onSubmit={handleColumnsSubmit}>
             <div className="panel">
               <h2>Map this file's columns</h2>
@@ -378,7 +549,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
                 </p>
               ))}
 
-              <button type="submit" disabled={previewing || !!missingRequiredFields.length
+              <button type="submit" disabled={previewing || reparsing || !!missingRequiredFields.length
                                                || !!duplicateTargetClaims.length}
                       style={{ marginTop: '0.8rem' }}>
                 {previewing ? 'Reading…' : 'Next: map accounts & categories'}

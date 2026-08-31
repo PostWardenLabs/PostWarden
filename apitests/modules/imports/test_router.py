@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from postwarden.db import get_connection
 from postwarden.modules.auth.deps import get_current_session, require_csrf_header
+from postwarden.modules.imports import service
 from postwarden.modules.imports.router import router
 
 from ...conftest import mk_user
@@ -91,6 +92,64 @@ def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
     assert "file_content_b64" in body
+    # Phase 2 (IMPORT_WIZARD.md §7) — the dialect panel's own guess and
+    # its two option lists, sniffed from this same file.
+    assert body["dialect"] == {
+        "delimiter": ",", "header_row": 0, "decimal_separator": ".",
+        "thousands_separator": "", "date_format": "iso",
+    }
+    assert {d["key"] for d in body["delimiters"]} == {",", ";", "\t", "|"}
+    assert {d["key"] for d in body["date_formats"]} == {"iso", "us", "eu"}
+
+
+def test_import_mapped_columns_endpoint_sniffs_a_semicolon_european_dialect(book, conn):
+    content = _csv(
+        "Konto;Datum;Betrag",
+        "Girokonto;2026-08-01;-500,00",
+    )
+    resp = client_for(conn).post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")})
+    assert resp.status_code == 200
+    dialect = resp.json()["dialect"]
+    assert dialect["delimiter"] == ";"
+    assert dialect["decimal_separator"] == ","
+
+
+def test_import_mapped_columns_reparse_endpoint_re_reads_the_same_file_with_an_overridden_dialect(book, conn):
+    # A semicolon file whose delimiter got sniffed as ',' by mistake (or
+    # whatever reason a user wants to override it) — the reparse endpoint
+    # re-reads the *same already-uploaded* file, not a new upload.
+    content = "junk header line\n" + _csv("A;B", "x;y")
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("weird.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/columns/reparse", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"],
+        "dialect": {"delimiter": ";", "header_row": 1},
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["columns"] == ["A", "B"]
+    assert body["sample_rows"] == [{"A": "x", "B": "y"}]
+    assert body["dialect"] == {**columns["dialect"], "delimiter": ";", "header_row": 1}
+
+
+def test_import_mapped_columns_reparse_endpoint_rejects_an_empty_file(book, conn):
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", _csv("A,B", "x,y"), "text/csv")}).json()
+
+    # header_row past the end of the (short) file leaves nothing to read.
+    resp = c.post("/import/mapped/columns/reparse", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "dialect": {"header_row": 50},
+    })
+    assert resp.status_code == 400
 
 
 def test_import_mapped_columns_endpoint_rejects_an_empty_file(book, conn):
@@ -189,3 +248,38 @@ def test_import_mapped_commit_endpoint_rejects_an_unmapped_account(book, conn):
         "account_map": {}, "category_map": {}, "flip_sign": False,
     })
     assert resp.status_code == 400
+
+
+def test_import_mapped_commit_endpoint_carries_an_edited_dialect_through_preview_and_commit(book, conn):
+    # Phase 2 end to end: a semicolon-delimited, comma-decimal file —
+    # sniffed correctly here, but exercised via an explicit user-chosen
+    # `dialect` the same way an edit in the dialect panel would arrive.
+    content = _csv(
+        "Konto;Datum;Betrag",
+        "Checking;2026-08-01;-500,00",
+    )
+    dialect = {"delimiter": ";", "decimal_separator": ",", "thousands_separator": "."}
+    column_map = {"account": "Konto", "date": "Datum", "amount": "Betrag"}
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+    assert columns["dialect"]["delimiter"] == ";"  # sniffed correctly, not user-overridden here
+
+    preview = c.post("/import/mapped/preview", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": column_map, "dialect": dialect,
+    }).json()
+    assert preview["accounts_found"] == ["Checking"]
+    assert preview["dialect"]["decimal_separator"] == ","
+
+    resp = c.post("/import/mapped", json={
+        "filename": preview["filename"], "target_scenario_id": preview["target_scenario_id"],
+        "file_content_b64": preview["file_content_b64"], "column_map": preview["column_map"],
+        "dialect": preview["dialect"],
+        "account_map": {"Checking": book["checking"]["code"]},
+        "category_map": {service.IMPORT_MAPPED_NO_CATEGORY: book["rent"]["code"]},
+        "flip_sign": False,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["staged_count"] == 1

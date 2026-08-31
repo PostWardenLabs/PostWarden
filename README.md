@@ -106,11 +106,17 @@ instance.
   double-entry to begin with — one row per transaction, a money-account
   column and a category column, whatever the export actually calls them
   (an ActualBudget export is the concrete shape this was built against,
-  but any single-entry CSV works: a first wizard step maps its own
-  column names onto Money Account/Entry Date/Amount/Payee/Notes/
-  Category) — by then mapping each distinct Account/Category value to a
-  real PostWarden account once per import, and turning every row into a
-  proper balanced posting for the same Staging review. **Find Duplicates** scans every pending entry at once for the classic
+  but any single-entry CSV works). Its own wizard: a file-format step
+  sniffs the file's delimiter, any leading rows to skip, and the
+  decimal/date conventions it uses — editable before anything else runs,
+  so a semicolon-delimited European export (`1.234,56`-style amounts) or
+  a file with a title line above its real header reads correctly instead
+  of just failing; then a column-mapping step maps the file's own column
+  names onto Money Account/Entry Date/Amount/Payee/Entry Description/
+  Line Memo/Category — by then mapping each distinct Account/Category
+  value to a real PostWarden account once per import, and turning every
+  row into a proper balanced posting for the same Staging
+  review. **Find Duplicates** scans every pending entry at once for the classic
   overlapping-import mistake — the same transaction proposed twice,
   same accounts/amounts/date — groups whatever it finds, and merges
   a group down to one entry with your choice of which description,
