@@ -6,17 +6,14 @@ import { useConfirm } from '../widgets/confirmContext'
 import MergeDialog from '../widgets/MergeDialog'
 import { useSelectMode } from '../widgets/useSelectMode'
 
-// Ported from app/templates/tags.html + app/static/entity-manage.js
-// (Phase 3.2) — the Management/CRUD archetype's first real screen. Same
-// Select/Merge/+Add/table/Status/Archive shape the legacy template's own
-// comment describes, driven here by React state instead of a shared
-// vanilla-JS file plus data-* attributes.
+// The Management/CRUD archetype's canonical screen: Select/Merge/+Add/
+// table/Status/Archive.
 //
 // GET /tags's own response is a plain `dict` list (`modules/reference/
 // router.py`), so openapi-fetch can only type it as
-// `{[key: string]: unknown}[]` — same gap `auth/SessionProvider.tsx`'s own
-// Phase 3.1 comment already documents for `/login`/`/me`, cast through
-// this local interface instead.
+// `{[key: string]: unknown}[]` — same gap `auth/SessionProvider.tsx`'s
+// own comment already documents for `/login`/`/me`, cast through this
+// local interface instead.
 interface Tag {
   id: number
   name: string
@@ -210,12 +207,11 @@ export default function TagsPage() {
           />
           select all
         </label>
-        {/* No `select-only` here — matches tags.html exactly: unlike the
-            "select all" checkbox, Merge is always in the DOM, just
-            `disabled` until 2+ rows are checked (which can only happen
-            once Select mode has revealed the per-row checkboxes to check
-            in the first place). Ported as-is, not "fixed" to hide it
-            outside Select mode too, per REBUILD.md decision 4. */}
+        {/* No `select-only` here: unlike the "select all" checkbox, Merge
+            is always in the DOM, just `disabled` until 2+ rows are
+            checked (which can only happen once Select mode has revealed
+            the per-row checkboxes to check in the first place) — a
+            known, accepted gap, not hidden outside Select mode too. */}
         <button
           type="button"
           className="quiet"
@@ -299,11 +295,8 @@ export default function TagsPage() {
                   <span className="entity-name-label">{t.name}</span>
                 )}
               </td>
-              {/* Cutover: closed the same "don't reach into a screen
-                  that doesn't exist yet" deferral PayeesPage.tsx's own
-                  entry-count link already closed (Phase 4.2) — /app/
-                  entries exists now, so this is a real drill-through to
-                  the Journal, same as Payees'. */}
+              {/* A real drill-through to the Journal, same as Payees'
+                  own entry-count link. */}
               <td className="num mono">
                 {t.entry_count > 0 ? (
                   <Link className="amount-link" to={`/app/entries?tags=${encodeURIComponent(t.name)}`}>{t.entry_count}</Link>

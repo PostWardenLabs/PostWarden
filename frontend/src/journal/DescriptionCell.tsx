@@ -9,14 +9,13 @@ interface DescriptionCellProps {
   onSaved: (value: string) => void
 }
 
-// Ported from app/static/description-edit.js (Phase 3.4) — click-to-edit
-// for an entry's own description, sharing `useInlineEdit`'s debounce/
-// autosave/corrective-cancel mechanics with `MemoCell.tsx`. This cell
-// lives *inside* `<summary>` (see `JournalPage.tsx`'s own comment on
-// why, matching entries.html's structure), so a click here has to stop
-// `<summary>`'s native "click anywhere inside toggles the panel"
-// behavior — `e.preventDefault()` on the wrapping span's own onClick,
-// the documented way to cancel that default, same as description-edit.js.
+// Click-to-edit for an entry's own description, sharing `useInlineEdit`'s
+// debounce/autosave/corrective-cancel mechanics with `MemoCell.tsx`.
+// This cell lives *inside* `<summary>` (see `JournalPage.tsx`'s own
+// comment on why), so a click here has to stop `<summary>`'s native
+// "click anywhere inside toggles the panel" behavior —
+// `e.preventDefault()` on the wrapping span's own onClick, the
+// documented way to cancel that default.
 export default function DescriptionCell({ entryId, description, onSaved }: DescriptionCellProps) {
   const edit = useInlineEdit(
     description,

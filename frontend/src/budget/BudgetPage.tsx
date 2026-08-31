@@ -9,11 +9,8 @@ import Combobox from '../widgets/Combobox'
 import { useConfirm } from '../widgets/confirmContext'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// Ported from app/templates/budget.html + budget-grid.js (Phase 4.4) — the
-// Editable grid archetype's only instance (UI_CONSISTENCY_AUDIT.md §1/§2d).
-// `modules/budget/` (backend) was already fully built and tested back in
-// Phase 1.7 — this phase is frontend-only, same shape Staging's own Phase
-// 4.3 already was.
+// The Editable grid archetype's only instance (UI_CONSISTENCY_AUDIT.md
+// §1/§2d).
 //
 // GET /budget's own response is a plain `dict` (`modules/budget/
 // router.py`), so openapi-fetch can only type it as `{[key: string]:
@@ -130,14 +127,13 @@ interface GridComputation {
   netPct: number | null
 }
 
-// Ported from budget-grid.js's own `recompute()` — one pass, bottom-up:
-// a leaf's Budgeted is whatever's currently typed (`edits`, keyed by
-// account id) or, untouched, the server's own figure; a summary
-// account's Budgeted is always the sum of its own children, live, the
-// same as legacy's own recursive `budgetedOf()`. Actual never
-// recomputes — every row already carries its own static, server-
-// rendered figure (this module's own docstring on `budget_grid`), so
-// only Budgeted (and anything derived from it) ever changes here.
+// One pass, bottom-up: a leaf's Budgeted is whatever's currently typed
+// (`edits`, keyed by account id) or, untouched, the server's own figure;
+// a summary account's Budgeted is always the sum of its own children,
+// live. Actual never recomputes — every row already carries its own
+// static, server-rendered figure (this module's own docstring on
+// `budget_grid`), so only Budgeted (and anything derived from it) ever
+// changes here.
 function computeGrid(result: BudgetResult, edits: Record<number, string>, pctOfBase: boolean): GridComputation {
   const allRows = result.grouped.flatMap((g) => g.rows)
   const byId = new Map<number, Row>()
@@ -227,16 +223,15 @@ export default function BudgetPage() {
   const menuPanelRef = useRef<HTMLDivElement>(null)
   // What the server last confirmed for a given leaf's own cell — reset
   // whenever a fresh `result` arrives (a real scenario/month/flip
-  // change), same "start over from whatever the server just sent"
-  // behavior a legacy page reload gave for free. A ref, not state:
-  // comparing against it on blur shouldn't itself trigger a re-render.
+  // change), starting over from whatever the server just sent. A ref,
+  // not state: comparing against it on blur shouldn't itself trigger a
+  // re-render.
   const savedRef = useRef<Record<number, string>>({})
 
   // Budget Grid is income-statement-only by definition
-  // (`fn_budget_line_guard`) — same filter legacy's own `budget_page`
-  // applies before ever building the picker (`_shared_journal_filters`
-  // has no equivalent here; this is this page's own, since no other
-  // screen needs an income-statement-only scenario list).
+  // (`fn_budget_line_guard`) — filtered before ever building the picker;
+  // this is this page's own filter, since no other screen needs an
+  // income-statement-only scenario list.
   const isoScenarios = useMemo(() => (scenarios ?? []).filter((s) => s.income_statement_only), [scenarios])
   const scenario = searchParams.get('scenario') || isoScenarios[0]?.code || ''
   const urlMonth = searchParams.get('month') || ''
@@ -488,13 +483,11 @@ export default function BudgetPage() {
               four quick-fill sources as a single cell's own chevron menu
               to every leaf cell at once, behind a real confirm since it
               overwrites whatever's already typed everywhere on the grid.
-              No Export CSV/XLSX here — `modules/budget/router.py` never
-              grew a `.csv`/`.xlsx` sibling (Phase 1.12 only built exports
-              for `modules/reports/`/`modules/entries/`), and adding a new
-              backend route is out of scope for this frontend-only phase;
-              UI_CONSISTENCY_AUDIT.md §3.6 already flags this as worth
-              deciding on purpose rather than leaving as an accident — left
-              open, same as it was, not silently dropped. */}
+              No Export CSV/XLSX here — `modules/budget/router.py` has no
+              `.csv`/`.xlsx` sibling, unlike `modules/reports/`/
+              `modules/entries/`. UI_CONSISTENCY_AUDIT.md §3.6 flags this
+              as worth deciding on purpose rather than leaving as an
+              accident — left open, not silently dropped. */}
           <p className="bar" style={{ alignItems: 'center' }}>
             <button
               type="button"

@@ -13,8 +13,7 @@ interface EntryGridProps {
   onFocusRow: (key: string) => void
 }
 
-// Ported from entries.html's `table.ledger.entry-grid` + app.js's row-
-// level mechanics (Phase 3.4). Purely presentational plus keyboard
+// The debit/credit line grid. Purely presentational plus keyboard
 // navigation — `updateLine` (owned by `NewEntryPanel.tsx`) is where the
 // debit/credit exclusivity and `ensureTrailingBlank` calls actually
 // happen, same "grid renders, parent owns the entry" split

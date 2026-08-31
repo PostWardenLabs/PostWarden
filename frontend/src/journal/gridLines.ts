@@ -9,7 +9,7 @@ export interface GridLine {
 // Split out of EntryGrid.tsx so that file exports only its default
 // component — the identical `react(only-export-components)` Fast
 // Refresh warning `confirmContext.ts` was already split out of
-// `ConfirmDialog.tsx` to avoid (Phase 2.5), same fix here.
+// `ConfirmDialog.tsx` to avoid, same fix here.
 let nextKey = 0
 export function makeBlankLine(): GridLine {
   nextKey += 1

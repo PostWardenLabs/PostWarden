@@ -21,17 +21,14 @@ import DescriptionCell from './DescriptionCell'
 import MemoCell from './MemoCell'
 import NewEntryPanel from './NewEntryPanel'
 
-// Ported from app/templates/entries.html + app.js/entries-select.js/
-// tags-bulk-edit.js/description-edit.js/memo-edit.js/entry_templates.js
-// (Phase 3.4) — the Journal, the hardest screen in the app and
-// REBUILD.md §9's own go/no-go gate. `NewEntryPanel.tsx`/`EntryGrid.tsx`
-// own the "+ New entry" form; this owns the filter bar, the list itself,
-// Select mode + Reverse + Edit tags, and export/pager.
+// The Journal — the biggest single screen in the app. `NewEntryPanel.tsx`/
+// `EntryGrid.tsx` own the "+ New entry" form; this owns the filter bar,
+// the list itself, Select mode + Reverse + Edit tags, and export/pager.
 //
 // GET /entries's own response is a plain `dict` (`modules/entries/
 // router.py`), so openapi-fetch can only type it as
-// `{[key: string]: unknown}`, same gap every prior JSON-API phase's own
-// comment documents — cast through these local interfaces instead.
+// `{[key: string]: unknown}` — cast through these local interfaces
+// instead.
 interface EntryLine {
   id: number
   debit: string
@@ -101,9 +98,9 @@ export default function JournalPage() {
 
   // Free-typed fields only commit to the URL (and therefore refetch) on
   // a real form submit — Enter in any field, or the Search icon's own
-  // click — same "auto-refresh.js deliberately excludes Search/Amount"
-  // carve-out entries.html's own comment gives; every other control
-  // below applies immediately on change. Resynced from the URL whenever
+  // click; every other control below applies immediately on change,
+  // since deferring those the same way would just make filtering feel
+  // laggy for no typing-debounce benefit. Resynced from the URL whenever
   // it changes out from under them (Clear filters, a one-field "clear"
   // link) via the effects right below.
   const [qtext, setQtext] = useState(qtextParam)
@@ -118,11 +115,10 @@ export default function JournalPage() {
   )
 
   // A real navigation-equivalent (`push`, not `replace`) for every one
-  // of these — unlike TrialBalancePage.tsx's own `As of` field, every
-  // control here really did cause a full page navigation in legacy
-  // (auto-refresh.js's own `form.requestSubmit()`), so a browser-history
-  // entry per filter change is exactly the parity this needs, not
-  // something to avoid.
+  // of these — unlike TrialBalancePage.tsx's own `As of` field, a
+  // browser-history entry per Journal filter change is exactly the
+  // parity this needs (Back should step through filter states, not
+  // leave the Journal entirely), not something to avoid.
   function buildParams(overrides: Record<string, string>): URLSearchParams {
     const current: Record<string, string> = {
       scenario, date_from: dateFrom, date_to: dateTo, qtext, tags, account, payee,
@@ -244,12 +240,10 @@ export default function JournalPage() {
   return (
     <>
       <div className="page-head">
-        {/* No "Back to report" link: legacy's own `back=` only ever
-            arrives via a drill-through link from another report, and
-            nothing in this rebuild produces one yet (Trial Balance's own
-            Phase 3.3 write-up chose plain text over a link for exactly
-            this reason) — reintroduce this once a report actually links
-            here with `back=` set. */}
+        {/* No "Back to report" link: that would only make sense arriving
+            via a drill-through link from another report, and nothing in
+            the app produces one yet — add this once a report actually
+            links here with a `back=` param set. */}
         <Link to="/app/help#journal" className="help-icon" aria-label="How this works" title="How this works">
           ?
         </Link>
@@ -399,8 +393,7 @@ export default function JournalPage() {
             // targets `a.button-link` specifically (see index.css); a
             // <button> with this class instead falls through to the
             // bare `button` element rule and picks up filled button
-            // chrome it was never meant to have. Matches legacy's own
-            // entries.html markup exactly.
+            // chrome it was never meant to have.
             <Link className="button-link" to="/app/entries">
               Clear filters
             </Link>
@@ -517,9 +510,9 @@ export default function JournalPage() {
                     no button-specific override, so a <button class="badge">
                     falls through to the bare `button` element rule and
                     picks up filled accent chrome instead of the plain
-                    outlined pill legacy's own `<a class="badge rev">`
-                    markup gets. Link's own click handling already
-                    preventDefault()s on a plain click before navigating,
+                    outlined pill an `<a class="badge rev">` gets. Link's
+                    own click handling already preventDefault()s on a
+                    plain click before navigating,
                     which is what stops <summary>'s native toggle here —
                     same mechanism DescriptionCell's span relies on, no
                     separate handler needed. */}

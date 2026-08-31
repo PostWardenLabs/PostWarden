@@ -9,9 +9,9 @@ interface MemoCellProps {
   onSaved: (value: string) => void
 }
 
-// Ported from app/static/memo-edit.js (Phase 3.4) — click-to-edit for a
-// journal line's own memo, sharing `useInlineEdit`'s mechanics with
-// `DescriptionCell.tsx`. Unlike the description, a memo *can* autosave
+// Click-to-edit for a journal line's own memo, sharing `useInlineEdit`'s
+// mechanics with `DescriptionCell.tsx`. Unlike the description, a memo
+// *can* autosave
 // blank (`allowBlank: true`) — clearing it out is a legitimate save, not
 // a no-op to cancel back from.
 export default function MemoCell({ lineId, memo, onSaved }: MemoCellProps) {

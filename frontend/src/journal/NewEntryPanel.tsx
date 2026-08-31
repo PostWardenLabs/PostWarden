@@ -33,19 +33,18 @@ function errorDetail(error: unknown, fallback: string): string {
 
 const today = new Date().toISOString().slice(0, 10)
 
-// Ported from entries.html's `details#new-entry-panel` + app.js (Phase
-// 3.4) — the New entry form. `EntryGrid.tsx` owns the line table itself;
-// this owns the rest: header fields, the balance bar, Post/Add line/
+// The New entry form. `EntryGrid.tsx` owns the line table itself; this
+// owns the rest: header fields, the balance bar, Post/Add line/
 // Distribute/Clear, template loading, and the fetch-based submit that
 // shows a rejected entry's error inline instead of losing what was
-// typed (app.js's own reason for `fetch` over a plain form POST).
+// typed.
 //
 // `<details>` stays genuinely uncontrolled (a plain ref and direct
 // `.open =` assignment, no `open` prop at all) rather than React state —
-// the same technique `TagsPage.tsx`'s own "+ Add tag" panel already used
-// (Phase 3.2), for the same reason: nothing here needs to *react* to
-// open/closed, only toggle it, and a controlled `open` would fight the
-// very first native `<summary>` click by reasserting itself next render.
+// the same technique `TagsPage.tsx`'s own "+ Add tag" panel already uses,
+// for the same reason: nothing here needs to *react* to open/closed,
+// only toggle it, and a controlled `open` would fight the very first
+// native `<summary>` click by reasserting itself next render.
 export default function NewEntryPanel({
   scenarios,
   postableByScenario,
@@ -71,8 +70,7 @@ export default function NewEntryPanel({
   const [lines, setLines] = useState<GridLine[]>(() => [makeBlankLine(), makeBlankLine()])
   const [error, setError] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
-  // Payees created inline mid-form via the picker's own "+ Create" row
-  // (legacy: entry_new.html's `data-create-url="/payees/quick-create"`) —
+  // Payees created inline mid-form via the picker's own "+ Create" row —
   // kept separate from the `payees` prop rather than pushed back up into
   // it, since `usePayees()` is a one-shot fetch-on-mount hook with no
   // setter; merged into the options list below so a payee created this
@@ -85,12 +83,10 @@ export default function NewEntryPanel({
   const descriptionRef = useRef<HTMLInputElement>(null)
   // Distribute needs "whichever row the grid's focus was last in" — by
   // the time its own click handler runs, focus has already moved to the
-  // Distribute button itself (same "focus moves to a clicked button
-  // before its click event fires" gap app.js's own comment describes),
-  // so this tracks it continuously via EntryGrid's onFocus instead of
-  // reading document.activeElement at click time. A ref, not state:
-  // Distribute reads it imperatively and nothing should re-render when
-  // focus merely moves between cells.
+  // Distribute button itself, so this tracks it continuously via
+  // EntryGrid's onFocus instead of reading document.activeElement at
+  // click time. A ref, not state: Distribute reads it imperatively and
+  // nothing should re-render when focus merely moves between cells.
   const lastFocusedKey = useRef<string | null>(null)
   // Staged by addRow()/distribute()/Alt+E, consumed by the effect below
   // once the DOM the target field lives in has actually committed —
@@ -115,9 +111,8 @@ export default function NewEntryPanel({
   // later native/ref-based toggle (the summary click, Alt+E) the moment
   // a re-render reasserted it. Same plain-ref, no-prop shape
   // `TagsPage.tsx`'s own "+ Add tag" panel already uses; this one just
-  // needs an extra one-time push open on mount when `?new=1` asked for
-  // it, matching legacy's own `{{ 'open' if request.query_params.get
-  // ('new') }}`.
+  // needs an extra one-time push open on mount when the `?new=1` query
+  // param asked for it.
   useEffect(() => {
     if (defaultOpen && detailsRef.current) detailsRef.current.open = true
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only, defaultOpen is a prop snapshot from the URL at load
@@ -146,13 +141,10 @@ export default function NewEntryPanel({
   }
 
   // Re-filters every line's account picker to whatever the newly
-  // selected scenario can actually post to — ported from app.js's
-  // `refreshAccountsForScenario`. Skipped on the very first render
-  // (nothing to clear yet) via the ref below, same "only on a real
-  // change" guard `TrialBalancePage.tsx`'s own effects don't need but
-  // this one does, since mount and "scenario changed to the same
-  // default" are otherwise indistinguishable from a bare `[scenarioId]`
-  // dependency.
+  // selected scenario can actually post to. Skipped on the very first
+  // render (nothing to clear yet) via the ref below, since mount and
+  // "scenario changed to the same default" are otherwise
+  // indistinguishable from a bare `[scenarioId]` dependency.
   const mounted = useRef(false)
   useEffect(() => {
     if (!mounted.current) {
@@ -184,9 +176,12 @@ export default function NewEntryPanel({
     pendingFocus.current = { key: line.key, field: 'account' }
   }
 
-  // Ported from app.js's own Distribute — see its file comment for the
-  // full reasoning on the first-row special case and why this targets
-  // the *existing* next row rather than always appending a new one.
+  // Balances the entry by plugging the difference into one target row:
+  // whichever row the grid's focus was last in, or the last row if none.
+  // The first row can't be the target — it's normally the source amount
+  // everything else is being distributed against, so a first-row target
+  // redirects to the next row instead (creating one if there isn't one
+  // yet already).
   function distribute() {
     setLines((ls) => {
       let rows = ls
@@ -292,9 +287,8 @@ export default function NewEntryPanel({
     onPosted(body.entry_id)
   }
 
-  // e.code, not e.key — see app.js's own comment on why (macOS Option
-  // remaps letters, so a "n"/"d"/... check against e.key silently never
-  // matches there).
+  // e.code, not e.key — macOS Option remaps letters, so a "n"/"d"/...
+  // check against e.key silently never matches there.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.altKey) return
