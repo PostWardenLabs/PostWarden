@@ -62,15 +62,28 @@ IMPORT_MAX_ERRORS_SHOWN = 20
 # both labeled "Account" would defeat that. `required` gates preview/
 # commit validation the same way the old exact-column-name check did:
 # money account, date, and amount are the three fields a double-entry
-# posting can't exist without; payee/notes/category are all optional,
-# same as they always were (a blank Category row is exactly what
-# `IMPORT_MAPPED_NO_CATEGORY` below already exists to handle).
+# posting can't exist without; payee/description/memo/category are all
+# optional, same as they always were (a blank Category row is exactly
+# what `IMPORT_MAPPED_NO_CATEGORY` below already exists to handle).
+#
+# `description` and `memo` are deliberately separate targets, not one
+# "Notes" field mapped onto two different downstream uses. The original
+# ask mapped a file's Notes column to the entry description; the shipped
+# code instead used Payee for that (falling back to Category, then a
+# fixed string) and Notes became the *line* memo — both are legitimate,
+# but leaving the choice implicit inside `transform_mapped_rows` meant a
+# user had no way to see or change it. `description` lets a user map a
+# column straight to the entry description when they have one; leaving
+# it unmapped keeps the same payee/category/fallback chain
+# `transform_mapped_rows` always used (documented there, and in the
+# mapping step's own UI, rather than only in this comment).
 IMPORT_MAPPED_FIELDS = [
     {"key": "account", "label": "Money Account", "required": True},
     {"key": "date", "label": "Entry Date", "required": True},
     {"key": "amount", "label": "Amount", "required": True},
     {"key": "payee", "label": "Payee", "required": False},
-    {"key": "notes", "label": "Notes", "required": False},
+    {"key": "description", "label": "Entry Description", "required": False},
+    {"key": "memo", "label": "Line Memo", "required": False},
     {"key": "category", "label": "Category", "required": False},
 ]
 IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
@@ -258,7 +271,16 @@ def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[di
     `parse_csv_import`, this never validates account codes or balances —
     there's no double entry yet at this point, just raw single-entry rows
     waiting on the review step's Account/Category mapping. Pure — no
-    database."""
+    database.
+
+    This shape is single-valued per target by construction (a `dict` key
+    holds one value), which is exactly right for how this function reads
+    a row but means it can never see "two file columns both claiming the
+    Amount target" — whichever column the frontend's own column->target
+    state happened to serialize last is the only one that survives the
+    inversion into this shape, with no trace of the other. That's why
+    that check lives in `ImportMappedPanel.tsx`, at the point where the
+    raw per-column choices still exist, not here."""
     reader = csv.DictReader(io.StringIO(content))
     if not reader.fieldnames:
         return [], ["The file is empty"]
@@ -282,7 +304,8 @@ def parse_mapped_file(content: str, column_map: dict[str, str]) -> tuple[list[di
             "account": get(row, "account"),
             "date": get(row, "date"),
             "payee": get(row, "payee"),
-            "notes": get(row, "notes"),
+            "description": get(row, "description"),
+            "memo": get(row, "memo"),
             "category": get(row, "category"),
             "amount": get(row, "amount"),
         })
@@ -343,7 +366,7 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
         except ValueError:
             errors.append(f"Row {r['row_no']}: invalid Date {r['date']!r} — expected YYYY-MM-DD")
             continue
-        memo = r["notes"] or None
+        memo = r["memo"] or None
         # Standard expense-tracker sign convention (negative = money out):
         # debit whichever side increases, credit whichever side decreases.
         # An expense (amount < 0) increases the category/expense account
@@ -356,9 +379,15 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
         else:
             lines = [{"code": money_code, "amount": amount, "memo": memo},
                      {"code": other_code, "amount": -amount, "memo": memo}]
+        # Explicit fallback chain (§2.1 of IMPORT_WIZARD.md): an
+        # `description`-mapped column wins outright when present; when
+        # nothing is mapped there, the entry description falls back to
+        # the payee, then the category, then a fixed placeholder — same
+        # chain this always used, just no longer buried unlabeled inside
+        # this one line.
         groups.append({
             "entry_date": entry_date.isoformat(),
-            "description": r["payee"] or r["category"] or "Imported transaction",
+            "description": r["description"] or r["payee"] or r["category"] or "Imported transaction",
             "reference": None, "payee_name": r["payee"] or None, "lines": lines,
         })
     return groups, errors

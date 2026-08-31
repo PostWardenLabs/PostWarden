@@ -272,10 +272,19 @@ shippable and independently revertable — one commit per phase minimum,
 more where a phase splits cleanly into backend and frontend the way the
 column-mapping step already did.
 
-### Phase 1 — Re-orient the mapping table (small)
+### Phase 1 — Re-orient the mapping table (small) — ✅ shipped
 
 The §2 decision, plus §2.1. No new capability, but it fixes a real blind
 spot in what shipped.
+
+The duplicate-target check (step 2 below) ended up client-side, not in
+`service.py` — the wire's `column_map` is single-valued per target by
+construction (a dict key holds one value), so by the time a second claim
+on one target would reach the backend, the information about the first
+claim it silently overwrote is already gone. `ImportMappedPanel.tsx`'s
+own per-column state is the only place both claims are still visible at
+once. `SPEC.md` decision 23's own account of the re-orientation has the
+fuller version.
 
 1. `service.py`: keep `IMPORT_MAPPED_FIELDS` as the canonical target
    list; add `description` and `memo` as distinct targets, and make the

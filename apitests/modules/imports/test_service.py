@@ -102,7 +102,7 @@ def test_import_csv_raises_when_no_groups_parsed(book, conn):
 
 
 MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
-                      "notes": "Notes", "category": "Category", "amount": "Amount"}
+                      "memo": "Notes", "category": "Category", "amount": "Amount"}
 
 
 def test_sniff_mapped_columns_returns_headers_in_file_order_and_sample_rows():
@@ -141,7 +141,22 @@ def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
     rows, errors = service.parse_mapped_file(content, column_map)
     assert errors == []
     assert rows == [{"row_no": 2, "account": "Landlord", "date": "2026-08-01", "payee": "",
-                      "notes": "", "category": "Rent", "amount": "-500"}]
+                      "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
+
+
+def test_parse_mapped_file_reads_a_description_column_distinct_from_payee():
+    # §2.1 of IMPORT_WIZARD.md: Entry Description and Line Memo are their
+    # own targets now, not just Payee/Notes wearing those hats implicitly.
+    content = _csv(
+        "Merchant,Memo line,When,Amount",
+        "Landlord,Rent for August,2026-08-01,-500",
+    )
+    column_map = {"account": "Merchant", "description": "Memo line", "date": "When", "amount": "Amount"}
+    rows, errors = service.parse_mapped_file(content, column_map)
+    assert errors == []
+    [row] = rows
+    assert row["description"] == "Rent for August"
+    assert row["payee"] == ""
 
 
 def test_parse_mapped_file_rejects_an_incomplete_column_map():
@@ -181,7 +196,7 @@ def test_preview_mapped_raises_on_a_file_with_no_rows():
 
 def test_transform_mapped_rows_maps_an_expense_row_debit_positive(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
-             "notes": "", "category": "Rent", "amount": "-500"}]
+             "description": "", "memo": "", "category": "Rent", "amount": "-500"}]
     groups, errors = service.transform_mapped_rows(
         rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
     assert errors == []
@@ -193,7 +208,7 @@ def test_transform_mapped_rows_maps_an_expense_row_debit_positive(book):
 
 def test_transform_mapped_rows_maps_an_income_row_credit_positive(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-02", "payee": "Employer",
-             "notes": "", "category": "", "amount": "1000"}]
+             "description": "", "memo": "", "category": "", "amount": "1000"}]
     groups, errors = service.transform_mapped_rows(
         rows, {"Checking": book["checking"]["code"]},
         {service.IMPORT_MAPPED_NO_CATEGORY: book["salary"]["code"]}, flip_sign=False)
@@ -206,7 +221,7 @@ def test_transform_mapped_rows_maps_an_income_row_credit_positive(book):
 
 def test_transform_mapped_rows_flip_sign_inverts_every_amount(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
-             "notes": "", "category": "Rent", "amount": "500"}]
+             "description": "", "memo": "", "category": "Rent", "amount": "500"}]
     groups, errors = service.transform_mapped_rows(
         rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=True)
     assert errors == []
@@ -216,7 +231,7 @@ def test_transform_mapped_rows_flip_sign_inverts_every_amount(book):
 
 def test_transform_mapped_rows_skips_a_zero_amount_row(book):
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
-             "notes": "", "category": "Rent", "amount": "0"}]
+             "description": "", "memo": "", "category": "Rent", "amount": "0"}]
     groups, errors = service.transform_mapped_rows(
         rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
     assert groups == []
@@ -225,10 +240,40 @@ def test_transform_mapped_rows_skips_a_zero_amount_row(book):
 
 def test_transform_mapped_rows_reports_an_unmapped_account(book):
     rows = [{"row_no": 2, "account": "Savings", "date": "2026-08-01", "payee": "",
-             "notes": "", "category": "Rent", "amount": "-10"}]
+             "description": "", "memo": "", "category": "Rent", "amount": "-10"}]
     groups, errors = service.transform_mapped_rows(rows, {}, {"Rent": book["rent"]["code"]}, False)
     assert groups == []
     assert "no mapping chosen for account" in errors[0]
+
+
+def test_transform_mapped_rows_description_wins_over_the_payee_fallback(book):
+    # §2.1 of IMPORT_WIZARD.md: an explicitly-mapped Entry Description
+    # takes priority over the payee/category/fallback chain, which only
+    # ever applies when nothing is mapped there.
+    rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
+             "description": "August rent", "memo": "", "category": "Rent", "amount": "-500"}]
+    groups, errors = service.transform_mapped_rows(
+        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, flip_sign=False)
+    assert errors == []
+    assert groups[0]["description"] == "August rent"
+
+
+def test_transform_mapped_rows_falls_back_to_payee_then_category_then_a_fixed_string(book):
+    base = {"row_no": 2, "account": "Checking", "date": "2026-08-01", "description": "", "memo": "", "amount": "-500"}
+    account_map = {"Checking": book["checking"]["code"]}
+    category_map = {"Rent": book["rent"]["code"], service.IMPORT_MAPPED_NO_CATEGORY: book["rent"]["code"]}
+
+    groups, _ = service.transform_mapped_rows(
+        [{**base, "payee": "Landlord", "category": "Rent"}], account_map, category_map, flip_sign=False)
+    assert groups[0]["description"] == "Landlord"
+
+    groups, _ = service.transform_mapped_rows(
+        [{**base, "payee": "", "category": "Rent"}], account_map, category_map, flip_sign=False)
+    assert groups[0]["description"] == "Rent"
+
+    groups, _ = service.transform_mapped_rows(
+        [{**base, "payee": "", "category": ""}], account_map, category_map, flip_sign=False)
+    assert groups[0]["description"] == "Imported transaction"
 
 
 def test_import_mapped_stages_entries_end_to_end(book, conn):

@@ -1154,13 +1154,53 @@ header rename before this importer would even parse them. `POST
 /import/mapped/columns` sniffs the uploaded file's real headers (plus a
 few real sample rows, so a column can be matched by looking at its
 data, not just guessing from a header like "Desc") and hands them to
-the wizard's first screen; the six target fields it offers
+the wizard's first screen; the seven target fields it offers
 (`service.IMPORT_MAPPED_FIELDS` — Money Account/Entry Date/Amount
-required, Payee/Notes/Category optional) are the one place that list is
-defined, read by both the mapping-step picker and the parse step's own
-validation. "Money Account"/"Category" are deliberately not both just
-"Account" here, the one place in the wizard where a plain reader could
-otherwise confuse which leg a mapping choice is picking.
+required, Payee/Entry Description/Line Memo/Category optional) are the
+one place that list is defined, read by both the mapping-step picker
+and the parse step's own validation. "Money Account"/"Category" are
+deliberately not both just "Account" here, the one place in the wizard
+where a plain reader could otherwise confuse which leg a mapping choice
+is picking. Likewise Entry Description and Line Memo are separate
+targets rather than one field silently feeding two different downstream
+uses: the original ask mapped a Notes-shaped column to the entry
+description, the shipped code instead derived the description from
+Payee (falling back to Category, then a fixed placeholder) and used
+Notes for the line memo — both are legitimate, so both are now visible,
+named options rather than one hidden implicitly inside
+`transform_mapped_rows`. Leaving Entry Description unmapped keeps that
+same payee/category/fallback chain; mapping it overrides the chain
+outright.
+
+**The mapping table itself is oriented file-column -> target, one row
+per column the file actually has, not target -> file-column.** The
+original design here (and the original `BACKLOG.md` ask) was one row
+per *column found in the file*, each with a dropdown of PostWarden
+targets defaulting to Ignore; what shipped in the first cut was the
+inverse — one row per target field, each with a dropdown of the file's
+columns — for three reasons that seemed reasonable at the time: required-
+field validation reads at a glance in a short fixed-length table,
+"Ignore" needs no explicit option since an unpicked column is just never
+selected, and the table stays a constant six rows however wide the file
+is. All three have real answers that flipping back doesn't give up: a
+live "still needed: …" strip above the table is more legible than
+scanning a fixed table for a blank anyway; an explicit "— ignore —"
+default is *itself* the point, not overhead to avoid — the flipped
+table forces a decision about every column, where the original one
+silently dropped whatever a user never happened to pick, and on a wide
+export (a 28-column bank CSV, say) there was no way to tell which two
+thirds of it the importer had ignored. The one thing the flipped
+orientation can express that the target-oriented one couldn't at all:
+two different file columns both claiming the same target (two Date
+columns, say) — the row-per-target shape structurally prevents that
+from ever happening, at the cost of the column silently overwriting
+whichever showed up first if you tried it the other way. That check now
+lives client-side, in `ImportMappedPanel.tsx`, at the point where the
+raw per-column choices still exist — by the time they're inverted into
+the wire's target-keyed `column_map` (still target-key -> column
+internally; only the picker's own orientation changed, not the request
+shape), a second claim on one key has already silently overwritten the
+first with no way to tell after the fact.
 
 **Sign convention is fixed, not configurable per rule**: a negative
 `Amount` debits the Category account and credits the Account (money

@@ -44,10 +44,11 @@ function skippedRowsMessage(errors: string[]): string {
 }
 
 // One entry of `service.IMPORT_MAPPED_FIELDS` — the backend's own
-// six-target-field list (Money Account/Entry Date/Amount required,
-// Payee/Notes/Category optional), read from `POST /import/mapped/columns`'
-// own response rather than duplicated here, so this screen's mapping
-// step always matches whatever the backend actually validates against.
+// target-field list (Money Account/Entry Date/Amount required; Payee/
+// Entry Description/Line Memo/Category optional), read from `POST
+// /import/mapped/columns`'s own response rather than duplicated here, so
+// this screen's mapping step always matches whatever the backend
+// actually validates against.
 interface MappedField {
   key: string
   label: string
@@ -83,7 +84,7 @@ interface PreviewResult {
 }
 
 const CHOOSE = { value: '', label: '— choose —' }
-const UNMAPPED = { value: '', label: '— unmapped —' }
+const IGNORE = { value: '', label: '— ignore —' }
 
 interface ImportMappedPanelProps {
   // Called once a batch actually lands, so the container can re-fetch
@@ -112,7 +113,19 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [columns, setColumns] = useState<ColumnsResult | null>(null)
-  const [columnMap, setColumnMap] = useState<Record<string, string>>({})
+  // The mapping step's own state, keyed the way the table now reads —
+  // one entry per *file column*, value the target field key it's mapped
+  // to ('' meaning Ignore). This is the inverse of what the wire format
+  // (`column_map`, target-key -> column) wants; the inversion happens on
+  // submit, in `handleColumnsSubmit`, which is also where a column-level
+  // shape like this earns its keep — it's the only place two different
+  // file columns picking the *same* target is still visible at all. Once
+  // inverted into `column_map`'s target-keyed dict, a second claim on
+  // one key would just silently overwrite the first (`service.
+  // parse_mapped_file`'s own docstring has the same note from the other
+  // side), so `duplicateTargetClaims` below has to be computed from this
+  // state, not from the dict this state gets turned into.
+  const [columnTargets, setColumnTargets] = useState<Record<string, string>>({})
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
 
@@ -132,17 +145,34 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     () => [CHOOSE, ...(postable?.forPickers ?? []).map((p) => ({ value: p.code, label: `${p.code} · ${p.name}` }))],
     [postable],
   )
-  const columnOptions = useMemo(
-    () => [UNMAPPED, ...(columns?.columns ?? []).map((c) => ({ value: c, label: c }))],
+  // Each file-column row's own dropdown: every target field this file's
+  // columns could be mapped onto, defaulting to Ignore. Options, not
+  // values — unlike `accountOptions` this never depends on `columns`'
+  // sample data, only on the target-field list itself.
+  const targetOptions = useMemo(
+    () => [IGNORE, ...(columns?.fields ?? []).map((f) => ({ value: f.key, label: f.label }))],
     [columns],
   )
   // Gates the column-mapping step's own submit — every `required` field
-  // (Money Account/Entry Date/Amount) needs a real column chosen before
-  // there's anything worth previewing; the backend re-checks the exact
-  // same thing (`service.parse_mapped_file`'s own `missing_required`),
-  // this is purely so the button reflects that up front instead of
-  // round-tripping to find out.
-  const missingRequiredFields = (columns?.fields ?? []).filter((f) => f.required && !columnMap[f.key])
+  // (Money Account/Entry Date/Amount) needs some column mapped to it
+  // before there's anything worth previewing; the backend re-checks the
+  // exact same thing (`service.parse_mapped_file`'s own
+  // `missing_required`), this is purely so the button and the "still
+  // needed" strip reflect it up front instead of round-tripping to find
+  // out.
+  const claimedTargetKeys = new Set(Object.values(columnTargets).filter(Boolean))
+  const missingRequiredFields = (columns?.fields ?? []).filter((f) => f.required && !claimedTargetKeys.has(f.key))
+  // The one thing the column-oriented table can express that the wire
+  // format can't (see `columnTargets`' own comment above): two different
+  // file columns both pointed at the same target. Grouped by target key
+  // so the error can name every column involved, not just flag that a
+  // clash exists.
+  const targetClaims = new Map<string, string[]>()
+  for (const [col, target] of Object.entries(columnTargets)) {
+    if (!target) continue
+    targetClaims.set(target, [...(targetClaims.get(target) ?? []), col])
+  }
+  const duplicateTargetClaims = [...targetClaims.entries()].filter(([, cols]) => cols.length > 1)
 
   async function handleUploadSubmit(e: FormEvent) {
     e.preventDefault()
@@ -164,19 +194,29 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
       return
     }
     setColumns(data as unknown as ColumnsResult)
-    setColumnMap({})
+    setColumnTargets({})
     setStep('columns')
   }
 
   async function handleColumnsSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!columns || missingRequiredFields.length) return
+    if (!columns || missingRequiredFields.length || duplicateTargetClaims.length) return
+    // Invert column->target into the wire's target->column shape. Safe
+    // to do with a plain assignment (rather than guarding each write)
+    // because the button above is already disabled while
+    // `duplicateTargetClaims` is non-empty — nothing here silently drops
+    // a second claim on the same key without the user having already
+    // been shown which columns clash.
+    const column_map: Record<string, string> = {}
+    for (const [col, target] of Object.entries(columnTargets)) {
+      if (target) column_map[target] = col
+    }
     setPreviewing(true)
     setFlash(null)
     const { data, error } = await client.POST('/import/mapped/preview', {
       body: {
         filename: columns.filename, target_scenario_id: columns.target_scenario_id,
-        file_content_b64: columns.file_content_b64, column_map: columnMap,
+        file_content_b64: columns.file_content_b64, column_map,
       },
     })
     setPreviewing(false)
@@ -229,7 +269,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   function startOver() {
     setFile(null)
     setColumns(null)
-    setColumnMap({})
+    setColumnTargets({})
     setPreview(null)
     setFlash(null)
     setStep('upload')
@@ -288,51 +328,58 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
         <>
           <p className="page-sub">
             {columns.filename} — {columns.columns.length} column{columns.columns.length === 1 ? '' : 's'} found.
-            Map each field below to whichever of the file's own columns holds it; the sample values are this
-            file's own first few rows, to help tell columns with similar names apart.
+            Every one of the file's own columns is listed below; map each to whichever PostWarden field it holds,
+            or leave it as Ignore. The sample values are this file's own first few rows, to help tell columns
+            with similar names apart.
           </p>
 
           {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
-          <div className="panel">
-            <h2>A look at the file</h2>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="ledger">
-                <thead>
-                  <tr>{columns.columns.map((c) => <th key={c}>{c}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {columns.sample_rows.map((row, i) => (
-                    <tr key={i}>
-                      {columns.columns.map((c) => <td key={c} className="dim">{row[c] || '—'}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           <form onSubmit={handleColumnsSubmit}>
             <div className="panel">
               <h2>Map this file's columns</h2>
-              <table className="ledger">
-                <thead><tr><th>Field</th><th>This file's column</th></tr></thead>
-                <tbody>
-                  {columns.fields.map((f) => (
-                    <tr key={f.key}>
-                      <td>{f.label}{f.required && <span className="dim"> *</span>}</td>
-                      <td>
-                        <Combobox
-                          options={columnOptions}
-                          value={columnMap[f.key] ?? ''}
-                          onChange={(v) => setColumnMap((m) => ({ ...m, [f.key]: v }))}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button type="submit" disabled={previewing || !!missingRequiredFields.length}
+              {/* One row per column found in the file (IMPORT_WIZARD.md §2)
+                  — every column gets an explicit decision, defaulting to
+                  Ignore, rather than the old target-field-oriented table
+                  silently dropping whatever a user never picked. */}
+              <div style={{ overflowX: 'auto' }}>
+                <table className="ledger">
+                  <thead><tr><th>Import file column</th><th>Sample value</th><th>Target data field</th></tr></thead>
+                  <tbody>
+                    {columns.columns.map((c) => (
+                      <tr key={c}>
+                        <td className="mono">{c}</td>
+                        <td className="dim">
+                          {columns.sample_rows.slice(0, 3).map((r) => r[c] || '—').join(', ')}
+                        </td>
+                        <td>
+                          <Combobox
+                            options={targetOptions}
+                            value={columnTargets[c] ?? ''}
+                            onChange={(v) => setColumnTargets((m) => ({ ...m, [c]: v }))}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {!!missingRequiredFields.length && (
+                <p className="dim small" style={{ marginTop: '0.8rem' }}>
+                  Still needed: {missingRequiredFields.map((f) => f.label).join(', ')}
+                </p>
+              )}
+              {duplicateTargetClaims.map(([target, cols]) => (
+                <p className="flash flash-err" key={target} style={{ marginTop: '0.8rem' }}>
+                  {cols.slice(0, -1).join(', ')}{cols.length > 2 ? ',' : ''} and {cols[cols.length - 1]} are
+                  {cols.length > 2 ? ' all' : ' both'} mapped to{' '}
+                  {columns.fields.find((f) => f.key === target)?.label ?? target} — pick one.
+                </p>
+              ))}
+
+              <button type="submit" disabled={previewing || !!missingRequiredFields.length
+                                               || !!duplicateTargetClaims.length}
                       style={{ marginTop: '0.8rem' }}>
                 {previewing ? 'Reading…' : 'Next: map accounts & categories'}
               </button>

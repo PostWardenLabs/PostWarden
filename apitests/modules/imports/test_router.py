@@ -71,7 +71,7 @@ def test_import_csv_endpoint_rejects_a_file_missing_required_columns(book, conn)
 
 
 MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",
-                      "notes": "Notes", "category": "Category", "amount": "Amount"}
+                      "memo": "Notes", "category": "Category", "amount": "Amount"}
 
 
 def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip_content(book, conn):
@@ -86,7 +86,8 @@ def test_import_mapped_columns_endpoint_returns_headers_fields_and_the_roundtrip
     body = resp.json()
     assert body["columns"] == ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
     assert body["sample_rows"][0]["Account"] == "Checking"
-    assert {f["key"] for f in body["fields"]} == {"account", "date", "payee", "notes", "category", "amount"}
+    assert {f["key"] for f in body["fields"]} == \
+        {"account", "date", "payee", "description", "memo", "category", "amount"}
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
     assert "file_content_b64" in body
