@@ -24,9 +24,9 @@ function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || navigator.platform || '')
 }
 
-// altLabel('R') -> "⌥R" on an Apple platform, "Alt+R" everywhere else —
-// matching macOS's own menus, which show a modifier symbol directly
-// against the key rather than spelling out the join.
+// altLabel('R') -> "⌥ R" on an Apple platform, "Alt+R" everywhere else —
+// a space after the symbol since, unlike "Alt+", ⌥ has no trailing
+// character of its own to separate it from the letter.
 export function altLabel(letter: string): string {
-  return isApplePlatform() ? `⌥${letter}` : `Alt+${letter}`
+  return isApplePlatform() ? `⌥ ${letter}` : `Alt+${letter}`
 }
