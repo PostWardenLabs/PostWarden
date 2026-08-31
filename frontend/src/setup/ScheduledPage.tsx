@@ -16,36 +16,29 @@ import EntryGrid from '../journal/EntryGrid'
 import { ensureTrailingBlank, isLineUsed, makeBlankLine, type GridLine } from '../journal/gridLines'
 import { useStagingPendingCount } from '../staging/useStagingPendingCount'
 
-// Ported from app/templates/scheduled.html (Phase 4.2) — the New
-// schedule form is the same `table.ledger.entry-grid` + balance-bar
-// shape as the Journal's own New entry panel (Phase 3.4), sharing one
-// `app.js` between both legacy pages, so this reuses `EntryGrid.tsx`/
-// `gridLines.ts` unchanged and mirrors `NewEntryPanel.tsx`'s own
-// state/handlers rather than reinventing them. Three real differences
-// from that panel, not a shared abstraction of the two:
+// The New schedule form is the same `table.ledger.entry-grid` +
+// balance-bar shape as the Journal's own New entry panel, so this reuses
+// `EntryGrid.tsx`/`gridLines.ts` unchanged and mirrors
+// `NewEntryPanel.tsx`'s own state/handlers rather than reinventing them.
+// Three real differences from that panel, not a shared abstraction of
+// the two:
 //
 // 1. A permanent `<div class="panel">`, not a collapsible `<details>` —
-//    scheduled.html never wraps its form in one (same "add UI is a
-//    permanent panel" shape ScenariosPage.tsx's own Phase 4.2 write-up
-//    already ported for a different screen) — so no Alt+E open/close
-//    shortcut, no `defaultOpen`/`onPosted` handshake with a parent list.
+//    same "add UI is a permanent panel" shape ScenariosPage.tsx uses —
+//    so no Alt+E open/close shortcut, no `defaultOpen`/`onPosted`
+//    handshake with a parent list.
 // 2. Repeats-every/unit/Next-on fields replace a single Date field, and
 //    `target_scenario_id` always requires balance — `modules/scheduling/
 //    service.py::create_schedule`'s own `total != 0` check is
 //    unconditional, unlike `modules/entries/service.py`'s scenario-
 //    dependent `enforce_balance`. The "(single-sided OK)" suffix on a
-//    non-enforcing scenario's own label is kept (matches legacy's
-//    `data-enforce` text) since it still describes a real property of
-//    that scenario — just not a rule *this* form's Save button honors.
-// 3. No Clear button, no Alt+C — scheduled.html's own button row only
-//    ever had Save/Add line/Distribute.
+//    non-enforcing scenario's own label is kept since it still describes
+//    a real property of that scenario — just not a rule *this* form's
+//    Save button honors.
+// 3. No Clear button, no Alt+C.
 //
-// The `pending_count` Staging banner (scheduled.html's own `flash-warn`)
-// is ported now, as a small addendum landing with Staging's own Phase
-// 4.3 rather than here — `useStagingPendingCount.ts` is the one-shot
-// count hook it reads, and `/app/staging` (Phase 4.3) is what it links
-// to, a real client route now instead of the bare `/staging` JSON
-// response this comment used to point at.
+// The `pending_count` Staging banner: `useStagingPendingCount.ts` is the
+// one-shot count hook it reads, and `/app/staging` is what it links to.
 type IntervalUnit = 'day' | 'week' | 'month'
 const INTERVAL_UNITS: IntervalUnit[] = ['day', 'week', 'month']
 

@@ -3,15 +3,10 @@ import { Link } from 'react-router-dom'
 
 import client from '../api/client'
 
-// Ported from app/templates/connect_bi.html (Phase 4.7) — no new backend
-// work at all, unlike this same phase's own dashboard: `GET /settings/
-// connect-bi` and `GET /settings/connect-bi/download.pbids` were already
-// built in `analytics/router.py` back in Phase 1.14, alongside the `/api/*`
-// JSON mirror (see that module's own docstring for why Connect BI lives
-// there rather than a dedicated module). `setup/SettingsPage.tsx`'s own
-// comment claiming this needed "real backend work of its own (Phase 4.7)"
-// was simply wrong — written before anyone had reason to check
-// `analytics/` — corrected in the same commit as this file.
+// `GET /settings/connect-bi` and `GET /settings/connect-bi/
+// download.pbids` are both served by `analytics/router.py`, alongside
+// the `/api/*` JSON mirror (see that module's own docstring for why
+// Connect BI lives there rather than a dedicated module).
 //
 // `GET /settings/connect-bi`'s own response is a plain `dict` (no
 // Pydantic model, same as every report route), so this casts through a

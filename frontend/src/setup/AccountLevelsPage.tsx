@@ -4,14 +4,11 @@ import { Link } from 'react-router-dom'
 import client from '../api/client'
 import { useConfirm } from '../widgets/confirmContext'
 
-// Ported from app/templates/account_levels.html (Phase 4.2) — no
-// vanilla-JS counterpart at all (no select/merge, no edit-mode toggle):
-// legacy's own rename form is a permanently-visible text input + Save
-// button right in the row, not TagsPage.tsx/PayeesPage.tsx's click-to-
-// edit pattern, so this page carries no `editingId` state and doesn't
-// reach for `useSelectMode.ts`/`MergeDialog.tsx` — same "only port what
-// the legacy screen actually does" reasoning ScenariosPage.tsx's own
-// Phase 4.2 write-up already gives for a different shape.
+// No select/merge, no edit-mode toggle: rename is a permanently-visible
+// text input + Save button right in the row, not TagsPage.tsx/
+// PayeesPage.tsx's click-to-edit pattern, so this page carries no
+// `editingId` state and doesn't reach for `useSelectMode.ts`/
+// `MergeDialog.tsx`.
 interface AccountLevelRow {
   id: number
   name: string
@@ -44,9 +41,9 @@ export default function AccountLevelsPage() {
       const rows = data as unknown as AccountLevelRow[]
       setLevels(rows)
       setNames(Object.fromEntries(rows.map((lv) => [lv.id, lv.name])))
-      // Legacy `app/main.py`'s own `next_depth = max(depths, default=0) +
-      // 1` — computed here from the same list rather than a dedicated
-      // route, since no backend route returns it either.
+      // `next_depth = max(depths, default=0) + 1` — computed here from
+      // the same list rather than a dedicated route, since no backend
+      // route returns it.
       setNewDepth(String(Math.max(0, ...rows.map((lv) => lv.depth)) + 1))
     }
   }, [])

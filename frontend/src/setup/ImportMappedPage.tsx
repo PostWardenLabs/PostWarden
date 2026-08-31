@@ -7,14 +7,10 @@ import Combobox from '../widgets/Combobox'
 import FileField from '../widgets/FileField'
 import { usePostableAccounts } from '../widgets/usePostableAccounts'
 
-// Ported from app/templates/import_mapped.html +
-// import_mapped_review.html (Phase 4.7) — legacy's two templates, but
-// only one of them is ever a real routable page: `import_mapped_review.
-// html` has no GET route of its own, it's only ever rendered as `POST
-// /import/mapped/preview`'s direct response body (`app/main.py`'s
-// `import_mapped_preview`). So this is one component with two internal
-// steps (`step` below), not two React Router routes — there's nothing
-// for a second route to point at.
+// The mapped importer's upload + review flow. The review step only ever
+// exists as `POST /import/mapped/preview`'s response body — there's no
+// GET route for it — so this is one component with two internal steps
+// (`step` below), not two React Router routes.
 //
 // `errorDetail`/`ErrorBody`, `IMPORT_MAX_ERRORS_SHOWN`/
 // `skippedRowsMessage` — identical to `ImportPage.tsx`'s own copies.
@@ -39,8 +35,8 @@ function skippedRowsMessage(errors: string[]): string {
 
 // What `POST /import/mapped/preview` hands back — the picker lists plus
 // the three fields the commit step needs to carry forward unchanged
-// (`filename`/`target_scenario_id`/`file_content_b64`), replacing
-// legacy's three hidden form fields with plain component state instead.
+// (`filename`/`target_scenario_id`/`file_content_b64`), held in plain
+// component state.
 interface PreviewResult {
   row_count: number
   accounts_found: string[]
@@ -74,10 +70,9 @@ export default function ImportMappedPage() {
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
 
-  // Keyed exactly like legacy's `account_map__{{ a }}`/`category_map__
-  // {{ c }}` hidden-field naming, minus the prefix: the map's own key is
-  // the file's raw Account/Category value, the value is the real
-  // account's *code* (not id) — `transform_mapped_rows` on the backend
+  // The map's own key is the file's raw Account/Category value, the
+  // value is the real account's *code* (not id) — `transform_mapped_rows`
+  // on the backend
   // looks values up by code, matching `postable_accounts_for_pickers`'
   // own `<option value="{{ p.code }}">`. `IMPORT_MAPPED_NO_CATEGORY`
   // (empty string) is the "(no category)" row's own key, same on both
@@ -134,14 +129,11 @@ export default function ImportMappedPage() {
     })
     setCommitting(false)
     if (error) {
-      // Legacy redirects a total failure back to a *bare* `/import/mapped`,
-      // which loses the uploaded file and every mapping (there's no
-      // server-side state between the two steps to restore from — see
-      // the review template's own comment on why the round trip is a
-      // hidden field, not a stored row). Staying on this same review step
-      // instead — the mappings are still right here in state — is a
-      // strict improvement, not a behavior this port owes fidelity to:
-      // the wire-level validation is identical either way.
+      // Stays on this same review step rather than bouncing back to the
+      // upload step — the mappings are still right here in component
+      // state, there's no server-side state between the two steps to
+      // restore from either way (see the `errors: string[]` shape below:
+      // the round trip is client-held state, not a stored row).
       setFlash({ err: errorDetail(error, 'Could not stage those rows') })
       return
     }
@@ -297,14 +289,13 @@ export default function ImportMappedPage() {
               <button type="submit" disabled={committing} style={{ marginTop: '0.8rem' }}>
                 {committing ? 'Staging…' : `Stage ${preview.row_count} row${preview.row_count === 1 ? '' : 's'}`}
               </button>
-              {/* A real `<button>`, not `<a class="button-link quiet">` like
-                  legacy's — "start over" resets this component's own state,
-                  it doesn't navigate anywhere, and a plain `button.quiet`
+              {/* A real `<button>`, not an `<a class="button-link quiet">`
+                  — "start over" resets this component's own state, it
+                  doesn't navigate anywhere, and a plain `button.quiet`
                   actually gets index.css's `.quiet` styling (it only
-                  targets the element selector, so legacy's own `<a
-                  class="button-link quiet">` rendered as a plain
-                  `.button-link` with `.quiet` doing nothing — not a
-                  behavior worth reproducing). */}
+                  targets the element selector, so an anchor with both
+                  classes would render as a plain `.button-link` with
+                  `.quiet` doing nothing). */}
               <button type="button" className="quiet" style={{ marginLeft: '0.5rem' }} onClick={startOver}>
                 Start over
               </button>

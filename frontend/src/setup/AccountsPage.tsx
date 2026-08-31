@@ -6,15 +6,13 @@ import type { Account, AccountType } from '../api/useAccounts'
 import { useAccountLevels } from '../api/useAccountLevels'
 import { useConfirm } from '../widgets/confirmContext'
 
-// Ported from app/templates/accounts.html + app/static/accounts.js
-// (Phase 4.6) — the Management/CRUD archetype (UI_CONSISTENCY_AUDIT.md
-// §2e/§4b groups Accounts with Payees/Tags/Scenarios/Levels/Scheduled/
-// Templates), but the only one of that family shaped as a two-column
-// level browser over a collapsible tree rather than a flat table. Two
-// distinct backend-already-shipped write paths (Phase 1.9/1.14) drive
-// it: `POST /accounts` (the bottom "New account" panel, an exact code
-// typed in) and `POST /accounts/quick-create` (the tree's own inline
-// "+" gap rows, a code generated server-side) — see
+// The Management/CRUD archetype (UI_CONSISTENCY_AUDIT.md §2e/§4b groups
+// Accounts with Payees/Tags/Scenarios/Levels/Scheduled/Templates), but
+// the only one of that family shaped as a two-column level browser over
+// a collapsible tree rather than a flat table. Two distinct write paths
+// drive it: `POST /accounts` (the bottom "New account" panel, an exact
+// code typed in) and `POST /accounts/quick-create` (the tree's own
+// inline "+" gap rows, a code generated server-side) — see
 // `modules/reference/schemas.py`'s own `CreateAccountRequest`/
 // `QuickCreateAccountRequest` docstrings for why both still exist.
 //
@@ -44,11 +42,10 @@ function errorDetail(error: unknown, fallback: string): string {
   return (error as ErrorBody | undefined)?.detail || fallback
 }
 
-// Ported from accounts.js's own IIFE-scoped `collapsed` init: every
-// summary account starts collapsed on a browser's first visit (nothing
-// in localStorage yet) — true tree browsing, not "everything already
-// expanded" — and exactly whatever was there before once a person has
-// customized it.
+// Every summary account starts collapsed on a browser's first visit
+// (nothing in localStorage yet) — true tree browsing, not "everything
+// already expanded" — and exactly whatever was there before once a
+// person has customized it.
 function loadCollapsed(accounts: Account[]): Set<number> {
   const stored = localStorage.getItem(STORAGE_KEY)
   if (stored !== null) {
@@ -61,12 +58,12 @@ function loadCollapsed(accounts: Account[]): Set<number> {
   return new Set(accounts.filter((a) => !a.is_postable).map((a) => a.id))
 }
 
-// Ported from `_accounts_with_gaps` (app/main.py) — a "+" gap sits
-// before every account row, plus one trailing gap after the last row.
-// Keyed by array position (`gap-${account.id}` isn't unique: the gap
-// immediately before the last account and the trailing gap both track
-// that same account, exactly as legacy's own `track_id` does), not by
-// `track_id`, since two gaps can share one.
+// Mirrors `domain/accounts.py`'s own `accounts_with_gaps` shape — a "+"
+// gap sits before every account row, plus one trailing gap after the
+// last row. Keyed by array position (`gap-${account.id}` isn't unique:
+// the gap immediately before the last account and the trailing gap both
+// track that same account via `track_id`), not by `track_id` itself,
+// since two gaps can share one.
 type Row = { kind: 'gap'; key: string; trackId: number | null } | { kind: 'account'; key: string; account: Account }
 
 function buildRows(sorted: Account[]): Row[] {
@@ -81,10 +78,9 @@ function buildRows(sorted: Account[]): Row[] {
   return rows
 }
 
-// Nearest visible account row in one direction from a gap's own index —
-// ported from accounts.js's `nearestVisible`, which walks DOM siblings;
-// this walks the same flat row array instead, skipping other gaps and
-// anything currently hidden by a collapsed ancestor.
+// Nearest visible account row in one direction from a gap's own index,
+// skipping other gaps and anything currently hidden by a collapsed
+// ancestor.
 function nearestAccount(rows: Row[], index: number, dir: 1 | -1, hidden: Map<number, boolean>): Account | null {
   let i = index + dir
   while (i >= 0 && i < rows.length) {
@@ -113,8 +109,7 @@ export default function AccountsPage() {
   const [isCashflow, setIsCashflow] = useState(false)
   const [creating, setCreating] = useState(false)
 
-  // Inline "+" gap-add form — at most one open at a time, same as
-  // legacy's own `gapRows.forEach(other => other.classList.remove("open"))`.
+  // Inline "+" gap-add form — at most one open at a time.
   const [openGapKey, setOpenGapKey] = useState<string | null>(null)
   const [gapName, setGapName] = useState('')
   const [gapParentId, setGapParentId] = useState('')
@@ -143,8 +138,7 @@ export default function AccountsPage() {
   // Seeded once, from whatever the very first successful fetch returned
   // — a later `reload()` (after creating/toggling an account) must not
   // reset a person's own collapse choices back to the localStorage/
-  // default computation, same as legacy never re-derives `collapsed`
-  // after its own initial page load either.
+  // default computation.
   useEffect(() => {
     if (accounts && !collapsedInit.current) {
       collapsedInit.current = true
@@ -185,8 +179,7 @@ export default function AccountsPage() {
   // client-side re-sort here.
   const rows = useMemo(() => buildRows(accounts ?? []), [accounts])
 
-  // Ported from accounts.js's `confirmIfDuplicateTopLevel` — a warning,
-  // not a block: a second top-level Asset/Liability/Equity/Income
+  // A warning, not a block: a second top-level Asset/Liability/Equity/Income
   // account is a legitimate power-user pattern (splitting "Personal"
   // from "Business" assets, say), Expense is deliberately exempt
   // (db/seed.sql's own 5000-9000 expects several top-level roots), and
@@ -264,10 +257,10 @@ export default function AccountsPage() {
     await reload()
   }
 
-  // Ported from accounts.js's own gap-trigger click handler — computes
-  // the same parent/type default from whichever two rows are currently
-  // visible right around this gap, not the full flat list (a collapsed
-  // summary account's own hidden children must never be "the next row").
+  // Computes the parent/type default from whichever two rows are
+  // currently visible right around this gap, not the full flat list (a
+  // collapsed summary account's own hidden children must never be
+  // "the next row").
   function openGapForm(gapIndex: number) {
     const prev = nearestAccount(rows, gapIndex, -1, hiddenById)
     const next = nearestAccount(rows, gapIndex, 1, hiddenById)
@@ -276,9 +269,9 @@ export default function AccountsPage() {
     if (prev) {
       // An empty summary account (no children anywhere, not just visible
       // ones) is otherwise indistinguishable here from "insert a sibling
-      // after it" — default to "first child of prev" in that case, same
-      // as legacy: an empty summary account's whole reason to exist is
-      // to hold children.
+      // after it" — default to "first child of prev" in that case: an
+      // empty summary account's whole reason to exist is to hold
+      // children.
       const prevIsEmptySummary = !prev.is_postable && !(accounts ?? []).some((a) => a.parent_id === prev.id)
       if (prevIsEmptySummary || (next && next.parent_id === prev.id)) {
         newParentId = String(prev.id)

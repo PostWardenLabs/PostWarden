@@ -14,20 +14,17 @@ import TagInput from '../widgets/TagInput'
 import EntryGrid from '../journal/EntryGrid'
 import { ensureTrailingBlank, isLineUsed, makeBlankLine, type GridLine } from '../journal/gridLines'
 
-// Ported from app/templates/entry_templates.html (Phase 4.2) — the same
-// `table.ledger.entry-grid` + balance-bar shape `ScheduledPage.tsx`'s
-// own Phase 4.2 write-up already explains sharing one `app.js` with the
-// Journal's New entry panel over. Reuses `EntryGrid.tsx`/`gridLines.ts`
-// unchanged, same as that page.
+// The same `table.ledger.entry-grid` + balance-bar shape `ScheduledPage.tsx`
+// and the Journal's New entry panel share. Reuses `EntryGrid.tsx`/
+// `gridLines.ts` unchanged, same as those pages.
 //
 // Simpler than both `NewEntryPanel.tsx` and `ScheduledPage.tsx` in one
-// real way: entry templates aren't scenario-bound at all (`app/main.py`'s
-// own comment on `templates_full`, ported verbatim into `modules/
-// scheduling/repository.py`) — no Scenario field, and the account picker
-// uses `usePostableAccounts()`'s own `forPickers` (the union across every
-// scenario), exactly the case that field's own Phase 3.4 docstring
-// names as its reason for existing ("entry_templates.html isn't
-// scenario-bound"). Balance is still unconditionally required
+// real way: entry templates aren't scenario-bound at all (`modules/
+// scheduling/repository.py`'s own comment) — no Scenario field, and the
+// account picker uses `usePostableAccounts()`'s own `forPickers` (the
+// union across every scenario), exactly the case that field's own
+// docstring names as its reason for existing. Balance is still
+// unconditionally required
 // (`modules/scheduling/service.py::create_template`'s own `total != 0`
 // check, identical to `create_schedule`'s), and the row of buttons below
 // is Save/Add line/Distribute with no Clear, same as Scheduled.

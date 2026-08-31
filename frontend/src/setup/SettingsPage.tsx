@@ -4,43 +4,30 @@ import { Link } from 'react-router-dom'
 import { useSession } from '../auth/sessionContext'
 import { centsEntryEnabled, setCentsEntryEnabled } from '../format/centsEntry'
 
-// Ported from app/templates/settings.html (Phase 4.2, the last screen in
-// this phase) — a hub of small, mostly-independent panels, not a single
-// CRUD entity, so this reads differently from every other screen this
-// phase built. Two of its panels are genuinely new backend-facing work
-// (Account, wired to `modules/auth/router.py`'s already-existing
+// A hub of small, mostly-independent panels, not a single CRUD entity,
+// so this reads differently from every other screen. Account is genuine
+// backend-facing work (wired to `modules/auth/router.py`'s
 // `/settings/username`/`/settings/password`, split into its own
-// `SettingsAccountPage.tsx` at `/app/settings/account` exactly like
-// legacy's own separate `account.html`); the rest are pure client-side
-// preference panels whose *mechanism* already existed before this phase
-// touched anything:
+// `SettingsAccountPage.tsx` at `/app/settings/account`); the rest are
+// pure client-side preference panels:
 //
 // - **Appearance (Theme/Font)** — `index.html`'s own pre-paint `<head>`
-//   script (Phase 2.4) already reads `postwarden-theme`/`postwarden-font`
-//   from `localStorage` and stamps `data-theme`/`data-font` on `<html>`
-//   before first paint; this panel is the first thing that ever *writes*
-//   those keys. Mirrors legacy `theme.js`'s own default-is-no-attribute
-//   shape (removing the key/attribute entirely at the default "slate"/
-//   "system", not writing the default value).
-// - **Amount entry** — `format/centsEntry.ts` (this phase), a verbatim
-//   port of `cents-entry.js`'s `document`-level delegated listener,
-//   already active globally (wired once in `main.tsx`) the moment this
-//   phase's own commit landed; this toggle is its only UI.
-// - **Number & date format** — `format/money.ts` (Phase 3.3) already
-//   reads `postwarden-number-format` fresh on every `formatMoney()` call;
-//   `format/date.ts` (this phase) does the same for `postwarden-date-
-//   format`, now wired into the five screens legacy's own `dateformat`
-//   Jinja filter actually reached (`entries.html`, `ledger.html`,
-//   `cash_flow.html`, `scheduled.html`, plus `dashboard.html`/
-//   `staging.html`, neither built yet). This panel is the first thing
-//   that writes either key.
+//   script reads `postwarden-theme`/`postwarden-font` from `localStorage`
+//   and stamps `data-theme`/`data-font` on `<html>` before first paint;
+//   this panel is the only thing that ever *writes* those keys. Removes
+//   the key/attribute entirely at the default "slate"/"system" rather
+//   than writing the default value.
+// - **Amount entry** — `format/centsEntry.ts`'s `document`-level
+//   delegated listener is active globally (wired once in `main.tsx`);
+//   this toggle is its only UI.
+// - **Number & date format** — `format/money.ts` reads
+//   `postwarden-number-format` fresh on every `formatMoney()` call;
+//   `format/date.ts` does the same for `postwarden-date-format`. This
+//   panel is the only thing that writes either key.
 //
 // "Connect Power BI / Excel" is a real `<Link>` to `/app/settings/
-// connect-bi` as of Phase 4.7's own `ConnectBiPage.tsx` — the backend it
-// needs (`analytics/router.py`'s `GET /settings/connect-bi*`) was
-// actually already built back in Phase 1.14, so this link's own
-// "not built yet" deferral, still worded that way immediately above
-// until this edit, was stale from the moment that landed.
+// connect-bi` (`ConnectBiPage.tsx`) — the backend it needs
+// (`analytics/router.py`'s `GET /settings/connect-bi*`) already exists.
 const THEMES: { value: string; label: string }[] = [
   { value: 'slate', label: 'Slate' },
   { value: 'ledger', label: 'Ledger' },

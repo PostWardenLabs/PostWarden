@@ -1,29 +1,22 @@
 import { useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-// Ported from app/templates/help.html (Phase 4.7, this phase's last
-// screen) — purely static prose, no backend calls at all. Every
-// cross-reference that pointed at another screen (`/staging`,
-// `/entries?new=1`, `/budget`, `/scenarios`, ...) is now a real
-// `<Link>` into that screen's own `/app/*` route, since all of them
-// exist by this point in the rebuild; `/entries/export.csv` stays a
-// plain `<a href>` for the same reason Connect BI's `.pbids` link and
-// the plain Import screen's own CSV export links do — a real file
-// download, not a client-fetched route. The in-page jump-nav anchors
-// (`#journal`, `#scheduled`, ...) are unchanged from legacy — plain
-// `<a href="#...">`, no scroll-spy/`active` state; legacy's own version
-// never had one either (`help.html`'s `<nav class="side-nav">` has no
-// companion JS file, unlike `.side-nav`'s other user, AccountsPage.tsx's
-// level-filter buttons).
+// Purely static prose, no backend calls at all. Every cross-reference
+// that points at another screen (`/staging`, `/entries?new=1`,
+// `/budget`, `/scenarios`, ...) is a real `<Link>` into that screen's
+// own `/app/*` route; `/entries/export.csv` stays a plain `<a href>` for
+// the same reason Connect BI's `.pbids` link and the plain Import
+// screen's own CSV export links do — a real file download, not a
+// client-fetched route. The in-page jump-nav anchors (`#journal`,
+// `#scheduled`, ...) are plain `<a href="#...">`, no scroll-spy/`active`
+// state.
 //
-// One real addition over legacy: `ImportPage.tsx`'s and
-// `ImportMappedPage.tsx`'s own help icons link to `/app/help#import`,
-// which — unlike legacy's full-page navigation, where the browser
-// itself jumps to the anchor — needs a manual scroll on mount, since
-// React Router doesn't scroll to a URL's hash on its own (no data
+// `ImportPage.tsx`'s and `ImportMappedPage.tsx`'s own help icons link to
+// `/app/help#import`, which needs a manual scroll on mount, since React
+// Router doesn't scroll to a URL's hash on its own (no data
 // router/`<ScrollRestoration>` in this app). First and only place this
-// rebuild needs that, so it's a plain local `useEffect` here rather
-// than a shared hook with one caller.
+// app needs that, so it's a plain local `useEffect` here rather than a
+// shared hook with one caller.
 export default function HelpPage() {
   const location = useLocation()
 

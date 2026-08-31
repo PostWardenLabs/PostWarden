@@ -4,28 +4,21 @@ import { Link } from 'react-router-dom'
 import client from '../api/client'
 import { useSession } from '../auth/sessionContext'
 
-// Ported from app/templates/account.html (Phase 4.2) — the "Manage
-// account" destination `SettingsPage.tsx`'s own Account panel links to,
-// same split legacy already had (`/settings` is the hub, `/settings/
-// account` is this form). Backend routes already existed before this
-// phase touched anything (`modules/auth/router.py`'s `POST /settings/
-// username`/`POST /settings/password`, mounted since Phase 1.14).
+// The "Manage account" destination `SettingsPage.tsx`'s own Account
+// panel links to (`/settings` is the hub, `/settings/account` is this
+// form). Backed by `modules/auth/router.py`'s `POST /settings/username`/
+// `POST /settings/password`.
 //
-// One real, medium-dictated difference on the password form: legacy
-// redirects to `/login?ok=Password+changed...` after
-// `delete_all_sessions_for_user` — a real page navigation, so the flash
-// survives in the URL. `LoginPage.tsx` has no equivalent yet (see its
-// own file comment: "nothing in the SPA redirects to a login screen on
-// success today"), and adding one is out of scope for this screen alone.
-// Shown inline here instead, then `session.logout()` (which clears local
+// After a password change, `change_password`'s own
+// `delete_all_sessions_for_user` invalidates every session, including
+// this one, before the response is even sent — so the confirmation is
+// shown inline here first, then `session.logout()` (which clears local
 // session state and drops this component in favor of `LoginPage`) fires
 // after a short delay — long enough to actually read the confirmation
-// before being signed out, not so long it feels stuck. The session is
-// already dead server-side the moment `POST /settings/password` returns
-// 200 (`change_password`'s own `delete_all_sessions_for_user` runs before
-// responding), so nothing is lost by the delay — any other request in
-// that window would already 401 on its own via `client.ts`'s global
-// unauthorized handler.
+// before being signed out, not so long it feels stuck. Nothing is lost
+// by the delay: the session is already dead server-side, so any other
+// request in that window would already 401 on its own via `client.ts`'s
+// global unauthorized handler.
 interface ErrorBody {
   detail?: string
 }
@@ -106,9 +99,9 @@ export default function SettingsAccountPage() {
               // it. Unescaped, this throws "Invalid character in
               // character class" in the console and the native pattern
               // check silently stops validating anything (caught in
-              // Phase 4.2's own manual verification, not by any type
-              // check — TypeScript sees a plain string). Same backend
-              // constraint either way: `modules/auth/schemas.py`'s own
+              // manual verification, not by any type check — TypeScript
+              // sees a plain string). Same backend constraint either
+              // way: `modules/auth/schemas.py`'s own
               // `ChangeUsernameRequest` still owns the real validation.
               pattern="[a-z0-9_.\-]{3,32}"
               title="3-32 characters: lowercase letters, numbers, _ . or -"

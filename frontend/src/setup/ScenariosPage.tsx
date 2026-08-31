@@ -4,20 +4,15 @@ import { Link } from 'react-router-dom'
 import { useAccountLevels } from '../api/useAccountLevels'
 import client from '../api/client'
 
-// Ported from app/templates/scenarios.html (Phase 4.2) — no vanilla-JS
-// counterpart beyond the inline `<script>` toggling the two fields below
-// (ported as a plain `income statement only` boolean gating the render,
-// not a DOM `hidden` toggle). Structurally unlike Payees/Tags: no
-// Select/Merge bar, no inline rename, no Archive/Delete — legacy's own
-// table has exactly one per-row action (Lock/Unlock), and the "add" UI
-// is a permanent `<div class="panel">` form, not a collapsible `<details
-// class="entry-new">` (scenarios.html never wraps it in one, unlike
-// payees.html/tags.html), so this page doesn't reuse `useSelectMode.ts`/
-// `MergeDialog.tsx` at all — nothing here is a set-based bulk operation.
+// Structurally unlike Payees/Tags: no Select/Merge bar, no inline
+// rename, no Archive/Delete — this table has exactly one per-row action
+// (Lock/Unlock), and the "add" UI is a permanent `<div class="panel">`
+// form, not a collapsible `<details class="entry-new">`, so this page
+// doesn't reuse `useSelectMode.ts`/`MergeDialog.tsx` at all — nothing
+// here is a set-based bulk operation.
 //
-// `useAccountLevels()` (`api/useAccountLevels.ts`) is its second caller,
-// exactly as that hook's own Phase 3.4 comment predicted — `usePostable
-// Accounts.ts` was the first.
+// `useAccountLevels()` (`api/useAccountLevels.ts`) is its second caller
+// — `usePostableAccounts.ts` is the first.
 type ScenarioType = 'budget' | 'forecast' | 'what_if'
 const SCENARIO_TYPES: ScenarioType[] = ['budget', 'forecast', 'what_if']
 

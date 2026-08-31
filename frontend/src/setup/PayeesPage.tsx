@@ -6,22 +6,16 @@ import { useConfirm } from '../widgets/confirmContext'
 import MergeDialog from '../widgets/MergeDialog'
 import { useSelectMode } from '../widgets/useSelectMode'
 
-// Ported from app/templates/payees.html + entity-manage.js (Phase 4.2) —
-// same Management/CRUD shape TagsPage.tsx (Phase 3.2) already ported,
-// with three real differences from Tags rather than a shared abstraction
-// (matching TagsPage.tsx's own choice not to factor the entity-specific
-// half out — see useSelectMode.ts's own comment on why only the
-// Select/Merge half is shared):
+// Same Management/CRUD shape TagsPage.tsx uses, with three real
+// differences from Tags rather than a shared abstraction (see
+// useSelectMode.ts's own comment on why only the Select/Merge half is
+// shared):
 //
-// 1. Name is `maxlength="80"` here, not 40 (payees.html's own input).
+// 1. Name is `maxlength="80"` here, not 40.
 // 2. The entry-count cell is a real drill-through link to the Journal
-//    (`/app/entries?payee=...`) — legacy's own `entry_link` macro,
-//    unreachable from TagsPage.tsx (Phase 3.2, predates Journal
-//    existing at all) but real now that JournalPage.tsx (Phase 3.4)
-//    already reads `?payee=`. No `back=` param: JournalPage.tsx's own
-//    Phase 3.4 comment defers that until something in this rebuild
-//    actually sets it, and this is that "something," except it still
-//    doesn't — same reasoning, revisit together.
+//    (`/app/entries?payee=...`), since JournalPage.tsx reads `?payee=`.
+//    No `back=` param: see JournalPage.tsx's own comment on why nothing
+//    sets that yet.
 // 3. No quick-create route rendered here — `POST /payees/quick-create`
 //    exists for the Journal's own Payee combobox (`usePayees.ts`'s
 //    first caller), not this table.

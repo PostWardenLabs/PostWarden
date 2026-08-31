@@ -6,15 +6,12 @@ import { useScenarios } from '../api/useScenarios'
 import Combobox from '../widgets/Combobox'
 import FileField from '../widgets/FileField'
 
-// Ported from app/templates/import.html (Phase 4.7) — the plain
-// double-entry CSV importer. Backend already fully built (`modules/
-// imports/`, Phase 1.8/1.14); this screen is frontend-only, same as
-// every Phase 4 screen except this phase's own Dashboard.
+// The plain double-entry CSV importer.
 //
 // `errorDetail`/`ErrorBody` — same local cast-from-`unknown` shape every
-// write-route screen in this rebuild carries (`PayeesPage.tsx` and
-// onward), since FastAPI's plain `HTTPException(400, detail=...)` isn't
-// typed any more specifically than that in the generated client.
+// write-route screen in this app carries (`PayeesPage.tsx` and onward),
+// since FastAPI's plain `HTTPException(400, detail=...)` isn't typed any
+// more specifically than that in the generated client.
 interface ErrorBody {
   detail?: string
 }
@@ -26,13 +23,11 @@ function errorDetail(error: unknown, fallback: string): string {
 // `IMPORT_MAX_ERRORS_SHOWN` — mirrors `modules/imports/service.py`'s own
 // constant of the same value (20). The backend's success response
 // returns every row error, untruncated (`import_csv`'s own `errors` is
-// the full list); legacy's own truncate-and-append-"...and N more" step
-// happened in the route handler assembling `err_msg`, which has no
-// equivalent here (`service.import_csv` just returns data, it doesn't
-// format a message) — so this screen does that formatting instead,
-// identical logic to Import-with-rule's own review step, which needs
-// the same truncation for the same reason and forks it rather than
-// sharing a one-off helper for two callers.
+// the full list); `service.import_csv` just returns data, it doesn't
+// format a message, so this screen does the truncate-and-append-"...and
+// N more" formatting instead — identical logic to Import-with-rule's own
+// review step, which needs the same truncation for the same reason and
+// forks it rather than sharing a one-off helper for two callers.
 const IMPORT_MAX_ERRORS_SHOWN = 20
 
 function skippedRowsMessage(errors: string[]): string {
@@ -53,9 +48,8 @@ interface RecentBatch {
 // `created_at` is a real timestamp (TIMESTAMPTZ, `.isoformat()` over the
 // wire), not a plain date — `format/date.ts`'s own `formatDate` only
 // ever handles a bare `YYYY-MM-DD` (its own regex rejects anything
-// else), so this is a small local formatter instead, in the visitor's
-// own local timezone rather than legacy's server-timezone `strftime` —
-// an intentional, minor difference for what's purely an informational
+// else), so this is a small local formatter instead, rendered in the
+// visitor's own local timezone — fine for what's purely an informational
 // "when," not ledger data itself.
 function formatBatchTime(iso: string): string {
   const d = new Date(iso)
