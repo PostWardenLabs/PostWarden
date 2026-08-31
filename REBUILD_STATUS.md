@@ -3966,14 +3966,47 @@ list to grow as items are discovered, not just shrink.
 
 ## Cutover
 
-- [ ] Merge `rebuild` into `master`
-- [ ] Tag, deploy beta first
-- [ ] Exercise beta **authenticated** — an unauthenticated `303` sweep
+- [x] Merge `rebuild` into `master` — fast-forward, `66112fb..37f299c`
+- [x] Tag, deploy beta first — `v0.31.0`, deployed via the existing
+      `notify-postwarden-public.yml` → `deploy-beta.yml` dispatch chain
+- [x] Exercise beta **authenticated** — an unauthenticated `303` sweep
       proves nothing (`auth_gate` redirects before any route body, or
-      its queries, ever run)
-- [ ] This is the cutover, not a staged rollout — no parallel Jinja
+      its queries, ever run). Logged in as `david`, hit `/entries`,
+      `/staging`, `/templates`, `/accounts`, `/tags`, `/scenarios`,
+      `/payees`, `/account-levels`, and all six `/reports/*` — every
+      one `200`. Also deployed `demo.postwarden.org` to the same tag
+      (`deploy-demo.sh`) and re-verified the same way logged in as
+      `demo` — demo isn't touched by a `master` merge on its own, but
+      there's no reason to leave it on the old app once beta's confirmed
+      good, and REBUILD.md decision 6 says no parallel Jinja instance
+      anywhere, not just on beta.
+
+      Found and fixed a real bug in the process, in `PostWardenPublic`
+      (not this repo): every deploy/reset script there ran a bare
+      `docker compose up`/`down`, and Compose auto-merges `docker-
+      compose.override.yml` if one exists next to `docker-compose.yml`
+      — which this repo's root has carried since this cutover, for
+      local hot-reload dev. On beta/demo's own VM checkout, `src/
+      postwarden/static/` (the built frontend) has never actually been
+      generated on disk — only Docker's own `frontend-build` stage
+      produces it, inside the image — so the override's bind mount was
+      shadowing the image's real static assets with that missing host
+      directory. The SPA 404'd outright on the very first post-cutover
+      beta deploy; every API route kept answering fine (they never go
+      through `StaticFiles`), so an unauthenticated sweep would have
+      missed this too. Fixed live by hand, then closed at the source in
+      `PostWardenPublic`: `deploy-beta.sh`, `deploy-beta.yml`'s own
+      inline copy of the same steps, `deploy-demo.sh`, and
+      `reset-demo.sh` (re-copied onto the VM by hand — it isn't git-
+      synced there) all scope explicitly to `-f docker-compose.yml` now.
+- [x] This is the cutover, not a staged rollout — no parallel Jinja
       instance is kept running anywhere once beta is confirmed good
-      (`REBUILD.md` decision 6)
+      (`REBUILD.md` decision 6). Confirmed on the VM itself: `docker ps
+      -a` shows only `postwarden-beta-app-1`/`postwarden-demo-app-1`
+      (both the new image), their two `db` containers, and `cloudflared`
+      — no orphaned legacy container. Beta's git checkout had a leftover
+      `app/__pycache__` (untracked, survives a `reset --hard`) —
+      removed with `git clean -fdx -- app`.
 - [x] Rewrite `docs/ARCHITECTURE.md` to describe the new tree (it is
       deliberately stale until this point — see `CLAUDE.md`)
 - [x] Bump `VERSION` — `0.31.0`, not `1.0.0`: this is still the same
@@ -4082,9 +4115,26 @@ that level get a line of their own.
 
   Also this session: `docs/ARCHITECTURE.md` rewritten from scratch for
   the new tree (was deliberately stale throughout the branch — see
-  `CLAUDE.md`); `VERSION` bumped to `0.31.0`. Remaining Cutover items —
-  the actual merge to `master`, tag, beta deploy, authenticated
-  verification — not yet done as of this entry.
+  `CLAUDE.md`); `VERSION` bumped to `0.31.0`.
+
+  Then the rest of the Cutover checklist, same session: `rebuild` fast-
+  forwarded into `master` and pushed, tagged `v0.31.0`, beta and demo
+  both deployed and verified authenticated (every data-touching route
+  `200`, not just an unauthenticated `303` sweep). Found and fixed a
+  real deploy-time bug along the way, in `PostWardenPublic`: every
+  deploy/reset script there called a bare `docker compose up`/`down`,
+  which silently auto-merges `docker-compose.override.yml` — a file
+  this repo's root has carried only since this same cutover, for local
+  hot-reload dev, and that beta/demo's VM checkout was never meant to
+  see. The override's bind mount shadowed the built frontend with an
+  empty host directory; beta's SPA 404'd outright on the very first
+  post-cutover deploy, invisibly to any check that only hits API
+  routes. Fixed live, then closed at the source in all four places it
+  was duplicated — see the Cutover checklist above for the full
+  writeup. **The rebuild is complete as of this entry** — the app
+  running on beta/demo/every future clone of this repo is the one
+  described throughout this file, not the Jinja2 app REBUILD.md set out
+  to replace.
 
 - **2026-08-30** — Phase 5 item 8 (distinct empty states), implemented
   the copy drafted earlier the same day (see the "second pass" entry
