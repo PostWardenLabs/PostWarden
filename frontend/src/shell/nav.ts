@@ -10,14 +10,13 @@ export interface NavGroup {
   links: NavLink[]
 }
 
-// Mirrors app/templates/base.html's sidebar exactly — same three groups,
-// same order, same link labels/paths.
+// The sidebar's three groups, in order, with their link labels/paths.
 //
 // The Books group's own `key` stays "ledger", not "books" — an arbitrary
-// localStorage identifier (see useSidebarGroupCollapse), left alone for
-// the same reason base.html's own comment gives: it has no coupling to
-// the visible "Books" label, so a future rename doesn't reset anyone's
-// saved collapse state. It happens to equal the Ledger *report* link's
+// localStorage identifier (see useSidebarGroupCollapse) with no coupling
+// to the visible "Books" label, so a future rename doesn't reset
+// anyone's saved collapse state. It happens to equal the Ledger *report*
+// link's
 // own `key` below, in the Reports group — harmless, since group keys and
 // link keys are never compared to each other, only within their own
 // list (group key -> collapse storage, link key -> active-link match).

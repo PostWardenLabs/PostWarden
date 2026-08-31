@@ -31,11 +31,9 @@ import TagsPage from './tags/TagsPage'
 
 // Maps a real browser path to the `current` key Sidebar.tsx/Topbar.tsx
 // use for active-link highlighting — deliberately a plain if-chain, not a
-// lookup shared with nav.ts's own NAV_GROUPS: only two paths are real
-// routes right now, and a link's own `key` (nav.ts) already has to match
-// this independently since neither file imports from the other. Grows by
-// one line per screen as Phase 4 moves each into `/app/*`, same as
-// nav.ts's own `client` flag.
+// lookup shared with nav.ts's own NAV_GROUPS: a link's own `key` (nav.ts)
+// already has to match this independently since neither file imports
+// from the other.
 function routeKey(pathname: string): string {
   if (pathname === '/app/accounts') return 'accounts'
   if (pathname === '/app/tags') return 'tags'
@@ -64,11 +62,10 @@ function routeKey(pathname: string): string {
 }
 
 // Shell's own topbar title, one entry per real route — a plain object
-// keyed the same way `routeKey` above returns, replacing what was a
-// two-way ternary (Phase 3.2) now that a third screen exists. Same
-// `nav.ts`-independent duplication `routeKey` already accepts (see its
-// own comment) rather than importing NAV_GROUPS' own labels, which
-// aren't keyed for a 1:1 lookup this cheap anyway.
+// keyed the same way `routeKey` above returns. Same `nav.ts`-independent
+// duplication `routeKey` already accepts (see its own comment) rather
+// than importing NAV_GROUPS' own labels, which aren't keyed for a 1:1
+// lookup this cheap anyway.
 const PAGE_TITLES: Record<string, string> = {
   accounts: 'Accounts',
   tags: 'Tags',
@@ -95,22 +92,14 @@ const PAGE_TITLES: Record<string, string> = {
   ledger: 'Ledger',
 }
 
-// Root component. As of Phase 3.1, this is the real end-to-end pipeline
-// proof REBUILD_STATUS.md's own checklist wording asked for — not the
-// placeholder `GET /healthz` check Phase 2.1/2.2 used instead (removed
-// here; a working authenticated session is a strictly stronger signal
-// that Vite's build reached FastAPI reached Postgres than a bare
-// liveness ping ever was), and not a hardcoded PLACEHOLDER_USER
-// (Phase 2.4's own stand-in, also removed).
+// Root component. Three-way branch on `session.status`, matching the
+// backend's own `auth_gate`'s "redirect to /login, or don't" logic —
+// just without a redirect, since `LoginPage` and the authenticated app
+// are both this one component tree, not two different server-rendered
+// pages.
 //
-// Three-way branch on `session.status`, matching legacy `auth_gate`'s
-// own "redirect to /login, or don't" logic — just without a redirect,
-// since `LoginPage` and the authenticated app are both this one
-// component tree, not two different server-rendered pages.
-//
-// As of Phase 3.2, the authenticated branch also renders a real
-// `<Routes>` — Tags is the first screen with its own URL (`/app/tags`,
-// not the bare `/tags` GET /tags itself already owns; see main.py's own
+// The authenticated branch renders a real `<Routes>` (`/app/tags`, not
+// the bare `/tags` GET /tags itself already owns; see main.py's own
 // comment on why `/app`, not `/api`). `useLocation()` needs a `<Router>`
 // ancestor, mounted once in main.tsx above everything, including the
 // anonymous/loading branches below — harmless there since neither of

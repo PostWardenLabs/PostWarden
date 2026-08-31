@@ -91,10 +91,9 @@ function rawAmount(v: number): string {
 }
 
 // Same two formulas as `domain.money.variance_amount`/`pct_variance`
-// (backend) — duplicated here, not imported, for the same reason
-// budget-grid.js's own client-side recompute duplicated `_pct_variance`/
-// `_variance_amount` from `app/main.py`: a leaf's own Budgeted figure has
-// to recompute live, in the browser, as it's typed, with no round trip.
+// (backend) — duplicated here, not imported, because a leaf's own
+// Budgeted figure has to recompute live, in the browser, as it's typed,
+// with no round trip.
 function varianceAmount(actual: number, budgeted: number, pctOfBase: boolean): number {
   return pctOfBase ? budgeted - actual : actual - budgeted
 }
@@ -329,8 +328,7 @@ export default function BudgetPage() {
     })
   }
 
-  // Closes on an outside click, Escape, or scroll — same three triggers
-  // budget-grid.js's own shared menu listens for. The anchor itself is
+  // Closes on an outside click, Escape, or scroll. The anchor itself is
   // excluded from the "outside click" check so a second click on the
   // same chevron toggles the menu closed (via toggleMenu's own
   // prev.key === key branch) instead of this effect closing it first and
@@ -621,7 +619,7 @@ function GroupRows({
                 />
                 {/* tabIndex={-1}: a bonus shortcut, not the primary way to
                     enter a value — every cell staying keyboard-typeable is
-                    what actually matters (budget-grid.js's own comment). */}
+                    what actually matters. */}
                 <button
                   type="button"
                   className="quickfill-toggle"

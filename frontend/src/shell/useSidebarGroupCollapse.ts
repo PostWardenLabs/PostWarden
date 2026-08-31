@@ -2,13 +2,11 @@ import { useCallback, useState } from 'react'
 
 const KEY_PREFIX = 'postwarden-sidebar-collapsed-'
 
-// Ported from app/static/sidebar-collapse.js — one localStorage key per
-// group (`key`, matching a group's own data-sidebar-key), not one shared
-// key, so collapsing Reports doesn't touch Books' own saved state.
-// Deliberately doesn't auto-expand a group just because the current page
-// lives inside it — a collapsed section stays collapsed across
-// navigation, the same tradeoff sidebar-collapse.js's own comment
-// accepts (same as a repo sidebar or an IDE's file tree).
+// One localStorage key per group (`key`), not one shared key, so
+// collapsing Reports doesn't touch Books' own saved state. Deliberately
+// doesn't auto-expand a group just because the current page lives
+// inside it — a collapsed section stays collapsed across navigation,
+// same as a repo sidebar or an IDE's file tree.
 export function useSidebarGroupCollapse(key: string) {
   const storageKey = KEY_PREFIX + key
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(storageKey) === '1')

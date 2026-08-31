@@ -73,9 +73,8 @@ export default function TagsPage() {
     }
   }, [])
 
-  // Focus + select the row's own rename input the moment it appears —
-  // entity-manage.js's own `input.focus(); input.select();`, run once per
-  // entry into edit mode (not on every keystroke — this effect is keyed
+  // Focus + select the row's own rename input the moment it appears, run
+  // once per entry into edit mode (not on every keystroke — this effect is keyed
   // on `editingId`, not `editValue`, which matters: an inline ref
   // callback here instead would re-fire — and re-select all the typed
   // text — on every render the input's own onChange causes).
@@ -161,9 +160,8 @@ export default function TagsPage() {
 
   // Survivor is whichever checked row sorts first in the table (matching
   // GET /tags's own `ORDER BY t.name`), not whichever checkbox was
-  // clicked first — same "DOM order, not click order" rule entity-
-  // manage.js's own `Array.from(table.querySelectorAll(...))` read gave
-  // for free and a plain Set can't answer on its own.
+  // clicked first — filtering `tags` (already in that order) rather than
+  // iterating the checked-id Set, which carries no ordering of its own.
   const checkedTags = (tags ?? []).filter((t) => select.checkedIds.has(t.id))
 
   async function confirmMerge(targetName: string) {

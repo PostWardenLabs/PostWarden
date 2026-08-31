@@ -31,11 +31,10 @@ interface SidebarGroupProps {
 }
 
 // A real <button>, not a styled <div> — see index.css's own
-// .sidebar-label comment for why (keyboard reachability, matching
-// sidebar-collapse.js's original element choice). The chevron rotates via
-// the shared .chevron classes (also ported this phase); .collapsed on the
-// wrapping group is what index.css hooks both the chevron rotation and
-// the `display: none` on every sibling <a> off of.
+// .sidebar-label comment for why (keyboard reachability). The chevron
+// rotates via the shared .chevron classes; .collapsed on the wrapping
+// group is what index.css hooks both the chevron rotation and the
+// `display: none` on every sibling <a> off of.
 function SidebarGroup({ group, current }: SidebarGroupProps) {
   const { collapsed, toggle } = useSidebarGroupCollapse(group.key)
   return (

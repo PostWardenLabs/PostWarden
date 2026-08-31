@@ -1,12 +1,9 @@
-/* Design tokens — ported verbatim from app/static/style.css (REBUILD_STATUS.md
-   Phase 2.3): the 320 CSS custom properties across the default palette (Slate)
-   and its 21 --data-theme variants, the three --data-font bundles, and the
-   handful of global element rules (box-sizing, body background/ink/font,
-   default link color, --content-max) that sit alongside them in the source
-   file because nothing below this point in app/static/style.css declares a
-   new custom property — everything past here is components consuming these
-   variables, which land per screen/widget in later phases (2.4 onward), not
-   copied wholesale here. */
+/* Design tokens: the 320 CSS custom properties across the default palette
+   (Slate) and its 21 --data-theme variants, the three --data-font bundles,
+   and the handful of global element rules (box-sizing, body
+   background/ink/font, default link color, --content-max) that sit
+   alongside them — everything past here is components consuming these
+   variables. */
 
 /* ==========================================================================
    PostWarden — design system
@@ -575,16 +572,10 @@ body {
 
 
 /* ==========================================================================
-   Phase 2.4 — shell chrome (sidebar, topbar, footer, flash banners, the
-   shared chevron). Ported byte-for-byte from app/static/style.css, same
-   as index.css's own Phase 2.3 header explains for the design tokens
-   above. Four separate ranges, not one contiguous cut — the source file
-   interleaves shell sections with page-specific ones (the login split
-   screen, the ledger table, forms, ...) that belong to later phases —
-   see REBUILD_STATUS.md's Phase 2.4 write-up for the exact line ranges
-   and the reasoning for including .chevron and the mobile/reduced-motion
-   rules' selectors for components that don't exist in the frontend yet
-   (dead until built, same as most of Phase 2.3's own 21 themes).
+   Shell chrome (sidebar, topbar, footer, flash banners, the shared
+   chevron). Some selectors here — .chevron and a few mobile/
+   reduced-motion rules — target components that don't exist in the
+   frontend yet; harmless dead weight, kept for when they do.
    ========================================================================== */
 /* -- top bar ------------------------------------------------------------- */
 /* .topbar itself is pure chrome — full-bleed background/border, nothing
@@ -679,7 +670,7 @@ html.sidebar-pinned .sidebar-toggle span { background: var(--ink); }
 html.sidebar-pinned .sidebar { box-shadow: none; }
 
 .sidebar-group { padding: 0 0.4rem 1.2rem 1.5rem; }
-/* A real <button>, not a styled <div> (sidebar-collapse.js) — reset to
+/* A real <button>, not a styled <div> — reset to
    plain text since every other button in this app has its own strong
    filled look, wrong for a section label sitting quietly above a list
    of links. Negative margins claw back the same left/right space the
@@ -693,8 +684,8 @@ html.sidebar-pinned .sidebar { box-shadow: none; }
 }
 .sidebar-label:hover { color: var(--ink); }
 /* Chevron points down (expanded, the default) or right (collapsed) —
-   same rotation convention report-tree.js's own tree-toggle already
-   uses, including that shape's own known centering quirk (see
+   same rotation convention .tree-toggle already uses, including that
+   shape's own known centering quirk (see
    .tree-toggle::before's comment): a corner built from the top+right
    border edges carries its visual weight low-and-right within its own
    box, so the *down*-pointing 135deg rotation reads as sitting low
@@ -844,28 +835,12 @@ main { max-width: var(--content-max); margin: 1.6rem auto 3rem; padding: 0 1.25r
 }
 
 /* =========================================================================
-   Phase 2.5 — widget CSS ported from app/static/style.css, verbatim.
-
-   Six more non-contiguous ranges, same methodology as Phase 2.3/2.4: exact
-   line ranges, byte-verified against source, whole rules (and their
-   explanatory comments) kept intact even where a comment references a
-   feature this phase doesn't build yet (.confirm-modal h3's "Edit tags
-   popup" callout, entries-select.js — not ported here; the CSS rule itself
-   is generic and every future modal-with-a-header needs it regardless).
-
-   The first two ranges are foundational, not widget-specific — button/
-   input/select/textarea base styles, .quiet's transparent variant, and
-   the disabled-state specificity fix — included here because all four
-   widgets below are literally built on native <button>/<input> elements
-   and render unstyled without them. Deliberately narrower than the full
-   878–1609 span Phase 2.3/2.4 skipped: still skipping the file-field,
-   checkbox/radio/switch, select-mode, quiet-link, amount-link, and pager
-   rules in between, since nothing in this phase's four widgets touches
-   them and they belong to whichever later archetype actually does. */
+   Widget CSS — button/input/select/textarea base styles, .quiet's
+   transparent variant, and the disabled-state specificity fix, plus the
+   combobox/datepicker/confirm-dialog rules built on top of them. */
 
 /* Every text field, select, and the comboboxes/date inputs skinned on
-   top of one (combobox.js and datepicker.js both leave font-family
-   alone, so they've always inherited this) shares one font: --sans —
+   top of one shares one font: --sans —
    the same face body text, combobox text, and every plain field's
    actual content (a description, a reference, an account/payee name)
    already reads in everywhere else. --mono is reserved for what's
@@ -962,7 +937,7 @@ button.quiet:disabled {
   color: var(--ink-soft); cursor: not-allowed;
 }
 
-/* -- combobox (searchable <select>, see combobox.js) ----------------------
+/* -- combobox (searchable <select>, see Combobox.tsx) ----------------------
    Sans, normal case — NOT the mono/uppercase treatment buttons/checkboxes/
    the date picker get. Those are fixed UI vocabulary ("Post entry",
    "Approve"); a combobox displays actual data instead (an account name, a
@@ -976,8 +951,8 @@ button.quiet:disabled {
    disagree with a plain typed field next to it anymore either, which
    is exactly what used to make a combobox look like a different
    control family from the field beside it. .combobox-option/-empty
-   below still set it explicitly: those are plain <div>s (see
-   combobox.js), not real form controls, so they never matched the
+   below still set it explicitly: those are plain <div>s, not real form
+   controls, so they never matched the
    input/select/textarea rule to begin with — only inheriting --sans
    from all the way up at body kept them in sync before, which held by
    accident more than by design. */
@@ -1008,7 +983,7 @@ button.quiet:disabled {
 }
 .combobox-empty.combobox-error { color: var(--red); }
 
-/* -- date picker (calendar popup, see datepicker.js) ----------------------- */
+/* -- date picker (calendar popup, see DatePicker.tsx) ----------------------- */
 .datepicker { position: relative; width: 100%; }
 .date-input { width: 100%; padding-right: 1.9rem; } /* sans comes from the shared input rule now */
 .date-trigger {
@@ -1096,8 +1071,9 @@ button.quiet:disabled {
 }
 .confirm-message { margin: 0 0 1.1rem; color: var(--ink); font-size: 0.92rem; line-height: 1.45; }
 /* Header for a modal that shows a control rather than a message/actions
-   pair (see entries-select.js's Edit tags popup) — same family/weight as
-   a panel's own h2, one size down since the modal itself is smaller. */
+   pair (see BulkTagsDialog.tsx's Edit tags popup) — same family/weight
+   as a panel's own h2, one size down since the modal itself is
+   smaller. */
 .confirm-modal h3 { margin: 0 0 0.9rem; font-family: var(--serif); font-size: 1.05rem; font-weight: 600; color: var(--ink); }
 .confirm-actions { display: flex; justify-content: flex-start; gap: 0.5rem; }
 /* Same red the rest of the app already uses for "this is destructive/
@@ -1115,27 +1091,14 @@ button.quiet:disabled {
 
 
 /* ==========================================================================
-   Phase 3.1 (login) — four more ranges out of app/static/style.css,
-   extracted the same way as Phase 2.3/2.4/2.5's own (sed -n, then a
-   byte-diff against this file's own copy): the login split-screen +
-   demo callout (734-812 — flagged back in Phase 2.3's own write-up as
-   "a real different phase, Phase 3.1, not just some selectors don't
-   exist yet"), label.field + label.field[hidden] (1249-1274, minus the
-   .amount-range rule sharing that neighborhood — the Amount filter
-   doesn't exist yet), .checkline (1407-1418, the checkbox-label style
-   the login form's own "Remember me" uses), and .grid-form
-   (2110-2111 — the login form's own single-column layout, forced via
-   its inline style="grid-template-columns: 1fr", per .auth-form-wrap's
-   own comment below). Everything else in each of these three
-   neighborhoods (.bar, .amount-range, .memo-cell, .select-only,
-   .panel, .stat-label/.stat-value) belongs to archetypes not built yet
-   and stays out for the same reason Phase 2.3/2.4 already gave.
+   Login — split-screen layout, form fields, and the demo callout.
    ========================================================================== */
 
-/* -- login: a split screen instead of the standard topbar/main chrome —
-   see login.html's {% block chrome %} override. Brand on the left (the
-   one place in the app "PostWarden" gets to be the whole point, rather than
-   a muted trailer after the page name), the form on the right. */
+/* -- login: a split screen instead of the standard topbar/main chrome,
+   rendered by LoginPage.tsx directly rather than through Shell.tsx.
+   Brand on the left (the one place in the app "PostWarden" gets to be
+   the whole point, rather than a muted trailer after the page name),
+   the form on the right. */
 .auth-split { display: flex; min-height: 100vh; }
 .auth-brand {
   flex: 1 1 50%; position: relative;
@@ -1256,26 +1219,13 @@ label.field[hidden] { display: none; }
              gap: 0.8rem; align-items: end; }
 
 /* =========================================================================
-   Phase 3.2 — Tags (the Management/CRUD archetype) CSS ported from
-   app/static/style.css, verbatim.
-
-   Ten non-contiguous ranges, same "exact line ranges, byte-verified
-   against source" methodology as every prior CSS-porting phase. The
-   "entries browser" range (details.entry/.entry-new) is imported whole,
-   including entry-journal/entry-staging's own grid-column rules and the
-   absolutely-positioned per-row checkbox gutter — neither is used by
-   Tags' own "+ Add tag" panel (which only needs the base details.entry
-   box/border and .entry-new's dashed-quiet summary), but both belong to
-   this exact same comment block and exist purely to be reused unchanged
-   once Journal/Staging (Phase 3.4/4.3) need them — pre-importing avoids
-   re-opening this same file to add back what was surgically excluded the
-   first time.
-
-   table.ledger only gets its base/th/td/.num rules here, not the whole
-   ~260-line section style.css groups it in — .report-table, sticky
-   headers/columns, the t-account/depth-N variants, and the rest all
-   belong to reports (Phase 3.3+) and Accounts (Phase 4.6), not Tags'
-   own four-column list. */
+   Management/CRUD archetype CSS (Tags, Payees, Scenarios) — table.ledger's
+   base/th/td/.num rules, plus details.entry/.entry-new (the "+ Add"
+   panel), including entry-journal/entry-staging's own grid-column rules
+   and the absolutely-positioned per-row checkbox gutter that Journal/
+   Staging reuse unchanged. Reports and Accounts add their own rules on
+   top of table.ledger separately — sticky headers/columns, the
+   t-account/depth-N variants, and the rest aren't needed here. */
 table.ledger {
   width: 100%; border-collapse: collapse; font-size: 0.9rem;
   background: var(--paper);
@@ -1315,7 +1265,7 @@ table.ledger .num, table.ledger th.num {
   margin-bottom: 1.1rem;
 }
 
-/* -- "select entries" mode (Journal — see entries-select.js) --------------
+/* -- "select entries" mode (Journal — see useSelectMode.ts) ---------------
    Hidden until toggled on: reading the Journal is the common case,
    selecting entries for a bulk action is the deliberate exception, unlike
    Staging where every row is a candidate for Approve/Reject by default.
@@ -1336,13 +1286,13 @@ table.ledger .num, table.ledger th.num {
 .select-only { display: none; }
 body.select-mode label.checkline.select-only { display: flex; }
 body.select-mode button.select-only { display: inline-block; }
-/* Payees/Tags' own Select mode (entity-manage.js) reuses this exact
+/* Payees/Tags' own Select mode (useSelectMode.ts) reuses this exact
    body.select-mode hook rather than a second one — same reasoning as
    above, just table cells instead of a details-summary gutter: each
    row's checkbox lives in its own <td>, so revealing it needs
    table-cell, not flex/inline-block. */
 body.select-mode td.select-only, body.select-mode th.select-only { display: table-cell; }
-/* Find Duplicates' (StagingDuplicatesPage.tsx, Phase 4.5) own group-level
+/* Find Duplicates' (StagingDuplicatesPage.tsx) own group-level
    "select all in this section" sits inline next to its group heading
    (not on its own line, the way a page-level "select all" bar item is)
    — needs `inline-flex`, not the generic rule's plain `flex`, or it
@@ -1471,10 +1421,9 @@ details.entry-new summary {
 details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
 
 /* -- entity manager (Payees, Tags) ---------------------------------------
-   Both pages share one shape (see entity-manage.js): a Select/Merge bar,
-   a table with a select-only checkbox column, and per-row Edit/Archive/
-   Delete (Tags: Edit/Delete only — see main.py's Tags section for why it
-   carries no Archive). */
+   Both pages (PayeesPage.tsx, TagsPage.tsx) share one shape: a
+   Select/Merge bar, a table with a select-only checkbox column, and
+   per-row Edit/Archive/Delete. */
 .entity-table td.actions { white-space: nowrap; }
 .entity-table td.actions form { display: inline; }
 .entity-table td.actions > * + * { margin-left: 0.4rem; }
@@ -1489,8 +1438,8 @@ details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
    the browser's built-in `[hidden] { display: none }` default at equal
    specificity, so the rename form would sit there rendered — right next
    to the label it's supposed to replace — despite the `hidden` attribute
-   entity-manage.js relies on to keep it out of the way until Edit is
-   clicked. */
+   PayeesPage.tsx/TagsPage.tsx rely on to keep it out of the way until
+   Edit is clicked. */
 .entity-rename-form[hidden] { display: none; }
 .entity-rename-input {
   font: inherit; font-family: inherit; color: inherit;
@@ -1504,46 +1453,15 @@ details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
 .inactive { opacity: 0.45; }
 
 /* =========================================================================
-   Phase 3.3 — Trial Balance (the Point-in-time report archetype) CSS
-   ported from app/static/style.css, verbatim.
-
-   Nine byte-verified ranges, same "exact line ranges, byte-verified
-   against source" methodology as every prior CSS-porting phase.
-   table.ledger's own base/th/td/.num already landed in Phase 3.2 (Tags),
-   so this batch is everything a report needs on top of that: .page-head/
-   .page-sub/.help-icon (every report page's own header row), .table-scroll
-   + .report-table's width/sizing rules, .report-frame/.report-export
+   Report archetype CSS (Trial Balance and its siblings), on top of
+   table.ledger's own base/th/td/.num rules: .page-head/.page-sub/
+   .help-icon (every report page's own header row), .table-scroll +
+   .report-table's width/sizing rules, .report-frame/.report-export
    (right-aligning Export CSV/XLSX to the table's own width), the sticky
    header-row-plus-two-columns block, the tinted money-column/type-head/
    subtotal/grand-total rules, .quiet-link/a.amount-link (the prev/next
-   month links and the Debit/Credit drill-through into a filtered Journal
-   — .amount-link itself has no live target yet, same "don't reach into a
-   screen that doesn't exist yet" reasoning Tags' own entry-count column
-   already applied; it renders, it just isn't clickable-through until
-   Phase 3.4 / /app/entries exists), and report-tree.js's own
-   .acct-name/.depth-N/.tree-toggle collapse mechanics.
-
-   Two things deliberately still NOT ported, staying deferred exactly as
-   Phase 3.2's own note said they would:
-   - .period-label/.period-start/.period-agg (Income Statement Split's
-     own multi-column-group header treatment) and .activity-desc-cell
-     (the Dashboard widget's flow-label styling) — both sit inside the
-     same source stretch as the money-column rules above but belong to
-     screens this phase doesn't touch (Income Statement is Phase 4;
-     Dashboard's real widget is later still), so pulling them in now
-     would be importing UI with no caller, unlike the "+Add tag" panel's
-     whole-block import (Phase 3.2), which *did* have every piece used
-     somewhere on that same page.
-   - .t-account/.two-col/.side-nav and the data-postable half of the
-     tree-toggle rules (Ledger's card grid, Accounts' own level browser)
-     — genuinely different pages (Phase 3.3/4.6 per Phase 3.2's own
-     note), kept out for the same reason. tr[data-postable="0"]'s own
-     selectors are ported anyway, since they share one indivisible
-     comment block with tr[data-has-children="1"] (Trial Balance's own
-     selector) in the source — same "whole coherent block, not
-     surgically trimmed" call Phase 3.2 made for entry-journal/
-     entry-staging's grid columns; Accounts (Phase 4.6) picks them up
-     for free when it gets there. */
+   month links and the Debit/Credit drill-through into a filtered
+   Journal), and .acct-name/.depth-N/.tree-toggle collapse mechanics. */
 
 .page-sub { color: var(--ink-soft); font-size: 0.88rem; margin: 0 0 1.2rem; }
 
@@ -1781,7 +1699,7 @@ table.ledger td.money-first, table.ledger th.money-first {
 table.ledger td.money-last, table.ledger th.money-last {
   border-right: 1px solid color-mix(in srgb, var(--red) 45%, transparent);
 }
-/* Income Statement's Split view only (Phase 4.1). .period-label centers
+/* Income Statement's Split view only. .period-label centers
    the period super-header ("2026-08", "This Quarter", ...) — it spans
    every sub-column beneath it (Actual/Variance/%Variance/Compare), so
    right-aligning it the same as a plain numeric header (table.ledger
@@ -1826,7 +1744,7 @@ tr.grand td { font-weight: 700; border-bottom: none; padding-top: 0.7rem; }
 tr.grand td.num { border-bottom: 3.5px double var(--ink); }
 tr.grand.out-of-balance td.num { border-bottom: 3.5px double var(--red); color: var(--red); }
 
-/* Ledger (Phase 4.1) — a wrapped grid of small, fixed-width four-column
+/* Ledger — a wrapped grid of small, fixed-width four-column
    ledger cards (Date/Debit/Credit/Date), one per account, instead of the
    one wide table.ledger.report-table every other report renders. Each
    card is still a real table.ledger (same money/grand treatment, so a
@@ -1874,7 +1792,7 @@ table.ledger.t-account caption {
 .t-account td.t-divider, .t-account th.t-divider { border-left: 2px solid var(--rule-strong); }
 table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; }
 
-/* Find Duplicates (StagingDuplicatesPage.tsx, Phase 4.5) — same
+/* Find Duplicates (StagingDuplicatesPage.tsx) — same
    section-label treatment as the Ledger page's own .t-section-label, one
    real table.ledger per group rather than per-account cards. */
 .duplicate-group { margin-top: 1.5rem; }
@@ -1891,9 +1809,9 @@ table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; 
   text-decoration: none; border-bottom: 1px dotted var(--rule-strong);
 }
 .quiet-link:hover { color: var(--ink); border-bottom-color: var(--ink); }
-/* A <button> version of the same look — Staging's inline "Edit" (see
-   staging-inline-edit.js) is a click handler, not a navigation, so it
-   can't be the <a> every other .quiet-link is; this strips the
+/* A <button> version of the same look — Staging's inline "Edit" is a
+   click handler, not a navigation, so it can't be the <a> every other
+   .quiet-link is; this strips the
    browser's own button chrome (border, background, that ambient
    padding-block a <button> gets that an <a> never did) back down to
    plain text with the same dotted underline. */
@@ -1924,7 +1842,7 @@ table.ledger td.acct-name.depth-4 { padding-left: 3.9rem; }
 table.ledger td.acct-name.depth-5 { padding-left: 5.2rem; }
 table.ledger td.acct-name.depth-6 { padding-left: 6.5rem; }
 
-/* Collapse/expand — see accounts.js. The arrow is reserved space on every
+/* Collapse/expand — see useCollapsibleTree.ts. The arrow is reserved space on every
    row (empty for leaves) so names always line up regardless of hover
    state; it's only visible (revealed on hover) or interactive on summary
    rows, and stays visible once a group is collapsed so the state itself
@@ -1964,7 +1882,7 @@ tr[data-postable="0"] .acct-name:hover .tree-toggle { opacity: 1; }
 tr[data-postable="0"]:hover td { background: var(--paper-deep); }
 tr.collapsed .tree-toggle { opacity: 1; }
 
-/* Same tree on Trial Balance/Balance Sheet (see report-tree.js) — but the
+/* Same tree on Trial Balance/Balance Sheet (see useCollapsibleTree.ts) — but the
    toggle stays visible without hovering: scanning a report's numbers is
    the point, not browsing structure, so which rows expand shouldn't be a
    secret until you happen to mouse over them. */
@@ -1978,20 +1896,18 @@ tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
 .small { font-size: 0.8rem; }
 
 /* =========================================================================
-   Phase 4.6 — Accounts (the chart-of-accounts management screen) CSS
-   ported from app/static/style.css, verbatim except one additive
-   selector (noted below). The tree/collapse mechanics themselves
-   (`.acct-name`/`.depth-N`/`.tree-toggle`/`data-postable`) already
-   landed in Phase 3.3 above — this is only what Accounts adds on top:
-   the two-column level browser and the inline "+" gap-add rows.
+   Accounts (the chart-of-accounts management screen) — the tree/collapse
+   mechanics (`.acct-name`/`.depth-N`/`.tree-toggle`/`data-postable`) are
+   shared with the report archetype above; this is only what Accounts
+   adds on top: the two-column level browser and the inline "+" gap-add
+   rows.
 
    `.side-nav`'s per-item filters are plain `<button>`s in
    AccountsPage.tsx, not `<a href>` — they re-filter the same
    already-fetched account list by depth client-side rather than
-   navigating anywhere, so a real anchor would misrepresent them as
-   navigable resources the way legacy's own full-page `?level_id=`
-   links were. `.side-nav button` is added alongside every `.side-nav
-   a` selector for exactly that reason, with a small reset
+   navigating anywhere, so a real anchor would misrepresent them as a
+   navigable resource. `.side-nav button` is added alongside every
+   `.side-nav a` selector for exactly that reason, with a small reset
    (background/border/text-align) `<a>` never needed; "Manage levels…"
    is a real `<Link>` (a genuine route change) and keeps using the `a`
    selectors unchanged. */
@@ -2012,14 +1928,13 @@ tr[data-has-children="1"]:hover td { background: var(--paper-deep); }
 .two-col-main { flex: 1; min-width: 0; }
 .two-col-main > h2:first-child { margin-top: 0; }
 
-/* Inline "add category here" gap rows, Actual Budget-style — ported
-   from accounts.js's own DOM-toggle version. AccountsPage.tsx
-   conditionally renders either the trigger button or the form instead
-   of toggling an `.open` class over both already-present elements, so
-   `.add-gap .add-gap-trigger`/`.add-gap-form`'s own `display: none`
-   defaults never actually have anything to hide here — kept anyway
-   since they're harmless and this stays a verbatim port rather than a
-   trimmed-down rewrite. */
+/* Inline "add category here" gap rows, Actual Budget-style.
+   AccountsPage.tsx conditionally renders either the trigger button or
+   the form rather than toggling an `.open` class over both
+   already-present elements, so `.add-gap .add-gap-trigger`/
+   `.add-gap-form`'s own `display: none` defaults never actually have
+   anything to hide here — harmless, kept for symmetry with the rest of
+   this rule set. */
 tr.add-gap td {
   padding: 0; border: none; height: 0.45rem; position: relative;
 }
@@ -2042,27 +1957,17 @@ tr.add-gap .add-gap-form input[type="text"] { flex: 1; min-width: 10rem; }
 tr.add-gap .add-gap-type { max-width: 11rem; }
 
 /* =========================================================================
-   Phase 3.4 — Journal (the hardest screen, and REBUILD.md §9's own go/
-   no-go gate) CSS ported from app/static/style.css, verbatim.
-
-   Eight byte-verified ranges, same methodology as every prior CSS-
-   porting phase. `details.entry`/`.entry-journal`/`.entry-new`,
-   `.select-only` + `body.select-mode`, `table.ledger`'s base rules, and
-   custom checkbox rendering all already landed in Phase 3.2 (Tags) —
-   entries.html's own summary/checkbox-gutter/select-mode markup reuses
-   every one of those unchanged, which is exactly why that range was
-   pre-imported whole back then. `.quiet-link`/`a.amount-link`/
-   `.combobox-panel` (Phase 2.5/3.3) are reused here too, by TagInput.tsx
-   and the badge/description-cell click targets, with nothing new needed
-   for them.
-
-   What's actually new this phase: the Amount filter's two-input range
-   layout, a memo cell's hover/edit-input look, the pager, the Search
-   field's own magnifying-glass icon, the entry-grid's column widths, the
-   balance bar, the reversal/tag badges, and the tag chip input. */
+   Journal — the Amount filter's two-input range layout, a memo cell's
+   hover/edit-input look, the pager, the Search field's own
+   magnifying-glass icon, the entry-grid's column widths, the balance
+   bar, the reversal/tag badges, and the tag chip input. Reuses
+   `details.entry`/`.entry-journal`/`.entry-new`, `.select-only` +
+   `body.select-mode`, `table.ledger`'s base rules, custom checkbox
+   rendering, `.quiet-link`/`a.amount-link`/`.combobox-panel` from the
+   rule sets above unchanged. */
 .amount-range { display: flex; align-items: center; gap: 0.4rem; }
 
-/* -- Journal line memo, click-to-edit (see memo-edit.js) ------------------
+/* -- Journal line memo, click-to-edit ------------------------------------
    Cursor + a faint hover fill are the cell's only "this is clickable"
    signal — no visible border/underline while not editing, so a filled-in
    memo still reads as plain text the rest of the time, same instinct as
@@ -2119,8 +2024,7 @@ table.entry-grid td { padding: 0.2rem 0.3rem; }
 table.entry-grid .col-account { width: 42%; }
 table.entry-grid .col-amount  { width: 15%; }
 
-/* -- budget grid (BudgetPage.tsx, Phase 4.4 — see budget-grid.js for the
-   legacy mechanism this ports) ---------------------------------------- */
+/* -- budget grid (BudgetPage.tsx) ----------------------------------------- */
 .budget-cell { width: 100%; border-color: var(--rule); }
 /* Quick-fill chevron ("Set to ACTUAL value of last month", ...) — sits
    flush against the cell's own input rather than the input having its
@@ -2216,22 +2120,14 @@ table.entry-grid .col-amount  { width: 15%; }
 .tag-chip-remove:hover { color: var(--red); }
 
 /* =========================================================================
-   Phase 4.7 — the last of "The rest": Dashboard, Connect BI, Import,
-   Import with rules, Help. `.stat-row`/`.stat-tile`/`.activity-desc-cell`
-   are Dashboard's own — the first real caller for both; `.activity-desc-
-   cell` was deliberately deferred all the way back at Phase 3.2's own
-   CSS-porting pass for exactly this reason (see that range's own
-   comment above `.small`). `.panel`/`.panel h2` is a second deferred
-   gap, closed here for the same reason: never actually ported despite
-   `<div className="panel">` already appearing on AccountsPage.tsx
-   (Phase 4.6) and ScenariosPage.tsx's own add-panel — this phase's own
-   Import/Import-with-rules/Connect BI screens are what finally give it
-   more than one caller worth checking against, and it renders exactly
-   as unstyled (no border/background/padding) everywhere it was already
-   in use until this lands. `.file-field`/`.file-field-name` is Import's
-   own file-choose control, ported for `widgets/FileField.tsx`'s first
-   two callers (plain Import, Import with rules). All five ported
-   verbatim from `app/static/style.css`. */
+   The rest: Dashboard, Connect BI, Import, Import with rules, Help.
+   `.stat-row`/`.stat-tile`/`.activity-desc-cell` are Dashboard's own.
+   `.panel`/`.panel h2` is shared with AccountsPage.tsx and
+   ScenariosPage.tsx's own add-panel, and renders exactly as unstyled (no
+   border/background/padding) everywhere it's used. `.file-field`/
+   `.file-field-name` is Import's own file-choose control, for
+   `widgets/FileField.tsx`'s callers (plain Import, Import with
+   rules). */
 .stat-row {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 1rem; margin-bottom: 2rem;

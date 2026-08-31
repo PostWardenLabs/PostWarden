@@ -20,8 +20,8 @@ export function isLineUsed(line: GridLine): boolean {
   return line.account !== '' || line.debit.trim() !== '' || line.credit.trim() !== '' || line.memo.trim() !== ''
 }
 
-// Ported from app.js's own `ensureTrailingBlank` — always exactly one
-// blank row at the end, never trimming the row someone's still focused
+// Always exactly one blank row at the end, never trimming the row
+// someone's still focused
 // in (a fresh combobox search left mid-type, say). `focusedKey` is
 // `NewEntryPanel.tsx`'s own last-focused-row tracking (see its
 // `onFocusRow`), the same value Distribute needs — see its own comment

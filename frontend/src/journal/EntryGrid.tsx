@@ -23,9 +23,7 @@ interface EntryGridProps {
 // Keyboard nav (Enter/Shift+Enter move vertically, same column) is a
 // real DOM query over the rendered table, not a ref registry — the same
 // blend of React state and direct `.focus()` calls `DatePicker.tsx`
-// already uses for its own roving-tabindex grid, for the identical
-// reason: this is genuinely how app.js itself worked (`columns()`
-// re-queries the DOM on every keypress), and a query is simpler than
+// already uses for its own roving-tabindex grid: a query is simpler than
 // threading a per-cell ref map through a table that grows and shrinks
 // rows on every keystroke.
 export default function EntryGrid({ lines, accounts, updateLine, tableRef, onFocusRow }: EntryGridProps) {

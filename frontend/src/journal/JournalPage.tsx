@@ -216,8 +216,8 @@ export default function JournalPage() {
     await reload()
   }
 
-  // Alt+R — same shortcut entries-select.js gives Reverse. Re-registered
-  // each render (cheap, a single document listener) so it always closes
+  // Alt+R for Reverse. Re-registered each render (cheap, a single
+  // document listener) so it always closes
   // over the current selection rather than a stale one from mount.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {

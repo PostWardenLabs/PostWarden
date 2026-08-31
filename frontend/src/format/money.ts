@@ -25,11 +25,8 @@ function prefs(): MoneyPrefs {
 
 // `value` arrives as a JSON string, not a number — `json.py`'s own
 // Decimal encoder (backend) serializes every `NUMERIC(18,2)` figure as a
-// string specifically to avoid float precision loss, the same reason
-// `parseFloat` here (not a plain numeric field) mirrors money-format.js's
-// own `typeof value === "number" ? value : parseFloat(value)` branch,
-// which existed for the identical reason (a DOM `data-value` attribute is
-// always a string too).
+// string specifically to avoid float precision loss, which is why this
+// branches on `typeof value` instead of assuming a plain numeric field.
 export function formatMoney(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return ''
   const n = typeof value === 'number' ? value : parseFloat(value)

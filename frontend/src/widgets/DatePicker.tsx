@@ -74,12 +74,12 @@ export default function DatePicker({ value, onChange, disabled, id, name, placeh
 
   // Closes on Tab (or Shift+Tab) out of the whole widget. Deliberately
   // checks document.activeElement a tick later rather than trusting
-  // focusout's own relatedTarget — ported verbatim from datepicker.js's
-  // own comment: arrow-key navigation below re-renders the grid and
-  // refocuses the new day, destroying the *old* focused button mid-
-  // render, which fires this same focusout with nothing focused for an
-  // instant — reading as "focus left the widget" and closing the panel
-  // out from under its own keyboard navigation if checked synchronously.
+  // focusout's own relatedTarget: arrow-key navigation below re-renders
+  // the grid and refocuses the new day, destroying the *old* focused
+  // button mid-render, which fires this same focusout with nothing
+  // focused for an instant — reading as "focus left the widget" and
+  // closing the panel out from under its own keyboard navigation if
+  // checked synchronously.
   useEffect(() => {
     if (!open) return
     const wrap = wrapRef.current
@@ -93,13 +93,10 @@ export default function DatePicker({ value, onChange, disabled, id, name, placeh
     return () => wrap.removeEventListener('focusout', onFocusOut)
   }, [open])
 
-  // render() in datepicker.js rebuilds every .date-day button from
-  // scratch on each call, so there's no node to call .focus() on until
-  // after that render lands — it re-queries the DOM inline, synchronously,
-  // right after building the grid. React can't do that same-tick DOM
-  // query before paint, so this effect is the equivalent: focusDay()
-  // below stages the target in a ref, and this runs once the grid
-  // showing it has actually committed.
+  // React rebuilds every .date-day button on each render, so there's no
+  // node to call .focus() on until after that render lands and commits.
+  // focusDay() below stages the target in a ref, and this effect runs
+  // once the grid showing it has actually committed.
   useEffect(() => {
     if (!open || !pendingFocusIso.current) return
     const iso = pendingFocusIso.current
