@@ -29,5 +29,14 @@ dev = [
     "httpx>=0.27",
 ]
 
+# `postwarden-cli` isn't the historical invocation (legacy was always
+# `python -m app.cli ...`, and scripts/create_user.sh keeps calling
+# `python -m postwarden.cli ...` for that reason — same convention, new
+# package name) — this entry point is a secondary, equivalent way in,
+# for anyone installing the package directly rather than running it out
+# of a checkout.
+[project.scripts]
+postwarden-cli = "postwarden.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
