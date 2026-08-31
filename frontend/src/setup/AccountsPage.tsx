@@ -373,7 +373,7 @@ export default function AccountsPage() {
                 Showing only <strong>{selectedLevel.name}</strong> — every account sitting exactly at depth{' '}
                 {selectedLevel.depth}, wherever it lives in the tree.
               </p>
-              <table className="ledger">
+              <table className="ledger accounts-table">
                 <thead>
                   <tr>
                     <th>Code</th>
@@ -415,7 +415,7 @@ export default function AccountsPage() {
               </table>
             </>
           ) : (
-            <table className="ledger" id="accounts-tree">
+            <table className="ledger accounts-table" id="accounts-tree">
               <thead>
                 <tr>
                   <th>Code</th>

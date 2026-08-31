@@ -1571,15 +1571,36 @@ details.entry-new.quiet summary { color: var(--ink); font-weight: 500; }
       2), on the same --content-max-free main, without a JS column count
       or a manual "wide" flag on any given page.
 
-   Every other table.ledger (Journal, Payees, Tags, Accounts, ...) is
+   Every other table.ledger (Journal, Payees, Tags, Scenarios, ...) is
    untouched — genuinely a handful of fixed columns regardless of what the
    viewer does with the page, so there was never a stretching problem to
-   fix there. .entry-grid (Journal/Staging/Scheduled/Templates' editable
+   fix there. Accounts gets the same .report-table treatment below, under
+   its own .accounts-table class, for the identical reason report tables
+   needed it. .entry-grid (Journal/Staging/Scheduled/Templates' editable
    line tables) doesn't carry .report-table either and deliberately keeps
    width: 100% — an editable grid's input fields need the room, unlike a
    read-only report's plain text. */
 table.ledger.report-table { width: auto; }
 main:has(table.report-table) { max-width: none; }
+
+/* Accounts' own tree/level tables: same "don't stretch to fill main"
+   fix as .report-table above, for the same reason — table.ledger's base
+   width: 100% forces the browser's auto layout to distribute whatever
+   space is left over among every column, so narrow-content columns
+   (Code, Postable, Cash flow) end up far wider than their own text ever
+   needs while Account and the action buttons drift apart with empty
+   space between them. width: auto lets the table size itself to
+   exactly what its columns' content requires, no more. */
+table.ledger.accounts-table { width: auto; }
+/* Content-width columns can end up narrower than a two-word header
+   ("Cash flow") or the two side-by-side action buttons in the last
+   column — auto layout would otherwise wrap those onto a second line
+   the instant the table's natural width doesn't all fit the
+   container, which is exactly the "no wrapping" case this table's own
+   width fix was for in the first place. nowrap keeps both on one line;
+   the table grows (or the page scrolls) instead of wrapping. */
+table.ledger.accounts-table th,
+table.ledger.accounts-table td:last-child { white-space: nowrap; }
 
 /* .report-frame wraps a report's own Export CSV/XLSX links (.report-export)
    together with its table (or its .table-scroll, for Income Statement's
