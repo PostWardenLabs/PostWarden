@@ -203,6 +203,152 @@ def test_target_fields_for_shape_covers_the_grouped_debit_credit_case():
     assert "category" not in by_key
 
 
+GROUPED_DEBIT_CREDIT_SHAPE = {"rows_per_entry": "grouped", "group_key_column": "Entry #",
+                               "amount_style": "debit_credit"}
+GROUPED_SIGNED_SHAPE = {"rows_per_entry": "grouped", "group_key_column": "Entry #", "amount_style": "signed"}
+ONE_ROW_DEBIT_CREDIT_SHAPE = {"rows_per_entry": "one", "group_key_column": None, "amount_style": "debit_credit"}
+GROUPED_COLUMN_MAP = {"group_key": "Entry #", "date": "Date", "description": "Description",
+                       "account": "Account code", "debit": "Debit", "credit": "Credit"}
+DIRECT_CODE_KIND = {"account": service.IMPORT_COLUMN_KIND_CODE}
+
+
+def test_parse_file_and_transform_rows_match_parse_csv_import_for_a_grouped_debit_credit_direct_code_file(book, conn):
+    # The literal equivalence check IMPORT_WIZARD.md §7 Phase 4 calls
+    # for: today's Export-CSV shape (grouped, Debit/Credit, real account
+    # codes, no value_maps at all) must stage identically whether it goes
+    # through the old `parse_csv_import` or the new `parse_file` +
+    # `transform_rows`.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
+        f"1,2026-08-01,Imported entry,{book['salary']['code']},,40",
+    )
+    old_groups, old_errors = service.parse_csv_import(conn, content)
+    assert old_errors == []
+
+    rows, parse_errors = service.parse_file(content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP)
+    assert parse_errors == []
+    new_groups, new_errors = service.transform_rows(
+        rows, GROUPED_DEBIT_CREDIT_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False)
+    assert new_errors == []
+    assert new_groups == old_groups
+
+
+def test_transform_rows_grouped_debit_credit_reports_one_balance_error_per_group_not_per_row(book):
+    # `parse_csv_import`'s own historical granularity: a group that
+    # doesn't balance is dropped with exactly one error, keyed to the
+    # group's first row — not one error per row inside it.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        f"1,2026-08-01,Off by ten,{book['checking']['code']},50,",
+        f"1,2026-08-01,Off by ten,{book['salary']['code']},,30",
+    )
+    rows, _ = service.parse_file(content, GROUPED_DEBIT_CREDIT_SHAPE, GROUPED_COLUMN_MAP)
+    groups, errors = service.transform_rows(
+        rows, GROUPED_DEBIT_CREDIT_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False)
+    assert groups == []
+    assert len(errors) == 1
+    assert errors[0]["row_no"] == 2
+    assert "doesn't balance" in errors[0]["message"]
+
+
+def test_transform_rows_grouped_signed_accepts_a_repeated_key_with_one_signed_amount_per_row(book):
+    # A new combination with no old-importer equivalent: several rows
+    # sharing a group key, each with its own signed Amount rather than a
+    # Debit/Credit pair.
+    content = _csv(
+        "Entry #,Date,Description,Account code,Amount",
+        f"1,2026-08-01,Rent,{book['checking']['code']},-500",
+        f"1,2026-08-01,Rent,{book['rent']['code']},500",
+    )
+    column_map = {"group_key": "Entry #", "date": "Date", "description": "Description",
+                   "account": "Account code", "amount": "Amount"}
+    rows, parse_errors = service.parse_file(content, GROUPED_SIGNED_SHAPE, column_map)
+    assert parse_errors == []
+    groups, errors = service.transform_rows(
+        rows, GROUPED_SIGNED_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False)
+    assert errors == []
+    [group] = groups
+    amounts = {ln["code"]: ln["amount"] for ln in group["lines"]}
+    assert amounts[book["checking"]["code"]] == Decimal("-500.00")
+    assert amounts[book["rent"]["code"]] == Decimal("500.00")
+
+
+def test_transform_rows_one_row_debit_credit_expresses_a_single_entrys_net_as_two_columns(book):
+    # Another new combination: one row = one entry (like the mapped
+    # importer always worked), but the net is a Debit/Credit pair instead
+    # of one signed Amount column.
+    content = _csv(
+        "Account,Date,Debit,Credit,Category",
+        "Checking,2026-08-01,,500,Rent",
+    )
+    column_map = {"account": "Account", "date": "Date", "debit": "Debit", "credit": "Credit",
+                  "category": "Category"}
+    rows, parse_errors = service.parse_file(content, ONE_ROW_DEBIT_CREDIT_SHAPE, column_map)
+    assert parse_errors == []
+    groups, errors = service.transform_rows(
+        rows, ONE_ROW_DEBIT_CREDIT_SHAPE,
+        column_kinds={"account": "label", "category": "label"},
+        value_maps={"account": {"Checking": book["checking"]["code"]},
+                    "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
+    assert errors == []
+    [group] = groups
+    amounts = {ln["code"]: ln["amount"] for ln in group["lines"]}
+    assert amounts[book["checking"]["code"]] == Decimal("-500.00")
+    assert amounts[book["rent"]["code"]] == Decimal("500.00")
+
+
+def test_transform_rows_one_row_signed_matches_transform_mapped_rows_for_an_expense(book):
+    # Confirms the generalized "one" path reproduces `transform_mapped_
+    # rows`' own shipped behavior (expense row, debit-positive) once
+    # `column_kinds` defaults to "label" and `value_maps` carries the same
+    # two maps `account_map`/`category_map` used to be.
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    column_map = {"account": "Account", "date": "Date", "payee": "Payee", "memo": "Notes",
+                  "category": "Category", "amount": "Amount"}
+    rows, _ = service.parse_file(content, service.IMPORT_DEFAULT_SHAPE, column_map)
+    groups, errors = service.transform_rows(
+        rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={}, value_maps={
+            "account": {"Checking": book["checking"]["code"]}, "category": {"Rent": book["rent"]["code"]}},
+        flip_sign=False)
+    assert errors == []
+    amounts = {ln["code"]: ln["amount"] for ln in groups[0]["lines"]}
+    assert amounts[book["rent"]["code"]] == Decimal("500.00")
+    assert amounts[book["checking"]["code"]] == Decimal("-500.00")
+
+
+def test_transform_rows_known_codes_none_trusts_a_code_kind_column_verbatim(book):
+    rows = [{"row_no": 2, "group_key": "1", "date": "2026-08-01", "description": "x",
+             "account": "NOPE999", "debit": "10", "credit": "", "reference": "", "payee": "", "memo": ""},
+            {"row_no": 3, "group_key": "1", "date": "2026-08-01", "description": "x",
+             "account": book["checking"]["code"], "debit": "", "credit": "10", "reference": "", "payee": "",
+             "memo": ""}]
+    groups, errors = service.transform_rows(
+        rows, GROUPED_DEBIT_CREDIT_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False,
+        known_codes=None)
+    assert errors == []  # trusted verbatim — `stage_import_groups` is the one that would catch NOPE999
+    [group] = groups
+    assert {ln["code"] for ln in group["lines"]} == {"NOPE999", book["checking"]["code"]}
+
+
+def test_transform_rows_known_codes_supplied_reports_an_unknown_code_per_row(book):
+    rows = [{"row_no": 2, "group_key": "1", "date": "2026-08-01", "description": "x",
+             "account": "NOPE999", "debit": "10", "credit": "", "reference": "", "payee": "", "memo": ""},
+            {"row_no": 3, "group_key": "1", "date": "2026-08-01", "description": "x",
+             "account": book["checking"]["code"], "debit": "", "credit": "10", "reference": "", "payee": "",
+             "memo": ""}]
+    groups, errors = service.transform_rows(
+        rows, GROUPED_DEBIT_CREDIT_SHAPE, column_kinds=DIRECT_CODE_KIND, value_maps={}, flip_sign=False,
+        known_codes={book["checking"]["code"]})
+    assert groups == []
+    assert errors[0]["row_no"] == 2
+    assert "Unknown account code 'NOPE999'" in errors[0]["message"]
+
+
 def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
     # A file whose own column names don't match ActualBudget's at all —
     # the whole point of the mapping step: any header works once mapped.

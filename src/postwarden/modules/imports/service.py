@@ -158,6 +158,22 @@ IMPORT_DEFAULT_SHAPE = {
 # column` also requires repeated values as corroborating evidence.
 _GROUP_KEY_NAME_HINTS = ("entry", "transaction", "txn", "id", "ref", "#")
 
+# Step 4's per-column property (IMPORT_WIZARD.md §7 Phase 4 item 2): does a
+# `lookup_capable` column (see `target_fields_for_shape`) already hold a
+# real account code (the plain importer's historical `Account code`
+# column), or a label that needs a lookup table built in the review step
+# (the mapped importer's historical `Account`/`Category` columns)? This is
+# the property that lets one `transform_rows` produce both importers'
+# existing behavior as configuration rather than as two code paths.
+# Default is `"label"` — the safer assumption when a caller (an old test,
+# a not-yet-updated client) doesn't set it at all, since treating an
+# unrecognized value as a code that needs no lookup would silently post to
+# whatever raw text happened to be in the file.
+IMPORT_COLUMN_KIND_CODE = "code"
+IMPORT_COLUMN_KIND_LABEL = "label"
+IMPORT_DEFAULT_COLUMN_KIND = IMPORT_COLUMN_KIND_LABEL
+IMPORT_NO_VALUE_KEY = ""  # the value-map key for a blank/unset lookup-column cell
+
 _DECIMAL_COMMA_STRICT = re.compile(r"^-?\d{1,3}(\.\d{3})+,\d{2}$")   # 1.234,56
 _DECIMAL_DOT_STRICT = re.compile(r"^-?\d{1,3}(,\d{3})+\.\d{2}$")     # 1,234.56
 _DECIMAL_COMMA_WEAK = re.compile(r"^-?\d+,\d{2}$")                   # 12,50 — decimal-comma, no thousands
@@ -656,6 +672,272 @@ def target_fields_for_shape(shape: dict) -> list[dict]:
         {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
         {"key": "category", "label": "Category", "required": False, "lookup_capable": True},
     ]
+
+
+def parse_file(content: str, shape: dict, column_map: dict[str, str],
+                dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
+    """(rows, errors) — collapses `parse_csv_import` and `parse_mapped_
+    file` into one function (IMPORT_WIZARD.md §7 Phase 4 item 3):
+    `shape` decides which target fields exist at all (`target_fields_
+    for_shape`), `column_map` decides which of the file's own columns
+    fills each one, same target-field-key -> file-column-name shape
+    `parse_mapped_file`'s `column_map` always had. Extraction only — no
+    grouping (a `"grouped"` shape's rows aren't combined into entries
+    here, that's `transform_rows`' job), no account-code or balance
+    validation, same "pure single-entry-row extraction" job `parse_
+    mapped_file` always had, now generalized to whatever `target_fields_
+    for_shape(shape)` says the row-level fields are. `errors` stays flat
+    `list[str]`, structural only (missing/unknown columns) — never
+    per-row, same contract `parse_mapped_file` already has. Pure — no
+    database (R12)."""
+    reader = _dict_reader(content, dialect)
+    if not reader.fieldnames:
+        return [], ["The file is empty"]
+    fields = target_fields_for_shape(shape)
+    missing_required = [f["label"] for f in fields if f["required"] and not column_map.get(f["key"])]
+    if missing_required:
+        return [], [f"Choose a column for: {', '.join(missing_required)}"]
+    mapped_columns = {col for col in column_map.values() if col}
+    unknown = mapped_columns - set(reader.fieldnames)
+    if unknown:
+        return [], [f"Mapped column(s) not found in the file: {', '.join(sorted(unknown))}"]
+
+    def get(row: dict, key: str) -> str:
+        col = column_map.get(key)
+        return (row.get(col) or "").strip() if col else ""
+
+    keys = [f["key"] for f in fields]
+    rows = []
+    start = dialect.get("header_row", 0) + 2  # the header itself is one line past whatever got skipped
+    for i, row in enumerate(reader, start=start):
+        rows.append({"row_no": i, **{key: get(row, key) for key in keys}})
+    return rows, []
+
+
+def _resolve_leg_account(field_label: str, raw: str, kind: str, value_map: dict[str, str],
+                          known_codes: set[str] | None) -> tuple[str | None, str | None]:
+    """Resolves one lookup-capable column's raw row value to a real
+    account code, per its own `column_kinds` entry (`IMPORT_DEFAULT_
+    COLUMN_KIND` — `"label"` — when unset). Returns `(code, None)` on
+    success, `(None, message)` on failure — never raises, since a
+    resolution failure is a per-row `transform_rows` error, not a
+    structural one.
+
+    A `"code"`-kind column trusts `raw` verbatim as the real account
+    code, *unless* the caller supplied `known_codes` (a real set of
+    codes that exist in the ledger) and `raw` isn't in it — restoring the
+    same per-row "unknown account code" diagnostic `parse_csv_import`
+    used to give directly (it had a `Connection` in hand; `transform_
+    rows` deliberately doesn't — see its own docstring). `known_codes is
+    None` (every pure unit test, and any caller that doesn't want the
+    extra DB round trip) means "no DB information available" — trust the
+    code and let `stage_import_groups`'s own blanket check catch a bad
+    one later.
+
+    A `"label"`-kind column looks `raw` (or `IMPORT_NO_VALUE_KEY` for a
+    blank cell) up in `value_map`."""
+    if kind == IMPORT_COLUMN_KIND_CODE:
+        if known_codes is not None and raw not in known_codes:
+            return None, f"Unknown account code {raw!r}"
+        return raw, None
+    code = value_map.get(raw or IMPORT_NO_VALUE_KEY)
+    if not code:
+        label = raw or "(no value)"
+        return None, f"No mapping chosen for {field_label} {label!r}"
+    return code, None
+
+
+def _row_amount(r: dict, amount_style: str, dialect: dict) -> Decimal:
+    """The row's own net amount, debit-positive, regardless of whether
+    the shape expresses it as one signed `Amount` column or a `Debit`/
+    `Credit` pair. Raises `decimal.InvalidOperation` (a non-numeric cell)
+    or `ValueError` (a `Debit`/`Credit` pair that isn't exactly one
+    positive value — the same "enter exactly one positive Debit or
+    Credit" sanity check `parse_csv_import` always enforced, now shared
+    by any shape using `amount_style: "debit_credit"`); both are caught
+    by `transform_rows`' own per-row error handling."""
+    if amount_style == "debit_credit":
+        d = parse_amount(r["debit"], dialect) if r["debit"] else Decimal("0")
+        c = parse_amount(r["credit"], dialect) if r["credit"] else Decimal("0")
+        if d < 0 or c < 0 or (d > 0) == (c > 0):
+            raise ValueError("enter exactly one positive Debit or Credit")
+        return (d - c).quantize(Decimal("0.01"))
+    return parse_amount(r["amount"], dialect).quantize(Decimal("0.01"))
+
+
+def _amount_error_message(r: dict, amount_style: str) -> str:
+    if amount_style == "debit_credit":
+        return "Debit/Credit must be numeric"
+    return f"Amount {r['amount']!r} isn't numeric"
+
+
+def transform_rows(rows: list[dict], shape: dict, column_kinds: dict[str, str],
+                    value_maps: dict[str, dict[str, str]], flip_sign: bool,
+                    dialect: dict = IMPORT_DEFAULT_DIALECT,
+                    known_codes: set[str] | None = None) -> tuple[list[dict], list[dict]]:
+    """(groups, errors) — collapses `transform_mapped_rows`' one-row-per-
+    entry logic with a new grouped-rows path, dispatching on `shape[
+    "rows_per_entry"]` (IMPORT_WIZARD.md §7 Phase 4 item 3). `errors` is
+    always the Phase-3 structured `{row_no, raw, message}` shape — the
+    one place the two importers' formerly-different error shapes
+    (`parse_csv_import`'s flat strings vs `transform_mapped_rows`'
+    structured dicts) get reconciled, onto the richer of the two. Pure —
+    no `Connection` (R12); see `known_codes`/`_resolve_leg_account` for
+    how a "code"-kind column's existence still gets checked without one.
+
+    **"N legs" means N *rows* sharing one `group_key`, not an N-way split
+    expressed by a single row** — the honest scope for Phase 4 item 3's
+    own wording. A `"one"` shape entry always has exactly two legs (the
+    money account and one "other" account); R9 (a single row expressing
+    an arbitrary multi-way split) stays a separate, deferred requirement,
+    not attempted here."""
+    if shape.get("rows_per_entry") == "grouped":
+        return _transform_grouped_rows(rows, shape, column_kinds, value_maps, dialect, known_codes)
+    return _transform_one_row_entries(rows, shape, column_kinds, value_maps, flip_sign, dialect, known_codes)
+
+
+def _transform_one_row_entries(rows: list[dict], shape: dict, column_kinds: dict[str, str],
+                                value_maps: dict[str, dict[str, str]], flip_sign: bool,
+                                dialect: dict, known_codes: set[str] | None) -> tuple[list[dict], list[dict]]:
+    """`rows_per_entry: "one"` — the mapped importer's original logic
+    (unchanged 2-leg shape: the money account and one "other" account),
+    generalized to resolve each leg via `_resolve_leg_account` (direct
+    code or value-map lookup, per `column_kinds`) instead of always
+    assuming a label needing `account_map`/`category_map`, and to accept
+    either a signed `Amount` or a `Debit`/`Credit` pair via `_row_amount`."""
+    account_kind = column_kinds.get("account", IMPORT_DEFAULT_COLUMN_KIND)
+    category_kind = column_kinds.get("category", IMPORT_DEFAULT_COLUMN_KIND)
+    account_map = value_maps.get("account", {})
+    category_map = value_maps.get("category", {})
+    amount_style = shape.get("amount_style", "signed")
+
+    groups, errors = [], []
+    for r in rows:
+        money_code, err = _resolve_leg_account("account", r["account"], account_kind, account_map, known_codes)
+        if err:
+            errors.append({"row_no": r["row_no"], "raw": r, "message": err})
+            continue
+        other_code, err = _resolve_leg_account("category", r.get("category", ""), category_kind,
+                                                 category_map, known_codes)
+        if err:
+            errors.append({"row_no": r["row_no"], "raw": r, "message": err})
+            continue
+        try:
+            amount = _row_amount(r, amount_style, dialect)
+        except (InvalidOperation, ValueError):
+            errors.append({"row_no": r["row_no"], "raw": r, "message": _amount_error_message(r, amount_style)})
+            continue
+        if flip_sign and amount_style == "signed":
+            amount = -amount
+        if amount_style == "signed" and amount == 0:
+            continue  # nothing to post — same "zero-amount rows are silently skipped" rule as always
+        try:
+            entry_date = parse_date(r["date"], dialect)
+        except ValueError:
+            date_label = _DATE_FORMAT_LABELS.get(dialect.get("date_format", "iso"), "YYYY-MM-DD")
+            errors.append({"row_no": r["row_no"], "raw": r,
+                            "message": f"Invalid Date {r['date']!r} — expected {date_label}"})
+            continue
+        memo = r.get("memo") or None
+        # Standard expense-tracker sign convention (negative = money out):
+        # debit whichever side increases, credit whichever side decreases.
+        if amount < 0:
+            lines = [{"code": other_code, "amount": -amount, "memo": memo},
+                     {"code": money_code, "amount": amount, "memo": memo}]
+        else:
+            lines = [{"code": money_code, "amount": amount, "memo": memo},
+                     {"code": other_code, "amount": -amount, "memo": memo}]
+        groups.append({
+            "entry_date": entry_date.isoformat(),
+            "description": r.get("description") or r.get("payee") or r.get("category") or "Imported transaction",
+            "reference": None, "payee_name": r.get("payee") or None, "lines": lines,
+        })
+    return groups, errors
+
+
+def _transform_grouped_rows(rows: list[dict], shape: dict, column_kinds: dict[str, str],
+                             value_maps: dict[str, dict[str, str]], dialect: dict,
+                             known_codes: set[str] | None) -> tuple[list[dict], list[dict]]:
+    """`rows_per_entry: "grouped"` — `parse_csv_import`'s original
+    grouping logic, generalized to resolve each row's own `account` leg
+    via `_resolve_leg_account` (a direct code, matching every file this
+    shape has ever actually seen, or a value-map lookup — a genuinely new
+    capability) instead of always assuming a real code, and to accept
+    either a signed `Amount` or a `Debit`/`Credit` pair per row via
+    `_row_amount`. Rows are grouped by `group_key` in first-seen order,
+    exactly as `parse_csv_import` always grouped by `Entry #`.
+
+    A row with a blank `group_key` gets its own error and joins no group,
+    same as a blank `Entry #` always did. A group where any row fails to
+    resolve is dropped entirely (no partial-group staging, same as
+    always); a group whose legs don't sum to zero is dropped with
+    **exactly one** structured error keyed to its first row — not one per
+    row in the group, matching `parse_csv_import`'s own per-group (not
+    per-row) balance-error granularity."""
+    account_kind = column_kinds.get("account", IMPORT_DEFAULT_COLUMN_KIND)
+    account_map = value_maps.get("account", {})
+    amount_style = shape.get("amount_style", "signed")
+
+    raw_groups: dict[str, list[dict]] = {}
+    order: list[str] = []
+    errors = []
+    for r in rows:
+        key = r.get("group_key", "")
+        if not key:
+            errors.append({"row_no": r["row_no"], "raw": r, "message": "Missing Entry Group value"})
+            continue
+        if key not in raw_groups:
+            raw_groups[key] = []
+            order.append(key)
+        raw_groups[key].append(r)
+
+    groups = []
+    for key in order:
+        group_rows = raw_groups[key]
+        first = group_rows[0]
+        lines, ok = [], True
+        for r in group_rows:
+            code, err = _resolve_leg_account("account", r.get("account", ""), account_kind, account_map,
+                                              known_codes)
+            if err:
+                errors.append({"row_no": r["row_no"], "raw": r, "message": err})
+                ok = False
+                continue
+            try:
+                amount = _row_amount(r, amount_style, dialect)
+            except (InvalidOperation, ValueError):
+                errors.append({"row_no": r["row_no"], "raw": r,
+                                "message": _amount_error_message(r, amount_style)})
+                ok = False
+                continue
+            if amount_style == "signed" and amount == 0:
+                continue  # an empty leg — nothing to post for this row
+            lines.append({"code": code, "amount": amount, "memo": r.get("memo") or None})
+        if not ok or not lines:
+            continue
+        total = sum(ln["amount"] for ln in lines)
+        if total != 0:
+            errors.append({"row_no": first["row_no"], "raw": first,
+                            "message": f"doesn't balance (off by {total:+.2f})"})
+            continue
+        try:
+            entry_date = parse_date(first["date"], dialect)
+        except ValueError:
+            date_label = _DATE_FORMAT_LABELS.get(dialect.get("date_format", "iso"), "YYYY-MM-DD")
+            errors.append({"row_no": first["row_no"], "raw": first,
+                            "message": f"Invalid Date {first['date']!r} — expected {date_label}"})
+            continue
+        description = first.get("description", "")
+        if not description:
+            errors.append({"row_no": first["row_no"], "raw": first, "message": "Missing Entry Description"})
+            continue
+        groups.append({
+            "entry_date": entry_date.isoformat(), "description": description,
+            "reference": first.get("reference") or None,
+            "payee_name": first.get("payee") or None,
+            "lines": lines,
+        })
+    return groups, errors
 
 
 def parse_mapped_file(content: str, column_map: dict[str, str],
