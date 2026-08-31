@@ -54,8 +54,8 @@ no-op'ing: `toggle_schedule` and `delete_template`.** This is the same
 class of oversight `modules/reference/repository.py`'s own docstring
 already found and fixed for `toggle_account`/`toggle_account_cashflow`/
 `toggle_lock`/
-`rename_account_level`/`delete_account_level` — nothing in `SPEC.md`/
-`BACKLOG.md` singles out schedules or templates as special here, and
+`rename_account_level`/`delete_account_level` — nothing in `SPEC.md`
+singles out schedules or templates as special here, and
 every *other* toggle/rename/delete route across the app already checks.
 `toggle_schedule_active` (below) `RETURNING`s the updated row, `None` on
 a miss, same idiom `modules/reference/repository.py` settled on;

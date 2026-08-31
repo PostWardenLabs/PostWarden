@@ -195,7 +195,7 @@ def find_duplicate_groups(conn: Connection) -> list[dict]:
     all_pending_entries_basic`'s own docstring on why "pending-or-not")
     by an exact fingerprint — same date, same `(account_id, amount)` leg
     set — ported from `_find_staging_duplicate_groups`. The matching
-    rule, exactly BACKLOG.md's own wording: "the same credit and debit
+    rule, exactly the original ask's wording: "the same credit and debit
     accounts, with the same amounts, AND the date matches." A 2-leg
     entry and a 3-leg entry can never match regardless of what their
     first two legs look like, since a duplicate is "the same transaction

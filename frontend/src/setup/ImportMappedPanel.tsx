@@ -13,20 +13,20 @@ import { usePostableAccounts } from '../widgets/usePostableAccounts'
 // the plain and mapped importers first merged onto one page as two tabs
 // (`ImportPage.tsx`'s own docstring has that history), then absorbed the
 // plain importer's own grouped/Debit-Credit/direct-code shape entirely in
-// IMPORT_WIZARD.md §7 Phase 4 — this is now the *only* importer, mounted
+// SPEC.md decision 24 — this is now the *only* importer, mounted
 // directly by `ImportPage.tsx` with no tab bar; `ImportPlainPanel.tsx`
 // and its `POST /import` route were retired outright once this panel's
 // own Shape step could reproduce their fixed grouped/Debit-Credit/
 // direct-code format as a default rather than a separate code path
-// (Phase 4 item 5). Up to four internal steps now (`step` below) —
-// BACKLOG.md's "New import with rules page" #2 added a column-mapping
+// (the wizard merge). Up to four internal steps now (`step` below) —
+// the original "import with rules" ask added a column-mapping
 // step between upload and review, since the importer used to require
 // the file's own header row to read literally
 // `Account,Date,Payee,Notes,Category,Amount` (true of ActualBudget's
 // export by construction, false of anything else) — see `SPEC.md`
 // decision 23's own account of why; a fourth, `'validate'`, only ever
-// renders when the review step's own pre-commit check (IMPORT_WIZARD.md
-// §7 Phase 3) finds row errors — a clean file never sees it. None of
+// renders when the review step's own pre-commit check (SPEC.md
+// decision 23) finds row errors — a clean file never sees it. None of
 // these steps exist as their own GET route — there's no server-side
 // state between them to restore from on a refresh either, same
 // reasoning the old two-step version already had — so this stays one
@@ -38,7 +38,7 @@ import { usePostableAccounts } from '../widgets/usePostableAccounts'
 // identical copies while both panels existed side by side (two
 // three-line helpers each with exactly one caller wasn't worth a shared
 // module import cycle between sibling panels) — now this file's only
-// copies, that panel having been deleted in Phase 4 item 5.
+// copies, that panel having been deleted in the wizard merge.
 interface ErrorBody {
   detail?: string
 }
@@ -49,8 +49,8 @@ function errorDetail(error: unknown, fallback: string): string {
 
 const IMPORT_MAX_ERRORS_SHOWN = 20
 
-// `service.transform_rows`' own per-row error shape (IMPORT_WIZARD.md §7
-// Phase 3 item 1) — structured, not a pre-joined "Row N: ..." string, so
+// `service.transform_rows`' own per-row error shape (SPEC.md decision
+// 23) — structured, not a pre-joined "Row N: ..." string, so
 // the validation-report table below can render `raw`'s own field values
 // next to `message` as separate columns. `raw` is the row exactly as
 // `parse_file` produced it — still-unparsed strings for whichever fields
@@ -72,8 +72,8 @@ function skippedRowsMessage(errors: RowError[]): string {
 // chosen, read from `POST /import/mapped/columns`'s own response
 // (`fields_by_shape`, every shape's list precomputed) rather than
 // duplicated here, so this screen's mapping step always matches whatever
-// the backend actually validates against. `lookup_capable` (IMPORT_
-// WIZARD.md §7 Phase 4 item 2) — only `account`/`category` are ever
+// the backend actually validates against. `lookup_capable` (SPEC.md
+// decision 24) — only `account`/`category` are ever
 // `true`; only those can carry a `column_kinds` entry at all.
 interface MappedField {
   key: string
@@ -89,8 +89,8 @@ interface DialectOption {
   label: string
 }
 
-// `service.IMPORT_DEFAULT_DIALECT`'s own shape — the wizard's Phase 1
-// step (IMPORT_WIZARD.md §3/§7 Phase 2): delimiter, how many leading
+// `service.IMPORT_DEFAULT_DIALECT`'s own shape — the wizard's
+// file-format step (SPEC.md decision 23): delimiter, how many leading
 // lines to skip before the header, and how the file's own numbers/dates
 // are written. Always a full object on this side of the wire — `service.
 // resolve_dialect`'s docstring is the reason nothing here needs a
@@ -103,7 +103,7 @@ interface Dialect {
   date_format: string
 }
 
-// `service.IMPORT_DEFAULT_SHAPE`'s own shape (IMPORT_WIZARD.md §7 Phase 4
+// `service.IMPORT_DEFAULT_SHAPE`'s own shape (SPEC.md decision 24
 // item 1) — "grouped rows vs one row per entry" and "Debit/Credit columns
 // vs one signed Amount column" are wizard settings now, not a choice of
 // importer. `group_key_column` is only ever `sniff_shape`'s own initial
@@ -204,8 +204,8 @@ interface PreviewResult {
   dialect: Dialect
 }
 
-// What `POST /import/mapped/validate` hands back (IMPORT_WIZARD.md §3
-// step 5, §7 Phase 3) — the review step's own pre-commit check, run with
+// What `POST /import/mapped/validate` hands back (SPEC.md decision
+// 23) — the review step's own pre-commit check, run with
 // the value maps that step just collected. `groups_count` is how many
 // entries would actually stage; `errors` is empty for a clean file, in
 // which case the frontend skips straight to committing without ever
@@ -245,7 +245,7 @@ const THOUSANDS_SEPARATOR_OPTIONS = [
   { value: '.', label: 'Period ( 1.234 )' },
 ]
 
-// The Shape panel's own two toggles (IMPORT_WIZARD.md §7 Phase 4 item 1)
+// The Shape panel's own two toggles (SPEC.md decision 24)
 // — plain `Combobox` pickers, same widget every other binary/enum choice
 // on this screen already uses (delimiter, decimal separator, date
 // format), rather than inventing a dedicated segmented-toggle widget for
@@ -259,7 +259,7 @@ const AMOUNT_STYLE_OPTIONS = [
   { value: 'debit_credit', label: 'Separate Debit / Credit columns' },
 ]
 
-// `columnKinds`' own two values (IMPORT_WIZARD.md §7 Phase 4 item 2) —
+// `columnKinds`' own two values (SPEC.md decision 24) —
 // whether a `lookup_capable` column's cells already hold a real account
 // code or a label needing a `value_maps` lookup in the review step.
 const COLUMN_KIND_OPTIONS = [
@@ -267,7 +267,7 @@ const COLUMN_KIND_OPTIONS = [
   { value: 'code', label: 'Account codes' },
 ]
 
-// The code/label default heuristic (IMPORT_WIZARD.md §7 Phase 4 item 2)
+// The code/label default heuristic (SPEC.md decision 24)
 // — a structural guess from `shape` alone, not a live check against real
 // account codes (keeps `parse_file`/`transform_rows` genuinely
 // `Connection`-free, R12): only the historical Export-CSV shape (grouped,
@@ -307,7 +307,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [columns, setColumns] = useState<ColumnsResult | null>(null)
-  // The Shape panel's own editable state (IMPORT_WIZARD.md §7 Phase 4
+  // The Shape panel's own editable state (SPEC.md decision 24
   // item 1) — seeded from `columns.shape`'s sniffed guess on upload, but
   // never re-derived from it after that: a shape edit is 100%
   // client-side (`ColumnsResult`'s own comment), so this has to live
@@ -336,7 +336,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   // so `duplicateTargetClaims` below has to be computed from this state,
   // not from the dict this state gets turned into.
   const [columnTargets, setColumnTargets] = useState<Record<string, string>>({})
-  // A parallel column-keyed map (IMPORT_WIZARD.md §7 Phase 4 item 2) —
+  // A parallel column-keyed map (SPEC.md decision 24) —
   // only meaningful for a column whose current target is `lookup_capable`
   // (defaults per `defaultColumnKind` otherwise); inverted into the
   // wire's target-keyed `column_kinds` alongside `column_map`'s own
@@ -346,7 +346,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
 
-  // One lookup map per `values_found` key (IMPORT_WIZARD.md §7 Phase 4
+  // One lookup map per `values_found` key (SPEC.md decision 24
   // item 2 — generalizes the old separate `accountMap`/`categoryMap`
   // state into "however many lookup-needing fields this mapping has").
   // Each inner map's own key is the file's raw value, the value is the
@@ -437,7 +437,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setStep('columns')
   }
 
-  // The Shape panel's own change handler (IMPORT_WIZARD.md §7 Phase 4
+  // The Shape panel's own change handler (SPEC.md decision 24
   // item 1) — 100% client-side, no re-parse (`ColumnsResult`'s own
   // comment). Always resets every mapping-table choice made so far,
   // including the dedicated group-key picker: the valid target-key set
@@ -450,8 +450,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setColumnKinds({})
   }
 
-  // The dialect panel's own live re-parse (IMPORT_WIZARD.md §7 Phase 2
-  // item 5, R2) — re-reads the *same already-uploaded* file
+  // The dialect panel's own live re-parse (SPEC.md decision 23; R2's
+  // always-real-data preview) — re-reads the *same already-uploaded* file
   // (`file_content_b64` never changes here) against `columns.dialect`
   // patched with whatever control the user just touched. Column targets
   // only get dropped when the columns a delimiter/header-row edit
@@ -528,7 +528,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setStep('review')
   }
 
-  // The review step's own Confirm (IMPORT_WIZARD.md §3 step 5, §7 Phase
+  // The review step's own Confirm (SPEC.md decision 23, §7 Phase
   // 3) — runs the real transform against the value maps just chosen, but
   // *without* staging anything yet (`POST /import/mapped/validate`, pure
   // — no database). A clean file (no row errors) skips straight to
@@ -682,7 +682,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
 
           {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
-          {/* The Shape panel (IMPORT_WIZARD.md §7 Phase 4 item 1) —
+          {/* The Shape panel (SPEC.md decision 24) —
               sniffed on upload, editable here, 100% client-side (no
               re-parse needed, see `handleShapeChange`'s own comment).
               Lives inside the columns step, same "no separate wizard
@@ -727,7 +727,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
             </div>
           </div>
 
-          {/* The dialect panel (IMPORT_WIZARD.md §3 step 1, §7 Phase 2)
+          {/* The dialect panel (SPEC.md decision 23)
               — sniffed on upload, editable here, re-parsing the same
               already-uploaded file live on every change (R2: the
               columns/sample values below are always this file's real
@@ -797,13 +797,13 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
           <form onSubmit={handleColumnsSubmit}>
             <div className="panel">
               <h2>Map this file's columns</h2>
-              {/* One row per column found in the file (IMPORT_WIZARD.md §2)
+              {/* One row per column found in the file (SPEC.md decision 23)
                   — every column gets an explicit decision, defaulting to
                   Ignore, rather than the old target-field-oriented table
                   silently dropping whatever a user never picked. A row
                   whose chosen target is `lookup_capable` (account/
-                  category) grows a second control (IMPORT_WIZARD.md §7
-                  Phase 4 item 2) — does this column already hold a real
+                  category) grows a second control (SPEC.md decision
+                  24) — does this column already hold a real
                   account code, or a label that needs mapping to one in
                   the review step. */}
               {/* No `overflowX: 'auto'` wrapper here (unlike the
@@ -898,8 +898,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
           {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
           <form onSubmit={handleReviewSubmit}>
-            {/* One lookup table per `values_found` key (IMPORT_WIZARD.md
-                §7 Phase 4 item 2) — a fully `"code"`-kind mapping (e.g.
+            {/* One lookup table per `values_found` key (SPEC.md
+                decision 24) — a fully `"code"`-kind mapping (e.g.
                 the old plain importer's own Export-CSV shape) comes back
                 with an empty `values_found` and renders zero tables here,
                 same immediacy that importer always had. */}
@@ -955,8 +955,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
 
             <div className="panel">
               {/* No signed value exists to flip once the file's own two
-                  Debit/Credit columns already carry it (IMPORT_WIZARD.md
-                  §7 Phase 4) — hidden outright, not just disabled. */}
+                  Debit/Credit columns already carry it (SPEC.md
+                  decision 24) — hidden outright, not just disabled. */}
               {preview.shape.amount_style !== 'debit_credit' && (
                 <label className="checkline">
                   <input type="checkbox" checked={flipSign} onChange={(e) => setFlipSign(e.target.checked)} />
@@ -986,8 +986,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
 
       {step === 'validate' && validation && (
         <>
-          {/* The validation-report step (IMPORT_WIZARD.md §3 step 5, §7
-              Phase 3) — only ever shown once `POST /import/mapped/
+          {/* The validation-report step (SPEC.md decision
+              23) — only ever shown once `POST /import/mapped/
               validate` comes back with at least one row error (R1: a
               clean file never sees this screen at all, `handleReviewSubmit`
               stages it directly). Every failing row, its own mapped

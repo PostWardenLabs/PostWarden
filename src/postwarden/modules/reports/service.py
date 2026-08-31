@@ -201,7 +201,7 @@ def ledger_rows(conn: Connection, scenario: str, as_of: str | None, zeros: int =
         if not acct_lines and not zeros:
             return None
         # Each side keeps its own line's date alongside its amount
-        # (BACKLOG.md's own ask) — a debit's date and the credit sitting
+        # (the feature's own ask) — a debit's date and the credit sitting
         # beside it are otherwise unrelated, same as a real T-account,
         # where the two sides are independent running lists that just
         # happen to share a page; pairing them by index is purely for
@@ -754,8 +754,8 @@ def compute_variance(conn: Connection, baseline: str, compare: str, level_id: st
         # chosen depth) is very often a summary account, not a postable
         # one — rolling up to "Top Level Accounts" pools everything under
         # e.g. "1000 Assets" itself, and nothing is ever posted directly
-        # to a branch. Needed so a caller's entry_link (BACKLOG.md's
-        # "make amounts clickable") doesn't link a pooled figure to an
+        # to a branch. Needed so a caller's entry_link (the "make amounts
+        # clickable" ask, SPEC.md decision 11) doesn't link a pooled figure to an
         # exact-account-code Journal filter that can only ever come back
         # empty — same "not r.has_children" rule the native-depth branch
         # above already gets from a real tree, reused here via the one

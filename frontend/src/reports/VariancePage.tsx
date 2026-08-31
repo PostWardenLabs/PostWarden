@@ -9,8 +9,8 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// A Point-in-time report (Balance Sheet/Variance/Ledger, per
-// UI_CONSISTENCY_AUDIT.md §2c's reclassification), and the only one with
+// A Point-in-time report (Balance Sheet/Variance/Ledger — docs/
+// ARCHITECTURE.md, "Component archetypes"), and the only one with
 // a genuinely different row shape depending on the request: native-depth
 // (a real account tree, same flatten_tree() shape Trial Balance/Balance
 // Sheet use) vs. rolled-up (a flat SQL-side aggregation with no id/

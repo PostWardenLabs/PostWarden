@@ -20,7 +20,7 @@ import MemoCell from '../journal/MemoCell'
 import StagingEditPanel from './StagingEditPanel'
 
 // The Filterable transaction list archetype's second instance
-// (`UI_CONSISTENCY_AUDIT.md` §1), review/approve for whatever's sitting in
+// (docs/ARCHITECTURE.md, "Component archetypes"), review/approve for whatever's sitting in
 // the one `is_staging` scenario. Reuses `JournalPage.tsx`'s own
 // `DescriptionCell`/`MemoCell`/`BulkTagsDialog` unchanged — the routes
 // they call (`/entries/{id}/edit-description`, `/entries/lines/{id}/edit-
@@ -31,7 +31,7 @@ import StagingEditPanel from './StagingEditPanel'
 // than a separate page.
 //
 // Real differences from the Journal's own filter-bar/list shape, not a
-// shared component between the two pages (`UI_CONSISTENCY_AUDIT.md` §4b
+// shared component between the two pages (the UI-consistency audit
 // already settled this: "already the target shape; no change proposed"):
 // Scenario here filters on each entry's own *target* scenario (where it
 // lands once approved — `target_scenario`, the one filter field with no

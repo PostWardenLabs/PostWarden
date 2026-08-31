@@ -1632,8 +1632,8 @@ table.ledger.accounts-table td:last-child { white-space: nowrap; }
 .report-frame { width: fit-content; max-width: 100%; }
 .report-export { justify-content: flex-end; margin-bottom: 0.6rem; }
 
-/* Sticky header row + leading Code/Account columns for reports
-   (BACKLOG.md) — scrolling down a long Trial Balance/Ledger-style
+/* Sticky header row + leading Code/Account columns for reports —
+   scrolling down a long Trial Balance/Ledger-style
    report used to lose the header row (which number column is Debit vs
    Credit?), and scrolling right through Income Statement Split's own
    monthly columns lost which account a number even belonged to. Two
@@ -2116,7 +2116,7 @@ table.entry-grid .col-amount  { width: 15%; }
   border: 1px solid var(--rule-strong); color: var(--ink-soft);
   border-radius: 2px;
 }
-/* .rev is now also a link (BACKLOG.md — "reversal of #X"/"reversed by
+/* .rev is now also a link ("reversal of #X"/"reversed by
    #X" hyperlink through to that entry) — text-decoration: none and a
    hover cue for the same reason .tag already needed both below. */
 .badge.rev { border-color: var(--red); color: var(--red); text-decoration: none; }

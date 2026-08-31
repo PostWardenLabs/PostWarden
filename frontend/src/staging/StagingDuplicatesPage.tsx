@@ -11,7 +11,7 @@ import TagInput from '../widgets/TagInput'
 import { useSelectMode } from '../widgets/useSelectMode'
 
 // Backed by `modules/staging/service.py::find_duplicate_groups`/`merge_
-// duplicates`. `UI_CONSISTENCY_AUDIT.md` §2a/§4b calls this screen "one real
+// duplicates`. The UI-consistency audit called this screen "one real
 // sibling" of the Filterable transaction list archetype (Journal,
 // Staging) rather than a sixth archetype of its own — it borrows that
 // family's per-entry conventions (`useSelectMode`, the same select-only
@@ -24,7 +24,7 @@ import { useSelectMode } from '../widgets/useSelectMode'
 // instead of accounts.
 //
 // Merge, clicked once, processes every group that currently has 2+
-// entries checked — not just the first one (BACKLOG.md's own follow-up
+// entries checked — not just the first one (a follow-up
 // ask, after the first pass only ever merged one group per click). Each
 // group's own checked entries are independent staging rows, so a merge
 // in one group can never invalidate another group's own fingerprint —
@@ -39,7 +39,7 @@ import { useSelectMode } from '../widgets/useSelectMode'
 //
 //   1. A three-way "Proceed / Select remaining entries / Cancel" dialog,
 //      shown only when a group being merged has an unchecked entry left
-//      over (BACKLOG.md's own spec) — same `.confirm-overlay`/
+//      over (the feature's own spec, SPEC.md decision 22) — same `.confirm-overlay`/
 //      `.confirm-modal` CSS `ConfirmDialog.tsx` already uses, with the
 //      same initial-focus-on-Cancel and Tab-trap treatment applied here
 //      by hand for its three buttons instead of two.

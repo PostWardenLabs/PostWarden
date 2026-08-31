@@ -9,8 +9,8 @@ import Combobox from '../widgets/Combobox'
 import { useConfirm } from '../widgets/confirmContext'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// The Editable grid archetype's only instance (UI_CONSISTENCY_AUDIT.md
-// §1/§2d).
+// The Editable grid archetype's only instance (docs/ARCHITECTURE.md,
+// "Component archetypes").
 //
 // GET /budget's own response is a plain `dict` (`modules/budget/
 // router.py`), so openapi-fetch can only type it as `{[key: string]:
@@ -477,15 +477,16 @@ export default function BudgetPage() {
         <p className="dim">No activity in this scenario yet.</p>
       ) : (
         <div className="report-frame">
-          {/* BACKLOG.md's own page-level bulk option — applies the same
+          {/* The page-level bulk option — applies the same
               four quick-fill sources as a single cell's own chevron menu
               to every leaf cell at once, behind a real confirm since it
               overwrites whatever's already typed everywhere on the grid.
               No Export CSV/XLSX here — `modules/budget/router.py` has no
               `.csv`/`.xlsx` sibling, unlike `modules/reports/`/
-              `modules/entries/`. UI_CONSISTENCY_AUDIT.md §3.6 flags this
-              as worth deciding on purpose rather than leaving as an
-              accident — left open, not silently dropped. */}
+              `modules/entries/`. Deliberate, decided on the record: the
+              grid is a working view of the Variance report, which has
+              the export — see docs/ARCHITECTURE.md's "Archetype
+              conventions". */}
           <p className="bar" style={{ alignItems: 'center' }}>
             <button
               type="button"

@@ -1,6 +1,6 @@
 """The imports module's `APIRouter` — the one unified import wizard
-(IMPORT_WIZARD.md §7 Phase 4; the plain fixed-column importer and its
-`POST /import` route were retired in Phase 4 item 5, once `ImportMapped
+(SPEC.md decision 24; the plain fixed-column importer and its
+`POST /import` route were retired in the wizard merge, once `ImportMapped
 Panel.tsx`'s own Shape step could reproduce that importer's grouped/
 Debit-Credit/direct-code format as a default rather than a separate code
 path). Same shape every prior module's own router established: thin
@@ -24,7 +24,7 @@ all — that page's only content beyond this module is the scenario
 picker, a `modules/reference/` concern. `POST /import/mapped/columns`
 takes the multipart upload and returns the file's own column names/
 sample rows (`service.sniff_mapped_columns`), a best-guess `shape`
-(`service.sniff_shape`, IMPORT_WIZARD.md §7 Phase 4 item 1) plus every
+(`service.sniff_shape`, SPEC.md decision 24) plus every
 shape's own target-field list precomputed (`service.target_fields_by_
 shape` — so the frontend's own shape toggle never needs a round trip),
 and its content, base64-encoded (`service.encode_for_roundtrip`) — the
@@ -37,8 +37,8 @@ lookup-table contents; `POST /import/mapped` takes the review step's own
 value-map choices and actually commits.
 
 **`POST /import/mapped/columns/reparse` isn't a fourth wizard step** —
-it's the dialect panel living inside the "columns" step (IMPORT_WIZARD.md
-§7 Phase 2), re-parsing the same already-uploaded file against a
+it's the dialect panel living inside the "columns" step (SPEC.md
+decision 23), re-parsing the same already-uploaded file against a
 user-edited dialect instead of the one `/mapped/columns` guessed. Every
 later step (`/mapped/preview`, `/mapped/validate`, `/mapped`) also takes
 that same `dialect` forward and re-applies it server-side, same "never
@@ -48,7 +48,7 @@ re-parse here (see `schemas.MappedColumnsReparseRequest`'s own
 docstring) — only `dialect` can change how the file's own cells split.
 
 **`POST /import/mapped/validate` isn't a fifth step either** — it's the
-review step's own pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run
+review step's own pre-commit check (SPEC.md decision 23), run
 with the value maps the review step just collected, before `POST
 /import/mapped` actually commits anything. A row error there now blocks
 `/mapped` outright unless the caller sets `skip_bad_rows` (see
@@ -60,7 +60,7 @@ choose to stage the rest and skip them.
 **Both `/mapped/validate` and `POST /mapped` do one bulk DB lookup before
 calling into the otherwise-pure `service.validate_file`/`service.import_
 file`** — `service.known_account_codes`, whenever `payload.column_kinds`
-marks any field `"code"` (IMPORT_WIZARD.md §7 Phase 4 item 2's own
+marks any field `"code"` (SPEC.md decision 24's own
 "restore the per-row unknown-code diagnostic without giving the pure
 functions a `Connection`" design; see that function's own docstring).
 `/mapped/preview` never needs this — it doesn't resolve accounts at all,
@@ -197,7 +197,7 @@ def import_mapped_validate(payload: schemas.MappedImportValidateRequest,
     `/mapped/columns/reparse` already documents) — a clean file's
     `errors` comes back empty and the frontend skips straight to `POST
     /import/mapped` without ever showing a validation-report screen
-    (R1). Now takes a `conn` (unlike before Phase 4) purely for that one
+    (R1). Now takes a `conn` (unlike before the merge) purely for that one
     lookup — `service.validate_file` itself still never sees it, still
     never writes anything; same "every route pays for a transaction
     uniformly, even a read-only one" reasoning `get_connection`'s own

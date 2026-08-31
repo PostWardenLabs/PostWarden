@@ -7,7 +7,7 @@ import { useAccountLevels } from '../api/useAccountLevels'
 import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 import { useConfirm } from '../widgets/confirmContext'
 
-// The Management/CRUD archetype (UI_CONSISTENCY_AUDIT.md §2e/§4b groups
+// The Management/CRUD archetype (docs/ARCHITECTURE.md groups
 // Accounts with Payees/Tags/Scenarios/Levels/Scheduled/Templates), but
 // the only one of that family shaped as a two-column level browser over
 // a collapsible tree rather than a flat table. Two distinct write paths
@@ -17,11 +17,10 @@ import { useConfirm } from '../widgets/confirmContext'
 // `modules/reference/schemas.py`'s own `CreateAccountRequest`/
 // `QuickCreateAccountRequest` docstrings for why both still exist.
 //
-// "Mark as cash" / "Unmark cash" is ported verbatim despite
-// UI_CONSISTENCY_AUDIT.md §3.9 flagging it as unclear wording
-// (BACKLOG.md) — that's an *open, unshipped* backlog item on `master`,
-// not something this branch's own porting work is licensed to resolve
-// on the side; §4a's wording unification (Archive/Unarchive) *is*
+// "Mark as cash" / "Unmark cash" is ported verbatim despite being
+// flagged twice as unclear wording — that's an open item (`ROADMAP.md`
+// Track Q), not something this page's own porting work was licensed to
+// resolve on the side; the wording unification (Archive/Unarchive) *is*
 // already shipped on `master` and is what this page ports as-is.
 
 const ACCOUNT_TYPES: AccountType[] = ['asset', 'liability', 'equity', 'income', 'expense']

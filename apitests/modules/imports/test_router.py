@@ -5,7 +5,7 @@ columns` exercises a real multipart file upload (`files=`), not a JSON
 body — the one shape no prior module's own router needed; every later
 step (`/mapped/preview`, `/mapped/validate`, `/mapped`) is JSON,
 round-tripping `file_content_b64`, `shape`, `column_map`, `column_kinds`,
-and `value_maps` (IMPORT_WIZARD.md §7 Phase 4) forward."""
+and `value_maps` (SPEC.md decision 24) forward."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -60,7 +60,7 @@ def test_import_mapped_columns_endpoint_returns_shape_fields_and_the_roundtrip_c
     body = resp.json()
     assert body["columns"] == ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
     assert body["sample_rows"][0]["Account"] == "Checking"
-    # IMPORT_WIZARD.md §7 Phase 4 item 1 — a one-row, no repeated-key file
+    # SPEC.md decision 24 — a one-row, no repeated-key file
     # sniffs to the "one"/"signed" shape, same shape the old mapped
     # importer always assumed implicitly.
     assert body["shape"] == service.IMPORT_DEFAULT_SHAPE
@@ -70,7 +70,7 @@ def test_import_mapped_columns_endpoint_returns_shape_fields_and_the_roundtrip_c
     assert body["target_scenario_id"] == book["actual"]["id"]
     assert body["filename"] == "export.csv"
     assert "file_content_b64" in body
-    # Phase 2 (IMPORT_WIZARD.md §7) — the dialect panel's own guess and
+    # The dialect panel (SPEC.md decision 23) — its own guess and
     # its two option lists, sniffed from this same file.
     assert body["dialect"] == {
         "delimiter": ",", "header_row": 0, "decimal_separator": ".",
@@ -95,7 +95,7 @@ def test_import_mapped_columns_endpoint_sniffs_a_semicolon_european_dialect(book
 
 
 def test_import_mapped_columns_endpoint_sniffs_a_grouped_debit_credit_shape(book, conn):
-    # IMPORT_WIZARD.md §7 Phase 4 item 1 — the old plain-importer's own
+    # SPEC.md decision 24 — the old plain-importer's own
     # Export-CSV shape, now just another sniff outcome for the one
     # unified columns endpoint.
     content = _csv(
@@ -270,7 +270,7 @@ def test_import_mapped_commit_endpoint_rejects_an_unmapped_account(book, conn):
         "column_map": preview["column_map"], "value_maps": {"account": {}, "category": {}}, "flip_sign": False,
     })
     assert resp.status_code == 400
-    # IMPORT_WIZARD.md §7 Phase 3 item 2 — blocked outright, nothing
+    # SPEC.md decision 23 — blocked outright, nothing
     # staged, `skip_bad_rows` left at its default `False`.
     assert c.get("/import").json()["recent_batches"] == []
 
@@ -326,7 +326,7 @@ def test_import_mapped_validate_endpoint_returns_zero_errors_for_a_clean_file(bo
 
 
 def test_import_mapped_validate_endpoint_resolves_a_code_kind_column_against_the_database(book, conn):
-    # IMPORT_WIZARD.md §7 Phase 4 item 2 — the one bulk `known_codes`
+    # SPEC.md decision 24 — the one bulk `known_codes`
     # lookup this route does before calling into `service.validate_file`,
     # restoring a precise per-row "unknown account code" diagnostic.
     content = _csv(
@@ -389,7 +389,7 @@ def test_import_mapped_commit_endpoint_stages_the_good_rows_when_skip_bad_rows_i
 
 
 def test_import_mapped_commit_endpoint_carries_an_edited_dialect_through_preview_and_commit(book, conn):
-    # Phase 2 end to end: a semicolon-delimited, comma-decimal file —
+    # The dialect controls end to end: a semicolon-delimited, comma-decimal file —
     # sniffed correctly here, but exercised via an explicit user-chosen
     # `dialect` the same way an edit in the dialect panel would arrive.
     content = _csv(
@@ -425,7 +425,7 @@ def test_import_mapped_commit_endpoint_carries_an_edited_dialect_through_preview
 
 
 def test_import_mapped_commit_endpoint_stages_a_grouped_debit_credit_file(book, conn):
-    # IMPORT_WIZARD.md §7 Phase 4 — the plain importer's own shape,
+    # SPEC.md decision 24 — the plain importer's own shape,
     # driven end to end through the unified `/mapped/*` endpoints.
     content = _csv(
         "Entry #,Date,Description,Account code,Debit,Credit",

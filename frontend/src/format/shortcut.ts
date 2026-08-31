@@ -1,6 +1,6 @@
 // Shows the real Mac/iPad/iPhone modifier key symbol (⌥) in place of the
 // literal "Alt+" text every keyboard-shortcut hint in the app is written
-// with (button labels like "Reverse (Alt+R)"). BACKLOG.md's own ask:
+// with (button labels like "Reverse (Alt+R)"). The original ask:
 // "When device is iPad or Mac show option key instead of ALT."
 //
 // The underlying shortcuts themselves never change — every keydown

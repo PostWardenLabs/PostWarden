@@ -38,7 +38,7 @@ export interface InlineEditState {
 // with nothing field-specific about it. A bug fixed once here benefits
 // both cells for free, at no coordination cost.
 //
-// The iPad bug this whole pattern exists to survive (BACKLOG.md — a
+// The iPad bug this whole pattern exists to survive (a
 // hardware-keyboard setup where blur/Enter's own save never landed) is
 // why a draft autosaves on a debounce *while still typing*, independent
 // of whatever eventually closes the field — and why `cancel()` has to

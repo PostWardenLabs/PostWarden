@@ -3,7 +3,7 @@ import { matchPreset, PERIOD_PRESETS, rangeForPreset } from './periodPresets'
 
 // A convenience that fills in the two real date fields a range report
 // actually submits (date_from/date_to). Shared by Cash Flow (first
-// caller) and Income Statement, per UI_CONSISTENCY_AUDIT.md §4b's own
+// caller) and Income Statement, per the UI-consistency audit's own
 // recommendation to promote this control to both pages rather than
 // leaving Cash Flow with only From/To — the two pages ask the identical
 // "what happened in this range" question. Pure preset logic lives in

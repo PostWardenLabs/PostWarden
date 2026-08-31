@@ -11,12 +11,12 @@ import ImportMappedPanel from './ImportMappedPanel'
 // fixed-column "CSV import" panel (`ImportPlainPanel.tsx`) and a
 // column-mapping "Import with rules" wizard (`ImportMappedPanel.tsx`) —
 // because the wizard couldn't yet express the fixed importer's own
-// grouped/Debit-Credit/direct-code shape. IMPORT_WIZARD.md §7 Phase 4
+// grouped/Debit-Credit/direct-code shape. SPEC.md decision 24
 // made that shape (and every other combination) a wizard setting
 // instead of a separate code path, so the two importers merged into
 // one: `ImportMappedPanel.tsx` alone, no tab bar, no mode to choose.
 // `ImportPlainPanel.tsx` and its `POST /import` route are deleted
-// outright (Phase 4 item 5) rather than kept as a shortcut, since the
+// outright (the wizard merge) rather than kept as a shortcut, since the
 // wizard's own default shape (grouped, Debit/Credit, direct codes)
 // already reproduces the old fixed importer's zero-friction path for a
 // file shaped that way — see `ImportMappedPanel.tsx`'s own Shape panel.

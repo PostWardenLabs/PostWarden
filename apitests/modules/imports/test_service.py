@@ -353,7 +353,8 @@ def test_import_file_stages_a_grouped_debit_credit_file_end_to_end(book, conn):
 
 
 def test_import_file_blocks_a_grouped_file_without_confirmation_when_a_row_fails(book, conn):
-    # Confirms the Phase 4 decision made before implementation started:
+    # Confirms the wizard-merge decision (SPEC.md decision 24) made
+    # before implementation started:
     # `skip_bad_rows` blocks by default for the grouped shape too, not
     # just the one-row shape — a deliberate behavior change from the old,
     # now-deleted `parse_csv_import`'s always-partial-stage default.
@@ -403,7 +404,7 @@ def test_parse_file_reads_every_row_via_an_arbitrary_column_map():
 
 
 def test_parse_file_reads_a_description_column_distinct_from_payee():
-    # §2.1 of IMPORT_WIZARD.md: Entry Description and Line Memo are their
+    # SPEC.md decision 23: Entry Description and Line Memo are their
     # own targets now, not just Payee/Notes wearing those hats implicitly.
     content = _csv(
         "Merchant,Memo line,When,Amount",
@@ -504,7 +505,7 @@ def test_transform_rows_one_row_signed_reports_an_unmapped_account(book):
         rows, service.IMPORT_DEFAULT_SHAPE, column_kinds={},
         value_maps={"account": {}, "category": {"Rent": book["rent"]["code"]}}, flip_sign=False)
     assert groups == []
-    # IMPORT_WIZARD.md §7 Phase 3 item 1 — structured, not a pre-joined
+    # SPEC.md decision 23 — structured, not a pre-joined
     # "Row N: ..." string, so a validation-report table can render `raw`
     # and `message` as separate columns.
     assert errors[0]["row_no"] == 2
@@ -525,7 +526,7 @@ def test_transform_rows_one_row_signed_reports_a_non_numeric_amount(book):
 
 
 def test_transform_rows_one_row_signed_description_wins_over_the_payee_fallback(book):
-    # §2.1 of IMPORT_WIZARD.md: an explicitly-mapped Entry Description
+    # SPEC.md decision 23: an explicitly-mapped Entry Description
     # takes priority over the payee/category/fallback chain, which only
     # ever applies when nothing is mapped there.
     rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "Landlord",
@@ -591,7 +592,7 @@ def test_import_file_stages_entries_via_an_arbitrary_column_map(book, conn):
 
 
 def test_import_file_blocks_one_row_signed_without_confirmation_when_a_row_fails_validation(book, conn):
-    # IMPORT_WIZARD.md §7 Phase 3 item 2 — a row error blocks the whole
+    # SPEC.md decision 23 — a row error blocks the whole
     # commit by default now (`skip_bad_rows` defaults to False), rather
     # than the old implicit "stage what worked, report the rest."
     content = _csv(
@@ -695,9 +696,9 @@ def test_sniff_dialect_defaults_a_plain_comma_iso_file():
 
 def test_sniff_dialect_detects_semicolons_and_a_comma_decimal_with_dot_thousands():
     # A European bank export: ';' fields, '.' groups thousands, ','
-    # is the decimal point — the exact shape IMPORT_WIZARD.md's Phase 2
-    # calls out as "currently just fails, with no control anywhere to
-    # fix it."
+    # is the decimal point — the exact shape the dialect work (SPEC.md
+    # decision 23) exists for: it used to just fail, with no control
+    # anywhere to fix it.
     content = _csv(
         "Konto;Datum;Zahlungsempfänger;Betrag",
         "Girokonto;2026-03-01;Vermieter;-500,00",

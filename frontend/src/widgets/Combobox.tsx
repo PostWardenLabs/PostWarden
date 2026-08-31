@@ -55,7 +55,7 @@ interface ComboboxProps {
 // native <select> at all, `value`/`onChange` are the source of truth.
 //
 // Two real browser-quirk fixes are encoded here: the iOS Safari
-// `select()` no-op — the round-2 BACKLOG.md fix, focusing an empty field
+// `select()` no-op — the round-2 fix, focusing an empty field
 // clears it outright instead of trying to select(), since "replace on
 // next keystroke" no longer needs selection to actually take effect on
 // any platform — and the general one-tick

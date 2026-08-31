@@ -869,7 +869,7 @@ export interface paths {
          *     `/mapped/columns/reparse` already documents) — a clean file's
          *     `errors` comes back empty and the frontend skips straight to `POST
          *     /import/mapped` without ever showing a validation-report screen
-         *     (R1). Now takes a `conn` (unlike before Phase 4) purely for that one
+         *     (R1). Now takes a `conn` (unlike before the merge) purely for that one
          *     lookup — `service.validate_file` itself still never sees it, still
          *     never writes anything; same "every route pays for a transaction
          *     uniformly, even a read-only one" reasoning `get_connection`'s own
@@ -1850,7 +1850,7 @@ export interface components {
         /**
          * MappedColumnsReparseRequest
          * @description Body of `POST /import/mapped/columns/reparse` — the dialect
-         *     panel's own live re-parse (IMPORT_WIZARD.md §7 Phase 2 item 5, R2's
+         *     panel's own live re-parse (SPEC.md decision 23, R2's
          *     "the preview is always the file's real data"). Same three
          *     round-tripped values every step here carries forward, plus the
          *     dialect the user just edited; `dialect`'s keys are all optional
@@ -1859,8 +1859,8 @@ export interface components {
          *     changed, though in practice `ImportMappedPanel.tsx` always sends the
          *     full dict it already holds.
          *
-         *     No `shape` here — editing `shape` (IMPORT_WIZARD.md §7 Phase 4 item
-         *     1) never needs a re-parse of the file itself, only `dialect`'s
+         *     No `shape` here — editing `shape` (SPEC.md decision
+         *     24) never needs a re-parse of the file itself, only `dialect`'s
          *     delimiter/header-row does (`service.sniff_shape`'s own docstring);
          *     it's a client-side-only setting that changes which target fields
          *     `POST /import/mapped/preview` accepts, not anything about how the
@@ -1890,14 +1890,14 @@ export interface components {
          *     file`'s own docstring) plus `value_maps`, the review step's own
          *     lookup tables (one per `lookup_capable` field whose `column_kinds`
          *     says `"label"` — generalizes the old, separate `account_map`/
-         *     `category_map` fields into one dict, Phase 4 item 2). Nothing is
+         *     `category_map` fields into one dict, SPEC.md decision 24). Nothing is
          *     ever persisted server-side between any of these steps — there's
          *     nothing to save, expire, or clean up, so the round trip is the
          *     simplest correct design.
          *
-         *     `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2, confirmed to
-         *     apply to every shape in Phase 4) — defaults to `False`: any row error
-         *     blocks the whole commit unless the caller explicitly opts in, once
+         *     `skip_bad_rows` (SPEC.md decisions 23–24 — confirmed to apply to
+         *     every shape in the wizard merge) — defaults to `False`: any row
+         *     error blocks the whole commit unless the caller explicitly opts in, once
          *     it's actually seen those errors (normally via `POST /import/mapped/
          *     validate` first — see `service.import_file`'s own docstring).
          */
@@ -1960,14 +1960,14 @@ export interface components {
          * MappedImportPreviewRequest
          * @description Body of `POST /import/mapped/preview` — the column-mapping step's
          *     own Confirm. `shape` (`service.IMPORT_DEFAULT_SHAPE`'s keys — see
-         *     IMPORT_WIZARD.md §7 Phase 4 item 1) decides which target fields exist
+         *     SPEC.md decision 24) decides which target fields exist
          *     at all (`service.target_fields_for_shape`); `column_map` is
          *     target-field-key -> the file's own column name for it, chosen against
          *     the columns/samples `POST /import/mapped/columns` handed back;
-         *     `column_kinds` (target-field-key -> `"code"`|`"label"`, Phase 4 item
-         *     2) says whether each `lookup_capable` field's column already holds a
-         *     real account code or a label needing a lookup table in the review
-         *     step. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
+         *     `column_kinds` (target-field-key -> `"code"`|`"label"`, SPEC.md
+         *     decision 24) says whether each `lookup_capable` field's column
+         *     already holds a real account code or a label needing a lookup table
+         *     in the review step. `filename`/`target_scenario_id`/`file_content_b64`/`dialect`
          *     are the same round-tripped values that step already returned
          *     (`dialect` possibly user-edited via `/mapped/columns/reparse` along
          *     the way), carried forward unchanged — nothing is persisted
@@ -2013,7 +2013,7 @@ export interface components {
         /**
          * MappedImportValidateRequest
          * @description Body of `POST /import/mapped/validate` — the review step's own
-         *     pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run with the exact
+         *     pre-commit check (SPEC.md decision 23), run with the exact
          *     value maps the user just chose. Same fields `MappedImportCommit
          *     Request` carries, minus `skip_bad_rows` — this endpoint's whole point
          *     is finding out whether that's needed before the frontend has to

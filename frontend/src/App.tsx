@@ -30,8 +30,8 @@ import StagingPage from './staging/StagingPage'
 import TagsPage from './tags/TagsPage'
 
 // Lazy: the only page that pulls in Recharts, currently ~650KB/~180KB
-// gzip of the production bundle on its own (see CUSTOM_REPORTS.md's
-// Frontend shape section) — every other route stays in the main chunk,
+// gzip of the production bundle on its own (see docs/ARCHITECTURE.md's
+// "Lazy routes" section) — every other route stays in the main chunk,
 // this one loads on first visit to /app/custom-report instead of on
 // every page load. If a second chart-heavy page ever ships, split it
 // the same way rather than pulling Recharts back into the main chunk.

@@ -21,8 +21,10 @@ Read, in this order:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the app code and
   UI patterns are organized: the backend's vertical slices, the
   frontend's five component archetypes, the reasoning behind both
-- [`UI_CONSISTENCY_AUDIT.md`](UI_CONSISTENCY_AUDIT.md) — §1's five
-  archetypes are the component spec every screen is built against
+- [`ROADMAP.md`](ROADMAP.md) — the master plan: vision, the sequenced
+  tracks, the decision register. **The only file in this repo that
+  contains plans** — a design exploration may grow notes anywhere, but
+  ordering opinions live there or they don't exist
 
 ## The standing rule: documentation ships with the feature, not after it
 
@@ -97,12 +99,11 @@ considering the task finished.
   explicit `tabIndex` for Safari's tab order, the iOS `select()` no-op),
   and an off-the-shelf replacement will not reproduce them by default.
 - **Plan a screen against its whole archetype, not just the one page
-  that prompted it.** `UI_CONSISTENCY_AUDIT.md` §1 groups every page
-  into one of five shapes (Filterable transaction list, Point-in-time
-  report, Range/period report, Editable grid, Management/CRUD) because
-  pages doing the same job kept drifting apart. If you find yourself
-  writing a second bespoke report page, stop — the archetype component
-  is the deliverable.
+  that prompted it.** `docs/ARCHITECTURE.md`'s "Component archetypes" +
+  "Archetype conventions" sections group every page into a small set of
+  shapes because pages doing the same job kept drifting apart. If you
+  find yourself writing a second bespoke report page, stop — the
+  archetype component is the deliverable.
 - **Migrations use Alembic.** `db/schema.sql` remains the source of
   truth for a fresh install; Alembic's baseline revision is that same
   schema, and every change forward from there is a real migration under
@@ -126,9 +127,9 @@ considering the task finished.
   (Cloudflare Pages, redeploys on push to `master` — no separate
   workflow). `docs/SPEC.md` is a **symlink** to the real `../SPEC.md`,
   not a copy — never replace it with an actual file, that's exactly the
-  doc-drift this whole convention exists to prevent. `BACKLOG.md` and
-  `UI_CONSISTENCY_AUDIT.md` are deliberately *not* in the mkdocs nav:
-  internal planning, not published reference.
+  doc-drift this whole convention exists to prevent. `ROADMAP.md` is
+  deliberately *not* in the mkdocs nav: internal planning, not
+  published reference.
 - **One commit per unit of work, worked sequentially.** Implement one
   thing, verify it, commit it, then move to the next — do not build
   several and squash them at the end. The test is whether a commit

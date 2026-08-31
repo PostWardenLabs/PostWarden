@@ -42,7 +42,7 @@ def _resolve_month(month: str) -> str:
     `YYYY-MM` shape the Month combobox and prev/next links actually
     send; a `ValueError` from
     `date.fromisoformat` (a stale bookmark, a hand-edited query string —
-    BACKLOG.md's own note on why the grid's own month picker is a real
+    the reason the grid's own month picker is a real
     `<select>`-equivalent and not a raw date input) falls back to today's
     month rather than a 500, same "don't crash on a bad filter value"
     leniency every other report's own date parsing already gets."""

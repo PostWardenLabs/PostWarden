@@ -1,8 +1,8 @@
 """The custom-reports `APIRouter` — one read-only GET plus its
 `.csv`/`.xlsx` export siblings, all under `/reports/custom` (a path no
 route in `modules/reports/` uses; the two modules stay independent
-slices that happen to share a URL neighborhood — see `CUSTOM_REPORTS.md`
-"Where the code goes").
+slices that happen to share a URL neighborhood — see `SPEC.md`
+decision 25).
 
 The whole report config lives in the query string, deliberately: a GET
 with the config in the URL is what makes any custom report

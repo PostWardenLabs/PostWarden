@@ -34,7 +34,7 @@ import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
 // `metric`/`dimension`/`account_type` are compile-time union types off the
 // generated schema (`openapi-typescript`, driven by the backend's own
 // `Enum`s — see `modules/custom_reports/enums.py`) rather than hand-typed
-// string literals here, per CUSTOM_REPORTS.md's Architecture section: an
+// string literals here, per SPEC.md decision 25: an
 // enum member added backend-side with no matching entry in the *_LABELS
 // maps below is a `tsc` error, not a silently-blank dropdown row.
 type Metric = components['schemas']['Metric']
@@ -129,8 +129,8 @@ function numberOf(value: string | number): number {
 }
 
 // One accent hue for the single series every bar/line/area chart here
-// ever draws (one metric x one dimension is exactly one `GROUP BY`, per
-// CUSTOM_REPORTS.md — never more than one series), with negative values
+// ever draws (one metric x one dimension is exactly one `GROUP BY` —
+// never more than one series), with negative values
 // picked out in the app's existing `--red` — the same diverging-by-sign
 // convention `format/money.ts`'s own `.neg` class already applies to
 // every negative number in the app, just carried into the chart. Pie

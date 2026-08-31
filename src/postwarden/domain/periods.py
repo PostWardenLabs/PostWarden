@@ -15,7 +15,7 @@ def shift_date_by_month(date_iso: str, delta_months: int) -> str:
     the target month's real length (Jan 31 minus a month is Dec 31, not
     an invalid Feb 31) — same clamping `dateutil.relativedelta` would do,
     without the dependency. Shared "as of" prev/next navigation
-    (UI_CONSISTENCY_AUDIT.md §5.6) for every point-in-time report —
+    (docs/ARCHITECTURE.md, "Archetype conventions") for every point-in-time report —
     Trial Balance, Balance Sheet, Variance — same shape `shift_month()`
     already uses for Budget Grid's own month field, generalized to a
     real date instead of always snapping to day 1."""
@@ -29,7 +29,7 @@ def shift_date_by_month(date_iso: str, delta_months: int) -> str:
 def shift_range(date_from_iso: str, date_to_iso: str) -> tuple[str, str, str, str]:
     """Slides a date range by its own inclusive length — (prev_from,
     prev_to, next_from, next_to). Shared prev/next-period navigation
-    (UI_CONSISTENCY_AUDIT.md §5.6) for every range report — Income
+    (docs/ARCHITECTURE.md, "Archetype conventions") for every range report — Income
     Statement, Cash Flow. The window's own length defines what "one
     period" means rather than a hardcoded month/quarter assumption, so
     clicking through works the same way whether the range on screen is
@@ -56,7 +56,7 @@ def shift_month(month: str, delta_months: int) -> str:
 
 
 def month_options(span: int = 36) -> list[str]:
-    """Options for the Month combo box (BACKLOG.md: typing a month let an
+    """Options for the Month combo box (the original bug: typing a month let an
     invalid one like "2026-13" reach date.fromisoformat() and 500 —
     <input type="month"> only *usually* rejects that server-side, and
     apparently doesn't in every browser). A real <select> can't submit a

@@ -2,8 +2,8 @@
 `v_fact_lines` (joined to `v_dim_account` only for the `account_level`
 dimension), assembled from enum-keyed fragments.
 
-The assembly below is the allowlist pattern `CUSTOM_REPORTS.md`'s
-Architecture section specifies, stated once here so no individual
+The assembly below is the allowlist pattern `SPEC.md` decision 25
+specifies, stated once here so no individual
 function has to restate it: every SQL fragment a query is composed from
 is a developer-written constant keyed by a `Metric`/`Dimension` enum
 member, or picked by an `if` on a typed filter — client input is never
@@ -32,8 +32,8 @@ from .enums import Dimension, Metric
 
 # One SELECT aggregate per metric. `net_amount` flips credit-normal
 # account types (liability/equity/income) so "spending" and "income"
-# both read as positive in the obvious direction — the sign convention
-# CUSTOM_REPORTS.md's metric table specifies, same normal_side logic
+# both read as positive in the obvious direction — the same normal_side
+# logic
 # v_dim_account derives. `entry_count` is distinct *entries*, not
 # lines — "how many transactions matched," the number a person means.
 _METRICS: dict[Metric, str] = {
@@ -61,8 +61,9 @@ _METRICS: dict[Metric, str] = {
 #
 # `tag` unnests v_fact_lines.tags, so a line carrying two tags counts
 # toward both groups — inherent to tags being overlapping labels
-# (they're entry-grain and many-to-many; FORECAST.md §4A discusses why
-# sums across tags don't partition). The ungrouped total (run_total)
+# (they're entry-grain and many-to-many; `ROADMAP.md` §6.3 discusses why
+# sums across tags don't partition — projects, not tags, are the
+# partitioning dimension). The ungrouped total (run_total)
 # counts each line once, so a tag report's rows can legitimately sum to
 # more than its total row.
 _DIMENSIONS: dict[Dimension, dict[str, str]] = {
@@ -126,7 +127,7 @@ def _where(*, scenario: str | None, date_from: str | None, date_to: str | None,
            payee_id: int | None, account_type: str | None) -> tuple[str, dict]:
     """The shared WHERE for `run_report`/`run_total` — every clause a
     fixed string, every value a bound parameter, all AND-combined (no
-    boolean tree — CUSTOM_REPORTS.md's Filters section)."""
+    boolean tree — SPEC.md decision 25)."""
     clauses: list[str] = []
     params: dict = {}
     if scenario:

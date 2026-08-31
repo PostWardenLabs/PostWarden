@@ -9,8 +9,8 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
 
-// A Range/period report screen (Income Statement/Cash Flow, per
-// UI_CONSISTENCY_AUDIT.md §1): URL-state date_from/date_to instead of a
+// A Range/period report screen (Income Statement/Cash Flow —
+// docs/ARCHITECTURE.md, "Component archetypes"): URL-state date_from/date_to instead of a
 // single as_of, driven by the PeriodPresetPicker widget. Unlike the
 // Point-in-time reports (Trial Balance, Balance Sheet), this report has
 // no account hierarchy — flat sections, no useCollapsibleTree.

@@ -1,6 +1,6 @@
 """The closed allowlists a custom report is composed from — the entire
-vocabulary a client can send (`CUSTOM_REPORTS.md`'s Architecture
-section). Because these are the route signature's own types
+vocabulary a client can send (`SPEC.md` decision 25). Because these
+are the route signature's own types
 (`router.py`), FastAPI 422s anything outside them before any code runs,
 and the generated frontend client (`frontend/src/api/schema.ts`)
 exposes them as TypeScript union types — adding a member here without
@@ -10,14 +10,15 @@ handling it frontend-side is a `tsc` error, which is why no runtime
 Adding a metric or dimension means adding an enum member *and* its
 fragment in `repository.py`'s `_METRICS`/`_DIMENSIONS` — never a
 free-form field name from the client. If a wanted report can't be
-expressed as a member here, that's a signal to revisit
-`CUSTOM_REPORTS.md`'s Non-goals, not to loosen the enum.
+expressed as a member here, that's a signal to open a new numbered
+decision in `SPEC.md` about why (decision 25's own closing rule), not
+to loosen the enum.
 
 `AccountTypeFilter` mirrors the Postgres `account_type` enum
 (`db/schema.sql`) rather than importing anything — the two are kept in
 sync by `apitests/modules/custom_reports/`'s own check against the
-live enum, the same Python-is-the-source-of-truth stance
-`CUSTOM_REPORTS.md`'s `saved_reports` sketch takes for metric/dimension.
+live enum, the same Python-is-the-source-of-truth stance the
+`saved_reports` sketch (`ROADMAP.md` S5) takes for metric/dimension.
 """
 from enum import Enum
 

@@ -57,7 +57,7 @@ def budget_grid(conn: Connection, scenario: str, month: str, pct_of_base: bool =
     budgeted_by_id = repo.budget_line_amounts(conn, scen["id"], month_start)
     actual_by_id = repo.account_balances(conn, "ACTUAL", month_end.isoformat(), month_start.isoformat())
 
-    # BACKLOG.md's own chevron menu ("Set to ACTUAL value of last month",
+    # The quick-fill chevron menu ("Set to ACTUAL value of last month",
     # "Set to 3 month average of ACTUAL", ...) needs last month's own
     # figures and a 3-calendar-month average, for both ACTUAL and whatever
     # scenario is currently open — computed once here, per account, rather

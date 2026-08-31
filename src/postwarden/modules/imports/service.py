@@ -1,13 +1,13 @@
 """The import wizard's pipeline (`parse_file`/`transform_rows`/`preview_
-file`/`validate_file`/`import_file`, IMPORT_WIZARD.md §7 Phase 4) and the
+file`/`validate_file`/`import_file`, SPEC.md decision 24) and the
 Staging-landing step behind it (`stage_import_groups`). Every function
 that touches the database takes a SQLAlchemy `Connection` and
 reads/writes through `repository.py`, same convention every prior module
 established.
 
-Before Phase 4, this module held two separate parsers — a plain
+Before the wizard merge, this module held two separate parsers — a plain
 fixed-column CSV importer (`parse_csv_import`) and this pipeline, each
-with its own route. Phase 4 made every one of the plain importer's fixed
+with its own route. The merge made every one of the plain importer's fixed
 choices (grouped rows keyed on an entry number, a Debit/Credit column
 pair, `Account code` cells holding real codes) an ordinary `shape`/
 `column_kinds` combination instead, then retired `parse_csv_import` and
@@ -55,7 +55,7 @@ from . import repository as repo
 
 IMPORT_MAX_ERRORS_SHOWN = 20
 
-# Step 1 of IMPORT_WIZARD.md's spine (§3) — Phase 2. A "dialect" is the
+# The wizard's file-format step (SPEC.md decision 23). A "dialect" is the
 # handful of low-level, per-file text-formatting choices that sit below
 # column mapping: which character separates fields, how many leading
 # lines to skip before the real header, which character is the decimal
@@ -97,7 +97,7 @@ _DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 # ActualBudget's own "Account"/"Payee"/etc., or anything else) get mapped
 # *onto* by the wizard's column-mapping step, before any of `transform_
 # rows`' leg-resolution logic runs. Originally a single fixed list here
-# (`IMPORT_MAPPED_FIELDS`, retired in Phase 4) — now `target_fields_for_
+# (`IMPORT_MAPPED_FIELDS`, retired in the merge) — now `target_fields_for_
 # shape` below, since which fields exist at all is itself a function of
 # `shape` (a grouped file's rows don't have a `category` field; a
 # Debit/Credit file has no single `amount` field). `key` is the internal
@@ -132,14 +132,14 @@ _DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 # always used (documented there, and in the mapping step's own UI,
 # rather than only in this comment).
 
-# Step 2 of IMPORT_WIZARD.md's spine (§3) — Phase 4. "Shape" is the
+# The wizard's shape step (SPEC.md decision 24). "Shape" is the
 # structural difference between "one row = one entry, one signed Amount
 # column" (what the mapped importer has only ever supported) and "several
 # rows share a key and combine into one entry, Debit/Credit instead of one
 # signed Amount" (what the plain importer's fixed CSV format hardcoded).
 # Making it a wizard setting, sniffed like `dialect` and re-editable, is
-# what lets one pipeline (`parse_file`/`transform_rows`, IMPORT_WIZARD.md
-# §7 Phase 4 item 3) produce both of today's importers' behavior as two
+# what lets one pipeline (`parse_file`/`transform_rows`, SPEC.md
+# decision 24) produce both of the old importers' behavior as two
 # configurations of the same code, rather than two separate functions.
 #
 # Deliberately just these two axes, not a fully general "how many legs can
@@ -147,7 +147,8 @@ _DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 # expresses exactly two legs (the money account and one "other" account);
 # an arbitrary N-way split expressed by a *single* row (extra Split_Amount-
 # style columns, R9) is explicitly out of scope here, same as it's out of
-# scope everywhere else in this roadmap until R9 itself is scheduled.
+# scope everywhere else until R9 itself is scheduled (`ROADMAP.md`'s
+# import track owns the R-numbered requirements cited in this module).
 IMPORT_DEFAULT_SHAPE = {
     "rows_per_entry": "one",        # "one" | "grouped"
     "group_key_column": None,       # a file column name; only meaningful when "grouped"
@@ -163,7 +164,7 @@ IMPORT_DEFAULT_SHAPE = {
 # column` also requires repeated values as corroborating evidence.
 _GROUP_KEY_NAME_HINTS = ("entry", "transaction", "txn", "id", "ref", "#")
 
-# Step 4's per-column property (IMPORT_WIZARD.md §7 Phase 4 item 2): does a
+# Step 4's per-column property (SPEC.md decision 24): does a
 # `lookup_capable` column (see `target_fields_for_shape`) already hold a
 # real account code (the plain importer's historical `Account code`
 # column), or a label that needs a lookup table built in the review step
@@ -199,7 +200,7 @@ def resolve_dialect(overrides: dict | None) -> dict:
 
 def sniff_dialect(content: str) -> dict:
     """Best-guess dialect for a file the column-mapping step hasn't seen
-    yet (IMPORT_WIZARD.md §3 step 1) — delimiter, how many leading lines
+    yet (SPEC.md decision 23) — delimiter, how many leading lines
     to skip before the header, and the decimal/thousands separator and
     date format used inside the data cells themselves. Pure string
     sniffing with no column semantics at all (there's no `column_map`
@@ -464,7 +465,7 @@ def sniff_mapped_columns(content: str, dialect: dict = IMPORT_DEFAULT_DIALECT, s
 
 
 def sniff_shape(columns: list[str], sample_rows: list[dict]) -> dict:
-    """Best-guess `shape` (IMPORT_WIZARD.md §7 Phase 4 item 1) from the
+    """Best-guess `shape` (SPEC.md decision 24) from the
     same `columns`/`sample_rows` `sniff_mapped_columns` already produces —
     called right alongside it, not as a separate parse pass. Pure, never
     raises (R1: always a guess, always editable in the wizard's own shape
@@ -519,7 +520,7 @@ def target_fields_for_shape(shape: dict) -> list[dict]:
     `amount_style: "signed"`), so a fixed list was exactly right for it;
     now that `shape` is itself a wizard setting, the *available* target
     fields are a function of it. Each entry is `{key, label, required,
-    lookup_capable}` — `lookup_capable` is new (Phase 4 item 2): only a
+    lookup_capable}` — `lookup_capable` is new with the merge: only a
     `lookup_capable` target can carry a `column_kinds` entry (`"code"` vs
     `"label"`, see `parse_file`/`transform_rows`) at all, since `date`/
     `amount`/`debit`/`credit`/`group_key`/etc. never have an
@@ -599,7 +600,7 @@ def target_fields_by_shape() -> dict[str, list[dict]]:
 def parse_file(content: str, shape: dict, column_map: dict[str, str],
                 dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
     """(rows, errors) — collapses `parse_csv_import` and `parse_mapped_
-    file` into one function (IMPORT_WIZARD.md §7 Phase 4 item 3):
+    file` into one function (SPEC.md decision 24):
     `shape` decides which target fields exist at all (`target_fields_
     for_shape`), `column_map` decides which of the file's own columns
     fills each one, same target-field-key -> file-column-name shape
@@ -699,7 +700,7 @@ def transform_rows(rows: list[dict], shape: dict, column_kinds: dict[str, str],
                     known_codes: set[str] | None = None) -> tuple[list[dict], list[dict]]:
     """(groups, errors) — collapses `transform_mapped_rows`' one-row-per-
     entry logic with a new grouped-rows path, dispatching on `shape[
-    "rows_per_entry"]` (IMPORT_WIZARD.md §7 Phase 4 item 3). `errors` is
+    "rows_per_entry"]` (SPEC.md decision 24). `errors` is
     always the Phase-3 structured `{row_no, raw, message}` shape — the
     one place the two importers' formerly-different error shapes
     (`parse_csv_import`'s flat strings vs `transform_mapped_rows`'
@@ -708,8 +709,8 @@ def transform_rows(rows: list[dict], shape: dict, column_kinds: dict[str, str],
     how a "code"-kind column's existence still gets checked without one.
 
     **"N legs" means N *rows* sharing one `group_key`, not an N-way split
-    expressed by a single row** — the honest scope for Phase 4 item 3's
-    own wording. A `"one"` shape entry always has exactly two legs (the
+    expressed by a single row** — the honest scope, per SPEC.md decision
+    24's own R9 boundary. A `"one"` shape entry always has exactly two legs (the
     money account and one "other" account); R9 (a single row expressing
     an arbitrary multi-way split) stays a separate, deferred requirement,
     not attempted here."""
@@ -939,7 +940,7 @@ def validate_file(content: str, shape: dict, column_map: dict[str, str], column_
                    value_maps: dict[str, dict[str, str]], flip_sign: bool,
                    dialect: dict = IMPORT_DEFAULT_DIALECT, known_codes: set[str] | None = None) -> dict:
     """Replaces `validate_mapped`. The review step's own pre-commit
-    validation report (IMPORT_WIZARD.md §3 step 5) — runs the exact
+    validation report (SPEC.md decision 23) — runs the exact
     `parse_file` + `transform_rows` pipeline `import_file` commits with,
     against the same maps, but never touches the database itself and
     never stages anything (`known_codes`, if the caller wants precise
@@ -964,11 +965,10 @@ def import_file(conn: Connection, *, content: str, filename: str, target_scenari
     pre-Phase-4 `import_mapped` and the plain importer's own bespoke
     commit logic alike. Same "`skip_bad_rows` makes a partial import an
     explicit choice, not an implicit default" contract `import_mapped`
-    established (IMPORT_WIZARD.md §7 Phase 3 item 2), now the rule for a
+    established (SPEC.md decision 23), now the rule for a
     grouped/Debit-Credit file too — a deliberate behavior change from the
     plain importer's old always-partial-stage default, confirmed before
-    Phase 4 implementation started (see `IMPORT_WIZARD.md` §7 Phase 4's
-    own write-up)."""
+    the wizard-merge implementation started (SPEC.md decision 24)."""
     rows, errors = parse_file(content, shape, column_map, dialect)
     if errors:
         raise ValueError("; ".join(errors))
