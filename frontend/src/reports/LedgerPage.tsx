@@ -8,11 +8,7 @@ import { formatMoney } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 
-// Ported from app/templates/ledger.html (Phase 4.1) — the last of the
-// five remaining reports, and the only backend work this phase needed:
-// no `/ledger`-equivalent route existed anywhere before this phase (see
-// `modules/reports/repository.py::ledger_lines`'s own docstring). Also
-// the only screen here with a genuinely different layout — a wrapped
+// The only report screen with a genuinely different layout — a wrapped
 // grid of small T-account cards (Date | Debit | Credit | Date), one per
 // account with activity, not one wide report table. No account
 // hierarchy at all (flat cards, no useCollapsibleTree — same reasoning
@@ -148,10 +144,8 @@ export default function LedgerPage() {
               .button-link's CSS targets `a.button-link` specifically
               (index.css), the exact bug class the 2026-08-30 QA pass
               already found and fixed for Journal's own "Clear filters".
-              Plain quiet-link styling here instead, though, matching
-              legacy's own plain <a> (no .button-link class at all on
-              this particular link in ledger.html — it's inline prose,
-              not a standalone action button). */}
+              Plain quiet-link styling here instead: it's inline prose,
+              not a standalone action button. */}
           <Link className="quiet-link" to={`?${pageParams({ zeros: '1' })}`}>
             Show accounts with no activity
           </Link>

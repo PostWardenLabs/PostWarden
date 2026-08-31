@@ -6,14 +6,8 @@ import { formatDate } from '../format/date'
 import { formatMoneyOrDash } from '../format/money'
 import { useStagingPendingCount } from '../staging/useStagingPendingCount'
 
-// Ported from app/templates/dashboard.html — Phase 4.7, the landing
-// page's first real implementation (App.tsx's own `Dashboard`/
-// `WidgetPreview` placeholder, in place since Phase 2.1/2.5, is retired
-// in the same commit this file lands in). Backend is new too
-// (`modules/dashboard/`, see its own `__init__.py` docstring): every
-// other module in this rebuild was ported during Phase 1, but legacy's
-// bare `GET /` route never had a JSON shape for an earlier phase to have
-// already produced.
+// The landing page: net worth, month-to-date income/expenses, recent
+// activity, and upcoming scheduled entries.
 //
 // `GET /dashboard`'s own response is a plain `dict` (no Pydantic model,
 // same as every report route), so this casts through a local interface —
@@ -26,7 +20,7 @@ interface FlowRow {
   payee_name: string | null
   total_debits: string | number
   // `null` means "more than one account on this side" — the backend's
-  // own `_flow_by_id` collapses that case rather than baking legacy's
+  // own `_flow_by_id` collapses that case rather than baking an
   // `<em>multiple</em>` marker into an HTML string; `FlowLabel` below is
   // what actually renders that italic fallback.
   debit_name: string | null
@@ -49,11 +43,9 @@ function isNeg(value: string | number): boolean {
 }
 
 // "Salary Income → Cash" — which account(s) the money came from and
-// which it landed in, ported from legacy's own `flow_side`/`r["flow"]`
-// assembly. Always rendered, never conditionally hidden: even a
-// zero-line row (which shouldn't happen in practice) resolves both sides
-// to "multiple" rather than an empty string, so there's nothing for a
-// legacy-style `{% if e.flow %}` check to ever actually skip.
+// which it landed in. Always rendered, never conditionally hidden: even
+// a zero-line row (which shouldn't happen in practice) resolves both
+// sides to "multiple" rather than an empty string.
 function FlowLabel({ row }: { row: FlowRow }) {
   return (
     <span className="activity-flow dim small">

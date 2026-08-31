@@ -9,13 +9,11 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
 
-// Ported from app/templates/cash_flow.html (Phase 4.1) — the first
-// Range/period report screen (Income Statement/Cash Flow, per
-// UI_CONSISTENCY_AUDIT.md §1), so the first to use URL-state date_from/
-// date_to instead of a single as_of, and the first to use the new
-// PeriodPresetPicker widget. Unlike every Point-in-time report so far
-// (Trial Balance, Balance Sheet), this report has no account hierarchy —
-// flat sections, no useCollapsibleTree.
+// A Range/period report screen (Income Statement/Cash Flow, per
+// UI_CONSISTENCY_AUDIT.md §1): URL-state date_from/date_to instead of a
+// single as_of, driven by the PeriodPresetPicker widget. Unlike the
+// Point-in-time reports (Trial Balance, Balance Sheet), this report has
+// no account hierarchy — flat sections, no useCollapsibleTree.
 //
 // GET /reports/cash-flow's own response is a plain `dict`
 // (`modules/reports/router.py`), same cast-through-a-local-interface gap

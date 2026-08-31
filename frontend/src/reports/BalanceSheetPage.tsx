@@ -8,10 +8,10 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// Ported from app/templates/balance_sheet.html (Phase 4.1) — the second
-// Point-in-time report screen, built directly on TrialBalancePage.tsx's
-// own pattern (Phase 3.3): URL-state filters, one useEffect fetch, a
-// useCollapsibleTree'd account tree. The one structural difference from
+// The second Point-in-time report screen, built directly on
+// TrialBalancePage.tsx's own pattern: URL-state filters, one useEffect
+// fetch, a useCollapsibleTree'd account tree. The one structural
+// difference from
 // Trial Balance worth calling out: `GET /reports/balance-sheet`'s own
 // response is NOT the `{grouped: [...]}` per-type-section shape Trial
 // Balance returns — `service.balance_sheet` flattens straight to three

@@ -10,9 +10,8 @@ import DatePicker from '../widgets/DatePicker'
 import PeriodPresetPicker from '../widgets/PeriodPresetPicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// Ported from app/templates/income_statement.html (Phase 4.1) — the
-// hardest data shape of the five remaining reports: rows mode (a single
-// range, structurally close to every other report) and Split mode (a
+// The hardest data shape of any report: rows mode (a single range,
+// structurally close to every other report) and Split mode (a
 // column-group-per-period matrix), discriminated by whether the response
 // carries `periods_totals` (confirmed from reading `modules/reports/
 // service.py::income_statement_rows`/`income_statement_matrix` directly,

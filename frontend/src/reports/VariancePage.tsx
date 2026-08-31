@@ -9,8 +9,7 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// Ported from app/templates/variance.html (Phase 4.1) — the last
-// Point-in-time report of the four (Balance Sheet/Variance/Ledger, per
+// A Point-in-time report (Balance Sheet/Variance/Ledger, per
 // UI_CONSISTENCY_AUDIT.md §2c's reclassification), and the only one with
 // a genuinely different row shape depending on the request: native-depth
 // (a real account tree, same flatten_tree() shape Trial Balance/Balance
@@ -121,11 +120,11 @@ export default function VariancePage() {
   const allRows = result ? result.grouped.flatMap((g) => g.rows) : []
   const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
 
-  // Phase 5 item 8: same "never posted to" vs. "nothing in this window"
-  // split as TrialBalancePage.tsx, but checked against both scenarios in
-  // the pair — treated as one combined condition (not per-scenario),
-  // matching how the rest of this report already treats baseline/compare
-  // as a unit rather than reporting on each separately.
+  // Same "never posted to" vs. "nothing in this window" split as
+  // TrialBalancePage.tsx, but checked against both scenarios in the pair
+  // — treated as one combined condition (not per-scenario), matching how
+  // the rest of this report already treats baseline/compare as a unit
+  // rather than reporting on each separately.
   const baselineRow = (scenarios ?? []).find((s) => s.code === baseline)
   const compareRow = (scenarios ?? []).find((s) => s.code === compare)
   const neitherHasEntries =

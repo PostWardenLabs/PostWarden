@@ -8,15 +8,14 @@ import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
 import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
 
-// Ported from app/templates/trial_balance.html (Phase 3.3) — the first of
-// Phase 3's Point-in-time report archetype, and the first screen this
-// rebuild renders a real account tree or a real money figure on.
+// The Point-in-time report archetype's canonical screen: an account tree
+// as of a given date.
 //
 // GET /reports/trial-balance's own response is a plain `dict`
 // (`modules/reports/router.py`), so openapi-fetch can only type it as
-// `{[key: string]: unknown}` — same gap `tags/TagsPage.tsx`'s own Phase
-// 3.2 comment documents for GET /tags, cast through these local
-// interfaces instead.
+// `{[key: string]: unknown}` — same gap `tags/TagsPage.tsx`'s own
+// comment documents for GET /tags, cast through these local interfaces
+// instead.
 interface Row extends CollapsibleRow {
   account_code: string
   account_name: string
@@ -30,8 +29,8 @@ interface Row extends CollapsibleRow {
   // encoder only ever runs on an actual `Decimal` instance — a plain int
   // serializes as a bare JSON number instead. `formatMoney`/
   // `isZeroAmount` (format/money.ts) already branch on `typeof value`
-  // for exactly this reason (mirroring money-format.js's own identical
-  // branch), so this is a type-accuracy fix, not a behavior change.
+  // for exactly this reason, so this is a type-accuracy fix, not a
+  // behavior change.
   debit_balance: string | number
   credit_balance: string | number
 }
@@ -62,13 +61,10 @@ interface TrialBalanceResult {
 const COLLAPSE_KEY = 'postwarden-trial-balance-collapsed'
 
 // Query-string state (scenario/as_of/zeros/raw), not component state —
-// the direct equivalent of legacy's own `<form method="get" data-auto-
-// refresh>` GET-and-redisplay design: every control change here is a
-// real (if client-side, via react-router) navigation to a new URL, so
-// the page stays bookmarkable/shareable/back-button-able exactly as it
-// was, and the prev/next "as of" links (below) can be real `<Link>`s
-// instead of onClick handlers, matching legacy's own plain `<a href>`s
-// rather than approximating them with JS.
+// every control change here is a real (if client-side, via react-router)
+// navigation to a new URL, so the page stays
+// bookmarkable/shareable/back-button-able, and the prev/next "as of"
+// links (below) can be real `<Link>`s instead of onClick handlers.
 export default function TrialBalancePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const scenarios = useScenarios()
@@ -79,11 +75,11 @@ export default function TrialBalancePage() {
   const zeros = searchParams.get('zeros') === '1'
   const raw = searchParams.get('raw') === '1'
 
-  // Phase 5 item 8: which of the two empty-state messages below applies
-  // — "nothing's ever been posted to this scenario" vs. "this scenario
-  // has activity, just none as of the selected date" — hinges on
-  // whether the scenario itself has ever had an entry, not just whether
-  // this particular query came back empty.
+  // Which of the two empty-state messages below applies — "nothing's
+  // ever been posted to this scenario" vs. "this scenario has activity,
+  // just none as of the selected date" — hinges on whether the scenario
+  // itself has ever had an entry, not just whether this particular query
+  // came back empty.
   const scenarioRow = (scenarios ?? []).find((s) => s.code === scenario)
 
   useEffect(() => {
@@ -110,13 +106,11 @@ export default function TrialBalancePage() {
   const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
 
   // `replace: true`, unlike the prev/next `<Link>`s below (a genuine
-  // history *push*, same as clicking one of legacy's own `<a href>`s) —
-  // deliberate, not a blind default. `DatePicker.tsx`'s own text field
-  // fires `onChange` per keystroke, not once on blur/commit the way a
-  // native `<input type="date">` fires `change`; pushing a new history
-  // entry per keystroke while typing an as-of date would spam "back"
-  // with a worse experience than legacy's own single-submit-per-edit
-  // GET ever had, for a mid-typing state nobody actually wants to
+  // history *push*) — deliberate, not a blind default. `DatePicker.tsx`'s
+  // own text field fires `onChange` per keystroke, not once on
+  // blur/commit the way a native `<input type="date">` fires `change`;
+  // pushing a new history entry per keystroke while typing an as-of date
+  // would spam "back" with a mid-typing state nobody actually wants to
   // navigate back into individually.
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
