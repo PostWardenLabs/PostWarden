@@ -1825,8 +1825,15 @@ table.ledger.t-account td, table.ledger.t-account th { padding: 0.35rem 0.7rem; 
    section-label treatment as the Ledger page's own .t-section-label, one
    real table.ledger per group rather than per-account cards. */
 .duplicate-group { margin-top: 1.5rem; }
+/* align-items: center, not baseline — the group-select-all checkbox has
+   no text baseline of its own to line up against once "select all in
+   this section" (this heading's own label text) came off of it, so
+   baseline alignment left it sitting oddly low next to the heading
+   text. gap, not justify-content: space-between — the checkbox now
+   sits directly to the left of the heading text rather than pinned to
+   the row's far right edge. */
 .duplicate-group-label {
-  display: flex; align-items: baseline; justify-content: space-between;
+  display: flex; align-items: center; gap: 0.5rem;
   font-family: var(--serif); font-weight: 600; font-size: 1rem;
   margin: 0 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--rule-strong);
 }

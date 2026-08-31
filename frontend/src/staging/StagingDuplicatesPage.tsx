@@ -206,6 +206,14 @@ function allFieldsMatch(entries: DuplicateEntry[]): boolean {
 // imperative `indeterminate` set (a DOM-only property, no React prop for
 // it — see `useSelectMode.ts`'s own identical comment) has a natural
 // effect to live in, keyed on this group's own counts.
+//
+// Sits to the left of the group's own date/account label with no
+// visible words next to it (flagged after the first pass spelled out
+// "select all in this section" beside every heading — too much text
+// repeated once per group) — the checkbox alone reads clearly enough in
+// context, same as the per-row checkboxes below it never carry a label
+// either. `.sr-only` keeps a real accessible name for anyone not
+// reading the visual layout.
 function GroupSelectAll({ checkedCount, total, onToggle }: { checkedCount: number; total: number; onToggle: () => void }) {
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -215,8 +223,9 @@ function GroupSelectAll({ checkedCount, total, onToggle }: { checkedCount: numbe
     el.indeterminate = checkedCount > 0 && checkedCount < total
   }, [checkedCount, total])
   return (
-    <label className="checkline group-select-all select-only" style={{ marginLeft: '0.8rem' }}>
-      <input ref={ref} type="checkbox" onChange={onToggle} /> select all in this section
+    <label className="checkline group-select-all select-only">
+      <input ref={ref} type="checkbox" onChange={onToggle} />
+      <span className="sr-only">Select all entries in this group</span>
     </label>
   )
 }
@@ -609,12 +618,12 @@ export default function StagingDuplicatesPage() {
         groups.map((group, i) => (
           <section className="duplicate-group" key={i}>
             <h2 className="duplicate-group-label">
-              {group.label}
               <GroupSelectAll
                 checkedCount={checkedCountIn(group)}
                 total={group.entries.length}
                 onToggle={() => toggleGroupAll(group)}
               />
+              {group.label}
             </h2>
             <table className="ledger">
               <thead>
