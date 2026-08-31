@@ -300,8 +300,8 @@ function GroupRows({ group, tree, scenario, raw, asOf, monthStart }: {
         <tr className="subtotal">
           <td></td>
           <td>{group.label} subtotal</td>
-          <td className="num money money-first">{formatMoney(group.sub_debits)}</td>
-          <td className="num money">{formatMoney(group.sub_credits)}</td>
+          <td className="num money money-first">{isZeroAmount(group.sub_debits) ? '' : formatMoney(group.sub_debits)}</td>
+          <td className="num money">{isZeroAmount(group.sub_credits) ? '' : formatMoney(group.sub_credits)}</td>
         </tr>
       )}
     </>
