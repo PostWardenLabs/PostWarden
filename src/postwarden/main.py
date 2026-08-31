@@ -40,6 +40,7 @@ from .modules.auth import service as auth_service
 from .modules.auth.deps import SESSION_COOKIE
 from .modules.auth.router import router as auth_router
 from .modules.budget.router import router as budget_router
+from .modules.custom_reports.router import router as custom_reports_router
 from .modules.dashboard.router import router as dashboard_router
 from .modules.entries.router import router as entries_router
 from .modules.imports.router import router as imports_router
@@ -142,6 +143,7 @@ def config(settings: Settings = Depends(get_settings)) -> dict:
 
 app.include_router(auth_router)
 app.include_router(reports_router)
+app.include_router(custom_reports_router)
 app.include_router(entries_router)
 app.include_router(staging_router)
 app.include_router(imports_router)

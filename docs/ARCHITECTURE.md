@@ -105,6 +105,11 @@ account settings), `entries` (the Journal), `staging` (import review +
 duplicates), `reports` (Trial Balance, Balance Sheet, Income Statement,
 Cash Flow, Variance, Ledger — the module with the most genuinely hard
 logic: account-tree rollups, period splitting, the cash-flow tie-out),
+`custom_reports` (the composable one-metric × one-dimension report —
+`GET /reports/custom`, a closed enum allowlist over the reporting-layer
+views; `CUSTOM_REPORTS.md` is its design doc, and deliberately its own
+slice rather than part of `reports`: different shape, growing
+saved-report CRUD in v2),
 `imports` (the one CSV import wizard — shape, dialect, and column
 mapping all wizard settings on a single pipeline, SPEC.md decision 24),
 `budget` (budget lines
