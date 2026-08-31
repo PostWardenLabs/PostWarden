@@ -208,7 +208,8 @@ export default function TrialBalancePage() {
             </thead>
             <tbody>
               {result.grouped.map((g) => (
-                <GroupRows key={g.type} group={g} tree={tree} />
+                <GroupRows key={g.type} group={g} tree={tree} scenario={scenario} raw={raw}
+                           asOf={result.as_of} monthStart={result.as_of.slice(0, 7) + '-01'} />
               ))}
               <tr className={`grand${result.in_balance ? '' : ' out-of-balance'}`}>
                 <td></td>
@@ -244,7 +245,25 @@ export default function TrialBalancePage() {
   )
 }
 
-function GroupRows({ group, tree }: { group: Group; tree: ReturnType<typeof useCollapsibleTree> }) {
+function GroupRows({ group, tree, scenario, raw, asOf, monthStart }: {
+  group: Group; tree: ReturnType<typeof useCollapsibleTree>
+  scenario: string; raw: boolean; asOf: string; monthStart: string
+}) {
+  // trial_balance.html's own `entry_link()` macro: a leaf row's non-zero
+  // balance is a link straight through to the Journal, pre-filtered to
+  // exactly the entries behind it. `date_from` only applies to a flow
+  // (income/expense) account, and only outside `raw` mode — a balance
+  // account (asset/liability/equity) always shows its full cumulative
+  // total through `as_of`, so bounding it below would exclude real
+  // contributing entries; a flow account's *default* view is already
+  // month-to-date (the simulated close), so the drill-through matches
+  // what's actually on screen rather than reaching further back than the
+  // figure itself represents.
+  const entryLink = (code: string, isFlow: boolean) =>
+    `/app/entries?scenario=${encodeURIComponent(scenario)}` +
+    `&date_from=${isFlow && !raw ? monthStart : ''}&date_to=${asOf}&account=${encodeURIComponent(code)}`
+  const isFlowType = group.type === 'income' || group.type === 'expense'
+
   return (
     <>
       <tr className="type-head">
@@ -270,20 +289,16 @@ function GroupRows({ group, tree }: { group: Group; tree: ReturnType<typeof useC
               <span className="tree-toggle" />
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
             </td>
-            {/* trial_balance.html's own `entry_link()` macro branches here —
-                a leaf row's non-zero balance becomes an `a.amount-link`
-                drilling through to a filtered Journal. `/app/entries`
-                doesn't exist yet (Phase 3.4), same "don't reach into a
-                screen that doesn't exist yet" reasoning Tags' own entry-
-                count column already applied (Phase 3.2) — so both of
-                trial_balance.html's branches collapse into this one,
-                plain-text either way, and only differ (from each other)
-                in whether a balance renders at all, which `isZeroAmount`
-                alone already decides. `a.amount-link`'s own CSS still
-                shipped with this phase's batch regardless, ready for
-                Phase 3.4 to wrap this cell in a real `<Link>`. */}
-            <td className="num money money-first">{isZeroAmount(r.debit_balance) ? '' : formatMoney(r.debit_balance)}</td>
-            <td className="num money">{isZeroAmount(r.credit_balance) ? '' : formatMoney(r.credit_balance)}</td>
+            <td className="num money money-first">
+              {isZeroAmount(r.debit_balance) ? '' : (
+                <Link className="amount-link" to={entryLink(r.account_code, isFlowType)}>{formatMoney(r.debit_balance)}</Link>
+              )}
+            </td>
+            <td className="num money">
+              {isZeroAmount(r.credit_balance) ? '' : (
+                <Link className="amount-link" to={entryLink(r.account_code, isFlowType)}>{formatMoney(r.credit_balance)}</Link>
+              )}
+            </td>
           </tr>
         ),
       )}

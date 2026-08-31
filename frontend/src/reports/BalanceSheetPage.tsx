@@ -200,21 +200,24 @@ export default function BalanceSheetPage() {
               </tr>
             </thead>
             <tbody>
-              <SectionRows label="Assets" rows={result.assets} tree={tree} sign={1} />
+              <SectionRows label="Assets" rows={result.assets} tree={tree} sign={1}
+                           scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
                 <td>Total assets</td>
                 <td className="num money money-first">{formatMoneyOrDash(result.total_assets)}</td>
               </tr>
 
-              <SectionRows label="Liabilities" rows={result.liabilities} tree={tree} sign={-1} />
+              <SectionRows label="Liabilities" rows={result.liabilities} tree={tree} sign={-1}
+                           scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
                 <td>Total liabilities</td>
                 <td className="num money money-first">{formatMoneyOrDash(result.total_liabilities)}</td>
               </tr>
 
-              <SectionRows label="Equity" rows={result.equity} tree={tree} sign={-1} />
+              <SectionRows label="Equity" rows={result.equity} tree={tree} sign={-1}
+                           scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
                 <td>Total equity</td>
@@ -251,11 +254,15 @@ function SectionRows({
   rows,
   tree,
   sign,
+  scenario,
+  asOf,
 }: {
   label: string
   rows: Row[]
   tree: ReturnType<typeof useCollapsibleTree>
   sign: 1 | -1
+  scenario: string
+  asOf: string
 }) {
   return (
     <>
@@ -278,7 +285,21 @@ function SectionRows({
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
             </td>
             <td className="num money money-first">
-              {formatMoneyOrDash(Number(r.subtotal) * sign)}
+              {/* balance_sheet.html's own entry_link(r.account_code,
+                  -r.subtotal) if not r.has_children else plain text —
+                  every leaf drills through regardless of amount (unlike
+                  Trial Balance, which only links a non-zero balance);
+                  a summary/parent row stays plain text either way. No
+                  date_from: a balance-sheet account is always cumulative
+                  through as_of, never bounded to a period. */}
+              {r.has_children ? (
+                formatMoneyOrDash(Number(r.subtotal) * sign)
+              ) : (
+                <Link className="amount-link"
+                      to={`/app/entries?scenario=${encodeURIComponent(scenario)}&date_to=${asOf}&account=${encodeURIComponent(r.account_code)}`}>
+                  {formatMoneyOrDash(Number(r.subtotal) * sign)}
+                </Link>
+              )}
             </td>
           </tr>
         ),

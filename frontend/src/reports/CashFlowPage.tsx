@@ -213,14 +213,16 @@ export default function CashFlowPage() {
                   <td className="num money money-first">{formatMoneyOrDash(result.tie_out.beginning)}</td>
                 </tr>
 
-                <CashFlowSection label="Inflows" rows={result.inflows} emptyText="No inflows in this range." />
+                <CashFlowSection label="Inflows" rows={result.inflows} emptyText="No inflows in this range."
+                                 scenario={result.scenario} dateFrom={result.date_from} dateTo={result.date_to} />
                 <tr className="subtotal">
                   <td></td>
                   <td>Total inflows</td>
                   <td className="num money money-first">{formatMoneyOrDash(result.total_inflows)}</td>
                 </tr>
 
-                <CashFlowSection label="Outflows" rows={result.outflows} emptyText="No outflows in this range." />
+                <CashFlowSection label="Outflows" rows={result.outflows} emptyText="No outflows in this range."
+                                 scenario={result.scenario} dateFrom={result.date_from} dateTo={result.date_to} />
                 <tr className="subtotal">
                   <td></td>
                   <td>Total outflows</td>
@@ -235,7 +237,8 @@ export default function CashFlowPage() {
                       </td>
                     </tr>
                     {result.ledger_adjustments.map((r) => (
-                      <CashFlowRowTr key={r.account_id} row={r} />
+                      <CashFlowRowTr key={r.account_id} row={r} scenario={result.scenario}
+                                     dateFrom={result.date_from} dateTo={result.date_to} />
                     ))}
                     <tr className="subtotal">
                       <td></td>
@@ -267,14 +270,10 @@ export default function CashFlowPage() {
   )
 }
 
-// `entry_link`'s own drill-through to a filtered Journal isn't wrapped
-// here — same "don't reach into a screen that doesn't exist yet"-shaped
-// deferral Trial Balance's and Balance Sheet's own comments already
-// document, even though `/app/entries` exists today: neither of those
-// two screens restored their own drill-through when Journal shipped
-// either, so leaving all three consistent (plain amounts, no link) beats
-// this screen alone jumping ahead.
-function CashFlowSection({ label, rows, emptyText }: { label: string; rows: CashFlowRow[]; emptyText: string }) {
+function CashFlowSection({ label, rows, emptyText, scenario, dateFrom, dateTo }: {
+  label: string; rows: CashFlowRow[]; emptyText: string
+  scenario: string; dateFrom: string; dateTo: string
+}) {
   return (
     <>
       <tr className="type-head">
@@ -287,13 +286,15 @@ function CashFlowSection({ label, rows, emptyText }: { label: string; rows: Cash
           </td>
         </tr>
       ) : (
-        rows.map((r) => <CashFlowRowTr key={r.account_id} row={r} />)
+        rows.map((r) => <CashFlowRowTr key={r.account_id} row={r} scenario={scenario} dateFrom={dateFrom} dateTo={dateTo} />)
       )}
     </>
   )
 }
 
-function CashFlowRowTr({ row }: { row: CashFlowRow }) {
+function CashFlowRowTr({ row, scenario, dateFrom, dateTo }: {
+  row: CashFlowRow; scenario: string; dateFrom: string; dateTo: string
+}) {
   return (
     <tr>
       <td className="mono dim">{row.account_code}</td>
@@ -320,7 +321,18 @@ function CashFlowRowTr({ row }: { row: CashFlowRow }) {
           </>
         )}
       </td>
-      <td className="num money money-first">{formatMoneyOrDash(row.amount)}</td>
+      {/* cash_flow.html's own entry_link — same pattern as Balance
+          Sheet's (drills through regardless of amount), but with the
+          report's own date_from/date_to range instead of a single as_of,
+          since Cash Flow has no month-to-date-vs-cumulative distinction
+          to make: every row here already represents activity strictly
+          within this range. */}
+      <td className="num money money-first">
+        <Link className="amount-link"
+              to={`/app/entries?scenario=${encodeURIComponent(scenario)}&date_from=${dateFrom}&date_to=${dateTo}&account=${encodeURIComponent(row.account_code)}`}>
+          {formatMoneyOrDash(row.amount)}
+        </Link>
+      </td>
     </tr>
   )
 }

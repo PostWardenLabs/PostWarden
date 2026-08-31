@@ -299,12 +299,16 @@ export default function TagsPage() {
                   <span className="entity-name-label">{t.name}</span>
                 )}
               </td>
-              {/* Entry count stays plain text, not legacy's amount-link
-                  through to a filtered Journal — /app/entries doesn't
-                  exist yet (Phase 3.4), same "don't reach into a screen
-                  that doesn't exist yet" reasoning every prior phase
-                  already applied to modules with no live counterpart. */}
-              <td className="num mono">{t.entry_count}</td>
+              {/* Cutover: closed the same "don't reach into a screen
+                  that doesn't exist yet" deferral PayeesPage.tsx's own
+                  entry-count link already closed (Phase 4.2) — /app/
+                  entries exists now, so this is a real drill-through to
+                  the Journal, same as Payees'. */}
+              <td className="num mono">
+                {t.entry_count > 0 ? (
+                  <Link className="amount-link" to={`/app/entries?tags=${encodeURIComponent(t.name)}`}>{t.entry_count}</Link>
+                ) : t.entry_count}
+              </td>
               <td className="dim">{t.is_active ? 'active' : 'archived'}</td>
               <td className="actions">
                 {editingId === t.id ? null : (

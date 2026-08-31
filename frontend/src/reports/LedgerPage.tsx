@@ -162,7 +162,7 @@ export default function LedgerPage() {
             <h2 className="t-section-label">{g.label}</h2>
             <div className="t-account-grid">
               {g.rows.map((a) => (
-                <TAccountCard key={a.code} card={a} />
+                <TAccountCard key={a.code} card={a} scenario={result.scenario} asOf={result.as_of} />
               ))}
             </div>
           </section>
@@ -172,15 +172,26 @@ export default function LedgerPage() {
   )
 }
 
-// entry_link/cell_link's own drill-through to a filtered Journal stays
-// unwrapped, same deferral every other report this phase carries — the
-// caption is plain text, not a link, and individual cells aren't links
-// either.
-function TAccountCard({ card }: { card: Card }) {
+// ledger.html's own two link patterns: the caption drills through to
+// the account's whole window (link_date_from..as_of — link_date_from is
+// month_start for a flow account outside raw mode, "" otherwise, same
+// as Trial Balance's is_flow logic but computed server-side here since
+// Card carries it directly), and each individual debit/credit cell
+// drills through to its own single day (cell_link — date_from and
+// date_to both equal that one row's date, only linked when a value is
+// actually there).
+function cellLink(scenario: string, code: string, date: string) {
+  return `/app/entries?scenario=${encodeURIComponent(scenario)}&date_from=${date}&date_to=${date}&account=${encodeURIComponent(code)}`
+}
+
+function TAccountCard({ card, scenario, asOf }: { card: Card; scenario: string; asOf: string }) {
   return (
     <table className="ledger t-account">
       <caption>
-        {card.code} · {card.name}
+        <Link className="amount-link"
+              to={`/app/entries?scenario=${encodeURIComponent(scenario)}&date_from=${card.link_date_from}&date_to=${asOf}&account=${encodeURIComponent(card.code)}`}>
+          {card.code} · {card.name}
+        </Link>
       </caption>
       <thead>
         <tr>
@@ -194,8 +205,16 @@ function TAccountCard({ card }: { card: Card }) {
         {card.rows.map((r, i) => (
           <tr key={i}>
             <td className="dim small">{r.debit_date ? formatDate(r.debit_date) : ''}</td>
-            <td className="num money money-first">{r.debit ? formatMoney(r.debit) : ''}</td>
-            <td className="num money money-last t-divider">{r.credit ? formatMoney(r.credit) : ''}</td>
+            <td className="num money money-first">
+              {r.debit ? (
+                <Link className="amount-link" to={cellLink(scenario, card.code, r.debit_date!)}>{formatMoney(r.debit)}</Link>
+              ) : ''}
+            </td>
+            <td className="num money money-last t-divider">
+              {r.credit ? (
+                <Link className="amount-link" to={cellLink(scenario, card.code, r.credit_date!)}>{formatMoney(r.credit)}</Link>
+              ) : ''}
+            </td>
             <td className="dim small">{r.credit_date ? formatDate(r.credit_date) : ''}</td>
           </tr>
         ))}
