@@ -1,11 +1,15 @@
-"""The imports module's `APIRouter` — both importers (plain CSV,
-mapped/rules). Same shape every prior module's own router established:
-thin routes, real logic in `service.py`.
+"""The imports module's `APIRouter` — the one unified import wizard
+(IMPORT_WIZARD.md §7 Phase 4; the plain fixed-column importer and its
+`POST /import` route were retired in Phase 4 item 5, once `ImportMapped
+Panel.tsx`'s own Shape step could reproduce that importer's grouped/
+Debit-Credit/direct-code format as a default rather than a separate code
+path). Same shape every prior module's own router established: thin
+routes, real logic in `service.py`.
 
 `get_current_session` is required at the router level for every route,
-every write route additionally requires `require_csrf_header`, and both
-`import_csv` and `import_mapped_commit` bind the resulting `session` to
-thread `session["user_id"]` through as `imported_by_user_id`.
+every write route additionally requires `require_csrf_header`, and
+`import_mapped_commit` binds the resulting `session` to thread
+`session["user_id"]` through as `imported_by_user_id`.
 `import_mapped_columns`/`import_mapped_preview` need the CSRF check too
 but never touch attribution — neither writes anything — so they only
 gain `require_csrf_header` as a bare `dependencies=[...]` entry, not a
@@ -77,27 +81,6 @@ router = APIRouter(prefix="/import", tags=["imports"],
 @router.get("")
 def recent_batches(limit: int = 10, conn: Connection = Depends(get_connection)) -> dict:
     return {"recent_batches": service.recent_batches(conn, limit)}
-
-
-@router.post("")
-async def import_csv(target_scenario_id: int = Form(...), file: UploadFile = File(...),
-                      session: dict = Depends(require_csrf_header),
-                      conn: Connection = Depends(get_connection)) -> dict:
-    """Unchanged multipart contract (IMPORT_WIZARD.md §7 Phase 4 item 4)
-    — only `service.import_csv`'s own internals moved onto the unified
-    pipeline, a thin shim now rather than its own parsing logic. Retired
-    outright in Phase 4 item 5 once `ImportPlainPanel.tsx` stops calling
-    it."""
-    try:
-        content = service.decode_upload(await file.read())
-        result = service.import_csv(
-            conn, content=content, filename=file.filename or "import.csv",
-            target_scenario_id=target_scenario_id, user_id=session["user_id"])
-    except ValueError as e:
-        raise HTTPException(400, detail=str(e))
-    except SQLAlchemyError as e:
-        raise HTTPException(400, detail=pg_message(e))
-    return result
 
 
 def _known_codes_if_needed(conn: Connection, content: str, shape: dict, column_map: dict[str, str],

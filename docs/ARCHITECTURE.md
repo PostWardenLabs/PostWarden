@@ -105,7 +105,9 @@ account settings), `entries` (the Journal), `staging` (import review +
 duplicates), `reports` (Trial Balance, Balance Sheet, Income Statement,
 Cash Flow, Variance, Ledger — the module with the most genuinely hard
 logic: account-tree rollups, period splitting, the cash-flow tie-out),
-`imports` (plain-CSV and mapped/rules importers), `budget` (budget lines
+`imports` (the one CSV import wizard — shape, dialect, and column
+mapping all wizard settings on a single pipeline, SPEC.md decision 24),
+`budget` (budget lines
 + variance), `reference` (Accounts, Payees, Tags, Scenarios, Account
 Levels — reference-data CRUD), `scheduling` (scheduled entries + entry
 templates), `dashboard` (the landing page). `src/postwarden/analytics/`

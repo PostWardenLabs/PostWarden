@@ -1,12 +1,11 @@
 """End-to-end tests of modules.imports.router — real HTTP requests
 through a throwaway FastAPI() + include_router(), the same pattern
-`modules/entries/test_router.py` established. `POST /import` and `POST
-/import/mapped/columns` exercise real multipart file uploads (`files=`),
-not JSON bodies — the one shape no prior module's own router needed;
-every later mapped-importer step (`/mapped/preview`, `/mapped/validate`,
-`/mapped`) is JSON, round-tripping `file_content_b64` (and now `shape`/
-`column_map`/`column_kinds`/`value_maps`, IMPORT_WIZARD.md §7 Phase 4)
-forward."""
+`modules/entries/test_router.py` established. `POST /import/mapped/
+columns` exercises a real multipart file upload (`files=`), not a JSON
+body — the one shape no prior module's own router needed; every later
+step (`/mapped/preview`, `/mapped/validate`, `/mapped`) is JSON,
+round-tripping `file_content_b64`, `shape`, `column_map`, `column_kinds`,
+and `value_maps` (IMPORT_WIZARD.md §7 Phase 4) forward."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -27,9 +26,8 @@ def client_for(conn) -> TestClient:
     # write route additionally requires `require_csrf_header` — override both
     # to a fixed fake session rather than simulate a real login/CSRF-token
     # round-trip in every test below. A *real* `users` row (`mk_user`), not a
-    # made-up id: `import_csv`/`import_mapped_commit` both thread this
-    # session's `user_id` into `imported_by_user_id`, which has a real FK
-    # against `users(id)`.
+    # made-up id: `import_mapped_commit` threads this session's `user_id`
+    # into `imported_by_user_id`, which has a real FK against `users(id)`.
     session = {"user_id": mk_user(conn)["id"], "username": "test"}
     app.dependency_overrides[get_current_session] = lambda: session
     app.dependency_overrides[require_csrf_header] = lambda: session
@@ -44,40 +42,6 @@ def test_recent_batches_endpoint_returns_empty_when_nothing_imported_yet(book, c
     resp = client_for(conn).get("/import")
     assert resp.status_code == 200
     assert resp.json() == {"recent_batches": []}
-
-
-def test_import_csv_endpoint_stages_entries(book, conn):
-    # No Reference/Payee/Memo columns here — exercises `import_csv`'s own
-    # shim filtering those optional fields out of its `column_map` before
-    # calling `parse_file`, rather than the file actually having them
-    # (IMPORT_WIZARD.md §7 Phase 4 item 4, `import_csv`'s own docstring).
-    content = _csv(
-        "Entry #,Date,Description,Account code,Debit,Credit",
-        f"1,2026-08-01,Imported entry,{book['checking']['code']},40,",
-        f"1,2026-08-01,Imported entry,{book['salary']['code']},,40",
-    )
-    resp = client_for(conn).post(
-        "/import", data={"target_scenario_id": str(book["actual"]["id"])},
-        files={"file": ("bank.csv", content, "text/csv")})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["staged_count"] == 1
-    assert body["errors"] == []
-
-    listed = client_for(conn).get("/import").json()["recent_batches"]
-    assert listed[0]["id"] == body["batch_id"]
-    assert listed[0]["filename"] == "bank.csv"
-
-
-def test_import_csv_endpoint_rejects_a_file_missing_required_columns(book, conn):
-    # `import_csv`'s shim routes through `parse_file`'s own structural
-    # check now, not `parse_csv_import`'s old bespoke "Missing required
-    # column(s)" message (IMPORT_WIZARD.md §7 Phase 4 item 4).
-    resp = client_for(conn).post(
-        "/import", data={"target_scenario_id": str(book["actual"]["id"])},
-        files={"file": ("bad.csv", "Date,Description\n2026-08-01,Nope\n", "text/csv")})
-    assert resp.status_code == 400
-    assert "Mapped column(s) not found in the file" in resp.json()["detail"]
 
 
 MAPPED_COLUMN_MAP = {"account": "Account", "date": "Date", "payee": "Payee",

@@ -3,35 +3,23 @@ import { Link } from 'react-router-dom'
 
 import client from '../api/client'
 import ImportMappedPanel from './ImportMappedPanel'
-import ImportPlainPanel from './ImportPlainPanel'
 
-// The Import screen's own container: a page-head, a two-way tab bar,
-// and the "Recent imports" table shared by both tabs, since both
-// importers ultimately funnel through the same `stage_import_groups`
-// (modules/imports/service.py's own docstring) and land in the same
-// `import_batches` table — there's only ever one real history to show,
-// regardless of which tab produced a given row.
+// The Import screen's own container: a page-head, the import wizard,
+// and the "Recent imports" table below it.
 //
-// This page used to be two: a plain `ImportPage.tsx` with the whole of
-// what's now `ImportPlainPanel.tsx`, reachable from the sidebar, and a
-// separate `ImportMappedPage.tsx` (now `ImportMappedPanel.tsx`) at
-// `/app/import/mapped`, reachable only via a text link buried in the
-// first page's copy — flagged in BACKLOG.md as "weird," since a user
-// with a single-entry export had to already know the second importer
-// existed. One nav entry, one URL, two tabs fixes that: whichever
-// shape a file turns out to be, the other importer is one click away,
-// not a hunt through prose.
-//
-// Each tab is unmounted while inactive (a plain `mode === 'x' && <.../>`
-// below, not both panels kept mounted and hidden via CSS) — switching
-// tabs mid-way through the mapped importer's upload/review flow loses
-// that in-progress state, same as navigating away from it used to.
-// Accepted trade-off: two file inputs with the same `id` can't both
-// exist in the DOM at once anyway (FileField.tsx's `id` prop), and
-// losing an in-progress upload on a deliberate tab switch is a
-// reasonable expectation, not a surprise.
-type Mode = 'plain' | 'mapped'
-
+// This page used to mount two separate importers behind a tab bar — a
+// fixed-column "CSV import" panel (`ImportPlainPanel.tsx`) and a
+// column-mapping "Import with rules" wizard (`ImportMappedPanel.tsx`) —
+// because the wizard couldn't yet express the fixed importer's own
+// grouped/Debit-Credit/direct-code shape. IMPORT_WIZARD.md §7 Phase 4
+// made that shape (and every other combination) a wizard setting
+// instead of a separate code path, so the two importers merged into
+// one: `ImportMappedPanel.tsx` alone, no tab bar, no mode to choose.
+// `ImportPlainPanel.tsx` and its `POST /import` route are deleted
+// outright (Phase 4 item 5) rather than kept as a shortcut, since the
+// wizard's own default shape (grouped, Debit/Credit, direct codes)
+// already reproduces the old fixed importer's zero-friction path for a
+// file shaped that way — see `ImportMappedPanel.tsx`'s own Shape panel.
 interface RecentBatch {
   id: number
   filename: string
@@ -55,7 +43,6 @@ function formatBatchTime(iso: string): string {
 }
 
 export default function ImportPage() {
-  const [mode, setMode] = useState<Mode>('plain')
   const [recent, setRecent] = useState<RecentBatch[] | null>(null)
 
   function reload() {
@@ -89,19 +76,7 @@ export default function ImportPage() {
         <Link to="/app/help#import" className="help-icon" aria-label="How this works" title="How this works">?</Link>
       </div>
 
-      <div className="bar" role="tablist" aria-label="Import method">
-        <button type="button" role="tab" aria-selected={mode === 'plain'}
-                className={mode === 'plain' ? '' : 'quiet'} onClick={() => setMode('plain')}>
-          CSV import
-        </button>
-        <button type="button" role="tab" aria-selected={mode === 'mapped'}
-                className={mode === 'mapped' ? '' : 'quiet'} onClick={() => setMode('mapped')}>
-          Import with rules
-        </button>
-      </div>
-
-      {mode === 'plain' && <ImportPlainPanel onStaged={reload} />}
-      {mode === 'mapped' && <ImportMappedPanel onStaged={reload} />}
+      <ImportMappedPanel onStaged={reload} />
 
       {!!recent?.length && (
         <>

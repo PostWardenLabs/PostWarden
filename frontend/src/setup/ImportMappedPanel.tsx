@@ -10,31 +10,35 @@ import { usePostableAccounts } from '../widgets/usePostableAccounts'
 
 // The unified importer's upload + shape/column-mapping + review flow —
 // split out of what used to be the whole of `ImportMappedPage.tsx` when
-// the plain and mapped importers merged onto one page as two tabs
-// (`ImportPage.tsx`'s own docstring has the reasoning), then absorbed the
-// plain importer's own grouped/Debit-Credit shape entirely in IMPORT_
-// WIZARD.md §7 Phase 4 — this is now the *only* importer's own UI, though
-// `ImportPage.tsx` still mounts it alongside `ImportPlainPanel.tsx` as a
-// tab until Phase 4.7 retires that panel and its route for good. Up to
-// four internal steps now (`step` below) — BACKLOG.md's "New import with
-// rules page" #2 added a column-mapping step between upload and review,
-// since the importer used to require the file's own header row to read
-// literally `Account,Date,Payee,Notes,Category,Amount` (true of
-// ActualBudget's export by construction, false of anything else) — see
-// `SPEC.md` decision 23's own account of why; a fourth, `'validate'`,
-// only ever renders when the review step's own pre-commit check (IMPORT_
-// WIZARD.md §7 Phase 3) finds row errors — a clean file never sees it.
-// None of these steps exist as their own GET route — there's no
-// server-side state between them to restore from on a refresh either,
-// same reasoning the old two-step version already had — so this stays
-// one component with internal `step` state, not separate React Router
+// the plain and mapped importers first merged onto one page as two tabs
+// (`ImportPage.tsx`'s own docstring has that history), then absorbed the
+// plain importer's own grouped/Debit-Credit/direct-code shape entirely in
+// IMPORT_WIZARD.md §7 Phase 4 — this is now the *only* importer, mounted
+// directly by `ImportPage.tsx` with no tab bar; `ImportPlainPanel.tsx`
+// and its `POST /import` route were retired outright once this panel's
+// own Shape step could reproduce their fixed grouped/Debit-Credit/
+// direct-code format as a default rather than a separate code path
+// (Phase 4 item 5). Up to four internal steps now (`step` below) —
+// BACKLOG.md's "New import with rules page" #2 added a column-mapping
+// step between upload and review, since the importer used to require
+// the file's own header row to read literally
+// `Account,Date,Payee,Notes,Category,Amount` (true of ActualBudget's
+// export by construction, false of anything else) — see `SPEC.md`
+// decision 23's own account of why; a fourth, `'validate'`, only ever
+// renders when the review step's own pre-commit check (IMPORT_WIZARD.md
+// §7 Phase 3) finds row errors — a clean file never sees it. None of
+// these steps exist as their own GET route — there's no server-side
+// state between them to restore from on a refresh either, same
+// reasoning the old two-step version already had — so this stays one
+// component with internal `step` state, not separate React Router
 // routes.
 //
 // `errorDetail`/`ErrorBody`, `IMPORT_MAX_ERRORS_SHOWN`/
-// `skippedRowsMessage` — identical to `ImportPlainPanel.tsx`'s own
-// copies. Forked, not shared, same as that file's own comment on why:
-// two three-line helpers each with exactly one caller isn't worth a
-// shared module import cycle between two sibling panels.
+// `skippedRowsMessage` were forked from `ImportPlainPanel.tsx`'s own
+// identical copies while both panels existed side by side (two
+// three-line helpers each with exactly one caller wasn't worth a shared
+// module import cycle between sibling panels) — now this file's only
+// copies, that panel having been deleted in Phase 4 item 5.
 interface ErrorBody {
   detail?: string
 }
@@ -280,8 +284,7 @@ function defaultColumnKind(targetKey: string, shape: Shape): 'code' | 'label' {
 
 interface ImportMappedPanelProps {
   // Called once a batch actually lands, so the container can re-fetch
-  // the shared "Recent imports" table — same contract as
-  // `ImportPlainPanel.tsx`'s own `onStaged`.
+  // the "Recent imports" table.
   onStaged: () => void
 }
 
@@ -291,9 +294,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const [step, setStep] = useState<'upload' | 'columns' | 'review' | 'validate'>('upload')
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
 
-  // Same exclusions as the plain Import panel's own target-scenario
-  // picker (ImportPlainPanel.tsx) — an import has to land somewhere it
-  // can eventually become real postings.
+  // An import has to land somewhere it can eventually become real
+  // postings.
   const eligibleScenarios = useMemo(
     () => (scenarios ?? []).filter((s) => !s.is_locked && !s.income_statement_only && !s.is_staging),
     [scenarios],
@@ -412,9 +414,12 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     const body = new FormData()
     body.append('target_scenario_id', String(scenarioId))
     body.append('file', file)
-    // Same `FormData`-passes-through-unchanged reasoning as
-    // ImportPlainPanel.tsx's own identical cast — see that file's
-    // comment for the openapi-fetch source dig this is based on.
+    // openapi-fetch's generated types expect a plain JSON-shaped body
+    // for this operation, but passing a real `FormData` instance through
+    // `body` works unchanged at runtime — openapi-fetch only serializes
+    // `body` when it isn't already `FormData`/`Blob`/etc, so this cast is
+    // just satisfying the type checker, not lying to it about actual
+    // behavior.
     const { data, error } = await client.POST('/import/mapped/columns', {
       body: body as unknown as { target_scenario_id: number; file: string },
     })

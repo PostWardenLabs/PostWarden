@@ -703,8 +703,7 @@ export interface paths {
         /** Recent Batches */
         get: operations["recent_batches_import_get"];
         put?: never;
-        /** Import Csv */
-        post: operations["import_csv_import_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1495,13 +1494,6 @@ export interface components {
         ApproveRejectRequest: {
             /** Entry Ids */
             entry_ids: string[];
-        };
-        /** Body_import_csv_import_post */
-        Body_import_csv_import_post: {
-            /** Target Scenario Id */
-            target_scenario_id: number;
-            /** File */
-            file: string;
         };
         /** Body_import_mapped_columns_import_mapped_columns_post */
         Body_import_mapped_columns_import_mapped_columns_post: {
@@ -3611,41 +3603,6 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    import_csv_import_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_import_csv_import_post"];
-            };
-        };
         responses: {
             /** @description Successful Response */
             200: {

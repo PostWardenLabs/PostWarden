@@ -415,13 +415,15 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
   reason expected: there's no rename/delete route for *any* scenario,
   so ACTUAL/STAGING were never specially exposed to begin with.
 - **New import with rules page — all three items shipped.** Post-
-  `v0.31.0`, no version bump of their own yet:
+  `v0.31.0`, no version bump of their own yet at the time:
     - *Enter should move between combo boxes, not submit the form* —
       `Combobox.tsx` now moves focus to the line below on Enter, the
       same way a spreadsheet does (`a22688d`).
     - *Direct access, instead of reaching it via a link on another page*
-      — the plain and mapped importers are two tabs on one Import page
-      now, so neither is hidden behind the other (`4e83869`).
+      — the plain and mapped importers were two tabs on one Import page
+      at the time, so neither was hidden behind the other (`4e83869`) —
+      later replaced outright by one wizard with no tabs at all, see
+      below.
     - *A column mapping step instead of assuming column names* — the
       mapped importer is a three-step wizard (upload → map columns →
       review). `IMPORT_MAPPED_FIELDS` replaced the old exact-header
@@ -433,6 +435,23 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
       column, rather than the file-column → target shape specified in
       the original ask** — see `IMPORT_WIZARD.md` §2 for why, and why
       it's being flipped back.
+- **The import wizard, all four planned phases — shipped, `v0.31.1`.**
+  Phases 1–3 (mapping-table re-orientation, the dialect step, the
+  per-row validation report) landed first, scoped to the mapped importer
+  alone; Phase 4 then merged it with the plain importer into one wizard
+  and deleted the plain importer's own UI/route outright —
+  `ImportPlainPanel.tsx`, `POST /import`'s route handler, and the two-tab
+  `ImportPage.tsx` are all gone. See `IMPORT_WIZARD.md` §7's own
+  phase-by-phase write-ups (each phase's deviations from its own plan)
+  and `SPEC.md` decision 24 for the shipped design. One naming loose end
+  deliberately left alone: `/import/mapped/*` and the `Mapped*Request`
+  schema names keep referring to what's now the *only* importer, not a
+  second one — confirmed as a deliberate "least churn now, rename later"
+  choice before Phase 4 started rather than an oversight. Worth a
+  cosmetic rename (`/import/*`, `ImportRequest`, `ImportMappedPanel.tsx`
+  → `ImportWizard.tsx`) once "mapped" is a clear misnomer with nothing
+  else competing for attention — not urgent, since the name is internal
+  (route paths and schema class names, not user-facing copy).
 
 ## Feature: Every theme has a light and dark mode. 
 - To move between themes and their light/dark variants, there is 

@@ -1,20 +1,23 @@
 """The import wizard's pipeline (`parse_file`/`transform_rows`/`preview_
-file`/`validate_file`/`import_file`, IMPORT_WIZARD.md §7 Phase 4) plus
-the plain CSV importer's own request body (`import_csv` — a thin shim
-over that same pipeline since Phase 4 item 4, `IMPORT_PLAIN_SHAPE`/
-`IMPORT_PLAIN_COLUMN_MAP`/`IMPORT_PLAIN_COLUMN_KINDS` its own fixed
-wizard configuration; `POST /import`, its one route, is deleted outright
-in Phase 4 item 5 once `ImportPlainPanel.tsx` stops calling it), and the
-shared Staging-landing step behind both. Every function that touches the
-database takes a SQLAlchemy `Connection` and reads/writes through
-`repository.py`, same convention every prior module established.
+file`/`validate_file`/`import_file`, IMPORT_WIZARD.md §7 Phase 4) and the
+Staging-landing step behind it (`stage_import_groups`). Every function
+that touches the database takes a SQLAlchemy `Connection` and
+reads/writes through `repository.py`, same convention every prior module
+established.
 
-**`stage_import_groups` is the one function every importer funnels
-through**: one `import_batches` row, then one `journal_entries` + its
-`journal_lines` per group, regardless of which parser produced `groups`.
-Every `groups` shape (the plain importer's, and `transform_rows`' own
-output for every wizard shape) agrees on the same dict shape —
-`entry_date`/`description`/`reference`/`payee_name`/`lines` (each line
+Before Phase 4, this module held two separate parsers — a plain
+fixed-column CSV importer (`parse_csv_import`) and this pipeline, each
+with its own route. Phase 4 made every one of the plain importer's fixed
+choices (grouped rows keyed on an entry number, a Debit/Credit column
+pair, `Account code` cells holding real codes) an ordinary `shape`/
+`column_kinds` combination instead, then retired `parse_csv_import` and
+its route outright (item 5) once `ImportMappedPanel.tsx`'s own Shape
+step could reproduce that combination as a default. `stage_import_groups`
+is the one function every `groups` producer funnels through — one
+`import_batches` row, then one `journal_entries` + its `journal_lines`
+per group — every `groups` shape (`transform_rows`' own output for every
+wizard shape) agreeing on the same dict shape: `entry_date`/
+`description`/`reference`/`payee_name`/`lines` (each line
 `{code, amount, memo}`).
 
 **Amounts are `Decimal` throughout, never `float`.** Same fix
@@ -33,11 +36,11 @@ noted in `modules/entries/repository.py`'s docstring).
 
 **No scenario-picker payload anywhere in this module** — same "don't
 reach into a module that doesn't exist yet" reasoning `repository.py`'s
-own docstring gives for `recent_batches`. `import_csv`/`import_file`
-both take `target_scenario_id` as a plain caller-supplied int, trusting
-whatever the frontend's own `modules/reference/`-backed picker sent —
-the foreign key `import_batches.target_scenario_id` is what actually
-enforces it's valid."""
+own docstring gives for `recent_batches`. `import_file` takes
+`target_scenario_id` as a plain caller-supplied int, trusting whatever
+the frontend's own `modules/reference/`-backed picker sent — the foreign
+key `import_batches.target_scenario_id` is what actually enforces it's
+valid."""
 import base64
 import csv
 import io
@@ -387,24 +390,21 @@ def recent_batches(conn: Connection, limit: int = 10) -> list[dict]:
 
 def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
                          target_scenario_id: int, user_id: int | None) -> int:
-    """Shared by both importers — see this module's own docstring.
-    Returns the new batch id. Raises `ValueError` if there's no
-    configured Staging scenario (`db/schema.sql`'s `uq_one_staging_
-    scenario` means this can only happen on a database nobody has
-    finished setting up).
+    """The landing step every `groups` producer funnels through — see
+    this module's own docstring. Returns the new batch id. Raises
+    `ValueError` if there's no configured Staging scenario
+    (`db/schema.sql`'s `uq_one_staging_scenario` means this can only
+    happen on a database nobody has finished setting up).
 
     **Every account code across every group is resolved up front,
-    before any row is written.** Every caller — the wizard's own
-    `import_file`, and `import_csv`'s own shim over it since Phase 4
-    item 4 — has `value_maps`/`column_kinds` values that are ultimately
-    caller-supplied and never checked against real accounts unless the
-    caller also supplied `known_codes` (`transform_rows`' own optional,
-    caller-assembled diagnostic — see `known_account_codes`); `import_
-    csv` always does (a `"code"`-kind column is its only lookup-capable
-    field), but a bad mapping value could still slip through if it
-    didn't. Resolving up front here means a bad mapping value always
-    fails with a clear message regardless, the same explicit "unknown
-    account code" check `modules.
+    before any row is written.** `import_file`'s `value_maps`/
+    `column_kinds` values are ultimately caller-supplied and never
+    checked against real accounts unless the caller also supplied
+    `known_codes` (`transform_rows`' own optional, caller-assembled
+    diagnostic — see `known_account_codes`), so a bad mapping value could
+    still slip through if it didn't. Resolving up front here means a bad
+    mapping value always fails with a clear message regardless, the same
+    explicit "unknown account code" check `modules.
     entries.service.create_entry` and `modules.staging.service.save_edit`
     already both do, rather than surfacing later as a bare `journal_
     lines.account_id` `NOT NULL` violation."""
@@ -430,86 +430,6 @@ def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
                               amount=ln["amount"], memo=ln["memo"])
     repo.check_deferred_constraints(conn)
     return batch_id
-
-
-# `import_csv`'s own fixed wizard configuration (IMPORT_WIZARD.md §7
-# Phase 4 item 4) — the historical Export-CSV shape (grouped rows, one
-# leg per row, a Debit/Credit pair, `Account code` cells already holding
-# real codes) expressed as `shape`/`column_map`/`column_kinds` instead of
-# `parse_csv_import`'s own bespoke parsing logic. `IMPORT_PLAIN_COLUMN_
-# MAP` covers every field `target_fields_for_shape` offers for this shape
-# — `group_key`/`date`/`account`/`debit`/`credit`/`description`
-# (required) and `reference`/`payee`/`memo` (optional) — under the exact
-# column names `IMPORT_REQUIRED_COLUMNS` (now retired) used to check for
-# by hand. `IMPORT_PLAIN_REQUIRED_KEYS` is the subset `import_csv` always
-# maps regardless of what the file actually has — see its own docstring
-# on why the three optional ones aren't always included verbatim.
-IMPORT_PLAIN_SHAPE = {"rows_per_entry": "grouped", "group_key_column": "Entry #", "amount_style": "debit_credit"}
-IMPORT_PLAIN_COLUMN_MAP = {
-    "group_key": "Entry #", "date": "Date", "description": "Description", "account": "Account code",
-    "debit": "Debit", "credit": "Credit", "reference": "Reference", "payee": "Payee", "memo": "Memo",
-}
-IMPORT_PLAIN_REQUIRED_KEYS = {"group_key", "date", "description", "account", "debit", "credit"}
-IMPORT_PLAIN_COLUMN_KINDS = {"account": IMPORT_COLUMN_KIND_CODE}
-
-
-def import_csv(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
-                user_id: int | None = None) -> dict:
-    """The plain double-entry CSV importer's full request body — a thin
-    shim over `import_file` (IMPORT_WIZARD.md §7 Phase 4 item 4) rather
-    than its own parsing logic, `IMPORT_PLAIN_SHAPE`/`IMPORT_PLAIN_
-    COLUMN_MAP`/`IMPORT_PLAIN_COLUMN_KINDS` fixing every wizard choice a
-    real user of the mapped importer would otherwise make by hand.
-
-    **The three optional fields (`reference`/`payee`/`memo`) only join
-    `column_map` when the file's own header actually has that column** —
-    `parse_file`'s structural check treats every `column_map` entry
-    (required or not) as a promise the file has to keep, unlike `parse_
-    csv_import`'s old bare `row.get("Reference")`, which silently read
-    `None` from a column that simply wasn't there. Sniffing the file's
-    real columns first (`sniff_mapped_columns`, cheap and pure — this
-    module's own established "re-read rather than thread extra state"
-    shape, see `known_account_codes`'s docstring) and filtering `IMPORT_
-    PLAIN_COLUMN_MAP` down to `IMPORT_PLAIN_REQUIRED_KEYS` plus whichever
-    optional ones are actually present keeps every plain-importer CSV
-    that never had a Reference/Payee/Memo column working exactly as
-    before; a genuinely empty or header-less file just falls through to
-    `parse_file`'s own "The file is empty" error a moment later.
-
-    `known_account_codes` resolves `Account code`'s real values in one
-    bulk query first, restoring `parse_csv_import`'s old per-row "unknown
-    account code" diagnostic (`_resolve_leg_account`'s own docstring).
-
-    **`skip_bad_rows` is left at `import_file`'s own default (`False`,
-    blocks on any row error) — a deliberate behavior change from `parse_
-    csv_import`'s old always-partial-stage habit**, confirmed before
-    Phase 4 implementation started (`IMPORT_WIZARD.md` §7 Phase 4's own
-    write-up, decision 1): every shape now requires the same explicit
-    "stage the rest, skip these" opt-in a row error used to skip
-    automatically for this importer alone. `POST /import` has no such
-    opt-in in its own request body — this route is retired outright in
-    Phase 4 item 5 (`ImportPlainPanel.tsx` never gets a validation-report
-    step of its own), so the practical effect is a CSV with any bad row
-    now fails outright rather than partially staging, for the short
-    window until that removal lands.
-
-    Raises `ValueError` when there's nothing valid to stage at all (a
-    required column the file itself is missing, every row failing to
-    resolve, or the whole file balancing to nothing) — same contract
-    `parse_csv_import`+`import_file`'s own combination already give
-    every wizard shape."""
-    try:
-        present = set(sniff_mapped_columns(content, IMPORT_DEFAULT_DIALECT)["columns"])
-    except ValueError:
-        present = set()  # empty/header-less file — parse_file raises its own clear error below
-    column_map = {k: v for k, v in IMPORT_PLAIN_COLUMN_MAP.items()
-                  if k in IMPORT_PLAIN_REQUIRED_KEYS or v in present}
-    known_codes = known_account_codes(conn, content, IMPORT_PLAIN_SHAPE, column_map, IMPORT_PLAIN_COLUMN_KINDS)
-    return import_file(
-        conn, content=content, filename=filename, target_scenario_id=target_scenario_id,
-        shape=IMPORT_PLAIN_SHAPE, column_map=column_map, column_kinds=IMPORT_PLAIN_COLUMN_KINDS,
-        value_maps={}, flip_sign=False, dialect=IMPORT_DEFAULT_DIALECT, skip_bad_rows=False,
-        known_codes=known_codes, user_id=user_id)
 
 
 def sniff_mapped_columns(content: str, dialect: dict = IMPORT_DEFAULT_DIALECT, sample_size: int = 5) -> dict:
@@ -1034,14 +954,15 @@ def import_file(conn: Connection, *, content: str, filename: str, target_scenari
                  value_maps: dict[str, dict[str, str]], flip_sign: bool,
                  dialect: dict = IMPORT_DEFAULT_DIALECT, skip_bad_rows: bool = False,
                  known_codes: set[str] | None = None, user_id: int | None = None) -> dict:
-    """Replaces `import_mapped` and, from Phase 4 item 4 on, `import_csv`
-    — the wizard's one commit step for every shape. Same "`skip_bad_rows`
-    makes a partial import an explicit choice, not an implicit default"
-    contract `import_mapped` established (IMPORT_WIZARD.md §7 Phase 3
-    item 2), now the rule for a grouped/Debit-Credit file too — a
-    deliberate behavior change from `import_csv`'s old always-partial-
-    stage default, confirmed before Phase 4 implementation started (see
-    `IMPORT_WIZARD.md` §7 Phase 4's own write-up)."""
+    """The wizard's one commit step for every shape — replaces the
+    pre-Phase-4 `import_mapped` and the plain importer's own bespoke
+    commit logic alike. Same "`skip_bad_rows` makes a partial import an
+    explicit choice, not an implicit default" contract `import_mapped`
+    established (IMPORT_WIZARD.md §7 Phase 3 item 2), now the rule for a
+    grouped/Debit-Credit file too — a deliberate behavior change from the
+    plain importer's old always-partial-stage default, confirmed before
+    Phase 4 implementation started (see `IMPORT_WIZARD.md` §7 Phase 4's
+    own write-up)."""
     rows, errors = parse_file(content, shape, column_map, dialect)
     if errors:
         raise ValueError("; ".join(errors))
@@ -1057,9 +978,8 @@ def import_file(conn: Connection, *, content: str, filename: str, target_scenari
 
 def decode_upload(raw: bytes) -> str:
     """`utf-8-sig` so an Excel-exported CSV's BOM doesn't end up glued to
-    the first header name — shared by both importers. Translates a
-    `UnicodeDecodeError` to `ValueError` so a router only ever has one
-    exception type to catch."""
+    the first header name. Translates a `UnicodeDecodeError` to
+    `ValueError` so a router only ever has one exception type to catch."""
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:

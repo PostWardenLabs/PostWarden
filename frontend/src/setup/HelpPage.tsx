@@ -128,17 +128,31 @@ export default function HelpPage() {
 
           <h2 id="import">Import</h2>
           <p>
-            Brings entries in from a CSV — the same column layout <a href="/entries/export.csv">Export CSV</a>{' '}
-            produces, so export → edit in a spreadsheet → re-import is a real round trip. Required columns:{' '}
-            <span className="mono">Entry #</span> (groups rows into one entry — the value itself isn&apos;t
-            kept), <span className="mono">Date</span>, <span className="mono">Description</span>,{' '}
-            <span className="mono">Account code</span>, and exactly one of <span className="mono">Debit</span> /{' '}
-            <span className="mono">Credit</span> per row. <span className="mono">Reference</span>,{' '}
-            <span className="mono">Payee</span>, and <span className="mono">Memo</span> are optional;{' '}
-            <span className="mono">Scenario</span> and <span className="mono">Account name</span> are ignored if
-            present — every entry in a group must balance on its own. Imported entries land in{' '}
-            <Link to="/app/staging">Staging</Link> for review, exactly like a scheduled entry, targeting
-            whichever scenario you pick on the upload form.
+            Brings entries in from a CSV — upload a file, then a wizard walks through matching it to a journal
+            entry before anything lands anywhere. Imported entries always land in{' '}
+            <Link to="/app/staging">Staging</Link> for review, exactly like a scheduled entry, targeting whichever
+            scenario you pick on the upload form.
+          </p>
+          <p>
+            After upload, pick the file&apos;s <strong>shape</strong>: whether each row is its own entry, or
+            several rows sharing a group-key column (like <span className="mono">Entry #</span>) each combine
+            into one; and whether the amount is one signed column or a separate Debit/Credit pair. The same
+            column layout <a href="/entries/export.csv">Export CSV</a> produces — grouped rows, Debit/Credit,
+            real account codes already in the file — is one shape among several, not a separate importer, so
+            export → edit in a spreadsheet → re-import is still a real round trip. Below the shape, map each of
+            the file&apos;s own columns onto a target field (date, description, account, amount, ...); an{' '}
+            <span className="mono">Account</span> or <span className="mono">Category</span> column can be
+            flagged as already holding real codes, or as labels (like a bank&apos;s own free-text category)
+            that need mapping to a real account next.
+          </p>
+          <p>
+            The review step lists the distinct values found in any label-mapped column and asks which account
+            each one becomes — skipped entirely for a file that&apos;s all real codes already. Submitting from
+            there checks every row before committing anything: a clean file stages immediately, but a file with
+            row errors (an unbalanced group, an unmapped label, an unknown account code) shows a validation
+            report instead, listing what failed and what would stage fine. From there, fix the mapping and
+            re-check, or stage the rest and explicitly skip the bad rows — nothing partially stages without
+            that choice.
           </p>
 
           <h2 id="templates">Templates</h2>

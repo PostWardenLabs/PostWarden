@@ -1334,6 +1334,119 @@ names, not arbitrary bank exports). Left as a plausible follow-up, not
 attempted here — `parse_csv_import`'s errors stay a flat `list[str]`,
 `ImportPlainPanel.tsx` stays a single flash banner.
 
+**Addendum (decision 24):** the "two importers" framing above is now
+historical. IMPORT_WIZARD.md §7 Phase 4 merged `/import` and
+`/import/mapped` into the one pipeline decision 24 describes — every
+reason given here for a per-import mapping (not a persistent ruleset),
+sniffed/editable dialect, and a structured validation report still
+holds, now for every file shape rather than the mapped importer alone.
+`parse_csv_import`, `ImportPlainPanel.tsx`, and the flat-`list[str]`
+error shape this decision described as the plain importer's own
+carve-out are gone; see decision 24 for what replaced them.
+
+### 24. Shape is a wizard property, not a choice of importer
+
+Decision 23 gave single-entry exports their own importer because
+`/import` only understood one fixed layout: rows grouped by `Entry #`,
+a Debit/Credit column pair, `Account code` cells already holding real
+codes. That layout was never actually special — it was one point in a
+small space of choices (one row per entry or several grouped by a key
+column; a signed amount or a Debit/Credit pair; a lookup column holding
+a real code already or a label that needs mapping) that the plain
+importer happened to hardcode and the mapped importer happened to
+leave unconfigurable the other way. IMPORT_WIZARD.md §7 Phase 4 made
+every one of those choices an explicit wizard setting instead, and
+`parse_csv_import`/`parse_mapped_file` — two parsers that had quietly
+converged on the same shared `_stage_import_groups()` landing step
+anyway — collapsed into one pipeline that reads them.
+
+**`shape` is `{rows_per_entry: "one"|"grouped", group_key_column: str|
+None, amount_style: "signed"|"debit_credit"}`.** `sniff_shape` guesses
+it from the file's own columns and sample rows the same way `sniff_
+dialect` already guessed delimiter/decimal format (decision 23's own
+account) — a case-insensitive Debit/Credit pair and a repeated-value
+column that looks like an id/entry/transaction key both nudge the
+guess toward `"grouped"`/`"debit_credit"`; anything ambiguous falls
+back to `"one"`/`"signed"`, the mapped importer's original and simpler
+default (R1: never block on a wrong guess, since every field is
+still editable). `target_fields_for_shape(shape)` replaces the fixed
+`IMPORT_MAPPED_FIELDS` list decision 23 described — the mapping step's
+own target-field list is now a function of `shape`, not a constant: a
+`"grouped"` shape adds a required `group_key` target with no lookup
+capability of its own, and `amount_style` swaps a single `amount`
+target for a `debit`/`credit` pair or back.
+
+**`column_kinds` (per lookup-capable column, `"code"` or `"label"`)
+generalizes what decision 23 only ever needed implicitly.** The plain
+importer's `Account code` column always held a real code; the mapped
+importer's `Account`/`Category` columns always held labels needing
+`account_map`/`category_map` — Phase 4 makes that a per-column choice
+rather than an assumption baked into which importer you happened to
+be using, and `value_maps: dict[key, dict[str,str]]` generalizes
+`account_map`/`category_map` into one map per `"label"`-kind column
+(in practice still 0, 1, or 2 maps, since only `account`/`category`
+are ever lookup-capable — this is *N grouped rows, one leg per row*,
+decision 23's own R9 boundary, not a single row expressing an
+arbitrary multi-way split, which stays future work regardless).
+`column_kinds`' default (`"label"` unless the shape is exactly
+grouped+debit_credit+account, which defaults to `"code"`) is a
+structural heuristic over `shape`/`amount_style` alone, deliberately
+not a live check against real account codes — keeps `parse_file`/
+`transform_rows` genuinely `Connection`-free (R12), the same purity
+`parse_mapped_file`/`transform_mapped_rows` always had.
+
+**`known_codes: set[str] | None` restores per-row "unknown account
+code" diagnostics without breaking that purity.** A `"code"`-kind
+column's value is trusted verbatim by `transform_rows` unless the
+caller also passes in a bulk-resolved `set` of real codes (`known_
+account_codes`, one query, run once by whichever router handler
+needs it) — `None` means every pure unit test, and the caller's
+grouped-row diagnostic degrades gracefully to `stage_import_groups`'s
+own blanket "Unknown account code" check instead of failing per-row.
+This is the one place Phase 4 added something decision 23's original
+design didn't need: `parse_mapped_file` never had a code-kind column
+to resolve at all.
+
+**The error shape decision 23 scoped to the mapped importer alone
+(`{row_no, raw, message}`, vs. the plain importer's flat strings) is
+now the only shape, for every file.** A grouped shape's balance
+failure still reports exactly one error per group, keyed to the
+group's first row — `parse_csv_import`'s own historical granularity,
+preserved rather than exploded into one error per row in the group.
+`parse_file` keeps flat strings for structural errors only (a required
+column missing, an unknown mapped column, an empty file) — the same
+split `parse_mapped_file` already had.
+
+**`skip_bad_rows` now blocks by default for every shape, not just the
+mapped importer's** — a deliberate behavior change from `parse_csv_
+import`'s old "stage what worked, report the rest" default for a
+grouped/Debit-Credit file, confirmed with David before implementation
+started. Every shape now needs the same explicit "stage the rest, skip
+these" opt-in a bad row used to skip automatically for the plain
+importer alone; `IMPORT_WIZARD.md` §7 Phase 4's own write-up has the
+full reasoning and the short-window UX regression this caused for
+`POST /import` in the sub-phase before its removal.
+
+**The merge happened in two steps, not one big-bang cutover**: first
+every new primitive (`shape`, `parse_file`, `transform_rows`, `preview_
+file`/`validate_file`/`import_file`) shipped alongside the two old
+implementations, wired into `/import/mapped/*` only; then `POST
+/import` became a thin shim over the same pipeline
+(`IMPORT_PLAIN_SHAPE`/`IMPORT_PLAIN_COLUMN_MAP`/`IMPORT_PLAIN_COLUMN_
+KINDS` fixing every wizard choice a real user of the mapped importer
+would otherwise make by hand) before `parse_csv_import` was deleted;
+only once `ImportMappedPanel.tsx`'s own Shape step could reproduce the
+plain importer's grouped/Debit-Credit/direct-code format as a default
+did `ImportPlainPanel.tsx` and `POST /import` disappear outright. One
+subtlety the shim surfaced that the two-parser design never had to
+face: `parse_file`'s structural check treats every `column_map` entry,
+required or not, as a promise the file has to keep — unlike `parse_
+csv_import`'s old bare `row.get("Reference")`, which silently read
+`None` from a column that simply wasn't there — so the shim has to
+sniff the file's real columns first and only map an optional field
+(`Reference`/`Payee`/`Memo`) when it's actually present, or a
+perfectly valid file missing those three columns would fail outright.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries
@@ -1376,9 +1489,14 @@ record of what was originally proposed and how it actually landed.
 - ~~**Import** — CSV/CAMT bank import posting suggested entries to a
   staging scenario for review before promotion to ACTUAL.~~ Shipped,
   landing in the STAGING scenario itself exactly as this predicted
-  rather than a second approval mechanism: `/import` for files that
-  already carry real debits and credits, `/import/mapped` (decision 23)
-  for single-entry exports that don't, both through one shared
-  `_stage_import_groups()` insert path. CAMT specifically was never
-  built — every real request for this has been CSV-shaped exports
-  (bank statements, ActualBudget) rather than CAMT XML.
+  rather than a second approval mechanism. Originally two importers —
+  `/import` for files that already carried real debits and credits,
+  `/import/mapped` (decision 23) for single-entry exports that
+  didn't — merged into the one `/import/mapped/*` wizard (decision 24,
+  IMPORT_WIZARD.md §7 Phase 4): "grouped vs. one row" and "Debit/Credit
+  vs. signed amount" are wizard settings now, not a choice of which
+  importer to use, and `POST /import` itself is gone. Every shape still
+  lands through the one shared `stage_import_groups()` insert path.
+  CAMT specifically was never built — every real request for this has
+  been CSV-shaped exports (bank statements, ActualBudget) rather than
+  CAMT XML.

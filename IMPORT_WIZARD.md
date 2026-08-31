@@ -16,6 +16,13 @@ reference for what the importer *does* stays `README.md` and `SPEC.md`.
 
 ## 1. Where things actually stand
 
+**Historical — describes the pre-Phase-4 state that motivated this
+whole roadmap.** Phase 4 (§7) shipped the merge this section argues for;
+see its own write-up for what actually landed, and `SPEC.md` decision 24
+for the design in full. Left as written rather than updated in place —
+same reasoning `SPEC.md`'s own decision write-ups use an addendum for
+instead of rewriting history.
+
 Two importers, one shared landing point.
 
 | | Plain (`POST /import`) | Mapped (`POST /import/mapped/*`) |
@@ -119,10 +126,10 @@ buried in
 |---|---|---|
 | **0. File** | scenario + upload | ✅ |
 | **1. Dialect** | delimiter, header row / skip N leading rows, decimal + thousands separator, date format | ✅ (quote char, encoding, currency symbols, sign convention not covered — see Phase 2's own "not done" note) |
-| **2. Shape** | one row per entry vs. rows grouped by a key column; one signed Amount vs. a Debit/Credit pair | ❌ hardcoded, one answer per importer |
-| **3. Column mapping** | §2's table; available targets depend on step 2 | ✅ right orientation (Phase 1); dialect-aware (Phase 2) |
-| **4. Value mapping** | for each column flagged "needs lookup," every distinct value → a real account (or payee, or tag) | ⚠️ hardcoded to Account + Category |
-| **5. Validation report** | every row that couldn't be read, why, and "skip those N, import the other M" | ✅ mapped importer only (Phase 3); plain importer still one flat error banner |
+| **2. Shape** | one row per entry vs. rows grouped by a key column; one signed Amount vs. a Debit/Credit pair | ✅ sniffed, editable (Phase 4) |
+| **3. Column mapping** | §2's table; available targets depend on step 2 | ✅ right orientation (Phase 1); dialect-aware (Phase 2); shape-aware (Phase 4) |
+| **4. Value mapping** | for each column flagged "needs lookup," every distinct value → a real account (or payee, or tag) | ✅ Account + Category, per column rather than hardcoded (Phase 4); payees/tags still out of scope |
+| **5. Validation report** | every row that couldn't be read, why, and "skip those N, import the other M" | ✅ every shape (Phase 3, generalized in Phase 4) |
 | **6. Confirm** | stage into Staging | ✅ |
 
 Step 2 is the structural key. **"Does one file row equal one entry, or
@@ -431,7 +438,7 @@ would stage, not a preview of the entries themselves. A pure per-row
 diagnostic table was the actually-asked-for shape (R3); a full entry
 preview is a bigger addition, left for whenever it's actually needed.
 
-### Phase 4 — Steps 2 + 4, and retiring the plain importer (large)
+### Phase 4 — Steps 2 + 4, and retiring the plain importer (large) — ✅ shipped
 
 The actual merge. Materially easier once phases 1–3 exist.
 
@@ -451,6 +458,66 @@ The actual merge. Materially easier once phases 1–3 exist.
    its tabs and becomes the wizard.
 6. Docs: the new `SPEC.md` decision from §6, `docs/ARCHITECTURE.md` for
    the frontend change, `README.md`'s "What you get."
+
+Shipped close to this plan, in the seven sub-phases the plan itself
+broke it into (4.1 pure `shape`/`sniff_shape`/`target_fields_for_shape`;
+4.2 `column_kinds`/`parse_file`/`transform_rows`; 4.3 `preview_file`/
+`validate_file`/`import_file`; 4.4+4.5 the router/schema cutover and the
+frontend Shape panel together, since 4.4 alone would have broken the
+existing frontend's mapped-tab requests; 4.6 the `POST /import` shim;
+4.7 this doc pass plus deleting the shim and its route), with five
+deliberate deviations:
+
+- **`known_codes: set[str] | None` is new — Phase 4's own plan didn't
+  call it out, but the merge needed it.** `parse_mapped_file` never had
+  a `"code"`-kind column to resolve at all, so decision 23's design
+  never needed a per-row "unknown account code" diagnostic for a pure
+  function; once a column can hold a real code, `transform_rows` needs
+  a way to check one without taking a `Connection` (R12). The router
+  does one bulk lookup (`known_account_codes`) and passes the resulting
+  set in as plain data; `None` (every pure unit test, and `stage_import_
+  groups`'s own blanket check as the fallback) defers the check
+  entirely, same shape `validate_mapped`/`import_mapped` already had for
+  everything else.
+- **`column_kinds`' code/label default is a structural heuristic, not
+  a live check.** `"label"` unless the shape is exactly grouped +
+  debit_credit + `account`, which defaults to `"code"` — matching the
+  historical Export-CSV round trip's own zero-friction default without
+  ever touching the database from `parse_file`/`transform_rows`
+  themselves.
+- **`skip_bad_rows` blocks by default for every shape, including
+  grouped/Debit-Credit** — a deliberate behavior change from `parse_csv_
+  import`'s old "stage what worked, report the rest" default, confirmed
+  with David before implementation started (not something the original
+  plan draft decided either way). `POST /import`'s own request body has
+  no opt-in for it, so for the one sub-phase (4.6) between the shim
+  landing and the route's own removal (4.7), a plain-format CSV with any
+  bad row failed outright rather than partially staging — a short-lived,
+  documented regression rather than a silent one, gone the moment 4.7
+  shipped.
+- **R9's scope stayed exactly where decision 23 left it**: "N legs"
+  means *N grouped rows, one leg per row* — today's Export-CSV shape,
+  generalized — not a single row expressing an arbitrary multi-way
+  split. `transform_mapped_rows` "generalizes to N legs" (item 3 above)
+  reads more expansive than what shipped; the actual generalization is
+  the grouped-shape path, gated on `group_key_column`, not a new
+  per-row split syntax.
+- **The `POST /import` shim surfaced a bug the plan didn't anticipate**:
+  `parse_file`'s structural "mapped column not found" check treats every
+  `column_map` entry, required or not, as a promise the file has to
+  keep — unlike `parse_csv_import`'s old bare `row.get("Reference")`,
+  which silently read `None` from a column that simply wasn't there. The
+  shim (`IMPORT_PLAIN_COLUMN_MAP`, briefly `IMPORT_PLAIN_SHAPE`/
+  `IMPORT_PLAIN_COLUMN_KINDS`, all now deleted along with it in 4.7) had
+  to sniff the file's real columns first and only map an optional field
+  (`Reference`/`Payee`/`Memo`) when it was actually present, or a
+  perfectly valid file missing those three columns would have failed
+  outright the moment the shim shipped. Caught by the pure-function test
+  suite before it ever reached a browser.
+
+See `SPEC.md` decision 24 for the shipped design in full, and decision
+23's own closing addendum for how it supersedes decision 23's original
+two-importer framing.
 
 ### Phase 5 and beyond — in whatever order pain dictates
 

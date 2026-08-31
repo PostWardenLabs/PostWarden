@@ -99,33 +99,39 @@ instance.
   shows up for you to approve on one shared page, never posts to your
   real books unsupervised. Edit a pending entry right there (fix an
   amount, change an account, add a line) or reject it outright before
-  it ever becomes a real posting — a draft, not yet history. Import
-  round-trips the same column layout Export CSV produces, so export →
-  edit in a spreadsheet → re-import is a real workflow. A second
-  importer, **Import with rules**, handles files that were never
-  double-entry to begin with — one row per transaction, a money-account
-  column and a category column, whatever the export actually calls them
-  (an ActualBudget export is the concrete shape this was built against,
-  but any single-entry CSV works). Its own wizard: a file-format step
-  sniffs the file's delimiter, any leading rows to skip, and the
-  decimal/date conventions it uses — editable before anything else runs,
-  so a semicolon-delimited European export (`1.234,56`-style amounts) or
-  a file with a title line above its real header reads correctly instead
-  of just failing; then a column-mapping step maps the file's own column
-  names onto Money Account/Entry Date/Amount/Payee/Entry Description/
-  Line Memo/Category — by then mapping each distinct Account/Category
-  value to a real PostWarden account once per import, and turning every
-  row into a proper balanced posting for the same Staging review; a row
-  that can't be resolved as currently mapped (an account or category
-  value with no mapping chosen, a date or amount that doesn't parse)
-  shows up in a validation report first — row number, its own values,
-  and why — with the choice to fix the mapping and try again, or stage
-  the rest and skip those rows, rather than either silently dropping
-  them or refusing the whole file. **Find Duplicates** scans every pending entry at once for the classic
-  overlapping-import mistake — the same transaction proposed twice,
-  same accounts/amounts/date — groups whatever it finds, and merges
-  a group down to one entry with your choice of which description,
-  tags, references, and per-line memos to keep.
+  it ever becomes a real posting — a draft, not yet history. Import is
+  one wizard that adapts to whatever shape the file actually is, rather
+  than a fixed format or a second importer for anything else: after
+  upload, a shape step picks whether each row is its own entry or
+  several share a group-key column, and whether the amount is one
+  signed column or a separate Debit/Credit pair (a file-format step
+  alongside it sniffs the delimiter, any leading rows to skip, and the
+  decimal/date conventions in use — editable before anything else runs,
+  so a semicolon-delimited European export or a file with a title line
+  above its real header reads correctly instead of just failing); a
+  column-mapping step then maps the file's own column names onto
+  whichever target fields the chosen shape calls for, flagging an
+  Account or Category column as either already holding real codes or
+  labels that need mapping. Export CSV produces one such shape — grouped
+  rows, Debit/Credit, real codes already in the file — so export → edit
+  in a spreadsheet → re-import is a real workflow the same way a
+  single-entry export (an ActualBudget export is the concrete shape
+  this was built against, but any single-entry CSV works) is just a
+  different shape of the same wizard, not a separate tool. The review
+  step maps each distinct labeled value to a real PostWarden account
+  once per import — skipped entirely for a file that's all real codes
+  already — and turns every row into a proper balanced posting for the
+  same Staging review; a row that can't be resolved as currently mapped
+  (an unbalanced group, an account or category value with no mapping
+  chosen, a date or amount that doesn't parse) shows up in a validation
+  report first — row number, its own values, and why — with the choice
+  to fix the mapping and try again, or stage the rest and skip those
+  rows, rather than either silently dropping them or refusing the whole
+  file. **Find Duplicates** scans every pending entry at once for the
+  classic overlapping-import mistake — the same transaction proposed
+  twice, same accounts/amounts/date — groups whatever it finds, and
+  merges a group down to one entry with your choice of which
+  description, tags, references, and per-line memos to keep.
 - **CSV export everywhere**, a chart-of-accounts manager, and dedicated
   management pages for payees and tags — rename, delete, archive a payee
   without touching its history, or select several and merge them into
