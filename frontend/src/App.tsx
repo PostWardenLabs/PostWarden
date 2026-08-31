@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
 
 import { useAppConfig } from './api/useAppConfig'
@@ -7,7 +8,6 @@ import BudgetPage from './budget/BudgetPage'
 import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
-import CustomReportPage from './reports/CustomReportPage'
 import DashboardPage from './reports/DashboardPage'
 import IncomeStatementPage from './reports/IncomeStatementPage'
 import LedgerPage from './reports/LedgerPage'
@@ -28,6 +28,14 @@ import Shell from './shell/Shell'
 import StagingDuplicatesPage from './staging/StagingDuplicatesPage'
 import StagingPage from './staging/StagingPage'
 import TagsPage from './tags/TagsPage'
+
+// Lazy: the only page that pulls in Recharts, currently ~650KB/~180KB
+// gzip of the production bundle on its own (see CUSTOM_REPORTS.md's
+// Frontend shape section) — every other route stays in the main chunk,
+// this one loads on first visit to /app/custom-report instead of on
+// every page load. If a second chart-heavy page ever ships, split it
+// the same way rather than pulling Recharts back into the main chunk.
+const CustomReportPage = lazy(() => import('./reports/CustomReportPage'))
 
 // Maps a real browser path to the `current` key Sidebar.tsx/Topbar.tsx
 // use for active-link highlighting — deliberately a plain if-chain, not a
@@ -149,7 +157,11 @@ function App() {
         <Route path="/app/income-statement" element={<IncomeStatementPage />} />
         <Route path="/app/variance" element={<VariancePage />} />
         <Route path="/app/ledger" element={<LedgerPage />} />
-        <Route path="/app/custom-report" element={<CustomReportPage />} />
+        <Route path="/app/custom-report" element={
+          <Suspense fallback={<p>Loading…</p>}>
+            <CustomReportPage />
+          </Suspense>
+        } />
         <Route path="/app/entries" element={<JournalPage />} />
         <Route path="/app/staging" element={<StagingPage />} />
         <Route path="/app/staging/duplicates" element={<StagingDuplicatesPage />} />

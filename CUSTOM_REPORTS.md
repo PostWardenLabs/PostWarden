@@ -287,7 +287,7 @@ filter controls reusing the existing
 toggle) driving a `GET /reports/custom` fetch, with the whole config
 URL-state like every sibling report. The value-level include/exclude
 checklist described below did not make it into v1 (see Phasing) —
-shipped filters are the closed set in "Filters (v1 sketch)" above,
+shipped filters are the closed set in "Filters (v1, shipped)" above,
 each a single value, not a checklist. Save/load (v2) reuses the
 Management/CRUD archetype.
 
@@ -303,9 +303,16 @@ frontend:
   legends, and pies are involved, and the existing widgets' "hand-tuned
   for real browser quirks" philosophy is about *input* components,
   where the quirks live, not about read-only rendering. It cost ~650KB
-  gzipped-to-~180KB of bundle growth (899KB total, 251KB gzip) — a
-  route-level `React.lazy` split is the obvious follow-up if that
-  becomes a problem, not yet done.
+  gzipped-to-~180KB of bundle growth. **Resolved 2026-08-31**: rather
+  than carry that in the main chunk permanently, `CustomReportPage` is
+  now `React.lazy`-loaded off its own route (`App.tsx`), wrapped in a
+  `<Suspense fallback={<p>Loading…</p>}>` — the only lazy route in the
+  app so far, and the pattern to follow if a second chart-heavy page
+  ever needs it. Recharts now ships in its own chunk
+  (`CustomReportPage-*.js`, ~429KB/~121KB gzip) fetched only on first
+  visit to `/app/custom-report`; the main chunk dropped from 899.38KB/
+  251.80KB gzip to 470.55KB/130.72KB gzip, clearing Vite's 500KB
+  chunk-size warning.
 - **There is no table-with-subtotals component to reuse.** The hoped-for
   shared Range/period table never got extracted — each report page's
   table is bespoke. Fine for v1: one dimension means one `GROUP BY`, so
