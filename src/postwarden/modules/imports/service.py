@@ -127,6 +127,37 @@ IMPORT_MAPPED_FIELDS = [
 ]
 IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
 
+# Step 2 of IMPORT_WIZARD.md's spine (§3) — Phase 4. "Shape" is the
+# structural difference between "one row = one entry, one signed Amount
+# column" (what the mapped importer has only ever supported) and "several
+# rows share a key and combine into one entry, Debit/Credit instead of one
+# signed Amount" (what the plain importer's fixed CSV format hardcoded).
+# Making it a wizard setting, sniffed like `dialect` and re-editable, is
+# what lets one pipeline (`parse_file`/`transform_rows`, IMPORT_WIZARD.md
+# §7 Phase 4 item 3) produce both of today's importers' behavior as two
+# configurations of the same code, rather than two separate functions.
+#
+# Deliberately just these two axes, not a fully general "how many legs can
+# one file row express" question — a file row (in the "one" shape) always
+# expresses exactly two legs (the money account and one "other" account);
+# an arbitrary N-way split expressed by a *single* row (extra Split_Amount-
+# style columns, R9) is explicitly out of scope here, same as it's out of
+# scope everywhere else in this roadmap until R9 itself is scheduled.
+IMPORT_DEFAULT_SHAPE = {
+    "rows_per_entry": "one",        # "one" | "grouped"
+    "group_key_column": None,       # a file column name; only meaningful when "grouped"
+    "amount_style": "signed",       # "signed" | "debit_credit"
+}
+# Name fragments that make a column plausible as a grouping key — "Entry
+# #", "Entry Number", "Transaction ID", "Txn Ref" and similar all match on
+# at least one of these. Deliberately permissive (a false-positive sniff
+# costs nothing, since R1 means it's always shown and always editable) but
+# still restricted to *some* id-shaped hint — an arbitrary column that
+# merely happens to repeat a value in the sample (a Category column, say)
+# shouldn't be sniffed as a grouping key just because `_sniff_group_key_
+# column` also requires repeated values as corroborating evidence.
+_GROUP_KEY_NAME_HINTS = ("entry", "transaction", "txn", "id", "ref", "#")
+
 _DECIMAL_COMMA_STRICT = re.compile(r"^-?\d{1,3}(\.\d{3})+,\d{2}$")   # 1.234,56
 _DECIMAL_DOT_STRICT = re.compile(r"^-?\d{1,3}(,\d{3})+\.\d{2}$")     # 1,234.56
 _DECIMAL_COMMA_WEAK = re.compile(r"^-?\d+,\d{2}$")                   # 12,50 — decimal-comma, no thousands
@@ -515,6 +546,116 @@ def sniff_mapped_columns(content: str, dialect: dict = IMPORT_DEFAULT_DIALECT, s
         if len(sample_rows) >= sample_size:
             break
     return {"columns": columns, "sample_rows": sample_rows}
+
+
+def sniff_shape(columns: list[str], sample_rows: list[dict]) -> dict:
+    """Best-guess `shape` (IMPORT_WIZARD.md §7 Phase 4 item 1) from the
+    same `columns`/`sample_rows` `sniff_mapped_columns` already produces —
+    called right alongside it, not as a separate parse pass. Pure, never
+    raises (R1: always a guess, always editable in the wizard's own shape
+    panel); an empty or ambiguous file just falls back to `IMPORT_DEFAULT_
+    SHAPE`'s values for whichever half it found no evidence for.
+
+    `amount_style`: a case-insensitive `Debit`+`Credit` column pair is
+    strong, unambiguous evidence (`_sniff_decimal_style`-style voting
+    would be overkill here — either both columns exist by name or they
+    don't) — `"debit_credit"` if both are present, `"signed"` otherwise.
+
+    `rows_per_entry`: delegates to `_sniff_group_key_column` below, which
+    requires *both* an id-shaped column name and actually-repeated values
+    in the sample — either alone is too weak a signal on its own (see that
+    function's own docstring)."""
+    lower = {c.strip().lower(): c for c in columns}
+    debit_col, credit_col = lower.get("debit"), lower.get("credit")
+    amount_style = "debit_credit" if debit_col and credit_col else "signed"
+
+    group_key_column = _sniff_group_key_column(columns, sample_rows)
+    rows_per_entry = "grouped" if group_key_column else "one"
+
+    return {
+        "rows_per_entry": rows_per_entry,
+        "group_key_column": group_key_column,
+        "amount_style": amount_style,
+    }
+
+
+def _sniff_group_key_column(columns: list[str], sample_rows: list[dict]) -> str | None:
+    """A column is a plausible grouping key only when *both* its name
+    looks id-shaped (`_GROUP_KEY_NAME_HINTS`) *and* the sample actually
+    shows a repeated value — name alone would false-positive on a column
+    like "Transaction Type" that never repeats meaningfully-groupably;
+    repetition alone would false-positive on any low-cardinality column
+    (Category, Cleared) that isn't a grouping key at all. First matching
+    column in file order wins; `None` (→ `rows_per_entry: "one"`) when
+    nothing qualifies."""
+    candidates = [c for c in columns if any(hint in c.strip().lower() for hint in _GROUP_KEY_NAME_HINTS)]
+    for c in candidates:
+        values = [(row.get(c) or "").strip() for row in sample_rows]
+        values = [v for v in values if v]
+        if len(values) > 1 and len(set(values)) < len(values):
+            return c
+    return None
+
+
+def target_fields_for_shape(shape: dict) -> list[dict]:
+    """Replaces the old fixed `IMPORT_MAPPED_FIELDS` constant as the sole
+    source of what the mapping step's own picker offers. The mapped
+    importer's file only ever had one shape (`rows_per_entry: "one"`,
+    `amount_style: "signed"`), so a fixed list was exactly right for it;
+    now that `shape` is itself a wizard setting, the *available* target
+    fields are a function of it. Each entry is `{key, label, required,
+    lookup_capable}` — `lookup_capable` is new (Phase 4 item 2): only a
+    `lookup_capable` target can carry a `column_kinds` entry (`"code"` vs
+    `"label"`, see `parse_file`/`transform_rows`) at all, since `date`/
+    `amount`/`debit`/`credit`/`group_key`/etc. never have an
+    account-shaped value to resolve.
+
+    `rows_per_entry == "one"`: unchanged from the old `IMPORT_MAPPED_
+    FIELDS` list when `amount_style == "signed"` — money account
+    (required, lookup_capable), entry date (required), amount (required),
+    payee/entry description/line memo (optional), category (optional,
+    lookup_capable — the "other leg"). `amount_style == "debit_credit"`
+    swaps the single `amount` target for `debit`+`credit`, both required
+    — the same one-row-is-one-entry shape, just expressing its net as two
+    columns instead of one signed one.
+
+    `rows_per_entry == "grouped"`: a `group_key` target appears (required,
+    never `lookup_capable` — its value only groups rows into one entry,
+    it's never a leg's own account), and `account`/`date` become per-row
+    requirements. `description` stays required, matching `parse_csv_
+    import`'s historical `IMPORT_REQUIRED_COLUMNS`; `reference`/`payee`/
+    `memo` stay optional. No `category` target — every row in a group
+    already names its own leg's account directly via `account`, so
+    there's no separate "other leg" column the way the one-row shape
+    needs one (an entry with more than two legs is however many rows
+    share one `group_key`, not more mapped columns)."""
+    amount_style = shape.get("amount_style", "signed")
+    amount_fields = (
+        [{"key": "amount", "label": "Amount", "required": True, "lookup_capable": False}]
+        if amount_style != "debit_credit" else
+        [{"key": "debit", "label": "Debit", "required": True, "lookup_capable": False},
+         {"key": "credit", "label": "Credit", "required": True, "lookup_capable": False}]
+    )
+    if shape.get("rows_per_entry") == "grouped":
+        return [
+            {"key": "group_key", "label": "Entry Group", "required": True, "lookup_capable": False},
+            {"key": "date", "label": "Entry Date", "required": True, "lookup_capable": False},
+            {"key": "account", "label": "Account", "required": True, "lookup_capable": True},
+            *amount_fields,
+            {"key": "description", "label": "Entry Description", "required": True, "lookup_capable": False},
+            {"key": "reference", "label": "Reference", "required": False, "lookup_capable": False},
+            {"key": "payee", "label": "Payee", "required": False, "lookup_capable": False},
+            {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
+        ]
+    return [
+        {"key": "account", "label": "Money Account", "required": True, "lookup_capable": True},
+        {"key": "date", "label": "Entry Date", "required": True, "lookup_capable": False},
+        *amount_fields,
+        {"key": "payee", "label": "Payee", "required": False, "lookup_capable": False},
+        {"key": "description", "label": "Entry Description", "required": False, "lookup_capable": False},
+        {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
+        {"key": "category", "label": "Category", "required": False, "lookup_capable": True},
+    ]
 
 
 def parse_mapped_file(content: str, column_map: dict[str, str],

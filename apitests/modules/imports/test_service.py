@@ -130,6 +130,79 @@ def test_sniff_mapped_columns_rejects_an_empty_file():
         service.sniff_mapped_columns("")
 
 
+def test_sniff_shape_defaults_to_one_row_signed_amount_for_a_plain_export():
+    sniff = service.sniff_mapped_columns(_csv(
+        "Merchant,When,Amount,Bucket",
+        "Landlord,2026-08-01,-500,Rent",
+    ))
+    shape = service.sniff_shape(sniff["columns"], sniff["sample_rows"])
+    assert shape == {"rows_per_entry": "one", "group_key_column": None, "amount_style": "signed"}
+
+
+def test_sniff_shape_detects_a_debit_credit_column_pair():
+    sniff = service.sniff_mapped_columns(_csv(
+        "Date,Description,Account code,Debit,Credit",
+        "2026-08-01,Rent,100,40,",
+    ))
+    shape = service.sniff_shape(sniff["columns"], sniff["sample_rows"])
+    assert shape["amount_style"] == "debit_credit"
+
+
+def test_sniff_shape_detects_a_repeated_entry_number_column_as_the_group_key():
+    sniff = service.sniff_mapped_columns(_csv(
+        "Entry #,Date,Description,Account code,Debit,Credit",
+        "1,2026-08-01,Rent,100,40,",
+        "1,2026-08-01,Rent,200,,40",
+    ))
+    shape = service.sniff_shape(sniff["columns"], sniff["sample_rows"])
+    assert shape == {"rows_per_entry": "grouped", "group_key_column": "Entry #", "amount_style": "debit_credit"}
+
+
+def test_sniff_shape_ignores_an_id_shaped_column_that_never_actually_repeats():
+    # "Transaction ID" looks group-key-shaped by name, but every value in
+    # the sample is unique — not actually evidence of grouping.
+    sniff = service.sniff_mapped_columns(_csv(
+        "Transaction ID,Date,Amount",
+        "TX1,2026-08-01,-40",
+        "TX2,2026-08-02,100",
+    ))
+    shape = service.sniff_shape(sniff["columns"], sniff["sample_rows"])
+    assert shape["rows_per_entry"] == "one"
+    assert shape["group_key_column"] is None
+
+
+def test_sniff_shape_ignores_a_repeated_column_with_no_id_shaped_name():
+    # "Category" repeats plenty in a real file, but nothing about its name
+    # suggests it groups rows into one entry.
+    sniff = service.sniff_mapped_columns(_csv(
+        "Date,Amount,Category",
+        "2026-08-01,-40,Rent",
+        "2026-08-02,-30,Rent",
+    ))
+    shape = service.sniff_shape(sniff["columns"], sniff["sample_rows"])
+    assert shape["rows_per_entry"] == "one"
+    assert shape["group_key_column"] is None
+
+
+def test_target_fields_for_shape_covers_the_one_row_signed_case():
+    fields = service.target_fields_for_shape({"rows_per_entry": "one", "amount_style": "signed"})
+    by_key = {f["key"]: f for f in fields}
+    assert by_key["account"]["required"] and by_key["account"]["lookup_capable"]
+    assert by_key["category"]["lookup_capable"] and not by_key["category"]["required"]
+    assert "amount" in by_key and "debit" not in by_key and "credit" not in by_key
+    assert "group_key" not in by_key
+
+
+def test_target_fields_for_shape_covers_the_grouped_debit_credit_case():
+    fields = service.target_fields_for_shape({"rows_per_entry": "grouped", "amount_style": "debit_credit"})
+    by_key = {f["key"]: f for f in fields}
+    assert by_key["group_key"]["required"] and not by_key["group_key"]["lookup_capable"]
+    assert by_key["account"]["required"] and by_key["account"]["lookup_capable"]
+    assert by_key["description"]["required"]
+    assert "debit" in by_key and "credit" in by_key and "amount" not in by_key
+    assert "category" not in by_key
+
+
 def test_parse_mapped_file_reads_every_row_via_an_arbitrary_column_map():
     # A file whose own column names don't match ActualBudget's at all —
     # the whole point of the mapping step: any header works once mapped.
