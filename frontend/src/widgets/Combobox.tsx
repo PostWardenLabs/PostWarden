@@ -7,6 +7,31 @@ export interface ComboboxOption {
 
 type ComboRow = ComboboxOption | { create: true; query: string }
 
+// Enter on a *closed* combobox (a value's already picked, nothing left
+// to commit) used to fall through to the browser's default and submit
+// the enclosing form — annoying on a table full of one-combobox-per-row
+// mappings (Import-with-rules' own account/category review step is the
+// motivating case), where Enter reads as "the line below," not "submit."
+// Tab already moves right natively; this is deliberately *not* the same
+// motion — Enter only ever moves down a column, same convention
+// `EntryGrid.tsx`'s own `tbody` keydown handler already established for
+// the debit/credit grid (see its docstring). A combobox outside any
+// `<table>` — the header-row fields above that grid, say — has no "line
+// below" to speak of, so Enter there does nothing beyond the
+// `preventDefault` that stops the submit; that's the actual fix, moving
+// focus is only possible where a next row exists.
+function focusLineBelow(current: HTMLElement) {
+  const td = current.closest('td')
+  const tr = td?.closest('tr')
+  if (!td || !tr) return
+  const cellIndex = Array.prototype.indexOf.call(tr.children, td)
+  const nextTr = tr.nextElementSibling
+  if (!nextTr || nextTr.tagName !== 'TR') return
+  const nextTd = nextTr.children[cellIndex]
+  const nextField = nextTd?.querySelector<HTMLElement>('.combobox-input, input, select, textarea')
+  nextField?.focus()
+}
+
 interface ComboboxProps {
   options: ComboboxOption[]
   value: string
@@ -194,6 +219,9 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
               e.preventDefault()
               if ('create' in row) createAndSelect(row.query)
               else selectOption(row)
+            } else if (!open) {
+              e.preventDefault()
+              focusLineBelow(e.currentTarget)
             }
           } else if (e.key === 'Escape') {
             if (open) {
