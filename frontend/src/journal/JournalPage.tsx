@@ -463,18 +463,30 @@ export default function JournalPage() {
 
       {result.entries.length === 0 ? (
         <p className="dim">
-          No entries match. Post one from{' '}
-          <button
-            type="button"
-            className="quiet-link"
-            onClick={() => {
-              const details = document.getElementById('new-entry-panel') as HTMLDetailsElement | null
-              if (details) details.open = true
-            }}
-          >
-            + New entry
-          </button>{' '}
-          above.
+          {hasFilters ? (
+            <>
+              No entries match these filters — use{' '}
+              <Link className="quiet-link" to="/app/entries">
+                Clear filters
+              </Link>{' '}
+              above to see everything posted.
+            </>
+          ) : (
+            <>
+              No entries yet. Post one from{' '}
+              <button
+                type="button"
+                className="quiet-link"
+                onClick={() => {
+                  const details = document.getElementById('new-entry-panel') as HTMLDetailsElement | null
+                  if (details) details.open = true
+                }}
+              >
+                + New entry
+              </button>{' '}
+              above.
+            </>
+          )}
         </p>
       ) : (
         result.entries.map((e) => (

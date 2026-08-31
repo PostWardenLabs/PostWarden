@@ -19,6 +19,15 @@ import client from './client'
 // `enforcing()` check — Trial Balance's own Phase 3.3 usage only ever
 // read `code`/`name`/`is_locked`, so this is a strict superset, not a
 // breaking change to that call site.
+//
+// Widened again for Phase 5 item 8 (distinct empty states): `entry_count`
+// was already real on the wire (`repository.py`'s `scenarios_all()`
+// selects it, `GET /scenarios` returns it unfiltered) but unused here —
+// Trial Balance and Variance need it to tell "this scenario has never
+// had anything posted to it" apart from "this scenario has entries, just
+// none in the selected window," which a bare empty-grid can't distinguish
+// on its own. Every existing caller already gets it for free from the
+// same response; nothing here changes what any of them read before.
 export interface Scenario {
   id: number
   code: string
@@ -29,6 +38,7 @@ export interface Scenario {
   income_statement_only: boolean
   enforce_balance: boolean
   base_level_id: number | null
+  entry_count: number
 }
 
 // A plain hook, not a Context/Provider — same call `useAppConfig.ts`

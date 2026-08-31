@@ -79,6 +79,13 @@ export default function TrialBalancePage() {
   const zeros = searchParams.get('zeros') === '1'
   const raw = searchParams.get('raw') === '1'
 
+  // Phase 5 item 8: which of the two empty-state messages below applies
+  // — "nothing's ever been posted to this scenario" vs. "this scenario
+  // has activity, just none as of the selected date" — hinges on
+  // whether the scenario itself has ever had an entry, not just whether
+  // this particular query came back empty.
+  const scenarioRow = (scenarios ?? []).find((s) => s.code === scenario)
+
   useEffect(() => {
     let cancelled = false
     client
@@ -219,7 +226,19 @@ export default function TrialBalancePage() {
         </div>
       )}
       {result !== null && result.grouped.length === 0 && (
-        <p className="dim">No activity in this scenario yet.</p>
+        <p className="dim">
+          {scenarioRow && scenarioRow.entry_count === 0 ? (
+            <>
+              No entries posted to this scenario yet. Post your first entry from{' '}
+              <Link className="quiet-link" to="/app/entries?new=1">
+                + New entry
+              </Link>
+              .
+            </>
+          ) : (
+            <>No activity in this scenario as of {asOf || 'today'}. Try an earlier — or blank — "as of" date.</>
+          )}
+        </p>
       )}
     </>
   )

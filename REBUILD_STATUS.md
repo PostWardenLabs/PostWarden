@@ -3949,12 +3949,13 @@ list to grow as items are discovered, not just shrink.
       reports expanded-first) — code-audited 2026-08-30, confirmed by
       design (two separate collapse implementations, not a shared
       default flag)
-- [ ] Distinct empty states per condition (nothing exists vs. nothing
+- [x] Distinct empty states per condition (nothing exists vs. nothing
       matches filters), most with their own call to action — surveyed
-      2026-08-30, copy drafted for the three screens that actually need
-      it (Journal, Trial Balance, Variance — see 2026-08-30 changes-log
-      entry for the exact strings and why the rest of the app doesn't
-      need this); still unimplemented. Budget grid's own "zero
+      2026-08-30, copy drafted the same day for the three screens that
+      actually need it (Journal, Trial Balance, Variance), **implemented
+      and browser-verified 2026-08-30** (see changes-log entry for the
+      exact strings, the `entry_count` wiring, and what was actually
+      exercised against real scenario data). Budget grid's own "zero
       income-statement-only scenarios" state audited separately
       (2026-08-30) and confirmed already correct as shipped — no second
       condition actually exists there, so no copy change is owed
@@ -4006,6 +4007,54 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 5 item 8 (distinct empty states), implemented
+  the copy drafted earlier the same day (see the "second pass" entry
+  below for the design reasoning) — this is the code change that entry
+  explicitly deferred. Three files:
+  - `api/useScenarios.ts` — widened `Scenario` with `entry_count: number`.
+    Already real on the wire (`repository.py`'s `scenarios_all()` selects
+    it), just uncast; every existing caller gets it for free through the
+    same `as unknown as Scenario[]` cast, so this isn't a breaking change
+    to any call site.
+  - `journal/JournalPage.tsx` — the empty-result `<p>` now branches on
+    the `hasFilters` flag that was already computed for the "Clear
+    filters" link a few lines up: filtered → "No entries match these
+    filters — use Clear filters above to see everything posted.";
+    unfiltered → "No entries yet. Post one from + New entry above."
+    (same button, just reworded off "match").
+  - `reports/TrialBalancePage.tsx` / `reports/VariancePage.tsx` — both
+    look up the selected scenario(s) in the already-fetched `scenarios`
+    list and branch on `entry_count === 0` ("never posted to" — links to
+    `/app/entries?new=1`, restoring the `trial_balance.html:106`
+    "Post your first entry from" link the port had dropped) vs. `> 0`
+    ("has activity, just none in this window" — points at the `as_of`
+    date). Variance treats baseline/compare as one combined condition
+    (both zero → "Neither scenario has any entries yet," matching how
+    the rest of that report already treats the pair as a unit rather
+    than reporting on each scenario separately).
+
+  Verified two ways: `docker compose build --no-cache backend` ran a
+  real `tsc -b && vite build` (this machine has a working `node`, unlike
+  every prior 2026-08-30 sandbox session) — clean, no type errors, which
+  also confirms the `entry_count` widening didn't break any other
+  `Scenario` caller. Then browser-confirmed every branch against real
+  scenario data in `db/seed.sql`/`seed_demo.sql`: Journal's qtext filter
+  to a nonexistent string → filtered message; Trial Balance/Variance
+  against `BUD2026` (income-statement-only, zero `entry_count` — no
+  journal entries ever posted to it, by design) → "never posted to this
+  scenario" message with a working `+ New entry` link; against `STAGING`
+  — which turned out to have real entries that net to exactly zero per
+  account (`grouped: []` but `total_debits`/`total_credits` both
+  "100.00", confirmed via the raw `/reports/trial-balance` response) —
+  correctly fell through to the "no activity as of {date}" message
+  rather than the wrong "never posted" one, which incidentally is a
+  genuine edge case (entries exist and balance, but every individual
+  account nets to zero) the `entry_count` check has to get right and
+  does. Variance's "neither scenario has entries" branch needed
+  `baseline=BUD2026&compare=BUD2026` specifically, since no seeded pair
+  of *distinct* scenarios both have zero entries. Console clean on every
+  page. Not re-run: the full 21-theme visual sweep (this was a scoped
+  functional check of new branches, not a repeat of the pass below).
 - **2026-08-30** — Phase 5 visual pass done with real browser access
   (this session had the browser tool that every prior 2026-08-30 session
   lacked). Container: `backend/docker-compose.yml`, rebuilt with

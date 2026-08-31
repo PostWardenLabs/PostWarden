@@ -121,6 +121,16 @@ export default function VariancePage() {
   const allRows = result ? result.grouped.flatMap((g) => g.rows) : []
   const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
 
+  // Phase 5 item 8: same "never posted to" vs. "nothing in this window"
+  // split as TrialBalancePage.tsx, but checked against both scenarios in
+  // the pair — treated as one combined condition (not per-scenario),
+  // matching how the rest of this report already treats baseline/compare
+  // as a unit rather than reporting on each separately.
+  const baselineRow = (scenarios ?? []).find((s) => s.code === baseline)
+  const compareRow = (scenarios ?? []).find((s) => s.code === compare)
+  const neitherHasEntries =
+    !!baselineRow && !!compareRow && baselineRow.entry_count === 0 && compareRow.entry_count === 0
+
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
     if (value) next.set(key, value)
@@ -261,7 +271,21 @@ export default function VariancePage() {
               </tr>
             </tbody>
           </table>
-          {result.grouped.length === 0 && <p className="dim">No activity in either scenario yet.</p>}
+          {result.grouped.length === 0 && (
+            <p className="dim">
+              {neitherHasEntries ? (
+                <>
+                  Neither scenario has any entries yet. Post one from{' '}
+                  <Link className="quiet-link" to="/app/entries?new=1">
+                    + New entry
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>No activity in either scenario as of {asOf || 'today'}. Try an earlier — or blank — "as of" date.</>
+              )}
+            </p>
+          )}
         </div>
       )}
     </>
