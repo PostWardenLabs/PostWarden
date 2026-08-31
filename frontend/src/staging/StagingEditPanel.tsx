@@ -37,27 +37,19 @@ function errorDetail(error: unknown, fallback: string): string {
   return (error as ErrorBody | undefined)?.detail || fallback
 }
 
-// Staging's own "Edit" (Phase 4.3) — ported from `staging-inline-edit.js` +
-// `app.js`'s shared grid, relocating this in place of an entry's read-only
-// `.staging-view` rather than navigating to a separate page (`StagingPage.
-// tsx` renders this instead of that view once its own "Edit" button is
-// clicked). Reuses `EntryGrid.tsx`/`gridLines.ts`, the same two files
+// Staging's own "Edit" — relocates this in place of an entry's read-only
+// row rather than navigating to a separate page (`StagingPage.tsx` renders
+// this instead of that row once its own "Edit" button is clicked). Reuses
+// `EntryGrid.tsx`/`gridLines.ts`, the same two files
 // `NewEntryPanel.tsx`/`ScheduledPage.tsx`/`EntryTemplatesPage.tsx` already
 // share — but mirrors `NewEntryPanel.tsx`'s own state/handlers rather than
-// factoring a shared hook out of the two, same call `ScheduledPage.tsx`'s
-// own Phase 4.2 write-up already made for the identical shape: real, small
-// differences, not worth a shared abstraction. Differences from
-// `NewEntryPanel.tsx`:
+// factoring a shared hook out of the two: real, small differences, not
+// worth a shared abstraction. Differences from `NewEntryPanel.tsx`:
 //
 // 1. No scenario picker — a staged entry's target scenario is fixed by
 //    whatever produced it (`GET /staging/{id}/edit`'s own `target_scenario_
 //    id`), not chosen here; the account picker is filtered against it
-//    directly instead of reacting to a `<select>` change. legacy's own
-//    panel kept a real (`sr-only`) `<select>` here purely so `app.js`'s
-//    shared `enforcing()` check had *a* scenario element to read
-//    `data-enforce` off of — this component has no such constraint, so it
-//    just reads `enforce_balance` off the matching `scenarios` row
-//    directly.
+//    directly instead of reacting to a `<select>` change.
 // 2. Loads existing data (`GET /staging/{id}/edit`) instead of starting
 //    blank — `journal_lines`' own debit/credit columns are `NUMERIC NOT
 //    NULL DEFAULT 0`, so the unused side of each line always arrives as

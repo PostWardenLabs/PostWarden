@@ -10,11 +10,8 @@ import Combobox, { type ComboboxOption } from '../widgets/Combobox'
 import TagInput from '../widgets/TagInput'
 import { useSelectMode } from '../widgets/useSelectMode'
 
-// Ported from app/templates/staging_duplicates.html + app/static/
-// staging-duplicates.js (Phase 4.5) — backend already done (Phase 1.6,
-// `modules/staging/service.py::find_duplicate_groups`/`merge_
-// duplicates`), frontend-only this phase, same as Staging/Budget before
-// it. `UI_CONSISTENCY_AUDIT.md` §2a/§4b calls this screen "one real
+// Backed by `modules/staging/service.py::find_duplicate_groups`/`merge_
+// duplicates`. `UI_CONSISTENCY_AUDIT.md` §2a/§4b calls this screen "one real
 // sibling" of the Filterable transaction list archetype (Journal,
 // Staging) rather than a sixth archetype of its own — it borrows that
 // family's per-entry conventions (`useSelectMode`, the same select-only
@@ -29,8 +26,8 @@ import { useSelectMode } from '../widgets/useSelectMode'
 // The one genuinely new piece of client-side machinery: a merge flow
 // that's two sequential custom dialogs, neither of which fits
 // `useConfirm()`'s plain message+OK/Cancel shape (`ConfirmDialog.tsx`) —
-// ported as local state/JSX here rather than a shared widget, since nothing
-// else in the app needs either shape:
+// local state/JSX here rather than a shared widget, since nothing else in
+// the app needs either shape:
 //
 //   1. A three-way "Proceed / Select remaining entries / Cancel" dialog,
 //      shown only when the group being merged has an unchecked entry
@@ -43,12 +40,11 @@ import { useSelectMode } from '../widgets/useSelectMode'
 //      `.confirm-modal h3` heading style matching `BulkTagsDialog.tsx`'s
 //      own "modal that shows a control, not a message" shape.
 //
-// Per-line memo defaults are pre-filled the same way `openMergeDetail`
-// legacy-side did: the survivor's own memo if it has one, else the first
-// non-blank memo found on the *matching* (account, amount) leg among the
-// other checked entries — never a guess across a different leg, since
-// matching account+amount is exactly what makes two legs "the same line"
-// across duplicate entries.
+// Per-line memo defaults are pre-filled from the survivor's own memo if
+// it has one, else the first non-blank memo found on the *matching*
+// (account, amount) leg among the other checked entries — never a guess
+// across a different leg, since matching account+amount is exactly what
+// makes two legs "the same line" across duplicate entries.
 
 interface DuplicateLine {
   id: number
@@ -88,11 +84,9 @@ function errorDetail(error: unknown, fallback: string): string {
   return (error as ErrorBody | undefined)?.detail || fallback
 }
 
-// The one Amount column here is the entry's total debit leg(s) — ported
-// from staging_duplicates.html's own `e.lines | selectattr('amount',
-// 'gt', 0) | sum(attribute='amount')`. Signed `amount` (positive debit,
-// negative credit) is `find_duplicate_groups`'s own shape — see
-// `repository.lines_for_entries_signed`'s docstring.
+// The one Amount column here is the entry's total debit leg(s). Signed
+// `amount` (positive debit, negative credit) is `find_duplicate_groups`'s
+// own shape — see `repository.lines_for_entries_signed`'s docstring.
 function debitTotal(entry: DuplicateEntry): number {
   return entry.lines.filter((l) => Number(l.amount) > 0).reduce((sum, l) => sum + Number(l.amount), 0)
 }
@@ -256,8 +250,7 @@ export default function StagingDuplicatesPage() {
   const [createdPayees, setCreatedPayees] = useState<Payee[]>([])
   const descriptionRef = useRef<HTMLInputElement>(null)
 
-  // Same focus-and-select-on-open as legacy's own `descInput.focus();
-  // descInput.select();` — the Description field is the one a user is
+  // Focus-and-select the Description field on open — the field a user is
   // most likely to want to immediately overtype.
   useEffect(() => {
     if (mergeDetail) {

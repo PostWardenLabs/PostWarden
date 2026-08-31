@@ -19,9 +19,7 @@ import DescriptionCell from '../journal/DescriptionCell'
 import MemoCell from '../journal/MemoCell'
 import StagingEditPanel from './StagingEditPanel'
 
-// Ported from app/templates/staging.html + staging.js/staging-inline-
-// edit.js/tags-bulk-edit.js/description-edit.js/memo-edit.js (Phase 4.3)
-// — the Filterable transaction list archetype's second instance
+// The Filterable transaction list archetype's second instance
 // (`UI_CONSISTENCY_AUDIT.md` §1), review/approve for whatever's sitting in
 // the one `is_staging` scenario. Reuses `JournalPage.tsx`'s own
 // `DescriptionCell`/`MemoCell`/`BulkTagsDialog` unchanged — the routes
@@ -30,7 +28,7 @@ import StagingEditPanel from './StagingEditPanel'
 // same parity `docs/ARCHITECTURE.md`'s own Staging section documents.
 // `StagingEditPanel.tsx` is the one genuinely new piece — the per-entry
 // "Edit" grid, relocated in place of an entry's `.staging-view` rather
-// than a separate page, same as legacy's `staging-inline-edit.js`.
+// than a separate page.
 //
 // Real differences from the Journal's own filter-bar/list shape, not a
 // shared component between the two pages (`UI_CONSISTENCY_AUDIT.md` §4b
@@ -42,11 +40,11 @@ import StagingEditPanel from './StagingEditPanel'
 // checkbox (a still-pending entry can't be a reversal), no entry_id/
 // account/payee "Showing only..." banners (nothing links into Staging
 // with those query params the way a report drills into the Journal), no
-// Export/pager (`list_pending` never paginated, matching legacy). Select/
-// Edit tags are the same mechanism as the Journal's; Approve/Reject
-// replace Reverse, and stay visible-but-disabled throughout rather than
-// select-only, matching legacy's own "read what they do without first
-// discovering Select" reasoning for those two specifically.
+// Export/pager (`list_pending` is never paginated). Select/Edit tags are
+// the same mechanism as the Journal's; Approve/Reject replace Reverse,
+// and stay visible-but-disabled throughout rather than select-only, so
+// a person can see what those two actions do without first discovering
+// Select.
 interface StagingLine {
   id: number
   debit: string
@@ -176,9 +174,7 @@ export default function StagingPage() {
 
   const activePayees = (payees ?? []).filter((p) => p.is_active)
   const filterPayeeNames = (payees ?? []).map((p) => p.name)
-  // Every non-staging scenario is a legal approval destination — ported
-  // from legacy's own `target_scenarios: [s for s in scenarios_all() if
-  // not s["is_staging"]]`.
+  // Every non-staging scenario is a legal approval destination.
   const targetScenarios = (scenarios ?? []).filter((s) => !s.is_staging)
 
   const selectAllRef = useRef<HTMLInputElement>(null)
@@ -189,10 +185,10 @@ export default function StagingPage() {
   const checkedEntries = (result?.entries ?? []).filter((e) => select.checkedIds.has(e.id))
   const [tagsDialogOpen, setTagsDialogOpen] = useState(false)
 
-  // Confirm wording ported verbatim from staging.js's own `msg` — Approve
-  // is the one action with no undo through this screen again (fixable
-  // only with Reverse from the Journal, once posted); bulk Reject is a
-  // permanent delete, same `danger` styling as its per-entry sibling.
+  // Approve is the one action with no undo through this screen again
+  // (fixable only with Reverse from the Journal, once posted); bulk
+  // Reject is a permanent delete, same `danger` styling as its per-entry
+  // sibling.
   async function handleApprove() {
     const ids = Array.from(select.checkedIds)
     if (ids.length === 0) return
@@ -241,9 +237,9 @@ export default function StagingPage() {
     await reload()
   }
 
-  // Alt+A/Alt+R — same shortcuts staging.js gives Approve/Reject.
-  // Re-registered each render so it always closes over the current
-  // selection, same reasoning JournalPage.tsx's own Alt+R handler gives.
+  // Alt+A/Alt+R for Approve/Reject. Re-registered each render so it
+  // always closes over the current selection, same reasoning
+  // JournalPage.tsx's own Alt+R handler gives.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!e.altKey || select.checkedIds.size === 0) return
