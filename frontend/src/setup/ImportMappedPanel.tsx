@@ -7,13 +7,20 @@ import Combobox from '../widgets/Combobox'
 import FileField from '../widgets/FileField'
 import { usePostableAccounts } from '../widgets/usePostableAccounts'
 
-// The mapped importer's upload + review flow — split out of what used
-// to be the whole of `ImportMappedPage.tsx` when the plain and mapped
-// importers merged onto one page as two tabs (`ImportPage.tsx`'s own
-// docstring has the reasoning). The review step only ever exists as
-// `POST /import/mapped/preview`'s response body — there's no GET route
-// for it — so this is one component with two internal steps (`step`
-// below), not two React Router routes.
+// The mapped importer's upload + column-mapping + review flow — split
+// out of what used to be the whole of `ImportMappedPage.tsx` when the
+// plain and mapped importers merged onto one page as two tabs
+// (`ImportPage.tsx`'s own docstring has the reasoning). Three internal
+// steps now, not two (`step` below) — BACKLOG.md's "New import with
+// rules page" #2 added a column-mapping step between upload and review,
+// since the importer used to require the file's own header row to read
+// literally `Account,Date,Payee,Notes,Category,Amount` (true of
+// ActualBudget's export by construction, false of anything else) — see
+// `SPEC.md` decision 23's own account of why. None of these three steps
+// exist as their own GET route — there's no server-side state between
+// them to restore from on a refresh either, same reasoning the old
+// two-step version already had — so this stays one component with
+// internal `step` state, not three React Router routes.
 //
 // `errorDetail`/`ErrorBody`, `IMPORT_MAX_ERRORS_SHOWN`/
 // `skippedRowsMessage` — identical to `ImportPlainPanel.tsx`'s own
@@ -36,10 +43,34 @@ function skippedRowsMessage(errors: string[]): string {
   return `${errors.length} row(s) skipped: ${shown.join('; ')}`
 }
 
+// One entry of `service.IMPORT_MAPPED_FIELDS` — the backend's own
+// six-target-field list (Money Account/Entry Date/Amount required,
+// Payee/Notes/Category optional), read from `POST /import/mapped/columns`'
+// own response rather than duplicated here, so this screen's mapping
+// step always matches whatever the backend actually validates against.
+interface MappedField {
+  key: string
+  label: string
+  required: boolean
+}
+
+// What `POST /import/mapped/columns` hands back — the file's own real
+// column names (in file order) plus a few real sample rows, so the
+// column-mapping step can show actual data next to each target field
+// instead of asking the user to guess from a header alone.
+interface ColumnsResult {
+  columns: string[]
+  sample_rows: Record<string, string>[]
+  fields: MappedField[]
+  filename: string
+  target_scenario_id: number
+  file_content_b64: string
+}
+
 // What `POST /import/mapped/preview` hands back — the picker lists plus
-// the three fields the commit step needs to carry forward unchanged
-// (`filename`/`target_scenario_id`/`file_content_b64`), held in plain
-// component state.
+// the fields the commit step needs to carry forward unchanged
+// (`filename`/`target_scenario_id`/`file_content_b64`/`column_map`),
+// held in plain component state.
 interface PreviewResult {
   row_count: number
   accounts_found: string[]
@@ -48,9 +79,11 @@ interface PreviewResult {
   filename: string
   target_scenario_id: number
   file_content_b64: string
+  column_map: Record<string, string>
 }
 
 const CHOOSE = { value: '', label: '— choose —' }
+const UNMAPPED = { value: '', label: '— unmapped —' }
 
 interface ImportMappedPanelProps {
   // Called once a batch actually lands, so the container can re-fetch
@@ -62,7 +95,7 @@ interface ImportMappedPanelProps {
 export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) {
   const scenarios = useScenarios()
   const postable = usePostableAccounts(scenarios)
-  const [step, setStep] = useState<'upload' | 'review'>('upload')
+  const [step, setStep] = useState<'upload' | 'columns' | 'review'>('upload')
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
 
   // Same exclusions as the plain Import panel's own target-scenario
@@ -77,6 +110,9 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const scenarioId = explicitScenarioId ?? firstScenarioId
 
   const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [columns, setColumns] = useState<ColumnsResult | null>(null)
+  const [columnMap, setColumnMap] = useState<Record<string, string>>({})
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<PreviewResult | null>(null)
 
@@ -96,11 +132,22 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     () => [CHOOSE, ...(postable?.forPickers ?? []).map((p) => ({ value: p.code, label: `${p.code} · ${p.name}` }))],
     [postable],
   )
+  const columnOptions = useMemo(
+    () => [UNMAPPED, ...(columns?.columns ?? []).map((c) => ({ value: c, label: c }))],
+    [columns],
+  )
+  // Gates the column-mapping step's own submit — every `required` field
+  // (Money Account/Entry Date/Amount) needs a real column chosen before
+  // there's anything worth previewing; the backend re-checks the exact
+  // same thing (`service.parse_mapped_file`'s own `missing_required`),
+  // this is purely so the button reflects that up front instead of
+  // round-tripping to find out.
+  const missingRequiredFields = (columns?.fields ?? []).filter((f) => f.required && !columnMap[f.key])
 
-  async function handlePreviewSubmit(e: FormEvent) {
+  async function handleUploadSubmit(e: FormEvent) {
     e.preventDefault()
     if (!file || !scenarioId) return
-    setPreviewing(true)
+    setUploading(true)
     setFlash(null)
     const body = new FormData()
     body.append('target_scenario_id', String(scenarioId))
@@ -108,12 +155,33 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     // Same `FormData`-passes-through-unchanged reasoning as
     // ImportPlainPanel.tsx's own identical cast — see that file's
     // comment for the openapi-fetch source dig this is based on.
-    const { data, error } = await client.POST('/import/mapped/preview', {
+    const { data, error } = await client.POST('/import/mapped/columns', {
       body: body as unknown as { target_scenario_id: number; file: string },
+    })
+    setUploading(false)
+    if (error) {
+      setFlash({ err: errorDetail(error, 'Could not read that file') })
+      return
+    }
+    setColumns(data as unknown as ColumnsResult)
+    setColumnMap({})
+    setStep('columns')
+  }
+
+  async function handleColumnsSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!columns || missingRequiredFields.length) return
+    setPreviewing(true)
+    setFlash(null)
+    const { data, error } = await client.POST('/import/mapped/preview', {
+      body: {
+        filename: columns.filename, target_scenario_id: columns.target_scenario_id,
+        file_content_b64: columns.file_content_b64, column_map: columnMap,
+      },
     })
     setPreviewing(false)
     if (error) {
-      setFlash({ err: errorDetail(error, 'Could not read that file') })
+      setFlash({ err: errorDetail(error, 'Could not read that file with this mapping') })
       return
     }
     setPreview(data as unknown as PreviewResult)
@@ -132,6 +200,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
         filename: preview.filename,
         target_scenario_id: preview.target_scenario_id,
         file_content_b64: preview.file_content_b64,
+        column_map: preview.column_map,
         account_map: accountMap,
         category_map: categoryMap,
         flip_sign: flipSign,
@@ -141,9 +210,9 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     if (error) {
       // Stays on this same review step rather than bouncing back to the
       // upload step — the mappings are still right here in component
-      // state, there's no server-side state between the two steps to
-      // restore from either way (see the `errors: string[]` shape below:
-      // the round trip is client-held state, not a stored row).
+      // state, there's no server-side state between any of these steps
+      // to restore from either way (see the `errors: string[]` shape
+      // below: the round trip is client-held state, not a stored row).
       setFlash({ err: errorDetail(error, 'Could not stage those rows') })
       return
     }
@@ -151,6 +220,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     const okMsg = `Staged ${result.staged_count} entr${result.staged_count === 1 ? 'y' : 'ies'} for review in Staging`
     setFlash({ ok: okMsg, err: result.errors.length ? skippedRowsMessage(result.errors) : undefined })
     setFile(null)
+    setColumns(null)
     setPreview(null)
     setStep('upload')
     onStaged()
@@ -158,6 +228,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
 
   function startOver() {
     setFile(null)
+    setColumns(null)
+    setColumnMap({})
     setPreview(null)
     setFlash(null)
     setStep('upload')
@@ -170,8 +242,9 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
           <p className="page-sub">
             For single-entry exports — one row per transaction, no debit/credit of their own — from whatever
             budgeting app or bank export produces that shape; ActualBudget&apos;s own CSV export is the one this
-            was built and tested against. Map each Account and Category value to a real PostWarden account once,
-            and every row gets turned into a proper double-entry posting, staged in{' '}
+            was built and tested against, but any single-entry CSV works the same way once its own columns are
+            mapped in the next step. Map each Account and Category value to a real PostWarden account once, and
+            every row gets turned into a proper double-entry posting, staged in{' '}
             <Link className="quiet-link" to="/app/staging">Staging</Link> for review same as any other import.
           </p>
 
@@ -181,12 +254,10 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
           <div className="panel">
             <h2>Upload a single-entry CSV</h2>
             <p className="dim small">
-              Expected columns: <span className="mono">Account, Date, Payee, Notes, Category, Amount</span> —
-              exactly what ActualBudget&apos;s own CSV export produces, but any file with those same column
-              names works the same way, whatever produced it. <span className="mono">Date</span> must be{' '}
-              <span className="mono">YYYY-MM-DD</span>.
+              Whatever columns your file already has — Account/Date/Payee/Notes/Category/Amount, or your bank's
+              own names for the same things — the next step maps them onto what this importer needs.
             </p>
-            <form className="grid-form" onSubmit={handlePreviewSubmit}>
+            <form className="grid-form" onSubmit={handleUploadSubmit}>
               <label className="field">
                 Target scenario
                 <Combobox
@@ -205,11 +276,71 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
                   onFileChange={setFile}
                 />
               </label>
-              <button type="submit" disabled={previewing || !file}>
-                {previewing ? 'Reading…' : 'Next: map accounts & categories'}
+              <button type="submit" disabled={uploading || !file}>
+                {uploading ? 'Reading…' : 'Next: map columns'}
               </button>
             </form>
           </div>
+        </>
+      )}
+
+      {step === 'columns' && columns && (
+        <>
+          <p className="page-sub">
+            {columns.filename} — {columns.columns.length} column{columns.columns.length === 1 ? '' : 's'} found.
+            Map each field below to whichever of the file's own columns holds it; the sample values are this
+            file's own first few rows, to help tell columns with similar names apart.
+          </p>
+
+          {flash?.err && <div className="flash flash-err">{flash.err}</div>}
+
+          <div className="panel">
+            <h2>A look at the file</h2>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="ledger">
+                <thead>
+                  <tr>{columns.columns.map((c) => <th key={c}>{c}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {columns.sample_rows.map((row, i) => (
+                    <tr key={i}>
+                      {columns.columns.map((c) => <td key={c} className="dim">{row[c] || '—'}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <form onSubmit={handleColumnsSubmit}>
+            <div className="panel">
+              <h2>Map this file's columns</h2>
+              <table className="ledger">
+                <thead><tr><th>Field</th><th>This file's column</th></tr></thead>
+                <tbody>
+                  {columns.fields.map((f) => (
+                    <tr key={f.key}>
+                      <td>{f.label}{f.required && <span className="dim"> *</span>}</td>
+                      <td>
+                        <Combobox
+                          options={columnOptions}
+                          value={columnMap[f.key] ?? ''}
+                          onChange={(v) => setColumnMap((m) => ({ ...m, [f.key]: v }))}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button type="submit" disabled={previewing || !!missingRequiredFields.length}
+                      style={{ marginTop: '0.8rem' }}>
+                {previewing ? 'Reading…' : 'Next: map accounts & categories'}
+              </button>
+              <button type="button" className="quiet" style={{ marginLeft: '0.5rem' }} onClick={startOver}>
+                Start over
+              </button>
+            </div>
+          </form>
         </>
       )}
 
