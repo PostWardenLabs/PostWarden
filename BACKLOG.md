@@ -477,6 +477,28 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
   `onBlur` was ever actually wired up — only the Tab keydown branch
   called it, so clicking away from an open combobox left it open until
   something else eventually closed it.
+- **Custom reports v1 — the Report Builder, shipped `v0.32.0`.** A
+  compose-your-own-report page (`/app/custom-report`) rather than a
+  chart bolted onto each existing report: pick one metric (net amount,
+  debit/credit total, entry count), one breakdown (account, account
+  level, tag, scenario, month/quarter/year), whichever filters apply,
+  and a chart type (bar/line/area/pie/table), all URL-state and with
+  the same Export CSV/XLSX siblings every other report has. Design
+  sketch and full phasing in `CUSTOM_REPORTS.md`; registered as a sixth
+  page archetype ("Composable report") in `UI_CONSISTENCY_AUDIT.md` §2g
+  and `docs/ARCHITECTURE.md`. Backend is a new vertical slice
+  (`src/postwarden/modules/custom_reports/`) with `metric`/`dimension`
+  as Python `Enum`s validated at the route signature — never
+  string-interpolated into SQL — dispatching to the existing reporting
+  views (`v_fact_lines`, `v_monthly_activity`, `fn_rollup_balance`), no
+  schema change at all. Frontend is Recharts, the app's first real UI
+  dependency; see `CUSTOM_REPORTS.md`'s Frontend shape section for why,
+  and for three non-obvious bugs the integration surfaced (a CSS
+  width-collapse under `ResponsiveContainer`, Recharts' pie chart
+  summing its values as strings instead of numbers, and its entrance
+  animation freezing forever on a backgrounded tab). See this file's
+  own "Add graphs to reports/create new reports" entry below for what
+  this does and doesn't cover of that older wishlist.
 
 ## Feature: Every theme has a light and dark mode. 
 - To move between themes and their light/dark variants, there is 
@@ -581,17 +603,43 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 ## Add support for different languages
 
 ## Add graphs to reports/create new reports
+**Partly shipped 2026-08-31** via the Report Builder
+(`/app/custom-report`, see `CUSTOM_REPORTS.md`) — a composable
+metric/dimension/chart config rather than a chart bolted onto each
+report page. What that covers vs. what's still genuinely missing:
+
 - Cash flow
-    - Waterfall
-    - Cash flow graph (line graph or bar chart, goes under 0 axis for net negative cash flow months)
-        - Bar chart could be net or could show positive movements and negative movements
+    - Waterfall — **still open**, v1 has no waterfall chart type at
+      all (bar/line/area/pie/table only) — `CUSTOM_REPORTS.md`'s v3
+      stretch phase.
+    - Cash flow graph (line graph or bar chart, goes under 0 axis for
+      net negative cash flow months) — **shipped**: `net_amount`
+      metric × `month` dimension, line or bar chart type, gives the
+      net-with-negative-months view.
+        - Bar chart could be net or could show positive movements and
+          negative movements — the net case is shipped; splitting one
+          bar into a positive/negative movement pair is really the v3
+          second-dimension case (`metric` alone can't split a bar in
+          two), still open.
 - Income statement
-    - Pie/donut chart for income and expense distribution (total for all displayed periods)
-    - Waterfall chart (total for all displayed periods)
-    - Bar chart, months as columns, total expense as bar height, color categories for expense accounts
+    - Pie/donut chart for income and expense distribution (total for
+      all displayed periods) — **shipped**: `net_amount` or
+      `debit_total`/`credit_total` × `account` dimension, pie chart
+      type, filtered by the `account_type` filter (income or expense).
+    - Waterfall chart (total for all displayed periods) — **still
+      open**, same v3 gap as above.
+    - Bar chart, months as columns, total expense as bar height, color
+      categories for expense accounts — **still open**: this needs two
+      simultaneous dimensions (month × account), which is
+      `CUSTOM_REPORTS.md`'s v3 "second dimension (stacked/split-by)"
+      — v1 is one dimension at a time by design.
 - Balance Sheet
     - Assets to Liabilities
     - Liquidity
+    - Neither of these is a Report Builder config at all (they're
+      point-in-time ratios/comparisons across account types, not a
+      metric-over-a-breakdown), so they're not covered by
+      `CUSTOM_REPORTS.md`'s phasing — still just an idea, not sized.
 
 ## Budget grid quick fill — still open
 - Shipped: per-cell chevron (4 options) and the page-level "Set all

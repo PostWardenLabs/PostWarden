@@ -1,10 +1,14 @@
-# Custom reports — design sketch (not built, for future reference)
+# Custom reports — design sketch (v1 shipped)
 
-**Status: not started.** No code, no migration, no route exists for any
-of this yet. This document exists so the next session that picks this
-up doesn't have to re-derive the reasoning from scratch — it's a design
-sketch to build from, not a description of anything in the repo today.
-It's internal planning like `BACKLOG.md`/
+**Status: v1 shipped 2026-08-31**, as the Report Builder
+(`/app/custom-report`, `frontend/src/reports/CustomReportPage.tsx`,
+`src/postwarden/modules/custom_reports/`). Everything under "Phasing"
+below marked v1 is built, tested, and documented in
+`docs/ARCHITECTURE.md`'s archetype table and
+`UI_CONSISTENCY_AUDIT.md` §2g. This document now describes what's live
+plus what v2/v3 would still add — it's no longer a pre-build sketch, so
+read the enum/filter/phasing sections below as "what v1 actually does,"
+not "what's proposed." It's still internal planning like `BACKLOG.md`/
 `UI_CONSISTENCY_AUDIT.md` — not in `mkdocs.yml`'s nav, not published to
 `docs.postwarden.org`.
 
@@ -12,8 +16,9 @@ It's internal planning like `BACKLOG.md`/
 the sketch's stale infrastructure assumptions (a runtime schema
 endpoint, a POST run endpoint, a presumed-existing charting library and
 subtotals table component) with what the rebuilt app actually provides.
-The security architecture, enums, filters, and phasing are unchanged
-from the original sketch.
+The security architecture, enums, filters, and phasing were unchanged
+from the original sketch, and v1 was built to this revision the same
+day.
 
 Origin: a conversation about whether an
 [ActualBudget](https://actualbudget.org)-style "build your own report"
@@ -184,7 +189,7 @@ route in the app already does.
   `UI_CONSISTENCY_AUDIT.md` §1 and `docs/ARCHITECTURE.md`'s archetype
   table when it ships.
 
-## Metric enum (v1 sketch)
+## Metric enum (v1, shipped)
 
 | Enum value | Meaning | Source |
 |---|---|---|
@@ -197,7 +202,7 @@ route in the app already does.
 `budget_variance` is the one metric that doesn't reduce to a single view
 scan — flag it as v2/stretch rather than launch scope.
 
-## Dimension enum (v1 sketch)
+## Dimension enum (v1, shipped)
 
 | Enum value | Meaning | Source | Value list (for the include/exclude checklist) |
 |---|---|---|---|
@@ -221,7 +226,7 @@ account_id IN (...)` / `WHERE tag_id IN (...)` clause built from a
 validated subset of the dimension's own value list, not a new kind of
 input.
 
-## Filters (v1 sketch)
+## Filters (v1, shipped)
 
 All closed/typed, all optional, all AND-combined (no boolean tree):
 
@@ -273,26 +278,34 @@ both work unchanged.
 
 ## Frontend shape
 
-One new page component, following the "one component per archetype"
-rule (`UI_CONSISTENCY_AUDIT.md` §1, `docs/ARCHITECTURE.md`): a config
-panel (metric/dimension dropdowns typed against the generated enum
-unions, value checklist, filter controls reusing the existing
-`Combobox`/`DatePicker`/`PeriodPresetPicker`/`TagInput` widgets,
-chart-type toggle) driving a `GET /reports/custom` fetch, with the
-whole config URL-state like every sibling report. Save/load (v2)
-reuses the Management/CRUD archetype.
+One page component (shipped: `frontend/src/reports/CustomReportPage.tsx`),
+following the "one component per archetype" rule
+(`UI_CONSISTENCY_AUDIT.md` §1, `docs/ARCHITECTURE.md`): a config panel
+(metric/dimension dropdowns typed against the generated enum unions,
+filter controls reusing the existing
+`Combobox`/`DatePicker`/`PeriodPresetPicker` widgets, chart-type
+toggle) driving a `GET /reports/custom` fetch, with the whole config
+URL-state like every sibling report. The value-level include/exclude
+checklist described below did not make it into v1 (see Phasing) —
+shipped filters are the closed set in "Filters (v1 sketch)" above,
+each a single value, not a checklist. Save/load (v2) reuses the
+Management/CRUD archetype.
 
 Two assumptions from the original sketch, resolved against the rebuilt
 frontend:
 
 - **Charting is a new dependency, not a given.** The frontend's
-  dependency list is deliberately tiny (react, react-dom,
-  react-router-dom, openapi-fetch — nothing else), so Recharts would be
-  its first significant UI dependency. Decision: use Recharts anyway —
-  hand-rolled SVG is a rabbit hole once axes, ticks, tooltips, legends,
-  and pies are involved, and the existing widgets' "hand-tuned for real
-  browser quirks" philosophy is about *input* components, where the
-  quirks live, not about read-only rendering.
+  dependency list was deliberately tiny (react, react-dom,
+  react-router-dom, openapi-fetch — nothing else), so Recharts was its
+  first significant UI dependency (plus `react-is`, an unhoisted peer
+  dependency npm doesn't install automatically). Decision: use Recharts
+  anyway — hand-rolled SVG is a rabbit hole once axes, ticks, tooltips,
+  legends, and pies are involved, and the existing widgets' "hand-tuned
+  for real browser quirks" philosophy is about *input* components,
+  where the quirks live, not about read-only rendering. It cost ~650KB
+  gzipped-to-~180KB of bundle growth (899KB total, 251KB gzip) — a
+  route-level `React.lazy` split is the obvious follow-up if that
+  becomes a problem, not yet done.
 - **There is no table-with-subtotals component to reuse.** The hoped-for
   shared Range/period table never got extracted — each report page's
   table is bespoke. Fine for v1: one dimension means one `GROUP BY`, so
@@ -300,24 +313,28 @@ frontend:
   needed. (The `account_level:N` dimension returns rows already rolled
   up by `fn_rollup_balance` — still flat.)
 
-## Phasing, if/when this gets picked up
+## Phasing
 
-1. **v1**: one metric + one dimension + the filter set above + chart/
-   table toggle, plus `.csv`/`.xlsx` export siblings (cheap via the
-   shared `export/` writers, and every other report has them). No save
-   — but the URL-is-the-config property means any v1 report is already
-   shareable/bookmarkable, and is the bridge to v2's saved reports. No
-   schema change at all in v1: no migration, no `saved_reports`, the
-   60 invariant tests untouched. Proves the allowlist pattern
-   end-to-end. Acceptance check for expressiveness: `BACKLOG.md`'s
-   "Add graphs" wishlist — expense-distribution pie and net-by-month
-   bar/line must be expressible as v1 configs (the stacked
+1. **v1 — shipped 2026-08-31**: one metric + one dimension + the filter
+   set above + chart/table toggle, plus `.csv`/`.xlsx` export siblings
+   (via the shared `export/` writers, same as every other report). No
+   save — but the URL-is-the-config property means any v1 report is
+   already shareable/bookmarkable, and is the bridge to v2's saved
+   reports. No schema change: no migration, no `saved_reports`, the 60
+   invariant tests untouched. Proves the allowlist pattern end-to-end.
+   Acceptance check for expressiveness, both met: `BACKLOG.md`'s "Add
+   graphs" wishlist's expense/income-distribution pie and net-by-month
+   bar/line are expressible as v1 configs (the stacked
    expenses-by-category-per-month bar is genuinely v3, second
-   dimension).
-2. **v2**: `saved_reports` CRUD, value-level include/exclude checklist,
-   dashboard placement for saved reports.
-3. **v3 (stretch)**: second dimension (stacked/split-by), `budget_variance`
-   metric.
+   dimension; waterfall is a chart type v1 doesn't have at all — see
+   below).
+2. **v2 — not started**: `saved_reports` CRUD, the value-level
+   include/exclude checklist, dashboard placement for saved reports.
+3. **v3 (stretch) — not started**: second dimension (stacked/split-by),
+   `budget_variance` metric, a waterfall chart type (`BACKLOG.md`'s
+   cash-flow and income-statement waterfalls need this specifically —
+   it's a distinct mark type from the bar/line/area/pie set v1 has, not
+   just another dimension).
 
 Deliberately not phased in: arbitrary filter trees, ad hoc calculated
 fields, a client-side query engine — see Non-goals. If a future need
