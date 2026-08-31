@@ -1174,7 +1174,7 @@ outright.
 
 **The mapping table itself is oriented file-column -> target, one row
 per column the file actually has, not target -> file-column.** The
-original design here (and the original `BACKLOG.md` ask) was one row
+original design here (and the feature's original ask) was one row
 per *column found in the file*, each with a dropdown of PostWarden
 targets defaulting to Ignore; what shipped in the first cut was the
 inverse — one row per target field, each with a dropdown of the file's
@@ -1211,7 +1211,7 @@ per mapping row — every row in one file follows the same convention, so
 per-row control would be a knob nobody needs to turn twice.
 
 **Deliberately not a conditional rule engine.** The feature's own
-original example (`BACKLOG.md`) included a second rule shaped
+original example included a second rule shaped
 differently from the first — "IF account is X AND Notes contains
 'withdrawal' THEN debit Cash / credit Savings," an override that has
 nothing to do with Category at all, for the transfers and cash
@@ -1251,8 +1251,8 @@ identical code.
 
 **A "dialect" — delimiter, leading rows to skip, decimal/thousands
 separator, date format — is sniffed once, up front, and edited in place
-rather than becoming a fourth wizard step.** IMPORT_WIZARD.md §3's step
-1: nothing before this point in the wizard could read a European bank
+rather than becoming a fourth wizard step.** Nothing before this point
+in the wizard could read a European bank
 export at all (`;`-delimited, `1.234,56` amounts) or a file with a
 title/timestamp line above the real header — both just failed outright,
 with no control anywhere to fix them. `POST /import/mapped/columns`
@@ -1293,13 +1293,14 @@ slash-separated `MM/DD/YYYY`/`DD/MM/YYYY` are recognized; a file using
 dots falls back to the `iso` guess and reports a per-row date error
 until the user picks a different `date_format`, at which point it still
 won't parse (`_DATE_FORMAT_STRPTIME` has no dot-separated entry). Known,
-not fixed — the roadmap's four explicit Phase 2 test cases (semicolon/
+not fixed — the dialect work's four explicit test cases (semicolon/
 comma-decimal, `DD/MM/YYYY`, a BOM'd export, junk rows above the header)
 are all slash- or ISO-dated; a dot-date format is a small follow-up, not
 a blocker, whenever a real file surfaces the gap.
 
 **A validation report replaced the flat error banner, for the mapped
-importer only** (IMPORT_WIZARD.md §3 step 5, §7 Phase 3, R3).
+importer only** (the wizard's validation step — `ROADMAP.md`'s import
+track R3, now shipped).
 `transform_mapped_rows`' `errors` used to be a `list[str]`, each entry a
 pre-formatted `"Row N: ..."` message, joined and truncated at
 `IMPORT_MAX_ERRORS_SHOWN` wherever it surfaced. It's now a structured
@@ -1335,7 +1336,7 @@ attempted here — `parse_csv_import`'s errors stay a flat `list[str]`,
 `ImportPlainPanel.tsx` stays a single flash banner.
 
 **Addendum (decision 24):** the "two importers" framing above is now
-historical. IMPORT_WIZARD.md §7 Phase 4 merged `/import` and
+historical. The wizard merge collapsed `/import` and
 `/import/mapped` into the one pipeline decision 24 describes — every
 reason given here for a per-import mapping (not a persistent ruleset),
 sniffed/editable dialect, and a structured validation report still
@@ -1364,7 +1365,7 @@ small space of choices (one row per entry or several grouped by a key
 column; a signed amount or a Debit/Credit pair; a lookup column holding
 a real code already or a label that needs mapping) that the plain
 importer happened to hardcode and the mapped importer happened to
-leave unconfigurable the other way. IMPORT_WIZARD.md §7 Phase 4 made
+leave unconfigurable the other way. The wizard merge made
 every one of those choices an explicit wizard setting instead, and
 `parse_csv_import`/`parse_mapped_file` — two parsers that had quietly
 converged on the same shared `_stage_import_groups()` landing step
@@ -1390,7 +1391,7 @@ target for a `debit`/`credit` pair or back.
 generalizes what decision 23 only ever needed implicitly.** The plain
 importer's `Account code` column always held a real code; the mapped
 importer's `Account`/`Category` columns always held labels needing
-`account_map`/`category_map` — Phase 4 makes that a per-column choice
+`account_map`/`category_map` — the merge makes that a per-column choice
 rather than an assumption baked into which importer you happened to
 be using, and `value_maps: dict[key, dict[str,str]]` generalizes
 `account_map`/`category_map` into one map per `"label"`-kind column
@@ -1413,7 +1414,7 @@ account_codes`, one query, run once by whichever router handler
 needs it) — `None` means every pure unit test, and the caller's
 grouped-row diagnostic degrades gracefully to `stage_import_groups`'s
 own blanket "Unknown account code" check instead of failing per-row.
-This is the one place Phase 4 added something decision 23's original
+This is the one place the merge added something decision 23's original
 design didn't need: `parse_mapped_file` never had a code-kind column
 to resolve at all.
 
@@ -1433,9 +1434,11 @@ import`'s old "stage what worked, report the rest" default for a
 grouped/Debit-Credit file, confirmed with David before implementation
 started. Every shape now needs the same explicit "stage the rest, skip
 these" opt-in a bad row used to skip automatically for the plain
-importer alone; `IMPORT_WIZARD.md` §7 Phase 4's own write-up has the
-full reasoning and the short-window UX regression this caused for
-`POST /import` in the sub-phase before its removal.
+importer alone. (For the one sub-phase between the compatibility shim
+landing and `POST /import`'s removal, a plain-format CSV with any bad
+row therefore failed outright rather than partially staging — a
+short-lived, documented regression rather than a silent one, gone the
+moment the route itself was deleted.)
 
 **The merge happened in two steps, not one big-bang cutover**: first
 every new primitive (`shape`, `parse_file`, `transform_rows`, `preview_
@@ -1456,6 +1459,69 @@ csv_import`'s old bare `row.get("Reference")`, which silently read
 sniff the file's real columns first and only map an optional field
 (`Reference`/`Payee`/`Memo`) when it's actually present, or a
 perfectly valid file missing those three columns would fail outright.
+
+### 25. A custom report is a closed enum allowlist over the reporting layer, never a query language
+
+The Report Builder (`/app/custom-report`, `GET /reports/custom`) lets a
+user compose a report — one metric, one breakdown dimension, typed
+filters, a chart type — without a developer hand-building a page for
+every shape. The obvious reference point, ActualBudget's custom
+reports, runs its query engine *in the browser against a local SQLite
+replica*; PostWarden is a server-side Postgres app reached over HTTP by
+a thin SPA, so the thing that turns a report config into SQL runs on
+the server, with real credentials, against the real ledger. That trust
+boundary — not a lesser ambition — is the design driver: **a report
+config sent from the browser is a closed enum of pre-vetted choices,
+never an arbitrary filter expression or field name.**
+
+Concretely:
+
+- **`Metric` and `Dimension` are Python `Enum`s in the route signature
+  itself** (`modules/custom_reports/enums.py`), so FastAPI 422s an
+  out-of-allowlist value before any code runs, and each member maps in
+  Python to exactly one pre-written query fragment
+  (`repository._METRICS`/`_DIMENSIONS`) — never string-interpolated
+  into SQL. Filters are typed the same way (a date range, ids validated
+  against real `accounts`/`tags`/`scenarios`/`payees` rows, the
+  `account_type` Postgres enum mirrored as a typed filter) and bound as
+  parameters. Adding a metric or dimension means adding an enum member
+  *and* its fragment — and if a wanted report can't be expressed as an
+  enum addition, that's a signal to open a new numbered decision here
+  about why, not to quietly grow this into a general query language.
+- **The allowlist ships at compile time, not runtime.** The generated
+  typed client (`frontend/src/api/schema.ts`) exposes the enums as
+  TypeScript union types, so the frontend's dropdowns are checked by
+  `tsc` against the backend's own allowlist — a member added
+  backend-side without frontend handling is a compile error. No runtime
+  "schema" endpoint exists, and none should.
+- **The run endpoint is a GET with the whole config in the query
+  string**, like every other report: that's what makes any composed
+  report bookmarkable and shareable with zero save machinery, and it's
+  the bridge to saved reports (a saved report is a named, validated
+  query string — `ROADMAP.md` S5; validation happens on every run, not
+  just at save, so replaying a stored config is safe by construction).
+- **It queries the reporting layer that already existed for BI tools**
+  (decisions 6 and 14): `v_fact_lines`, `v_monthly_activity`,
+  `fn_rollup_balance`. The hard parts — hierarchy rollup, the
+  debit/credit sign convention, tag denormalization — were already
+  solved and already tested for a different consumer; the whole feature
+  is a thin allowlisted access layer in front of them, which is why it
+  shipped with no schema change at all.
+- **Its own vertical slice** (`modules/custom_reports/`), not part of
+  `modules/reports/` — the deletable-on-its-own test: it has a
+  different shape (it grows write routes and `schemas.py` with saved
+  reports; `modules/reports/` deliberately has neither), and the two
+  merely share a URL neighborhood.
+
+Deliberately out of scope, permanently: arbitrary boolean filter
+trees (Actual's own UI is dropdown-and-chip driven too — matching that
+UX never required a generic engine), ad hoc calculated fields, and any
+client-side query engine or ledger replica in the browser — the
+product's reason for being is Postgres as the single live source of
+truth. Frontend rendering notes (Recharts as the first real UI
+dependency, and the lazy-route pattern it forced) live in
+`docs/ARCHITECTURE.md`, not here — rendering choices aren't schema
+design.
 
 ## Extension roadmap
 
@@ -1502,8 +1568,8 @@ record of what was originally proposed and how it actually landed.
   rather than a second approval mechanism. Originally two importers —
   `/import` for files that already carried real debits and credits,
   `/import/mapped` (decision 23) for single-entry exports that
-  didn't — merged into the one `/import/mapped/*` wizard (decision 24,
-  IMPORT_WIZARD.md §7 Phase 4): "grouped vs. one row" and "Debit/Credit
+  didn't — merged into the one `/import/mapped/*` wizard (decision 24):
+  "grouped vs. one row" and "Debit/Credit
   vs. signed amount" are wizard settings now, not a choice of which
   importer to use, and `POST /import` itself is gone. Every shape still
   lands through the one shared `stage_import_groups()` insert path.

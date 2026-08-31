@@ -107,9 +107,9 @@ Cash Flow, Variance, Ledger — the module with the most genuinely hard
 logic: account-tree rollups, period splitting, the cash-flow tie-out),
 `custom_reports` (the composable one-metric × one-dimension report —
 `GET /reports/custom`, a closed enum allowlist over the reporting-layer
-views; `CUSTOM_REPORTS.md` is its design doc, and deliberately its own
-slice rather than part of `reports`: different shape, growing
-saved-report CRUD in v2),
+views; `SPEC.md` decision 25 is its design record, and deliberately its
+own slice rather than part of `reports`: different shape, growing
+saved-report CRUD later — `ROADMAP.md` S5),
 `imports` (the one CSV import wizard — shape, dialect, and column
 mapping all wizard settings on a single pipeline, SPEC.md decision 24),
 `budget` (budget lines
@@ -225,9 +225,12 @@ Pydantic-free response shape has actually caused a bug.
 
 ### Component archetypes
 
-`UI_CONSISTENCY_AUDIT.md` §1 names six page shapes; the build follows
-that grouping directly — one component per archetype, then per-screen
-configuration, not a bespoke page per screen:
+Every page falls into one of six shapes (established by a full
+controls-inventory pass of the app, 2026-08 — the audit itself lives in
+git history as `UI_CONSISTENCY_AUDIT.md`; its standing conventions are
+the next section); the build follows that grouping directly — one
+component per archetype, then per-screen configuration, not a bespoke
+page per screen:
 
 | Archetype | Screens | Shared shape |
 |---|---|---|
@@ -236,7 +239,7 @@ configuration, not a bespoke page per screen:
 | Range/period report | Income Statement, Cash Flow | scenario + date-from/date-to, `PeriodPresetPicker` |
 | Editable grid | Budget | live client-side recompute, no full-page reload on edit |
 | Management / CRUD | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | Select/Merge/+Add/table/Status/Archive — `useSelectMode`, `MergeDialog` |
-| Composable report | Report Builder (`CustomReportPage.tsx`) | metric/dimension dropdowns typed against the generated `Metric`/`Dimension`/`AccountTypeFilter` enum unions, the same filter widgets every other archetype already uses, a chart-type toggle (Recharts) with a flat table + total row as the non-chart view — see `CUSTOM_REPORTS.md` |
+| Composable report | Report Builder (`CustomReportPage.tsx`) | metric/dimension dropdowns typed against the generated `Metric`/`Dimension`/`AccountTypeFilter` enum unions, the same filter widgets every other archetype already uses, a chart-type toggle (Recharts) with a flat table + total row as the non-chart view — see `SPEC.md` decision 25 |
 
 Every Point-in-time and Range/period report screen also carries the
 `entry_link`/`cell_link` drill-through pattern: a non-zero (or, on
@@ -245,6 +248,61 @@ link">` to `/app/entries` pre-filtered to `scenario`/`date_from`/
 `date_to`/`account` — each report's own date-bounding rule differs (see
 each page's own `entryLink`/`cellLink` comment) rather than being
 unified into one shared rule.
+
+### Archetype conventions
+
+**The standing rule: a report/list-page UI change is planned against
+every screen in its archetype at once**, not just the page that
+prompted it — pages doing the same job drifted apart repeatedly before
+this rule existed, and re-converging them cost more than designing
+once per archetype ever does. (`ROADMAP.md` §3.3 plans to merge the
+three report archetypes into one tabbed Reports surface — that's this
+rule taken to its conclusion, not an exception to it.)
+
+One wording per concept, app-wide:
+
+- **Archive / Unarchive** for every record active/inactive toggle
+  (never Deactivate or Pause). Scenarios' Lock/Unlock stays its own
+  word — locking is genuinely a different concept from retiring.
+- **"Show zero balances"** for the include-zero-rows checkbox,
+  everywhere — page-specific scope nuance goes in a tooltip, not the
+  label.
+- **"Scenario"** as the picker label everywhere, even where the param
+  is `baseline` (Variance) or means *target* scenario (Staging).
+
+Canonical control sets:
+
+- **Point-in-time reports**: Scenario → As of → checkboxes in fixed
+  order (zero balances, then true/raw balances, then flip variance —
+  only those that apply) → prev/next month links, day-clamped
+  (`domain/periods.py`).
+- **Range reports**: Scenario → Compare (Income Statement only) →
+  Period preset → From/To → checkboxes; prev/next slides the window by
+  its own length, so a hand-typed range pages by its own span instead
+  of snapping to a calendar boundary it never had.
+- **Filterable lists**: shared filter row with Clear filters inline in
+  the field row; Select toggle → checkboxes + tri-state select-all →
+  bulk-action buttons visible throughout but disabled until checked.
+- **Management/CRUD**: the Payees/Tags Select → Merge pattern is the
+  model; `useSelectMode` + `MergeDialog`.
+
+Deliberate divergences on the record (so they read as decisions, not
+drift): Budget Grid has **no export** — it's a working view of the
+Variance report, which has the export, and exporting a
+still-being-edited grid would export a draft. Ledger has no export
+(originally a teaching aid; reopened as `ROADMAP.md` O8). The Report
+Builder's blank date range means **all history**, unlike the classic
+reports' "this month" — a custom report over everything is the sensible
+default for it specifically.
+
+### Lazy routes
+
+`CustomReportPage` is `React.lazy`-loaded off its own route in
+`App.tsx` (wrapped in `<Suspense>`) so Recharts ships in its own chunk,
+fetched on first visit to `/app/custom-report`, instead of sitting in
+the main bundle (~429KB/~121KB gzip of chart library for a page most
+sessions never open). The only lazy route so far, and the pattern to
+follow if another heavy-dependency page appears.
 
 ### Widgets
 
