@@ -24,9 +24,12 @@ function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || navigator.platform || '')
 }
 
-// altLabel('R') -> "⌥ R" on an Apple platform, "Alt+R" everywhere else —
-// a space after the symbol since, unlike "Alt+", ⌥ has no trailing
-// character of its own to separate it from the letter.
+// altLabel('R') -> "⌥ R" on an Apple platform, "Alt+R" everywhere
+// else — a thin space (U+2009) after the symbol since, unlike "Alt+", ⌥
+// has no trailing character of its own to separate it from the letter.
+// A regular space read as too wide a gap between the two (flagged after
+// the first pass used one); U+2009 keeps them visibly separate without
+// the letter drifting away from its symbol.
 export function altLabel(letter: string): string {
-  return isApplePlatform() ? `⌥ ${letter}` : `Alt+${letter}`
+  return isApplePlatform() ? `⌥ ${letter}` : `Alt+${letter}`
 }
