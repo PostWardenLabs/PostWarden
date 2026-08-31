@@ -36,12 +36,20 @@ export default defineConfig({
     // other path with no error to notice. The regex below inverts that:
     // proxy anything that ISN'T the SPA (`/app`, `/app/*`, bare `/`),
     // vite's own internal/HMR paths (`/@...`, `/src/*`, `/node_modules/*`),
-    // or a `public/` static asset (anything whose last path segment has
-    // a file extension, e.g. `/favicon.svg`) — so a newly mounted backend
-    // route is proxied automatically, with nothing here to remember to
-    // update.
+    // or a real `public/` static asset. That last exclusion used to be
+    // "any last path segment with a dot in it," which seemed like a safe
+    // proxy for "this is a file, not an API route" — except several real
+    // API routes ARE dotted (every report's `/export.csv`/`.xlsx`,
+    // `/reports/custom.csv`/`.xlsx`, `/settings/connect-bi/download.pbids`),
+    // so under `npm run dev` those export links 404'd instead of hitting
+    // the backend, while working fine against the Docker build (no vite
+    // dev server, no proxy, no bug there). Fixed by naming the actual
+    // static-asset extensions `public/` uses (just `.svg` today) instead
+    // of excluding "any extension" — add to this list if a new file lands
+    // in `public/`, but an API route's own extension (csv, xlsx, pbids,
+    // ...) must never be added here.
     proxy: {
-      '^/(?!$|app(?:/|$)|@|src/|node_modules/)(?!.*\\.[^/]+$).*': {
+      '^/(?!$|app(?:/|$)|@|src/|node_modules/)(?!.*\\.(?:svg|png|jpe?g|gif|webp|ico|woff2?|ttf|otf)$).*': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
