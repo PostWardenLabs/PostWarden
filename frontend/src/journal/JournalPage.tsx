@@ -506,16 +506,25 @@ export default function JournalPage() {
                 />
                 {e.payee_name && <span className="dim small">· {e.payee_name}</span>}
                 {e.reference && <span className="dim small">[{e.reference}]</span>}
-                {/* Real <a>s (via <Link>), not <button>s — .badge's CSS has
-                    no button-specific override, so a <button class="badge">
-                    falls through to the bare `button` element rule and
-                    picks up filled accent chrome instead of the plain
-                    outlined pill an `<a class="badge rev">` gets. Link's
-                    own click handling already preventDefault()s on a
-                    plain click before navigating,
-                    which is what stops <summary>'s native toggle here —
-                    same mechanism DescriptionCell's span relies on, no
-                    separate handler needed. */}
+                {e.posted_by && <span className="dim small">— {e.posted_by}</span>}
+              </span>
+              {/* Every per-entry badge — reversal links and real tags alike
+                  — lives in this one trailing grid column (last "auto" in
+                  .entry-journal summary's own template), right of the
+                  description and before the amount, so none of them ever
+                  compete with description text on the same line or push
+                  the amount column around. Real <a>s (via <Link>), not
+                  <button>s, for the reversal badges — .badge's CSS has no
+                  button-specific override, so a <button class="badge">
+                  falls through to the bare `button` element rule and
+                  picks up filled accent chrome instead of the plain
+                  outlined pill an `<a class="badge rev">` gets. Link's own
+                  click handling already preventDefault()s on a plain
+                  click before navigating, which is what stops
+                  <summary>'s native toggle here — same mechanism
+                  DescriptionCell's span relies on, no separate handler
+                  needed. */}
+              <span className="entry-tags">
                 {e.reverses_entry_id && (
                   <Link className="badge rev" to={`?${buildParams({ entry_id: String(e.reverses_entry_id) }).toString()}`}>
                     reversal of #{e.reverses_entry_id}
@@ -526,10 +535,6 @@ export default function JournalPage() {
                     reversed by #{e.reversed_by}
                   </Link>
                 )}
-                {e.posted_by && <span className="dim small">— {e.posted_by}</span>}
-              </span>
-              <span className="num mono">{formatMoneyOrDash(e.total_debits)}</span>
-              <span className="entry-tags">
                 {e.tags.map((t) => (
                   <Link
                     key={t}
@@ -540,6 +545,7 @@ export default function JournalPage() {
                   </Link>
                 ))}
               </span>
+              <span className="num mono">{formatMoneyOrDash(e.total_debits)}</span>
             </summary>
             <div className="lines">
               <table className="ledger">
