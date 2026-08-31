@@ -1,11 +1,10 @@
-"""Central JSON encoding for Decimal and date/datetime — the "documented
-gap" REBUILD.md §6 calls out: the legacy app hand-rolled this same fix
-twice, per-route (`staging_duplicates_page`'s `groups_json`,
-`templates_full()`), both by `str()`-ing every debit/credit before
-building the JSON blob, because a plain `json.dumps` has no idea how to
-serialize either type. This module makes that the default everywhere
-instead of an opt-in per route — but "everywhere" turns out to mean two
-genuinely different code paths, both fixed here:
+"""Central JSON encoding for Decimal and date/datetime — a plain
+`json.dumps` has no idea how to serialize either type, and this app's
+money amounts are `NUMERIC(18,2)` in Postgres, so silently downgrading
+to `float` is a real precision-loss risk, not a theoretical one. This
+module makes correct encoding the default everywhere instead of an
+opt-in per route — but "everywhere" turns out to mean two genuinely
+different code paths, both fixed here:
 
 1. **A route that just `return`s a dict/Pydantic model.** FastAPI runs
    that value through `jsonable_encoder` before any `Response` class ever
@@ -22,11 +21,10 @@ genuinely different code paths, both fixed here:
    field (`model_dump(mode="json")`), so response *shape* doesn't change
    based on whether a route happens to declare a `response_model` or not.
 
-2. **A route that explicitly builds `JSONResponse({...})`** — legacy's
-   own idiom for the `{"ok": True/False, ...}` action-toast responses
-   scattered throughout `app/main.py`, which the ported modules keep
-   using rather than inventing a new shape for. `jsonable_encoder` is a
-   FastAPI-only convenience that never runs on an already-constructed
+2. **A route that explicitly builds `JSONResponse({...})`** — the idiom
+   several modules use for `{"ok": True/False, ...}` action-toast
+   responses. `jsonable_encoder` is a FastAPI-only convenience that
+   never runs on an already-constructed
    `Response` — Starlette's `JSONResponse.render()` calls plain
    `json.dumps` directly, which raises `TypeError` outright on *either*
    a bare `Decimal` or a bare `date`/`datetime`, no float-downgrade
@@ -64,9 +62,9 @@ def encode_json_value(value: Any) -> Any:
 
 class JSONResponse(_StarletteJSONResponse):
     """Same name and constructor as `fastapi.responses.JSONResponse` — a
-    ported route imports this instead (`from postwarden.json import
-    JSONResponse`) for the exact same `JSONResponse({"ok": ..., ...})`
-    call legacy already makes; nothing else about the call site changes.
+    route imports this instead (`from postwarden.json import
+    JSONResponse`) to get Decimal/date-safe encoding on an explicitly
+    built response; nothing else about the call site changes.
     """
 
     def render(self, content: Any) -> bytes:

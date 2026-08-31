@@ -1,66 +1,35 @@
 """Raw SQL access for the reference module — Accounts, Account levels,
 Scenarios, Payees, Tags. Every function takes a SQLAlchemy `Connection`
 (from `db.get_connection()`) and returns plain dicts/lists/scalars, same
-convention every prior module established. Ported from `app/main.py`'s
-`scenarios_all`/`account_levels_all`, the `/accounts` section
-(`_next_account_code`, `create_account`, `quick_create_account`,
-`toggle_account`, `toggle_account_cashflow`), `/account-levels`,
-`/scenarios`, `/payees` (including `merge_payees`), and `/tags`
-(including `merge_tags`).
+convention every prior module established.
 
-**Five legacy top-level resources in one module, not five modules.**
+**Five top-level resources in one module, not five modules.**
 Accounts/account levels/scenarios/payees/tags are all pure reference
-data — no report math, no journal-entry write path — and every one of
-legacy's own CRUD sections for them is a few dozen lines. Splitting them
-into five separate `modules/` packages would mean five near-empty
-`repository.py`/`service.py`/`router.py` triples for what is, in every
-case, "list rows, insert a row, toggle a boolean, maybe rename/delete."
-`REBUILD.md` decision 3's "a module should be deletable on its own" test
-still holds *within* this file — nothing here imports from any other
-`modules/` package, and nothing outside this module imports from it
-either (every prior module that needs one of these lookups — `reports`'
-`full_scenarios()`, `budget`'s forked `dim_accounts`/scenario lookup,
-`staging`'s forked account-code lookup, `imports`' forked constraint
-check — already forked its own copy rather than reaching in here, since
-this module didn't exist yet when they were built).
+data — no report math, no journal-entry write path — and each one's own
+CRUD is a few dozen lines. Splitting them into five separate `modules/`
+packages would mean five near-empty `repository.py`/`service.py`/
+`router.py` triples for what is, in every case, "list rows, insert a
+row, toggle a boolean, maybe rename/delete." "A module should be
+deletable on its own" still holds *within* this file — nothing here
+imports from any other `modules/` package, and nothing outside this
+module imports from it either; every module that needs one of these
+lookups (`reports`, `budget`, `staging`, `imports`) forked its own small
+copy instead of reaching in here.
 
-**Five write routes now `RETURNING`/rowcount-check and raise on an
-unknown id, where their legacy originals silently no-op'd instead:**
-`toggle_account`/`toggle_account_cashflow` (a bare `UPDATE ... WHERE id
-= %s` with no rowcount check, still redirecting to "Account updated"),
-`toggle_lock` (scenarios, same shape), and `rename_account_level`/
-`delete_account_level` (same shape again). Every *other* toggle/rename/
-delete route in legacy (`toggle_payee`, `rename_payee`, `delete_payee`,
-`toggle_tag`, `rename_tag`, `delete_tag`) already does check and raise
-`ValueError(f"... #{id} not found")` on a miss — these five were very
-likely an oversight in the original, not a deliberate asymmetry (nothing
-in `SPEC.md` or `BACKLOG.md` calls out accounts/scenarios/account-levels
-as special here, and the operation is conceptually identical to their
-already-checked siblings). A JSON API caller also has more reason than a
-redirect-plus-flash one did to get a real 400 back for "that id doesn't
-exist" instead of a silent 200. Documented here since it's the one place
-this module deviates from a verbatim port rather than forking/dropping
-something `REBUILD.md` decision 4 already covers; `service.py` is where
-each of the five actually raises.
+**Five write routes `RETURNING`/rowcount-check and raise on an unknown
+id:** `toggle_account`/`toggle_account_cashflow`, `toggle_lock`
+(scenarios), and `rename_account_level`/`delete_account_level`. Every
+sibling toggle/rename/delete route already raises `ValueError(f"...
+#{id} not found")` on a miss, and a JSON API caller has more reason than
+a form post did to get a real 400 back for "that id doesn't exist"
+instead of a silent success — so these five match that behavior rather
+than staying an asymmetric exception. `service.py` is where each of the
+five actually raises.
 
-**`_accounts_with_gaps` and `top_level_types_taken` (legacy
-`accounts_page`) are not ported.** Both are rendering concerns — the
-"+"-between-rows gap placeholders accounts.js turns into an inline
-quick-create form, and the "warn before a second top-level Assets/
-Liabilities/Equity/Income account" UI guardrail (`BACKLOG.md`'s own
-note: not a DB constraint) — computable by the frontend directly from
-the same flat `GET /accounts` list this module already returns (a gap
-before/after every row, or `not a["parent_id"]`), with nothing to look
-up that isn't already in that response.
-
-**`TYPE_LABELS` (legacy's `{"asset": "Assets", ...}`) is not ported.**
-Display-string mapping, not reference data — a frontend concern, same
-as `money()`/`dateformat()` staying render-time in legacy. `ACCOUNT_
-TYPES`/`SCENARIO_TYPES` themselves live in `schemas.py` as `Literal`
-types instead of plain lists — FastAPI/Pydantic validates a bad value
-into a 422 automatically, so there is no separate manual membership
-check to port from `quick_create_account`'s own `if acct_type not in
-ACCOUNT_TYPES`.
+`ACCOUNT_TYPES`/`SCENARIO_TYPES` live in `schemas.py` as `Literal` types
+rather than plain lists — FastAPI/Pydantic validates a bad value into a
+422 automatically, so there's no separate manual membership check
+needed.
 """
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -79,9 +48,8 @@ ACCOUNT_TYPE_CODE_PREFIX = {
 
 def list_accounts(conn: Connection, level_id: int | None = None) -> list[dict]:
     """Every account from `v_dim_account`, full hierarchy path and normal
-    side included — ported from `accounts_page`'s own query. `level_id`
-    (when given) narrows to accounts sitting at that level's own depth,
-    same as legacy's `selected_level` branch."""
+    side included. `level_id` (when given) narrows to accounts sitting
+    at that level's own depth."""
     if level_id is not None:
         row = conn.execute(
             text("SELECT depth FROM account_levels WHERE id = :level_id"), {"level_id": level_id}
@@ -273,8 +241,8 @@ def rename_payee(conn: Connection, payee_id: int, name: str) -> int:
 
 def delete_payee(conn: Connection, payee_id: int) -> str | None:
     """Every FK onto `payees(id)` is `ON DELETE SET NULL` — safe by
-    construction, same as legacy's own comment: any entry that used this
-    payee just goes back to having none."""
+    construction: any entry that used this payee just goes back to
+    having none."""
     row = conn.execute(
         text("DELETE FROM payees WHERE id = :id RETURNING name"), {"id": payee_id}
     ).mappings().first()
@@ -283,27 +251,22 @@ def delete_payee(conn: Connection, payee_id: int) -> str | None:
 
 def merge_payees(conn: Connection, survivor_id: int, other_ids: list[int], target_name: str) -> int | None:
     """Repoints every FK onto the merged-away ids, deletes them, then
-    renames the survivor — ported from `merge_payees`. Deleting the
-    others *before* the rename matters: if `target_name` equals one of
-    the about-to-be-deleted payees' own current name, renaming the
-    survivor first would collide with `payees.name`'s UNIQUE constraint.
-    Returns the number of `journal_entries` rows repointed (`None` if
-    `survivor_id` doesn't exist), same "entries affected" count legacy's
-    own flash message reports — `scheduled_entries`/`entry_templates`
-    are repointed too but not counted, matching legacy exactly.
+    renames the survivor. Deleting the others *before* the rename
+    matters: if `target_name` equals one of the about-to-be-deleted
+    payees' own current name, renaming the survivor first would collide
+    with `payees.name`'s UNIQUE constraint. Returns the number of
+    `journal_entries` rows repointed (`None` if `survivor_id` doesn't
+    exist) — `scheduled_entries`/`entry_templates` are repointed too but
+    not counted in that figure.
 
-    **Checks `survivor_id` exists up front, unlike legacy** (which only
-    ever discovers a bad survivor id at the very end, via the final
-    rename's own rowcount). Left alone, a bad survivor id here wouldn't
-    even get that far: every `payee_id` column the repoint `UPDATE`s
-    touch is a real FK onto `payees(id)`, so pointing one at an id that
-    doesn't exist would raise a raw `ForeignKeyViolation` the moment any
-    of the merged-away payees actually had an entry — a worse failure
-    mode than legacy's own (legacy's plain `payee_id` reassignment has
-    no such FK check *until* commit, so it fails the same way, just
-    later and less predictably). Same "resolve it up front instead of
-    relying on a constraint violation" fix `modules.imports.service.
-    stage_import_groups` already made for unmapped account codes."""
+    **Checks `survivor_id` exists up front.** Left unchecked, a bad
+    survivor id would still fail, just later and less predictably: every
+    `payee_id` column the repoint `UPDATE`s touch is a real FK onto
+    `payees(id)`, so pointing one at an id that doesn't exist would raise
+    a raw `ForeignKeyViolation` the moment any of the merged-away payees
+    actually had an entry. Same "resolve it up front instead of relying
+    on a constraint violation" fix `modules.imports.service.
+    stage_import_groups` makes for unmapped account codes."""
     if conn.execute(text("SELECT 1 FROM payees WHERE id = :id"), {"id": survivor_id}).first() is None:
         return None
     result = conn.execute(
@@ -370,24 +333,21 @@ def delete_tag(conn: Connection, tag_id: int) -> str | None:
 
 
 def merge_tags(conn: Connection, survivor_id: int, other_ids: list[int], target_name: str) -> int | None:
-    """Ported from `merge_tags`. Unlike payees, a tag's associations are
-    many-to-many across three junction tables — each gets an "insert the
-    survivor's own association wherever a merged-away tag had one, ON
-    CONFLICT DO NOTHING" pass before the old tag rows are deleted, since a
-    plain `UPDATE ... SET tag_id` could collide with an (entry_id, tag_id)
-    pair that already exists (something tagged with *both* the survivor
-    and a tag being folded into it) and violate the junction table's own
-    primary key. Returns distinct `journal_entries` affected (`None` if
-    `survivor_id` doesn't exist) — `scheduled_entries`/`entry_templates`
-    carrying a merged tag aren't reflected in that count either, matching
-    legacy exactly.
+    """Unlike payees, a tag's associations are many-to-many across three
+    junction tables — each gets an "insert the survivor's own association
+    wherever a merged-away tag had one, ON CONFLICT DO NOTHING" pass
+    before the old tag rows are deleted, since a plain `UPDATE ... SET
+    tag_id` could collide with an (entry_id, tag_id) pair that already
+    exists (something tagged with *both* the survivor and a tag being
+    folded into it) and violate the junction table's own primary key.
+    Returns distinct `journal_entries` affected (`None` if `survivor_id`
+    doesn't exist) — `scheduled_entries`/`entry_templates` carrying a
+    merged tag aren't reflected in that count either.
 
-    **Checks `survivor_id` exists up front, unlike legacy** — same fix,
-    same reason, as `merge_payees` above: left alone, a bad survivor id
-    would surface as a raw `ForeignKeyViolation` on the junction-table
-    `INSERT` the moment any merged-away tag actually had an association,
-    rather than legacy's own (also-broken, just later) final-rename
-    rowcount check."""
+    **Checks `survivor_id` exists up front** — same fix, same reason, as
+    `merge_payees` above: left unchecked, a bad survivor id would surface
+    as a raw `ForeignKeyViolation` on the junction-table `INSERT` the
+    moment any merged-away tag actually had an association."""
     if conn.execute(text("SELECT 1 FROM tags WHERE id = :id"), {"id": survivor_id}).first() is None:
         return None
     affected = conn.execute(

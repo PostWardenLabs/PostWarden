@@ -1,26 +1,20 @@
 """Pure account-tree logic — rollup, flatten, and the P&L-net sign
 correction shared by every report that walks the chart of accounts.
 
-Ported from `app/main.py`'s module-level `_build_account_tree`/
-`_flatten_tree`/`_pnl_net`/`_earnings_row`/`_accounts_with_gaps`,
-docstrings kept close to verbatim. Callers pass plain dicts (what a
-repository layer produces from a `v_dim_account` row and a
-`fn_account_balances()` row) — this module never touches the database
-itself, that's what makes it unit-testable in milliseconds.
+Callers pass plain dicts (what a repository layer produces from a
+`v_dim_account` row and a `fn_account_balances()` row) — this module
+never touches the database itself, that's what makes it unit-testable
+in milliseconds.
 
-`earnings_row` is the one deliberate divergence from that port: it's now
-`earnings_rows` (plural), returning a real parent/children tree node
-instead of a flat row — a rebuild-branch UX change, not a straight port,
-see that function's own docstring and SPEC.md decision 10.
+`earnings_rows` returns a real parent/children tree node rather than a
+flat row — see that function's own docstring and SPEC.md decision 10.
 
-`income_statement_groups` joined this file in Phase 1.4 rather than
-staying in `modules/reports/`: it's `_income_statement_groups` from
-`app/main.py`, and despite living next to genuinely hard, DB-calling
-report code there, the function itself never touches the database —
-it's pure tree-signing/grouping on a `build_account_tree` result, the
-same category as `flatten_tree` right above it. `modules/reports/
-service.py` (the impure, DB-calling half of Income Statement) imports
-it from here.
+`income_statement_groups` lives here rather than in `modules/reports/`:
+despite sitting conceptually next to genuinely hard, DB-calling report
+code, the function itself never touches the database — it's pure
+tree-signing/grouping on a `build_account_tree` result, the same
+category as `flatten_tree` right above it. `modules/reports/service.py`
+(the impure, DB-calling half of Income Statement) imports it from here.
 """
 from .money import normalize_zero, pct_variance, variance_amount
 

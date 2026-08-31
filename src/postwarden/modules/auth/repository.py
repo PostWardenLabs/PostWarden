@@ -47,9 +47,9 @@ def update_username(conn: Connection, user_id: int, username: str) -> None:
     (its own join would have found no session first). `users.username`'s
     own `UNIQUE` constraint is what actually needs to raise here, on a
     collision with someone else's name — surfaced to the caller as a
-    plain `sqlalchemy.exc.IntegrityError`, same as legacy's own
-    unguarded `UPDATE` let `psycopg.errors.UniqueViolation` bubble up
-    to its `except psycopg.Error` handler."""
+    plain `sqlalchemy.exc.IntegrityError`, left unguarded on purpose
+    rather than pre-checked (pre-checking would just be a second query
+    racing the same constraint anyway)."""
     conn.execute(text("UPDATE users SET username = :username WHERE id = :id"),
                  {"username": username, "id": user_id})
 
@@ -68,9 +68,8 @@ def insert_session(conn: Connection, user_id: int, token: str, csrf_token: str,
 
 
 def session_by_token(conn: Connection, token: str) -> dict | None:
-    """Joins `users` the same way legacy `auth.get_session`'s own query
-    does, so a caller gets `user_id`/`username`/`is_active`/`csrf_token`/
-    `expires_at` in one round trip rather than two."""
+    """Joins `users` so a caller gets `user_id`/`username`/`is_active`/
+    `csrf_token`/`expires_at` in one round trip rather than two."""
     row = conn.execute(text("""
         SELECT s.token, s.user_id, s.csrf_token, s.expires_at, u.username, u.is_active
           FROM sessions s JOIN users u ON u.id = s.user_id

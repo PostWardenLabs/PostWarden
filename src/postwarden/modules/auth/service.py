@@ -1,28 +1,15 @@
-"""Business logic for the auth module — ported from `app/auth.py`
-(session/password helpers, the brute-force throttle) and the validation
-`app/main.py`'s `login_submit`/`change_username`/`change_password`
-routes ran inline.
+"""Business logic for the auth module — session/password helpers, the
+brute-force login throttle.
 
-Two things worth flagging up front, both real properties of the code
-below, not incidental:
+**The single-process, in-memory login throttle (`_failed_logins`) is
+deliberate, not a shortcut.** A `dict` module global is only correct
+because the Dockerfile runs one uvicorn worker; moving it to the
+database (correct under multiple workers/replicas) would be solving a
+problem this deployment doesn't have.
 
-- **The single-process, in-memory login throttle (`_failed_logins`) is a
-  verbatim port, deliberately, not a "fix while we're here."** Legacy's
-  own comment says why: a `dict` module global is only correct because
-  the Dockerfile runs one uvicorn worker. Nothing about the rebuild
-  changes that deployment shape, so nothing about this needs to change
-  either — moving it to the database (correct under multiple
-  workers/replicas) would be solving a problem this deployment doesn't
-  have.
-- **`RateLimitedError`/`InvalidCredentialsError` are new** — legacy's
-  `login_submit` treats both failures identically (the same flash-
-  redirected login page, same 200-after-303 shape, no room for a status
-  code to differ). A JSON API has status codes to spend: `router.py`
-  answers 429 for the former, 401 for the latter. This is a real,
-  deliberate improvement enabled by the medium changing, not a decision
-  requiring its own `REBUILD.md` §5 entry — no behavior a user can
-  observe differently changes, just which numeric code a programmatic
-  caller sees.
+`RateLimitedError`/`InvalidCredentialsError` get distinct status codes
+(429/401 — see `router.py`) rather than a uniform failure response,
+since a JSON API has status codes to spend.
 """
 import re
 import secrets
@@ -113,11 +100,10 @@ def login(conn, username: str, password: str) -> dict:
 
 
 def get_session(conn, token: str | None) -> dict | None:
-    """Look up a session by its cookie token, the same three checks
-    legacy `auth.get_session` makes: exists, not expired (deleting it if
-    so — the same lazy-cleanup-on-next-use legacy relies on, since there
-    is no cron in this deployment to sweep `sessions` otherwise), and
-    the user behind it is still active."""
+    """Look up a session by its cookie token: exists, not expired
+    (deleting it if so — lazy cleanup on next use, since there's no cron
+    in this deployment to sweep `sessions` otherwise), and the user
+    behind it is still active."""
     if not token:
         return None
     session = repo.session_by_token(conn, token)
@@ -139,10 +125,8 @@ def logout(conn, token: str | None) -> None:
 def require_csrf(session: dict | None, token: str | None) -> None:
     """Raise `ValueError` (caught the same uniform way as any other bad
     input, per every other write module's own convention) if `token`
-    doesn't match this session's own `csrf_token`. Ported from legacy
-    `require_csrf`; the transport changes (a hidden form field there, an
-    `X-CSRF-Token` request header for a JSON API — see `router.py`'s own
-    docstring), the check itself does not."""
+    doesn't match this session's own `csrf_token`. Travels as the
+    `X-CSRF-Token` request header — see `router.py`'s own docstring."""
     if not session or not token or not secrets.compare_digest(token, session["csrf_token"]):
         raise ValueError("Your session expired or the form was stale — please retry.")
 
@@ -166,9 +150,9 @@ def change_username(conn, user_id: int, username: str) -> str:
 def change_password(conn, user_id: int, current_password: str, new_password: str,
                      confirm_password: str) -> None:
     """On success, revokes every session for this user (including the
-    one making this request) — same as legacy: logging back in with the
-    new password is itself the confirmation it was set correctly.
-    `router.py` is what actually clears the caller's own cookie."""
+    one making this request) — logging back in with the new password is
+    itself the confirmation it was set correctly. `router.py` is what
+    actually clears the caller's own cookie."""
     user = repo.user_by_id(conn, user_id)
     if not user or not verify_password(current_password, user["password_hash"]):
         raise ValueError("Current password is incorrect")
@@ -181,14 +165,12 @@ def change_password(conn, user_id: int, current_password: str, new_password: str
 
 
 def bootstrap_admin_from_env(conn, username: str, password: str) -> None:
-    """First-boot convenience for Docker deployments — ported verbatim
-    from `app/auth.py`'s own version, just taking the two env values as
-    plain arguments instead of reading `os.environ` itself, so this
-    module stays framework/env-decoupled like every other module's
-    `service.py`. Reading `settings.postwarden_admin_user`/
-    `_password` and actually calling this at startup is `main.py`'s own
-    lifespan hook to wire — Phase 1.14, same as legacy's own call site
-    (`app/main.py`'s `lifespan`), not this phase's job to invoke.
+    """First-boot convenience for Docker deployments — takes the two env
+    values as plain arguments rather than reading `os.environ` itself,
+    so this module stays framework/env-decoupled like every other
+    module's `service.py`. Reading `settings.postwarden_admin_user`/
+    `_password` and calling this at startup is `main.py`'s own lifespan
+    hook.
 
     Silently does nothing once any user exists, so it's safe to leave
     the env vars set across redeploys — it never overwrites a password."""

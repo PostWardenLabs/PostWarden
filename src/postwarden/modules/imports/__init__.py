@@ -1,1 +1,1 @@
-"""Plain-CSV and mapped/rules importers. Phase 1.8."""
+"""Plain-CSV and mapped/rules importers."""

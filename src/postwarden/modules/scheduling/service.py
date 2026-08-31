@@ -1,23 +1,13 @@
 """Validation and orchestration for the scheduling module — scheduled
 entries and entry templates. Every function here takes a SQLAlchemy
 `Connection` and reads/writes through `repository.py`, never raw SQL of
-its own, same convention every prior module established. Ported from
-`app/main.py`'s `create_schedule`, `toggle_schedule`,
-`materialize_due_schedules`, `templates_page`'s own `templates_full()`
-call, `create_template`, `delete_template`.
+its own, same convention every prior module established.
 
-**`materialize_due_schedules` is ported and fully tested here, but not
-wired into anything yet — a documented gap, same shape as every prior
-module's own CSRF/attribution gaps.** Legacy calls the equivalent
-function from its auth middleware, on every authenticated request,
-wrapped in a bare `try/except Exception: pass` (see `app/main.py`'s own
-comment: "no task runner in this deployment, so 'auto-post on the date'
-is done lazily here instead of a real cron"). Both the middleware and
-the auth session it depends on are `modules/auth/` (Phase 1.11)
-concerns; wiring a periodic or per-request call to this function into
-the new app is that phase's job, or `main.py`'s (Phase 1.14) — same
-"don't reach into a mechanism that doesn't exist yet" reasoning every
-prior module already applies to CSRF."""
+`materialize_due_schedules` is called from `main.py`'s own middleware on
+every authenticated request, wrapped in a bare `try/except Exception:
+pass` — there's no task runner in this deployment, so "auto-post on the
+date" is done lazily on request rather than by a real cron. See
+`main.py`'s `advance_due_schedules` for the wiring."""
 from datetime import date
 
 from sqlalchemy.engine import Connection
@@ -41,10 +31,9 @@ def create_schedule(conn: Connection, *, description: str, reference: str | None
                      interval_count: int, next_date: date | None, tags: str,
                      accounts: list[str], debits: list[str], credits: list[str],
                      memos: list[str]) -> int:
-    """Ported from `create_schedule`'s validation-then-insert body.
-    `interval_unit` is no longer checked against `SCHEDULE_UNITS` here —
-    `schemas.IntervalUnit`'s `Literal` already rejected a bad value
-    before this function is ever called from `router.py` (direct
+    """`interval_unit` isn't checked against the three valid values
+    here — `schemas.IntervalUnit`'s `Literal` already rejected a bad
+    value before this function is ever called from `router.py` (direct
     callers, e.g. tests, are expected to pass one of the three valid
     strings, same trust boundary `domain.entry.parse_lines` places on
     its own callers).
@@ -55,8 +44,7 @@ def create_schedule(conn: Connection, *, description: str, reference: str | None
     `domain.entry.parse_lines`'s own docstring explains why): `scheduled_
     entry_lines` carries no equivalent trigger at all, `db/schema.sql`'s
     own `CHECK (amount <> 0)` per line is as far as the schema goes, so
-    an unbalanced schedule is caught here in app code or not at all,
-    same as legacy."""
+    an unbalanced schedule is caught here in app code or not at all."""
     lines = parse_lines(accounts, debits, credits, memos)
     total = sum(ln["amount"] for ln in lines)
     if total != 0:
@@ -95,29 +83,24 @@ def toggle_schedule_active(conn: Connection, scheduled_id: int) -> dict:
 
 def materialize_due_schedules(conn: Connection) -> tuple[list[int], list[str]]:
     """Posts a staged occurrence for every active, due schedule and
-    advances its `next_date` — ported from `materialize_due_schedules`.
-    Returns `(materialized_ids, errors)`, the same "collect successes
-    and failures separately" shape `modules.entries.service.
-    reverse_entries_bulk` already uses, for the identical structural
-    reason: **one schedule per `Connection.begin_nested()` SAVEPOINT,
-    not a bare loop.** Legacy's version gets per-schedule independence
-    for free (each occurrence is its own `with tx() as cur:`, committing
-    — and so running the deferred balance/has-lines triggers — before
-    the next schedule's own block even starts); `db.get_connection()`
-    gives the whole request one transaction, so without the SAVEPOINT a
-    bad schedule would abort every schedule after it too, not just
-    itself. `repo.check_deferred_constraints` inside each SAVEPOINT is
-    what forces those triggers to run at a point this function's own
-    `try/except` (not a 500 raised who-knows-when after this function
-    already returned) can catch — see `repository.py`'s own docstring
-    for the full explanation, the same one `modules.entries.repository.
-    check_deferred_constraints` already gave for the Journal's own write
-    path.
+    advances its `next_date`. Returns `(materialized_ids, errors)`, the
+    same "collect successes and failures separately" shape `modules.
+    entries.service.reverse_entries_bulk` already uses, for the identical
+    structural reason: **one schedule per `Connection.begin_nested()`
+    SAVEPOINT, not a bare loop.** `db.get_connection()` gives the whole
+    request one transaction, so without the SAVEPOINT a bad schedule
+    would abort every schedule after it too, not just itself.
+    `repo.check_deferred_constraints` inside each SAVEPOINT is what
+    forces the balance/has-lines triggers to run at a point this
+    function's own `try/except` (not a 500 raised who-knows-when after
+    this function already returned) can catch — see `repository.py`'s
+    own docstring for the full explanation, the same one `modules.
+    entries.repository.check_deferred_constraints` already gave for the
+    Journal's own write path.
 
-    A schedule with no lines is skipped, `next_date` left untouched,
-    matching legacy's own `if not lines: continue` — nothing to post,
-    and silently advancing the date would mean the occurrence is just
-    lost rather than caught on the next pass."""
+    A schedule with no lines is skipped, `next_date` left untouched —
+    nothing to post, and silently advancing the date would mean the
+    occurrence is just lost rather than caught on the next pass."""
     due = repo.due_schedules(conn)
     if not due:
         return [], []
@@ -159,11 +142,9 @@ def materialize_due_schedules(conn: Connection) -> tuple[list[int], list[str]]:
 # ---------------------------------------------------------------------------
 
 def list_templates(conn: Connection) -> list[dict]:
-    """Ported from `templates_full` — each template comes back with its
-    own `lines`/`tags` nested directly under it, the shape legacy's
-    version already used (unlike the Journal/Staging's three-parallel-
-    dicts precursor `modules/entries/service.py`'s own docstring
-    contrasts itself with)."""
+    """Each template comes back with its own `lines`/`tags` nested
+    directly under it — see `modules/entries/service.py`'s own docstring
+    for why that nested shape is preferred over parallel dicts."""
     templates = repo.templates_all(conn)
     ids = [t["id"] for t in templates]
     lines_by_t: dict[int, list] = {}

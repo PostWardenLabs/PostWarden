@@ -78,9 +78,10 @@ XLSX_GRAND_BORDER_BAD = Border(bottom=Side(style="double", color="FFB3392C"))  #
 # Average read as a different *kind* of column at a glance — not just
 # one more period — while staying distinguishable from each other too.
 XLSX_PERIOD_AGG_FILL = PatternFill("solid", fgColor="FFDCE2E8")  # 22% --rule-strong over --paper-deep
-# No currency symbol — matches the app's own plain-text `money()` Jinja
-# filter convention (display-only formatting is a rendering concern, and
-# there's no renderer here). Parens for negatives, a bare dash for zero.
+# No currency symbol — matches the frontend's own plain-text `formatMoney`
+# convention (`frontend/src/format/money.ts`; display-only formatting is
+# a rendering concern, and there's no renderer here). Parens for
+# negatives, a bare dash for zero.
 XLSX_MONEY_FMT = '#,##0.00;(#,##0.00);"-"'
 # `pct_variance()` already returns the percentage figure itself (12.3
 # meaning "12.3%"), not a 0-1 fraction, so this appends a literal "%"

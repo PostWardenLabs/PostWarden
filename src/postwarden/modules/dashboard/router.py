@@ -1,15 +1,13 @@
 """The dashboard module's `APIRouter` — one read-only route, the landing
-page's own summary. Ported from `app/main.py`'s bare `GET /` route, but
-mounted at `GET /dashboard` instead: the frontend's own root path (`/`)
-already serves the SPA shell (`main.py`'s static-file mount), the same
-`/foo` (this module's JSON) vs `/app/foo` (the React route) split every
-other Phase 4 screen already follows — `/dashboard` is this screen's own
-`/foo`.
+page's own summary. Mounted at `GET /dashboard`, not `/`: the frontend's
+own root path (`/`) already serves the SPA shell (`main.py`'s
+static-file mount), the same `/foo` (this module's JSON) vs `/app/foo`
+(the React route) split every other screen follows — `/dashboard` is
+this screen's own `/foo`.
 
-Mounted into `app` with `get_current_session` required at the router
-level, the same router-level dependency every module has carried since
-Phase 1.14 — the direct equivalent of legacy's global `auth_gate`. No
-write routes, so no `require_csrf_header` anywhere.
+`get_current_session` is required at the router level, the same
+router-level dependency every module carries. No write routes, so no
+`require_csrf_header` anywhere.
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.engine import Connection

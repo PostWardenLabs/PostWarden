@@ -5,23 +5,21 @@ one of the star-schema views `db/schema.sql` grants to `postwarden_bi`
 (`scenarios`) for `/api/scenarios`' own richer shape.
 
 Every function here is its own fork of a query a sibling module already
-has a version of, not an import — the same REBUILD.md decision 3
-"deletable on its own" test every prior module already applies. This
-one cuts in both directions at once: `modules/reports/repository.py`'s
-`dim_accounts` filters to `WHERE is_active` (a report never shows an
-archived account) and `modules/reference/repository.py`'s
-`scenarios_all` is reference's own CRUD-page shape — this module's
-versions are verbatim ports of `app/main.py`'s own `api_accounts`/
-`api_scenarios`, which predate either of those and were never actually
-identical to begin with (`api_accounts` has no `is_active` filter at
-all — the JSON mirror always showed every account, archived or not).
-Deleting `modules/reports/` or `modules/reference/` should never take
-the `/api/*` contract down with it, and vice versa.
+has a version of, not an import — the same "deletable on its own" test
+every prior module already applies. This one cuts in both directions at
+once: `modules/reports/repository.py`'s `dim_accounts` filters to
+`WHERE is_active` (a report never shows an archived account) and
+`modules/reference/repository.py`'s `scenarios_all` is reference's own
+CRUD-page shape — this module's versions were never actually identical
+to begin with (`accounts` below has no `is_active` filter at all — the
+JSON mirror always shows every account, archived or not). Deleting
+`modules/reports/` or `modules/reference/` should never take the
+`/api/*` contract down with it, and vice versa.
 
 Every function takes `conn` as its first argument and returns plain
 dicts/lists — `Decimal` for every money value, unchanged by `service.py`
 (there is no report-shaped assembly to do here; the JSON mirror hands
-back exactly what the view/function already computed, same as legacy).
+back exactly what the view/function already computed).
 """
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
@@ -31,9 +29,8 @@ def trial_balance(conn: Connection, scenario: str, as_of: str | None) -> list[di
     """`fn_trial_balance(scenario, as_of)`, verbatim — every active
     account's own trial-balance row, `NULL` `as_of` meaning "through
     today" (the function's own default, per its `schema.sql` docstring).
-    No `p_from` — legacy's `api_trial_balance` never exposed one, and this
-    module ports what `/api/*` actually did, not `fn_trial_balance`'s
-    full capability."""
+    No `p_from` — the `/api/*` contract never exposed one, only the full
+    `fn_trial_balance` capability behind it."""
     rows = conn.execute(
         text("SELECT * FROM fn_trial_balance(:scenario, :as_of)"),
         {"scenario": scenario, "as_of": as_of},
@@ -42,21 +39,21 @@ def trial_balance(conn: Connection, scenario: str, as_of: str | None) -> list[di
 
 
 def accounts(conn: Connection) -> list[dict]:
-    """Every account, active or not — `api_accounts`'s own `SELECT * FROM
-    v_dim_account ORDER BY sort_path`, no `WHERE is_active` at all. A
-    verbatim port, not an oversight: unlike every report/picker in this
-    app, the JSON mirror is meant to hand back the whole dimension table
-    for a BI tool building its own model, where an archived account is
-    still a real row with real history, not noise to filter out."""
+    """Every account, active or not — `SELECT * FROM v_dim_account ORDER
+    BY sort_path`, no `WHERE is_active` at all. Deliberate, not an
+    oversight: unlike every report/picker in this app, the JSON mirror
+    is meant to hand back the whole dimension table for a BI tool
+    building its own model, where an archived account is still a real
+    row with real history, not noise to filter out."""
     rows = conn.execute(text("SELECT * FROM v_dim_account ORDER BY sort_path")).mappings()
     return [dict(r) for r in rows]
 
 
 def scenarios(conn: Connection) -> list[dict]:
     """Every scenario plus its own `base_level_name`/`entry_count` —
-    `api_scenarios`'s own `scenarios_all()` call, forked verbatim rather
-    than imported from `modules/reference/repository.py`'s identically-
-    shaped `scenarios_all` (see this module's own docstring)."""
+    forked rather than imported from `modules/reference/repository.py`'s
+    identically-shaped `scenarios_all` (see this module's own
+    docstring)."""
     rows = conn.execute(text("""
         SELECT s.*, al.name AS base_level_name,
                (SELECT COUNT(*) FROM journal_entries e
@@ -70,14 +67,13 @@ def scenarios(conn: Connection) -> list[dict]:
 
 def fact_lines(conn: Connection, scenario: str | None, date_from: str | None,
                date_to: str | None) -> list[dict]:
-    """Up to 1000 `v_fact_lines` rows, newest first — `api_entries`'s own
-    query, same optional `scenario_code`/`entry_date` filters and the
-    same `ORDER BY entry_date DESC, seq DESC, line_id` tiebreak (`seq`,
-    not `entry_id`: entry ids are random codes, not sequential — see
-    `v_fact_lines`'s own comment in `schema.sql` for why `created_at`
-    alone isn't enough either, since one transaction can insert several
-    entries sharing a single `now()`). The 1000-row cap is legacy's own
-    `LIMIT`, ported as-is — this is a JSON mirror for scripts, not a
+    """Up to 1000 `v_fact_lines` rows, newest first — optional
+    `scenario_code`/`entry_date` filters, `ORDER BY entry_date DESC, seq
+    DESC, line_id` (`seq`, not `entry_id`: entry ids are random codes,
+    not sequential — see `v_fact_lines`'s own comment in `schema.sql`
+    for why `created_at` alone isn't enough either, since one transaction
+    can insert several entries sharing a single `now()`). The 1000-row
+    cap is deliberate — this is a JSON mirror for scripts, not a
     paginated browser."""
     where, params = ["TRUE"], {}
     if scenario:

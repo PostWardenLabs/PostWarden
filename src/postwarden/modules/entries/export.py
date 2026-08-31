@@ -1,10 +1,8 @@
-"""CSV/XLSX assembly for the Journal's export routes — ported from
-`app/main.py`'s `entries_export_csv`/`entries_export_xlsx`, unchanged in
-shape. Both take the flat leg-per-row list `service.export_rows` already
-produces (CSV in each line's own posting order, XLSX with debits grouped
-ahead of credits within an entry — see that function's own docstring)
-and hand it to `export.csv`/`export.xlsx` (Phase 1.12) to write, the
-same shared plumbing `modules/reports/export.py` draws from.
+"""CSV/XLSX assembly for the Journal's export routes. Both take the flat
+leg-per-row list `service.export_rows` already produces (CSV in each
+line's own posting order, XLSX with debits grouped ahead of credits
+within an entry — see that function's own docstring) and hand it to the
+same shared writer plumbing `modules/reports/export.py` draws from.
 """
 import csv
 import io

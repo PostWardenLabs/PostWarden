@@ -1,38 +1,30 @@
-"""App entrypoint — app factory + router mounting, per REBUILD.md §6's
-tree comment. Real content as of Phase 1.14: every module built since
-Phase 1.4 gets `include_router`'d here, for the first time — this file
-itself owns none of their routes, same as it never has.
+"""App entrypoint — app factory + router mounting. This file owns no
+module's routes; every router below is built elsewhere and `include_
+router`'d in here.
 
-**The actual login/CSRF gate is *not* wired here as middleware, unlike
-legacy's global `auth_gate`.** `modules/auth/deps.py`'s own docstring
-already settled this back in Phase 1.11: `get_current_session`/
-`require_csrf_header` are per-route `Depends(...)` — every router below
-sets `get_current_session` at its own `APIRouter(dependencies=[...])`
-level (the direct equivalent of legacy's blanket middleware, just
-FastAPI-idiomatic instead of ASGI-idiomatic), and every write route
-additionally depends on `require_csrf_header`. See each module's own
-`router.py` docstring for the specifics of how Phase 1.14 wired it in
-there. `modules/auth/router.py` itself carries no router-level
-dependency — `/login` has to stay reachable with no session at all, and
-its other four routes already spell out their own `Depends(...)` per
-route.
+**The login/CSRF gate is not wired here as middleware.**
+`get_current_session`/`require_csrf_header` (`modules/auth/deps.py`) are
+per-route `Depends(...)` instead: every router below sets `get_current_
+session` at its own `APIRouter(dependencies=[...])` level, and every
+write route additionally depends on `require_csrf_header`. See each
+module's own `router.py` docstring for the specifics. `modules/auth/
+router.py` itself carries no router-level dependency — `/login` has to
+stay reachable with no session at all, and its other routes already
+spell out their own `Depends(...)` per route.
 
-**What legacy's `auth_gate` did that a per-route `Depends(...)` has no
-natural place for: lazily materializing due schedules on every
-authenticated request** (SPEC.md decision 9 — no task runner in this
-deployment, so "auto-post on the date" happens inline instead of on a
-cron). That one piece of `auth_gate` genuinely is cross-cutting in a way
-no single module's router can own, so it's the one bit of real
-middleware this file adds — seeing every request, gated on there being a
-valid session, otherwise a no-op. See `advance_due_schedules`'s own
-docstring below.
+**One thing doesn't fit a per-route dependency: lazily materializing due
+schedules on every authenticated request** (SPEC.md decision 9 — no task
+runner in this deployment, so "auto-post on the date" happens inline
+instead of on a cron). That's genuinely cross-cutting in a way no single
+module's router can own, so it's the one bit of real middleware this
+file adds — seeing every request, gated on there being a valid session,
+otherwise a no-op. See `advance_due_schedules`'s own docstring below.
 
-**Migrations are not run from here**, unlike legacy's `lifespan` calling
-`run_migrations()`. REBUILD.md decision 5 makes Alembic a separate,
-explicit step that runs *before* this process starts (the Dockerfile's
-own `CMD`, or CI's own `alembic upgrade head` step) — see `db.py`'s own
-docstring for why baking that into a lazy, cached `Engine` here would be
-the wrong layer for it.
+**Migrations are not run from here.** Alembic is a separate, explicit
+step that runs *before* this process starts (the Dockerfile's own `CMD`,
+or CI's own `alembic upgrade head` step) — see `db.py`'s own docstring
+for why baking that into a lazy, cached `Engine` here would be the wrong
+layer for it.
 """
 from contextlib import asynccontextmanager
 
@@ -66,13 +58,13 @@ configure_decimal_encoding()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Ports legacy `lifespan`'s one remaining piece: seeding the first
-    admin user from `POSTWARDEN_ADMIN_USER`/`_PASSWORD` if the deployment
-    has none yet (`auth.service.bootstrap_admin_from_env`'s own docstring
-    has the full reasoning — silently a no-op once any user exists, so
-    it's safe to leave the env vars set across every redeploy). Opens its
-    own connection/transaction directly against `get_engine()` rather
-    than `db.get_connection()` — that dependency is generator-shaped for
+    """Seeds the first admin user from `POSTWARDEN_ADMIN_USER`/
+    `_PASSWORD` if the deployment has none yet
+    (`auth.service.bootstrap_admin_from_env`'s own docstring has the
+    full reasoning — silently a no-op once any user exists, so it's safe
+    to leave the env vars set across every redeploy). Opens its own
+    connection/transaction directly against `get_engine()` rather than
+    `db.get_connection()` — that dependency is generator-shaped for
     FastAPI's per-request injection, not meant to be driven by hand
     outside a request."""
     settings = get_settings()
@@ -87,20 +79,19 @@ app = FastAPI(title="PostWarden", lifespan=lifespan, default_response_class=JSON
 
 @app.middleware("http")
 async def advance_due_schedules(request: Request, call_next):
-    """The one piece of legacy's global `auth_gate` middleware that
-    doesn't fit a per-route `Depends(...)` — see this file's own
-    docstring for why the session/CSRF gate itself isn't here. Ported
-    close to verbatim: a cheap, almost-always-empty lookup on every
-    request that carries a session cookie, swallowing any failure the
-    same bare `except Exception: pass` legacy uses ("a failure here
-    shouldn't take the app down"). Opens its own connection rather than
-    going through `db.get_connection()` for the same reason `lifespan`
-    above does — this runs outside any route's own request-scoped
-    dependency graph. Silently does nothing for an anonymous request
-    (no session to check) or a genuinely expired/invalid one (`get_
-    session` returns `None`) — the route's own `get_current_session`
-    dependency answers the actual 401 for that case, this middleware just
-    doesn't duplicate the check."""
+    """The one piece of the login gate that doesn't fit a per-route
+    `Depends(...)` — see this file's own docstring for why the session/
+    CSRF gate itself isn't here. A cheap, almost-always-empty lookup on
+    every request that carries a session cookie, swallowing any failure
+    on purpose (`except Exception: pass` — a failure here shouldn't take
+    the app down). Opens its own connection rather than going through
+    `db.get_connection()` for the same reason `lifespan` above does —
+    this runs outside any route's own request-scoped dependency graph.
+    Silently does nothing for an anonymous request (no session to check)
+    or a genuinely expired/invalid one (`get_session` returns `None`) —
+    the route's own `get_current_session` dependency answers the actual
+    401 for that case, this middleware just doesn't duplicate the
+    check."""
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         with get_engine().connect() as conn, conn.begin():
@@ -114,35 +105,22 @@ async def advance_due_schedules(request: Request, call_next):
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    """Liveness check — no DB touch. Used by Phase 0's docker-compose bring-up."""
+    """Liveness check — no DB touch."""
     return {"status": "ok"}
 
 
 @app.get("/config")
 def config(settings: Settings = Depends(get_settings)) -> dict:
-    """Public, unauthenticated app metadata — Phase 3.1. Legacy never
-    needed a route for this: `version`/`demo_banner`/`demo_user`/
-    `demo_password` were plain Jinja globals, already in scope for
-    every server-rendered template (`login.html`'s auth-brand corner
-    and demo callout, `base.html`'s footer). A JSON SPA has nothing
-    playing that role, so this is the same class of addition `GET /me`
-    already is: dictated by the medium, not new business logic. Lives
-    here rather than in a module for the same reason `/healthz` does —
-    no DB touch, nothing worth a router/service/repository split for.
-
-    Unauthenticated on purpose: the login page itself is the main
-    caller, before any session exists.
+    """Public, unauthenticated app metadata — the login page (before any
+    session exists) is the main caller, for the footer's version string
+    and the demo-instance banner/callout. Lives here rather than in a
+    module for the same reason `/healthz` does — no DB touch, nothing
+    worth a router/service/repository split for.
 
     `demo_user`/`demo_password` are only ever included when
-    `demo_banner` is true — this is a real, security-relevant departure
-    from just mirroring the Jinja globals' own always-populated dict:
-    those globals are always set server-side, but Jinja's own `{% if
-    demo_banner %}` guard means legacy only ever put them in an actual
-    HTTP response when a visitor was really looking at a demo instance.
-    A JSON body has no equivalent of a template conditionally omitting
-    a value from its own rendered output, so that conditional has to be
-    made explicit here — the alternative would leak a real instance's
-    admin password to any unauthenticated caller of this route whenever
+    `demo_banner` is true — a real, security-relevant conditional, not
+    incidental: leaving it out would leak a real instance's admin
+    password to any unauthenticated caller of this route whenever
     `POSTWARDEN_ADMIN_PASSWORD` happens to be set (every Docker
     deployment's own bootstrap-admin convenience, not just demo's),
     regardless of `POSTWARDEN_DEMO_MODE`."""
@@ -173,55 +151,44 @@ app.include_router(scheduling_router)
 app.include_router(analytics_router)
 app.include_router(dashboard_router)
 
-# The built frontend (REBUILD_STATUS.md Phase 2.1) — mounted last and only
-# if it exists, both deliberately.
+# The built frontend — mounted last and only if it exists, both
+# deliberately.
 #
 # **Last**: a Mount is matched by prefix, and Starlette tries routes in
 # registration order — every module's router above claims its own exact
 # path(s) first, so this only ever answers a request none of them did.
 # That matters concretely here: several of those routers already own a
 # path a client-side route will eventually want too (`GET /entries` is the
-# Journal's own JSON data route today). `html=True` below covers `/` itself
+# Journal's own JSON data route). `html=True` below covers `/` itself
 # and every hashed `/assets/...` file Vite's own build produces.
 #
 # **Only if it exists**: `postwarden_static_dir` (`config.py`) is not
-# required to be there — a backend-only checkout (CI, any module's own test
-# suite, a developer who hasn't run `npm run build` yet) never had this
-# directory before this phase and stays unaffected; the 523 existing tests
-# (now 529+) assert nothing about `/` or `/assets/*`.
+# required to be there — a backend-only checkout (CI, any module's own
+# test suite, a developer who hasn't run `npm run build` yet) is
+# unaffected; the test suite asserts nothing about `/` or `/assets/*`.
 #
-# **The `/app/*` namespace, new in Phase 3.2.** The deep-link/refresh gap
-# this comment used to describe as unsolved ("deciding how the app-shell
-# HTML and the JSON API stop sharing a path at all") is what Tags — the
-# first screen needing a real URL of its own — forced a real answer to.
-# The obvious-looking fix, prefixing every data route with `/api`, turned
-# out to be wrong once actually checked against the routes that exist:
-# `analytics/router.py` (Phase 1.13) already owns literal `/api/accounts`,
-# `/api/entries`, `/api/trial-balance`, etc. as a real, external, already-
-# documented contract — the Connect BI feature's `.pbids` files point
-# Power BI at those exact URLs. Prefixing `modules/entries/`'s own
-# `/entries` the same way would land it at `/api/entries` too, colliding
-# with analytics' route of the same name, which is a completely different
-# thing (a flat BI-consumer mirror vs. the Journal's own filter/paginate
-# endpoint) — not a cosmetic clash, a real routing conflict. Renaming
-# analytics' own paths instead was rejected too: those are a real, shipped
-# integration point (a `.pbids` file a Power BI user has already saved
-# somewhere points at today's URL), not internal plumbing free to move.
+# **`/app/*`, not `/api/*`, is the SPA's own namespace.** The obvious-
+# looking fix — prefixing every data route with `/api` — turns out to be
+# wrong once checked against the routes that exist: `analytics/router.py`
+# already owns literal `/api/accounts`, `/api/entries`, `/api/trial-
+# balance`, etc. as a real, external, already-documented contract — the
+# Connect BI feature's `.pbids` files point Power BI at those exact URLs.
+# Prefixing `modules/entries/`'s own `/entries` the same way would land
+# it at `/api/entries` too, colliding with analytics' route of the same
+# name, which is a completely different thing (a flat BI-consumer mirror
+# vs. the Journal's own filter/paginate endpoint) — not a cosmetic clash,
+# a real routing conflict. Renaming analytics' own paths instead was
+# rejected too: that's a real, shipped integration point (a `.pbids` file
+# a Power BI user has already saved somewhere points at today's URL), not
+# internal plumbing free to move.
 #
 # So the SPA's own client-side routes live under `/app/*` instead — a
-# namespace no module has ever used (`/app` reads as a substring of
-# `/staging/approve`'s neighbors at a glance, so this was actually
-# grep-checked, not assumed). Zero backend routers changed: every module
-# keeps its own bare path exactly as it already was, `analytics/router.py`
-# included. The frontend's own `main.tsx` wraps everything in a
-# `BrowserRouter`; `Sidebar`'s Tags link points at `/app/tags`, not `/tags`
-# (which stays the JSON API's own path, still 401-gated, still answering
-# a list of tags, never HTML). Every other sidebar link is untouched,
-# still a plain full-page `<a href="/staging">`-style navigation into
-# what's still a raw JSON response today — the same pre-existing rough
-# edge every unbuilt screen already had before this phase, not worsened,
-# not yet fixed; each becomes real once its own Phase 4 turn moves it
-# under `/app/*` too.
+# namespace no module router has ever used. Zero backend routers changed:
+# every module keeps its own bare path exactly as it already was,
+# `analytics/router.py` included. The frontend's own `main.tsx` wraps
+# everything in a `BrowserRouter`; `Sidebar`'s Tags link points at
+# `/app/tags`, not `/tags` (which stays the JSON API's own path, still
+# 401-gated, still answering a list of tags, never HTML).
 #
 # The two routes below are what actually close the deep-link gap: a direct
 # browser navigation or refresh at `/app/tags` has no `index.html` file at
@@ -236,13 +203,10 @@ _index_html = _static_dir / "index.html"
 
 
 def _spa_index_response() -> FileResponse:
-    """Split out of `spa_shell` below so it's callable directly from a test
-    with no dependency on whether `_static_dir` existed at import time —
-    the same gap the plain `app.mount(...)` below has always had (the 529-
-    test suite asserts nothing about `/` or `/assets/*` either, per this
-    file's own comment above), closed here instead of carried forward,
-    since this one's real branching logic (missing file -> 404, not a
-    500) is cheap to actually cover."""
+    """Split out of `spa_shell` below so it's callable directly from a
+    test with no dependency on whether `_static_dir` existed at import
+    time — its branching logic (missing file -> 404, not a 500) is
+    cheap to cover directly."""
     if not _index_html.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(_index_html)

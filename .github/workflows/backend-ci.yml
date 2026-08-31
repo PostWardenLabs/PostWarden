@@ -4,22 +4,21 @@ name: Backend CI
 #
 # Two jobs, deliberately kept separate rather than one shared Postgres
 # instance:
-#   - `test`: apitests/ — the FastAPI app's own suite (Phase 1 onward),
-#     installed and migrated via Alembic first. Deliberately a top-level
-#     directory, not tests/api/ — pytest loads every conftest.py from the
-#     repo root down to each collected path, so nesting this under tests/
-#     would mean tests/conftest.py's own pytest_configure (below) fires
-#     on every run of this suite too, and it dials a `db` hostname this
-#     job's Postgres service doesn't expose.
+#   - `test`: apitests/ — the FastAPI app's own suite, installed and
+#     migrated via Alembic first. Deliberately a top-level directory, not
+#     tests/api/ — pytest loads every conftest.py from the repo root down
+#     to each collected path, so nesting this under tests/ would mean
+#     tests/conftest.py's own pytest_configure (below) fires on every run
+#     of this suite too, and it dials a `db` hostname this job's Postgres
+#     service doesn't expose.
 #   - `invariants`: tests/test_invariants.py + tests/test_cashflow.py —
-#     REBUILD.md §3's "60 pure-Postgres tests," the actual safety net this
-#     whole rebuild leaned on. These apply db/schema.sql directly
-#     (tests/conftest.py's own CREATE DATABASE + raw SQL file), not
-#     through Alembic, and import psycopg/pytest only — never the app
-#     package itself (REBUILD.md §3 — "never import the app") — so mixing
-#     them into `test`'s already-migrated database would mean two
-#     different schema-provisioning paths sharing one Postgres instance
-#     for no reason.
+#     the 60 pure-Postgres tests, the schema's own safety net regardless
+#     of what the application layer looks like. These apply db/schema.sql
+#     directly (tests/conftest.py's own CREATE DATABASE + raw SQL file),
+#     not through Alembic, and import psycopg/pytest only — never the app
+#     package itself — so mixing them into `test`'s already-migrated
+#     database would mean two different schema-provisioning paths sharing
+#     one Postgres instance for no reason.
 on:
   push:
     paths:

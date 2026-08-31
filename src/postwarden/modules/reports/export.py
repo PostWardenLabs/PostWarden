@@ -1,14 +1,12 @@
 """CSV/XLSX assembly for every report `modules/reports/router.py`
-exports — ported from `app/main.py`'s six `/export/*` route pairs
-(Trial Balance, Balance Sheet, Income Statement, Cash Flow, Variance —
-Ledger's own export never existed in legacy either), unchanged in
-shape. Each function here takes the *same* `service.py` result its
-read-only sibling route already returns, plus whatever raw query params
-feed the filename/subtitle, and returns a `fastapi.Response` — the
-actual `csv.writer`/`openpyxl.Workbook` calls live here, `export.csv`/
-`export.xlsx` (Phase 1.12) supply the shared plumbing (the BOM-prefixed
-CSV wrapper, the XLSX style palette and row/formula helpers) every
-report below draws from identically.
+exports (Trial Balance, Balance Sheet, Income Statement, Cash Flow,
+Variance — Ledger has no export). Each function here takes the *same*
+`service.py` result its read-only sibling route already returns, plus
+whatever raw query params feed the filename/subtitle, and returns a
+`fastapi.Response` — the actual `csv.writer`/`openpyxl.Workbook` calls
+live here, `export.csv`/`export.xlsx` supply the shared plumbing (the
+BOM-prefixed CSV wrapper, the XLSX style palette and row/formula
+helpers) every report below draws from identically.
 
 **Every account row's own base/compare figure in an XLSX export is a
 literal, not a formula.** This is a rolled-up multi-root account tree
@@ -345,8 +343,8 @@ def income_statement_xlsx(result: dict, scenario: str, compare: str, date_from: 
     bold/ruled "group" treatment directly, in place — one real total per
     section, not two.
 
-    Two reader aids from legacy's own live feedback against a real
-    download: every Variance/% Variance column also carries real
+    Two reader aids added from live feedback against a real download:
+    every Variance/% Variance column also carries real
     conditional-formatting rules (red negative, green positive —
     `xlsx.xlsx_variance_coloring`), not a color baked in at generation
     time. Split view also draws a heavier rule down the right edge of

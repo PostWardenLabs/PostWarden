@@ -15,17 +15,15 @@ filter bar looks or behaves gets planned against *every other report in
 its archetype* before it's built, the same way §5.6's prev/next
 navigation was designed once per archetype (point-in-time vs. range)
 and applied identically across every report in each, rather than
-invented per page. Also see `docs/ARCHITECTURE.md`'s own "Sticky header
-row..." and "Prev/next navigation..." sections, which document the two
-concrete patterns that came out of thinking this way.
+invented per page. See `docs/ARCHITECTURE.md`'s "Component archetypes"
+section for how this grouping maps onto the current frontend.
 
-Method: read every page template in `app/templates/`, grepped for every
+Method (historical — this was the original pass, against the app as it
+existed at the time): read every page template, grepped for every
 `<form>`, `<select>`, `<input>`, `<button>` on each, cross-referenced
-against `style.css`'s own component classes and `auto-refresh.js`/
-`combobox.js` for the shared JS behavior underneath. Not run through the
-browser page by page — this is a structural read of what's actually
-rendered, not a visual QA pass (the "Bug fixes" work item covers a few
-things this audit's own reading also surfaced).
+against the stylesheet's own component classes and the shared JS
+behavior underneath. Not run through the browser page by page — a
+structural read of what was actually rendered, not a visual QA pass.
 
 ---
 

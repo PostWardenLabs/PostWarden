@@ -2,27 +2,20 @@
 routes plus the two Connect BI settings routes (see `service.py`'s own
 docstring for why the latter live here). No single `prefix` fits both
 families, so every route spells out its own full path, the same
-"bundles more than one legacy top-level concern" shape `modules/
-reference/router.py` (Phase 1.9) and `modules/auth/router.py` (Phase
-1.11) already established.
+"bundles more than one top-level concern" shape `modules/
+reference/router.py` and `modules/auth/router.py` already established.
 
-No `schemas.py`, same reasoning `modules/reports/router.py` (Phase 1.4)
-already gives: every route here is a GET with plain query params FastAPI
+No `schemas.py`, same reasoning `modules/reports/router.py` already
+gives: every route here is a GET with plain query params FastAPI
 already validates from the function signature, and no request body ever
 needs a Pydantic model.
 
-Mounted into `app` as of Phase 1.14 (`main.py`), with `get_current_
-session` required at the router level for every route below — the same
-router-level dependency every other module's own Phase 1.14 wiring uses,
-matching legacy's global `auth_gate`. That includes `/api/*`: legacy's
-`auth_gate` gated it too (its own `path.startswith("/api/")` branch just
-picked a JSON 401 over a redirect, which every route here already
-answers with regardless, being JSON throughout) — a BI tool reaches the
-star schema directly, over Postgres, as the `postwarden_bi` role
-(`service.py`'s own `BI_USER`/`BI_DB`), not through `/api/*`, so there's
-no separate "machine-friendly, unauthenticated" path being closed off
-here. No write routes in this module, so no `require_csrf_header`
-anywhere.
+`get_current_session` is required at the router level for every route
+below, including `/api/*`: a BI tool reaches the star schema directly,
+over Postgres, as the `postwarden_bi` role (`service.py`'s own
+`BI_USER`/`BI_DB`), not through `/api/*`, so there's no separate
+"machine-friendly, unauthenticated" path being closed off here. No
+write routes in this module, so no `require_csrf_header` anywhere.
 """
 import json as stdlib_json
 

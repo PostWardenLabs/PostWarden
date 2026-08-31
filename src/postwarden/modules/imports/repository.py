@@ -2,29 +2,26 @@
 mapped/rules) land every entry they produce in Staging as one
 `import_batches` row plus one `journal_entries` + `journal_lines` set per
 group, exactly like `modules/staging/repository.py`'s own write helpers
-land an approved entry in its target scenario. Ported from `app/main.py`'s
-`_stage_import_groups`, plus the raw SQL inline in `_parse_csv_import` and
-`import_page`.
+land an approved entry in its target scenario.
 
 **Forks `modules/entries/repository.py`'s `account_ids_by_code`/
 `check_deferred_constraints` and `modules/staging/repository.py`'s
 `actual_scenario_id`-shaped "look up the one Staging scenario" query,
 rather than importing them.** Same test every prior module's own
-docstring already applies (REBUILD.md decision 3): a module should be
-deletable on its own, and importing across the vertical-slice boundary
-fails that test in exactly the direction that matters here — deleting
-`modules/entries/` or `modules/staging/` would break `modules/imports/`
-even though staging a CSV row doesn't depend on either.
+docstring already applies: a module should be deletable on its own, and
+importing across the vertical-slice boundary fails that test in exactly
+the direction that matters here — deleting `modules/entries/` or
+`modules/staging/` would break `modules/imports/` even though staging a
+CSV row doesn't depend on either.
 
-**No `scenarios`/`account_levels` picker payload in `recent_batches`**,
-unlike legacy's `import_page` (which always passed the full target-
-scenario picker list alongside the recent-batches table). Same "don't
-reach into a module that doesn't exist yet" reasoning every prior write
-module's own docstring already applies to `modules/reference/` (Phase
-1.9) — `recent_batches` still joins `scenarios` directly for each row's
-own `target_scenario_code` (a fact about that one batch, same as
-`modules/staging/repository.py`'s own direct `scenarios` joins), just
-without the separate "here's every scenario you could pick" list."""
+**No `scenarios`/`account_levels` picker payload in `recent_batches`.**
+Same "don't reach into a module that doesn't exist yet" reasoning every
+prior write module's own docstring already applies to `modules/
+reference/` — `recent_batches` still joins `scenarios` directly for
+each row's own `target_scenario_code` (a fact about that one batch,
+same as `modules/staging/repository.py`'s own direct `scenarios`
+joins), just without the separate "here's every scenario you could
+pick" list."""
 from decimal import Decimal
 
 from sqlalchemy import text
@@ -48,21 +45,18 @@ def account_ids_by_code(conn: Connection, codes: list[str]) -> dict[str, int]:
 
 
 def staging_scenario_id(conn: Connection) -> int | None:
-    """The one scenario `is_staging` names — ported from the inline
-    `SELECT id FROM scenarios WHERE is_staging` in `_stage_import_groups`.
-    `db/schema.sql`'s `uq_one_staging_scenario` caps this at one row,
-    ever, same guarantee `modules/staging/repository.py`'s own lookups
-    rely on."""
+    """The one scenario `is_staging` names. `db/schema.sql`'s
+    `uq_one_staging_scenario` caps this at one row, ever, same guarantee
+    `modules/staging/repository.py`'s own lookups rely on."""
     row = conn.execute(text("SELECT id FROM scenarios WHERE is_staging")).mappings().first()
     return row["id"] if row else None
 
 
 def upsert_payee(conn: Connection, name: str) -> int:
-    """Ported from `_stage_import_groups`'s own `INSERT ... ON CONFLICT
-    (name) DO UPDATE SET name = EXCLUDED.name RETURNING id` — the `DO
-    UPDATE` is a no-op write, there only so `RETURNING id` fires on a
-    conflict too (a plain `DO NOTHING` returns no row for an existing
-    payee)."""
+    """`INSERT ... ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id` — the `DO UPDATE` is a no-op write, there only so
+    `RETURNING id` fires on a conflict too (a plain `DO NOTHING` returns
+    no row for an existing payee)."""
     row = conn.execute(text("""
         INSERT INTO payees (name) VALUES (:name)
         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
@@ -88,11 +82,10 @@ def insert_import_batch(conn: Connection, *, filename: str, target_scenario_id: 
 def insert_staged_entry(conn: Connection, *, scenario_id: int, entry_date, description: str,
                          reference: str | None, payee_id: int | None,
                          import_batch_id: int) -> str:
-    """One staged `journal_entries` header — ported from `_stage_import_
-    groups`'s own `INSERT`. Deliberately no `created_by_user_id`: legacy's
-    own insert never sets it either (only the batch row's own `imported_
-    by_user_id` records who ran the import), and an entry sitting in
-    Staging isn't yet anyone's manual posting — see `modules.staging.
+    """One staged `journal_entries` header. Deliberately no
+    `created_by_user_id`: only the batch row's own `imported_by_user_id`
+    records who ran the import, and an entry sitting in Staging isn't
+    yet anyone's manual posting — see `modules.staging.
     service.approve_entry`, which is where `created_by_user_id` finally
     gets set, on the *approved* copy. `import_batch_id` is what satisfies
     `fn_staging_manual_entry_guard` (`db/schema.sql`) — a Staging-scenario
@@ -121,17 +114,14 @@ def insert_line(conn: Connection, *, entry_id: str, line_no: int, account_id: in
 
 
 def recent_batches(conn: Connection, limit: int) -> list[dict]:
-    """The last `limit` uploads, newest first — ported from `import_page`'s
-    own query, with one addition: `ib.id DESC` as a tiebreaker legacy's
-    own `ORDER BY ib.created_at DESC` didn't have. `created_at` is `now()`,
-    which returns the *transaction* start time in Postgres — identical for
-    every row inserted by the same transaction, a real possibility here
-    since `db.get_connection()` gives one request one transaction (unlike
-    legacy's own per-route `tx()`, which never inserted more than one
-    batch per commit anyway). Without the tiebreaker, two batches from the
-    same request would sort arbitrarily instead of by insertion order.
-    See this module's own docstring for why there's no separate
-    scenario-picker payload alongside it."""
+    """The last `limit` uploads, newest first. `ib.id DESC` is a
+    tiebreaker: `created_at` is `now()`, which returns the *transaction*
+    start time in Postgres — identical for every row inserted by the
+    same transaction, a real possibility here since `db.get_connection()`
+    gives one request one transaction. Without the tiebreaker, two
+    batches from the same request would sort arbitrarily instead of by
+    insertion order. See this module's own docstring for why there's no
+    separate scenario-picker payload alongside it."""
     rows = conn.execute(text("""
         SELECT ib.id, ib.filename, ib.row_count, ib.created_at,
                s.code AS target_scenario_code, u.username AS imported_by

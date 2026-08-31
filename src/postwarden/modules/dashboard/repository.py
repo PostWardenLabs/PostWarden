@@ -1,10 +1,9 @@
 """Raw SQL access for the dashboard module — the landing page's own five
-queries, ported straight from `app/main.py`'s `dashboard()` route.
-Forked rather than reused from `modules/reports/repository.py`'s own
-`fn_trial_balance` call (REBUILD.md decision 3's "deletable on its own"
-test, the same reasoning every other module's own `repository.py`
-already gives for not importing another module's) even though the
-trial-balance-totals query below hits the same Postgres function.
+queries. Forked rather than reused from `modules/reports/repository.py`'s
+own `fn_trial_balance` call (the "deletable on its own" test, the same
+reasoning every other module's own `repository.py` already gives for not
+importing another module's) even though the trial-balance-totals query
+below hits the same Postgres function.
 
 Every function takes `conn` as its first argument and returns plain
 dicts/lists/`Decimal`s, same convention every other module's own
@@ -23,8 +22,7 @@ def trial_balance_by_type(conn: Connection, scenario: str, as_of: str,
     net per `acct_type` — `service.dashboard_summary` reads `asset`/
     `liability` off an unwindowed call for net worth, and `income`/
     `expense` off a `since=month_start` call for the month-to-date
-    figures, matching legacy's own two separate `q()` calls
-    (`as_of_rows`/`mtd_rows`)."""
+    figures."""
     rows = conn.execute(
         text("SELECT acct_type, net FROM fn_trial_balance(:scenario, :as_of, :since)"),
         {"scenario": scenario, "as_of": as_of, "since": since},
@@ -36,8 +34,7 @@ def trial_balance_by_type(conn: Connection, scenario: str, as_of: str,
 
 
 def recent_entries(conn: Connection, scenario: str, limit: int) -> list[dict]:
-    """The most recent postings in `scenario`, newest first — ported
-    from legacy's own `recent` query, unchanged."""
+    """The most recent postings in `scenario`, newest first."""
     rows = conn.execute(text("""
         SELECT e.id, e.entry_date, e.description, p.name AS payee_name,
                (SELECT COALESCE(SUM(l.debit), 0) FROM journal_lines l
@@ -68,12 +65,11 @@ def recent_entry_lines(conn: Connection, entry_ids: list[str]) -> list[dict]:
 
 
 def upcoming_schedules(conn: Connection, limit: int) -> list[dict]:
-    """Every *active* schedule, soonest first — ported from legacy's own
-    `upcoming` query, unchanged. Never includes one that's actually due
-    today: `materialize_due_schedules` (the auth middleware, legacy and
-    this rebuild alike) already turns a due occurrence into a real
-    Staging entry and pushes `next_date` past today before this query
-    ever runs, so every row here is a genuine future date."""
+    """Every *active* schedule, soonest first. Never includes one that's
+    actually due today: `materialize_due_schedules` (run from `main.py`'s
+    own middleware) already turns a due occurrence into a real Staging
+    entry and pushes `next_date` past today before this query ever runs,
+    so every row here is a genuine future date."""
     rows = conn.execute(text("""
         SELECT se.id, se.next_date, se.description, p.name AS payee_name,
                (SELECT COALESCE(SUM(l.debit), 0) FROM scheduled_entry_lines l

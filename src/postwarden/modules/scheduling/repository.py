@@ -7,29 +7,25 @@ because they're the same thing:
   occurrence never posts straight to its own `target_scenario_id` — it
   first becomes a real, pending `journal_entries` row in Staging
   (`materialize_due_schedules`, `service.py`), and only a human
-  approving it from `modules/staging/` (Phase 1.6) turns that into a
-  second, real posting. This module owns the schedule and the
-  materializing; `modules/staging/` already owns everything from
-  "pending in Staging" onward.
+  approving it from `modules/staging/` turns that into a second, real
+  posting. This module owns the schedule and the materializing;
+  `modules/staging/` already owns everything from "pending in Staging"
+  onward.
 - **Entry templates** (`entry_templates` + `entry_template_lines`) never
   post anywhere on their own — they're reusable scaffolding for the New
-  entry form's "Load template" picker (`entry_templates.js`, entirely
-  client-side once loaded), the same as typing a line by hand. No
-  recurrence, no materializing, no Staging involvement at all.
+  entry form's "Load template" picker, the same as typing a line by
+  hand. No recurrence, no materializing, no Staging involvement at all.
 
 Same conventions every prior module established: every function takes a
 SQLAlchemy `Connection` (from `db.get_connection()`) and returns plain
 dicts/lists/scalars, `Decimal` for every money value, never `float`.
-Ported from `app/main.py`'s `scheduled_all`, `materialize_due_schedules`,
-`create_schedule`, `toggle_schedule`, `templates_full`, `create_template`,
-`delete_template`, plus the shared `_sync_tags`/`_sync_entry_tags`.
 
 **Forks `modules/entries/repository.py`'s `account_ids_by_code`/
 `insert_line`/`check_deferred_constraints` and `modules/imports/
 repository.py`'s `staging_scenario_id`-shaped lookup, rather than
 importing them** — the same "a module should be deletable on its own"
-test (`REBUILD.md` decision 3) every prior write module's own docstring
-already applies: deleting `modules/entries/`, `modules/staging/`, or
+test every prior write module's own docstring already applies: deleting
+`modules/entries/`, `modules/staging/`, or
 `modules/imports/` should never break `modules/scheduling/`, even
 though materializing a due schedule's occurrence doesn't conceptually
 depend on any of them. `insert_staged_occurrence` is this module's own
@@ -45,25 +41,19 @@ theoretical one.** `materialize_due_schedules` inserts a full
 `enforce_balance = TRUE` scenario like any other (SPEC.md decision 9) —
 `trg_lines_balanced`/`trg_entry_has_lines` apply to it exactly the same
 way they do to a manually-posted entry, and are just as `DEFERRABLE
-INITIALLY DEFERRED`. Legacy's own `materialize_due_schedules` gets this
-for free because each schedule's occurrence is its own `with tx() as
-cur:` block, committing (and so triggering the deferred check)
-independently once per schedule; `db.get_connection()`'s one-
-transaction-per-request design has no such per-schedule commit point,
-so `service.materialize_due_schedules` calls this — and wraps each
-schedule in its own `Connection.begin_nested()` SAVEPOINT, the same
-`reverse_entries_bulk` technique `modules/entries/service.py` already
-uses — so one schedule's bad data can't silently corrupt or block the
-next one's insert the way Phase 1.5's own `SET CONSTRAINTS` bug first
-demonstrated.
+INITIALLY DEFERRED`. `db.get_connection()`'s one-transaction-per-request
+design has no per-schedule commit point of its own to trigger the
+deferred check independently, so `service.materialize_due_schedules`
+calls this — and wraps each schedule in its own `Connection.
+begin_nested()` SAVEPOINT, the same `reverse_entries_bulk` technique
+`modules/entries/service.py` already uses — so one schedule's bad data
+can't silently corrupt or block the next one's insert.
 
-**Two write routes are harmonized to check-and-raise on an unknown id,
-where their legacy originals silently no-op'd instead: `toggle_schedule`
-and `delete_template`.** Both are a bare `UPDATE`/`DELETE ... WHERE id =
-%s` with no rowcount check in `app/main.py`, still redirecting to a
-success flash regardless. This is the same class of oversight
-`modules/reference/repository.py`'s own docstring already found and
-fixed for `toggle_account`/`toggle_account_cashflow`/`toggle_lock`/
+**Two write routes check-and-raise on an unknown id instead of silently
+no-op'ing: `toggle_schedule` and `delete_template`.** This is the same
+class of oversight `modules/reference/repository.py`'s own docstring
+already found and fixed for `toggle_account`/`toggle_account_cashflow`/
+`toggle_lock`/
 `rename_account_level`/`delete_account_level` — nothing in `SPEC.md`/
 `BACKLOG.md` singles out schedules or templates as special here, and
 every *other* toggle/rename/delete route across the app already checks.
@@ -132,8 +122,7 @@ def sync_journal_entry_tags(conn: Connection, entry_id: str, tag_names: list[str
     forked from `modules.entries.repository.sync_entry_tags` rather than
     imported, same "deletable on its own" reasoning. `materialize_due_
     schedules` calls this to carry a schedule's own tags onto each
-    staged occurrence, ported from legacy's own `_sync_entry_tags(cur,
-    entry_id, tag_names)` call inside `materialize_due_schedules`."""
+    staged occurrence."""
     sync_tags(conn, "journal_entry_tags", "entry_id", entry_id, tag_names)
 
 
@@ -142,7 +131,7 @@ def sync_journal_entry_tags(conn: Connection, entry_id: str, tag_names: list[str
 # ---------------------------------------------------------------------------
 
 def scheduled_all(conn: Connection) -> list[dict]:
-    """Every schedule, soonest-due first — ported from `scheduled_all`."""
+    """Every schedule, soonest-due first."""
     rows = conn.execute(text("""
         SELECT se.*, s.code AS scenario_code, s.name AS scenario_name,
                p.name AS payee_name,
@@ -184,8 +173,8 @@ def insert_schedule_line(conn: Connection, *, scheduled_entry_id: int, line_no: 
 
 
 def toggle_schedule_active(conn: Connection, scheduled_id: int) -> dict | None:
-    """`None` on an unknown id — see this module's own docstring for why
-    this checks, where legacy's `toggle_schedule` didn't."""
+    """`None` on an unknown id — see this module's own docstring for
+    why."""
     row = conn.execute(text("""
         UPDATE scheduled_entries SET is_active = NOT is_active WHERE id = :id
         RETURNING id, description, is_active
@@ -194,12 +183,10 @@ def toggle_schedule_active(conn: Connection, scheduled_id: int) -> dict | None:
 
 
 def due_schedules(conn: Connection) -> list[dict]:
-    """Every active schedule whose `next_date` has arrived — ported from
-    `materialize_due_schedules`'s own query. `ORDER BY id` (not
-    `next_date`, unlike `scheduled_all`) matches legacy exactly: the
-    order two schedules due on the same day materialize in doesn't
-    matter, but it needs to be *some* fixed order for the loop to be
-    deterministic."""
+    """Every active schedule whose `next_date` has arrived. `ORDER BY id`
+    (not `next_date`, unlike `scheduled_all`): the order two schedules
+    due on the same day materialize in doesn't matter, but it needs to
+    be *some* fixed order for the loop to be deterministic."""
     rows = conn.execute(text("""
         SELECT * FROM scheduled_entries
          WHERE is_active AND next_date <= CURRENT_DATE
@@ -228,16 +215,15 @@ def schedule_tag_names(conn: Connection, scheduled_entry_id: int) -> list[str]:
 def insert_staged_occurrence(conn: Connection, *, scenario_id: int, entry_date, description: str,
                               reference: str | None, payee_id: int | None,
                               scheduled_entry_id: int) -> str:
-    """One staged `journal_entries` header for a due occurrence — ported
-    from `materialize_due_schedules`'s own `INSERT`. `scheduled_entry_id`
-    is what satisfies `fn_staging_manual_entry_guard`, the same role
-    `modules.imports.repository.insert_staged_entry`'s `import_batch_id`
-    plays for the other producer. No `created_by_user_id`, matching
-    legacy exactly: an occurrence sitting in Staging isn't yet anyone's
-    manual posting, same reasoning `modules.imports.repository.
-    insert_staged_entry`'s own docstring gives — that only gets set on
-    the *approved* copy `modules.staging.service.approve_entry`
-    creates."""
+    """One staged `journal_entries` header for a due occurrence.
+    `scheduled_entry_id` is what satisfies `fn_staging_manual_entry_
+    guard`, the same role `modules.imports.repository.
+    insert_staged_entry`'s `import_batch_id` plays for the other
+    producer. No `created_by_user_id`: an occurrence sitting in Staging
+    isn't yet anyone's manual posting, same reasoning `modules.imports.
+    repository.insert_staged_entry`'s own docstring gives — that only
+    gets set on the *approved* copy `modules.staging.service.
+    approve_entry` creates."""
     row = conn.execute(text("""
         INSERT INTO journal_entries
                (scenario_id, entry_date, description, reference, payee_id, scheduled_entry_id)
@@ -271,13 +257,11 @@ def advance_next_date(conn: Connection, scheduled_id: int, next_date) -> None:
 # ---------------------------------------------------------------------------
 
 def templates_all(conn: Connection) -> list[dict]:
-    """Header rows only, name-ordered — ported from `templates_full`'s
-    own first query. `service.list_templates` nests each template's own
-    `lines`/`tags` (via `template_lines_for`/`template_tags_for` below)
-    directly under it, the same shape legacy's `templates_full` already
-    builds (unlike the Journal/Staging's three-parallel-dicts precursor
-    `modules/entries/service.py`'s docstring contrasts itself with —
-    this one was already right)."""
+    """Header rows only, name-ordered. `service.list_templates` nests
+    each template's own `lines`/`tags` (via `template_lines_for`/
+    `template_tags_for` below) directly under it — see
+    `modules/entries/service.py`'s own docstring for why that nested
+    shape is preferred over parallel dicts."""
     rows = conn.execute(text("""
         SELECT t.id, t.name, t.description, t.reference, t.payee_id, p.name AS payee_name
           FROM entry_templates t
@@ -329,8 +313,7 @@ def insert_template_line(conn: Connection, *, template_id: int, line_no: int, ac
 
 def delete_template(conn: Connection, template_id: int) -> int:
     """Returns the rowcount — `service.delete_template` is what checks
-    it and raises. See this module's own docstring for why this checks,
-    where legacy's `delete_template` didn't."""
+    it and raises. See this module's own docstring for why."""
     result = conn.execute(
         text("DELETE FROM entry_templates WHERE id = :id"), {"id": template_id})
     return result.rowcount

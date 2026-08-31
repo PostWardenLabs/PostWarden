@@ -2,47 +2,36 @@
 entry's occurrence or a CSV import row sits in until a human approves
 it. Same conventions `modules/entries/repository.py` established:
 every function takes a SQLAlchemy `Connection` and returns plain
-dicts/lists/scalars, `Decimal` for money, never `float`. Ported from
-`app/main.py`'s `_staging_filter`, `pending_staging_entries`,
-`approve_staging_entries`, `_pending_staging_entry`,
-`staging_edit_save`, `staging_reject`/`reject_staging_entries`,
-`_find_staging_duplicate_groups`, `merge_staging_duplicates`.
+dicts/lists/scalars, `Decimal` for money, never `float`.
 
 **Forks `modules/entries/repository.py`'s shared filter fragments and a
 few small helpers (`account_ids_by_code`, `insert_entry`/`insert_line`,
-`sync_entry_tags`, tag/line lookups) rather than importing them.**
-`modules/entries/repository.py`'s own docstring left this open — "Phase
-1.6 decides then whether to import `build_filter` from here or fork its
-own copy." Forking wins: REBUILD.md decision 3's own test for a vertical
-slice is "a module should be deletable on its own," and importing from a
-sibling module fails that test in exactly the direction that matters —
-deleting `modules/entries/` would break `modules/staging/` even though
-nothing about approving a staged entry actually depends on the Journal.
-The shared fragments (date range, free-text search, tags, account,
-payee, amount operator — legacy's own `_shared_journal_filters`) are
-~25 lines; the duplication cost is small and paid once, while the
-coupling cost of importing would compound with every future module that
-also needs entry filtering (`budget`, `imports`).
+`sync_entry_tags`, tag/line lookups) rather than importing them.** A
+vertical slice's own test is "a module should be deletable on its own,"
+and importing from a sibling module fails that test in exactly the
+direction that matters — deleting `modules/entries/` would break
+`modules/staging/` even though nothing about approving a staged entry
+actually depends on the Journal. The shared fragments (date range,
+free-text search, tags, account, payee, amount operator) are ~25 lines;
+the duplication cost is small and paid once, while the coupling cost of
+importing would compound with every future module that also needs entry
+filtering (`budget`, `imports`).
 
 **No `target_scenario`/`accounts` picker payload in `staged_entry`'s
 response, and no full scenario row either** — same "don't reach into a
-module that doesn't exist yet" reasoning `modules/reports/repository.py`
-and `modules/entries/repository.py` both already applied to
-`modules/reference/` (Phase 1.9). `service.get_edit_data` returns
-`target_scenario_id` (a fact about *this* staged entry, computed from
-its own producer) but not the scenario's own name/code or the postable-
-accounts-for-that-scenario list legacy's `staging_edit_data` embedded —
-the frontend fetches those from `modules/reference/` once it exists.
+sibling module" reasoning `modules/reports/repository.py` and
+`modules/entries/repository.py` both apply to `modules/reference/`.
+`service.get_edit_data` returns `target_scenario_id` (a fact about
+*this* staged entry, computed from its own producer) but not the
+scenario's own name/code or the postable-accounts-for-that-scenario
+list — the frontend fetches those from `modules/reference/` instead.
 
-**One small consolidation, not a behavior port verbatim:** legacy has
-two near-identical "resolve this staged entry's target scenario, default
-to ACTUAL, and validate it's actually pending" blocks — the inline one
-in `approve_staging_entries` (error text "no target scenario to approve
-into") and `_pending_staging_entry` (shared by edit/reject/merge, error
-text "no target scenario"). `service._validate_pending` here is the one
+**One small consolidation:** two near-identical "resolve this staged
+entry's target scenario, default to ACTUAL, and validate it's actually
+pending" checks are collapsed into `service._validate_pending`, the one
 function both `approve_entry` and the edit/reject/merge paths call,
-using the clearer of the two messages throughout. See `service.py`'s own
-docstring."""
+using the clearer of the two error messages throughout. See
+`service.py`'s own docstring."""
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import text
@@ -144,12 +133,12 @@ def build_filter(*, date_from: str | None = None, date_to: str | None = None, qt
 
 def list_pending_entries(conn: Connection, where: list[str], params: dict) -> list[dict]:
     """Every entry sitting in Staging that matches `where`/`params` — no
-    `LIMIT`/`OFFSET`, matching legacy's own `pending_staging_entries`,
-    which never paginated this page. `target_scenario_code`/`_name` and
-    each row's own origin (`schedule_description`/`import_filename`/
-    `import_date`) are what `staging.html` shows per row ("Created from
-    schedule 'Rent'"/"Imported from file 'march.csv'") — both joins are
-    LEFT since an entry carries at most one of the two, never both."""
+    `LIMIT`/`OFFSET`, since this page is never large enough to need
+    pagination. `target_scenario_code`/`_name` and each row's own origin
+    (`schedule_description`/`import_filename`/`import_date`) are what
+    the Staging screen shows per row ("Created from schedule 'Rent'"/
+    "Imported from file 'march.csv'") — both joins are LEFT since an
+    entry carries at most one of the two, never both."""
     sql = f"""
         SELECT e.id, e.entry_date, e.description, e.reference, e.payee_id,
                p.name AS payee_name,
@@ -218,17 +207,13 @@ def tags_for_entries(conn: Connection, entry_ids: list[str]) -> list[dict]:
 
 
 def all_pending_entries_basic(conn: Connection) -> list[dict]:
-    """Every entry currently sitting in the Staging scenario — ported
-    from `_find_staging_duplicate_groups`'s own first query. Note this
-    does **not** filter on `promoted_entry_id IS NULL`, matching legacy
-    exactly: an already-approved staging-origin entry is never moved or
-    deleted (only `promoted_entry_id` gets set on it), so it stays a
-    candidate for "Find duplicates" same as legacy's own unfiltered
-    query. Ported as-is rather than fixed — REBUILD.md decision 4 is
-    explicit that this rebuild ports behavior, not silently corrects it,
-    and `staging/duplicates` has zero test coverage today (REBUILD.md
-    §4's own blind-spot list) to say whether this is a bug or
-    deliberate."""
+    """Every entry currently sitting in the Staging scenario. Note this
+    does **not** filter on `promoted_entry_id IS NULL`: an already-
+    approved staging-origin entry is never moved or deleted (only
+    `promoted_entry_id` gets set on it), so it stays a candidate for
+    "Find duplicates" too. Left as-is rather than "fixed" — `staging/
+    duplicates` has no test coverage pinning down whether that's a bug
+    or deliberate, so changing it now would be a guess."""
     rows = conn.execute(text("""
         SELECT e.id, e.entry_date, e.description, e.reference, e.payee_id,
                p.name AS payee_name
@@ -281,11 +266,9 @@ def insert_entry(conn: Connection, *, scenario_id: int, entry_date, description:
                   reference: str | None, payee_id: int | None,
                   created_by_user_id: int | None = None) -> str:
     """The new, posted entry `service.approve_entry` creates in the
-    target scenario — ported from `approve_staging_entries`'s own
-    `INSERT`. Deliberately doesn't set `scheduled_entry_id`/`import_
-    batch_id`: those name what *staged* this entry, and the newly-
-    approved entry isn't itself a staged one — same column set legacy's
-    own approve `INSERT` uses."""
+    target scenario. Deliberately doesn't set `scheduled_entry_id`/
+    `import_batch_id`: those name what *staged* this entry, and the
+    newly-approved entry isn't itself a staged one."""
     row = conn.execute(text("""
         INSERT INTO journal_entries (scenario_id, entry_date, description, reference,
                                       payee_id, created_by_user_id)
@@ -343,10 +326,8 @@ def update_entry_header(conn: Connection, entry_id: str, *, entry_date, descript
 def update_entry_fields(conn: Connection, entry_id: str, *, description: str,
                          reference: str | None, payee_id: int | None) -> None:
     """The narrower update `service.merge_duplicates` uses for the
-    survivor entry — ported from `merge_staging_duplicates`'s own
-    `UPDATE`. No `entry_date`, unlike `update_entry_header`: the merge
-    popup never offers to change it, matching legacy's own form, which
-    has no date field."""
+    survivor entry. No `entry_date`, unlike `update_entry_header`: the
+    merge popup never offers to change it."""
     conn.execute(text("""
         UPDATE journal_entries SET description = :description, reference = :reference,
                                     payee_id = :payee_id

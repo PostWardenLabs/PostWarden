@@ -1,7 +1,6 @@
 """Raw SQL access for the budget module — the ActualBudget-style grid for
 an income-statement-only scenario (`scenarios.income_statement_only`).
-Ported from `app/main.py`'s inline queries inside `_budget_rows`/
-`save_budget_cell`. Same conventions `modules/reports/repository.py`/
+Same conventions `modules/reports/repository.py`/
 `modules/entries/repository.py` already established: every function takes
 a SQLAlchemy `Connection` (from `db.get_connection()`) and returns plain
 dicts/scalars, `Decimal` for every money value, never `float`.
@@ -9,9 +8,9 @@ dicts/scalars, `Decimal` for every money value, never `float`.
 **`dim_accounts`, `account_balances`, `income_statement_only_scenario`
 fork the equivalent queries already in `modules/reports/repository.py`
 rather than importing them** — the same "a module should be deletable on
-its own" test (`REBUILD.md` decision 3) `modules/staging/repository.py`'s
-own docstring already applied when it forked `modules/entries/`'s filter
-builder. `budget_line_amounts` and `budget_line_avg3` have no reports
+its own" test `modules/staging/repository.py`'s own docstring applies
+when it forks `modules/entries/`'s filter builder. `budget_line_amounts`
+and `budget_line_avg3` have no reports
 equivalent at all: `reports.repository.budget_line_totals` sums
 `budget_lines.amount` over an arbitrary date *range* (Income Statement's
 Compare column needs one number for however many months the report spans)
@@ -42,11 +41,10 @@ def dim_accounts(conn: Connection) -> list[dict]:
 def income_statement_only_scenario(conn: Connection, code: str) -> dict | None:
     """`id` for `code`, but only if it's actually income-statement-only —
     `None` both for an unknown code and for a real scenario that isn't
-    (same single query legacy's own `_budget_rows` used, folding the type
-    check into the `WHERE` rather than checking it after the fact). The
-    caller (`service.budget_grid`) treats `None` as "nothing budgeted yet
-    for this month" and returns the zero-figure stub, same as legacy's
-    `budget_page` route did before ever calling `_budget_rows`."""
+    (the type check folds into the `WHERE` rather than being checked
+    after the fact). The caller (`service.budget_grid`) treats `None` as
+    "nothing budgeted yet for this month" and returns the zero-figure
+    stub."""
     row = conn.execute(text(
         "SELECT id FROM scenarios WHERE code = :code AND income_statement_only"
     ), {"code": code}).mappings().first()

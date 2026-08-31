@@ -2,47 +2,41 @@
 report, each a thin wrapper: resolve query params/defaults, call
 `service.py`, add the prev/next date-navigation fields every point-in-
 time or range report shows (`domain.periods`), return the result as a
-plain dict — plus, as of Phase 1.12, a `.csv`/`.xlsx` sibling for five of
-the six, resolving the identical `service.py` result and handing it to
-`export.py` to write. **The CSV/XLSX siblings deliberately do not apply
-the read route's own "default a blank date range to the current month"
-step** — ported from `income_statement_export_csv`/`cash_flow_export_
-csv`'s own established legacy behavior (see their docstrings there): a
-blank `date_from`/`date_to` on an export means unbounded, not "this
-month," a real, if easy-to-miss, difference between viewing a report and
-exporting one that predates this rebuild and is preserved rather than
-"fixed" (REBUILD.md decision 4 — port behavior, don't redesign it along
-the way). `/ledger` (Phase 4.1, added after the other five) is the one
-exception with no export siblings at all — legacy's own `ledger.html`
-never had them either, and nothing here should invent behavior legacy
-never had.
+plain dict — plus a `.csv`/`.xlsx` sibling for five of the six, resolving
+the identical `service.py` result and handing it to `export.py` to
+write. **The CSV/XLSX siblings deliberately do not apply the read
+route's own "default a blank date range to the current month" step**
+(see `income_statement_export_csv`/`cash_flow_export_csv`'s own
+docstrings): a blank `date_from`/`date_to` on an export means unbounded,
+not "this month" — a real, if easy-to-miss, difference between viewing a
+report and exporting one. `/ledger` is the one exception with no export
+siblings at all — it's a card grid meant to be read on screen, not
+exported.
 
-Mounted into `app` as of Phase 1.14 (`main.py`), with `get_current_session`
-required at the router level for every route below — the direct
-equivalent of legacy's global `auth_gate` (every route needs a valid
-session; there's nothing here for it to redirect to, so an absent/expired
-session is a plain 401 like every other JSON route). No write routes in
-this module, so no `require_csrf_header` anywhere — a report or its
-export never mutates anything. This file was fully testable before
-mounting too (a throwaway `FastAPI()` + `include_router()`, the same
-pattern `test_json.py` already established for an unmounted route), and
-its Decimal/date fields serialize correctly with no extra wiring here —
+`get_current_session` is required at the router level for every route
+below (every route needs a valid session; there's nothing here for it to
+redirect to, so an absent/expired session is a plain 401 like every
+other JSON route). No write routes in this module, so no
+`require_csrf_header` anywhere — a report or its export never mutates
+anything. This file is fully testable standalone too (a throwaway
+`FastAPI()` + `include_router()`, the same pattern `test_json.py`
+establishes for an unmounted route), and its Decimal/date fields
+serialize correctly with no extra wiring here —
 `configure_decimal_encoding()` runs once at `main.py` import time and
 patches FastAPI's `jsonable_encoder` process-wide, which is what
 actually renders every plain-dict return below (see `json.py`'s own
 docstring for why an *explicit* `JSONResponse(...)` would need a second,
 different fix that no route here happens to need).
 
-No `schemas.py` in this module, unlike `modules/entries/`
-(REBUILD.md decision 3's own example) — every route here is a GET with
-plain query params FastAPI already validates from the function
-signature, and no request body ever needs a Pydantic model. Response
-shapes stay plain dicts, same as `domain/`'s own functions return —
-there is no reference-data picker (`scenarios`, `account_levels`) folded
-into a report response either: those belong to `modules/reference/`
-(Phase 1.9), and a report route reaching into a module that doesn't
-exist yet would break the "deletable on its own" test REBUILD.md
-decision 3 sets for a vertical slice.
+No `schemas.py` in this module, unlike `modules/entries/` — every route
+here is a GET with plain query params FastAPI already validates from the
+function signature, and no request body ever needs a Pydantic model.
+Response shapes stay plain dicts, same as `domain/`'s own functions
+return — there is no reference-data picker (`scenarios`,
+`account_levels`) folded into a report response either: that belongs to
+`modules/reference/`, and a report route reaching into another module
+for it would break the "deletable on its own" test a vertical slice is
+held to.
 """
 from datetime import date
 
@@ -87,10 +81,8 @@ def balance_sheet(scenario: str = "ACTUAL", as_of: str = "", raw: int = 0, zeros
 @router.get("/ledger")
 def ledger(scenario: str = "ACTUAL", as_of: str = "", zeros: int = 0, raw: int = 0,
            conn: Connection = Depends(get_connection)) -> dict:
-    # No `.csv`/`.xlsx` export siblings — legacy's own `ledger.html` has
-    # none (it's a card grid meant to be read on screen, not exported),
-    # and nothing here should invent behavior legacy never had
-    # (`REBUILD.md` decision 4).
+    # No `.csv`/`.xlsx` export siblings — it's a card grid meant to be
+    # read on screen, not exported.
     result = service.ledger_rows(conn, scenario, as_of or None, zeros, raw)
     as_of_date = as_of or date.today().isoformat()
     return {

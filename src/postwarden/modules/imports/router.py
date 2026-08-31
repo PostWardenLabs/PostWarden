@@ -2,32 +2,25 @@
 mapped/rules). Same shape every prior module's own router established:
 thin routes, real logic in `service.py`.
 
-Mounted into `app` as of Phase 1.14 (`main.py`), which closes the gap
-this docstring used to flag: every route now requires `get_current_
-session` (router-level, legacy's global `auth_gate` equivalent), every
-write route additionally requires `require_csrf_header`, and both
+`get_current_session` is required at the router level for every route,
+every write route additionally requires `require_csrf_header`, and both
 `import_csv` and `import_mapped_commit` bind the resulting `session` to
-thread `session["user_id"]` through as `imported_by_user_id` — matching
-legacy's `auth.current_user(request)["user_id"]` at both of its own
-commit call sites (`app/main.py`'s `import_csv`/`import_mapped_commit`).
-`import_mapped_preview` needs the CSRF check too (legacy's own version
-calls `require_csrf` before it ever reads the upload) but never touched
+thread `session["user_id"]` through as `imported_by_user_id`.
+`import_mapped_preview` needs the CSRF check too but never touches
 attribution — it writes nothing — so it only gains `require_csrf_header`
-as a bare `dependencies=[...]` entry, not a bound parameter. No target-
-scenario picker payload on `GET /import` either — `modules/reference/`
-(Phase 1.9) concern, same as every prior module.
+as a bare `dependencies=[...]` entry, not a bound parameter. No
+target-scenario picker payload on `GET /import` either — that's a
+`modules/reference/` concern, same as every prior module.
 
-**The mapped importer's preview/commit round-trip is JSON-shaped, not
-legacy's hidden-form-fields-plus-base64 shape** — `GET /import/mapped`
-itself doesn't exist here at all (legacy's own route renders nothing
-this module owns: an empty page whose only content is the scenario
-picker, a `modules/reference/` concern). `POST /import/mapped/preview`
-takes the same multipart upload legacy's did and returns the parsed
-picker lists *plus* the file's own content, base64-encoded
-(`service.encode_for_roundtrip`) — the frontend holds that in memory and
-sends it back verbatim as `schemas.MappedImportCommitRequest.file_
-content_b64` when the user confirms the mapping. See `schemas.py`'s own
-docstring for why this is a wire-format change, not a behavior one."""
+**The mapped importer's preview/commit round-trip is JSON-shaped.**
+`GET /import/mapped` itself doesn't exist here at all — that page's only
+content beyond this module is the scenario picker, a `modules/
+reference/` concern. `POST /import/mapped/preview` takes a multipart
+upload and returns the parsed picker lists *plus* the file's own
+content, base64-encoded (`service.encode_for_roundtrip`) — the frontend
+holds that in memory and sends it back verbatim as `schemas.
+MappedImportCommitRequest.file_content_b64` when the user confirms the
+mapping. See `schemas.py`'s own docstring for the reasoning."""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
@@ -65,12 +58,10 @@ async def import_csv(target_scenario_id: int = Form(...), file: UploadFile = Fil
 @router.post("/mapped/preview", dependencies=[Depends(require_csrf_header)])
 async def import_mapped_preview(target_scenario_id: int = Form(...), file: UploadFile = File(...)) -> dict:
     """No `conn`/database at all — parsing and grouping the file's own
-    Account/Category values is pure, ported straight from `service.
-    preview_mapped`. `target_scenario_id`/`filename` are handed back
-    unchanged alongside `file_content_b64` purely so the frontend can
-    carry them forward into the commit step without holding separate
-    state of its own — same round-trip legacy's hidden form fields
-    performed."""
+    Account/Category values is pure (`service.preview_mapped`).
+    `target_scenario_id`/`filename` are handed back unchanged alongside
+    `file_content_b64` purely so the frontend can carry them forward
+    into the commit step without holding separate state of its own."""
     raw = await file.read()
     try:
         content = service.decode_upload(raw)

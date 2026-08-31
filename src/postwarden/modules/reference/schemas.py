@@ -5,9 +5,8 @@ dicts (`repository.py`'s own), only request bodies get a model.
 
 `account_type`/`scenario_type` are `Literal`s here, matching `db/
 schema.sql`'s own `account_type`/`scenario_type` enums exactly — FastAPI
-turns an invalid value into a 422 automatically, which is what replaces
-legacy `quick_create_account`'s manual `if acct_type not in
-ACCOUNT_TYPES` check (see `repository.py`'s own docstring)."""
+turns an invalid value into a 422 automatically, so `repository.py`
+doesn't need to validate the value itself."""
 from typing import Literal
 
 from pydantic import BaseModel
@@ -27,10 +26,10 @@ class CreateAccountRequest(BaseModel):
 
 
 class QuickCreateAccountRequest(BaseModel):
-    """Body of `POST /accounts/quick-create` — the accounts.html "+"
-    picker. Exactly one of `parent_id`/`account_type` drives the new
-    leaf's type (`parent_id` wins when both are given, same as legacy);
-    the code itself is generated, not supplied."""
+    """Body of `POST /accounts/quick-create` — the Accounts page's inline
+    "+" picker. Exactly one of `parent_id`/`account_type` drives the new
+    leaf's type (`parent_id` wins when both are given); the code itself
+    is generated, not supplied."""
     name: str
     parent_id: int | None = None
     account_type: AccountType | None = None
@@ -71,7 +70,7 @@ class CreatePayeeRequest(BaseModel):
 class MergePayeesRequest(BaseModel):
     """Body of `POST /payees/merge`. `payee_ids[0]` is the survivor —
     which one survives is otherwise arbitrary, since `target_name` is set
-    explicitly afterward regardless (ported from `merge_payees`)."""
+    explicitly afterward regardless."""
     payee_ids: list[int]
     target_name: str
 

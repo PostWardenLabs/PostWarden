@@ -125,13 +125,14 @@ since its only callers are the dashboard's own aggregation and the
 
 ### 7. Thin application, no ORM
 
-`db/schema.sql` is the single source of truth; the FastAPI layer is plain
-SQL through psycopg3. Every query in the app can be pasted into psql.
-Server-rendered Jinja2 + ~100 lines of vanilla JS; no build step, no SPA.
-The journal entry screen is keyboard-first — account, debit *or* credit,
-Tab, next line appears — with a live balance bar; the Post button unlocks
-only when the entry balances (client courtesy; the database re-checks at
-commit regardless).
+`db/schema.sql` is the single source of truth; the FastAPI layer composes
+plain, explicit SQL through SQLAlchemy Core — no ORM identity map or
+unit-of-work sitting between the app and the triggers that actually
+enforce the invariants. Every query in the app can still be pasted into
+psql. The journal entry screen is keyboard-first — account, debit *or*
+credit, Tab, next line appears — with a live balance bar; the Post button
+unlocks only when the entry balances (client courtesy; the database
+re-checks at commit regardless).
 
 ### 8. Authentication is session-based and database-backed, not JWT
 
@@ -266,7 +267,7 @@ Trial Balance, Balance Sheet, and the Budget grid all show a summary
 account's *rolled-up* subtotal (everything under it), not just its own
 direct postings, with collapse/expand. `v_dim_account`'s recursive CTE
 already gives every account its `path`/`depth` for free, but the rollup
-itself (`_build_account_tree()` in `app/main.py`) is plain Python over
+itself (`domain/accounts.py`'s tree-building functions) is plain Python over
 that flat list, not a second SQL recursion — the Budget grid needs to
 merge *two* independent rollups (Budgeted from `budget_lines`, Actual
 from `journal_lines`) node-for-node, which is awkward to express as one
@@ -277,8 +278,8 @@ on Payees, `payee=`), with a `back=` link returning to the report with
 every filter it had applied still in place; a summary row's amount
 stays plain text, deliberately, since no single Journal filter can mean
 "everything under this node." See `docs/ARCHITECTURE.md` for the
-mechanics (the `data-id`/`data-parent`/`data-has-children` markup,
-`report-tree.js`, the `entry_link` macro convention).
+mechanics (`useCollapsibleTree`, the `entry_link`/`cell_link` drill-
+through pattern).
 
 ### 12. Presentation preferences live in the browser, not Postgres
 
@@ -318,15 +319,24 @@ integers (`001_`, `002_`, ...) are more readable and sort in the order
 they were actually meant to run, with no collision risk worth paying for
 here.
 
-What actually shipped: `db/migrations/NNN_description.sql`, forward-only
+What shipped first: `db/migrations/NNN_description.sql`, forward-only
 (matching decision 4's own append-only ethos — a bad migration gets
-fixed by a new one, never edited or rolled back), applied by
-`app/migrate.py` once at every app startup, tracked by a one-row
-`schema_version` table. `schema.sql` stays exactly what it's always
-been — the full current state for a fresh install — with the discipline
-that every migration also gets folded into it by hand, `schema_version`'s
-seed bumped to match, so a new clone never replays migration history to
-arrive at the same place.
+fixed by a new one, never edited or rolled back), applied by a
+hand-rolled runner once at every app startup, tracked by a one-row
+`schema_version` table.
+
+**Superseded: this is now Alembic.** The rejection above held only as
+long as every real deployment's database was disposable — freely
+wiped with `docker compose down -v` — which stopped being true once a
+personal or self-hosted instance could hold real financial data worth
+keeping. At that point Alembic's actual cost (a Python-side revision
+graph on top of a schema meant to stay plain SQL) is worth paying for a
+migration runner that's been solved once, correctly, rather than
+maintained by hand indefinitely. `schema.sql` keeps its role unchanged
+— the full current state for a fresh install, and Alembic's baseline
+revision — so decision 7's "every query in the app can be pasted into
+psql" still holds for the schema itself; only the migration *runner*
+changed. See `alembic/` and `docs/ARCHITECTURE.md`.
 
 ### 14. BI tools get their own read-only role, not the app's login
 
@@ -566,7 +576,7 @@ alphabetically-first) — was rejected because a merge is usually
 prompted by realizing two names are the *same real thing under
 different spellings* ("Trader Joe's" vs "Trader Joes"), and neither
 existing spelling is necessarily the one worth keeping; the UI (see
-`entity-manage.js` in `docs/ARCHITECTURE.md`) instead prompts for the
+`MergeDialog` in `docs/ARCHITECTURE.md`) instead prompts for the
 final name outright, pre-filled with the first selected row's name as
 a sensible default but freely editable, covering "merge and clean up
 the name" in one step instead of two. The surviving *row* (as opposed
@@ -632,18 +642,18 @@ column after the periods (a plain aggregate, same figures the unsplit
 report would show), and the natural ask was for its header to read
 whatever the Period dropdown currently says — "This Quarter", "Custom
 range" — instead of a bare "Total". The dropdown's *choice* only exists
-client-side, though (`period-picker.js`'s own comment: "the backend
-only ever sees plain date_from/date_to" — a deliberate boundary,
-predating Split, that keeps the preset a convenience rather than a
-piece of state the server has to track). Making the Totals header say
-"This Quarter" server-side would mean submitting the preset as a real
-field and threading it through the route, back-links, and CSV export —
-undoing that boundary for the sake of one label. Instead,
-`period-picker.js` (which already fully owns preset↔date-range
+client-side, though (`widgets/periodPresets.ts`'s own comment: "the
+backend only ever sees plain date_from/date_to" — a deliberate
+boundary, predating Split, that keeps the preset a convenience rather
+than a piece of state the server has to track). Making the Totals
+header say "This Quarter" server-side would mean submitting the preset
+as a real field and threading it through the route, back-links, and CSV
+export — undoing that boundary for the sake of one label. Instead,
+`PeriodPresetPicker` (which already fully owns preset↔date-range
 translation) rewrites the header text itself, on load and on change,
-the same place that already knows the answer. The server-rendered
-default stays the plain, always-correct "Total" — visible with JS
-disabled, and what CSV export uses unconditionally, since a CSV file
+the same place that already knows the answer. The default served by the
+backend stays the plain, always-correct "Total" — what CSV export uses
+unconditionally, since a CSV file
 has no script to run.
 
 **Addendum — Average is Totals divided by the period count, not a
@@ -867,11 +877,11 @@ genuinely left the ledger's "nowhere" and entered a real account — the
 tie-out's `beginning + net_change == ending` identity needs that
 counted *somewhere*, or the statement stops reconciling against the
 balance sheet for any period that includes one. The chosen fix is
-presentation, not deletion: `_cash_flow_rows()` (`app/main.py`) still
-sums every leg's own signed contribution into `net_change` exactly as
-before — equity legs are only ever regrouped into their own **Ledger
-adjustments** section (rendered between Outflows and Net change in
-cash, `cash_flow.html`), never blended into Inflows/Outflows as if they
+presentation, not deletion: `cash_flow_rows()` (`modules/reports/
+service.py`) still sums every leg's own signed contribution into
+`net_change` exactly as before — equity legs are only ever regrouped
+into their own **Ledger adjustments** section (rendered between
+Outflows and Net change in cash), never blended into Inflows/Outflows as if they
 were income or spending, and never dropped from the total. The section
 only renders when non-empty, since most periods — including every
 period after the one where a self-hoster's books started — have no

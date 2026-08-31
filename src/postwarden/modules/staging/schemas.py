@@ -22,16 +22,14 @@ class EntryLineIn(BaseModel):
 class ApproveRejectRequest(BaseModel):
     """Body of both `POST /staging/approve` and `POST /staging/reject` —
     same shape, since both are "act on this checked set" over the same
-    checkboxes (`staging.html`'s Approve/Reject buttons share one
-    `<form>`, see legacy's own comment on `reject_staging_entries`)."""
+    selection."""
     entry_ids: list[str]
 
 
 class EditStagingEntryRequest(BaseModel):
     """Body of `POST /staging/{entry_id}/edit` — the inline edit panel's
-    Save. `entry_date` defaults to today when omitted, same as legacy's
-    `form.get("entry_date") or date.today().isoformat()`, applied in
-    `service.save_edit` rather than here for the same reason `modules.
+    Save. `entry_date` defaults to today when omitted — applied in
+    `service.save_edit` rather than here, same reasoning `modules.
     entries.schemas.CreateEntryRequest` gives: "today" is a runtime
     fact, not a request-shape one."""
     entry_date: date | None = None
@@ -44,14 +42,10 @@ class EditStagingEntryRequest(BaseModel):
 
 class MergeDuplicatesRequest(BaseModel):
     """Body of `POST /staging/duplicates/merge`. `line_memos` is keyed by
-    line id as a string (JSON object keys are always strings) rather
-    than the parallel `memo_<line_id>` form fields legacy's HTML form
-    used — the router looks up each of the survivor's own line ids in
-    this dict, same "ignore whatever key doesn't belong to a line the
-    survivor actually has" behavior `merge_staging_duplicates`'s own
-    `form.get(f"memo_{row['id']}")` lookup already has (a missing key
-    just leaves that line's memo untouched, matching legacy's `is not
-    None` check)."""
+    line id as a string (JSON object keys are always strings) — the
+    router looks up each of the survivor's own line ids in this dict,
+    and a missing key just leaves that line's memo untouched rather than
+    clearing it."""
     keep_id: str
     remove_ids: list[str]
     description: str

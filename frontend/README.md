@@ -1,9 +1,8 @@
 # PostWarden — frontend
 
-The React + TypeScript SPA, per [`REBUILD.md`](../REBUILD.md) — scaffolded
-via `npm create vite@latest -- --template react-ts`. See
-[`REBUILD_STATUS.md`](../REBUILD_STATUS.md)'s Phase 2 section for what's
-built and what's next; this file stays a short pointer, not a duplicate.
+The React + TypeScript SPA — scaffolded via `npm create vite@latest --
+template react-ts`. See [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)
+for how it's organized; this file stays a short pointer, not a duplicate.
 
 ## Local dev
 

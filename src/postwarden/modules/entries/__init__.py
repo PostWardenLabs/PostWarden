@@ -1,1 +1,1 @@
-"""The Journal backend. Phase 1.5."""
+"""The Journal backend."""

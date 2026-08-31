@@ -1,25 +1,14 @@
-"""Budget grid assembly and the single-cell save — ported from
-`app/main.py`'s `_budget_rows`/`save_budget_cell`, comments and docstrings
-kept close to verbatim per `REBUILD.md` §6's own instruction for a hard
-report function. Every function here takes a SQLAlchemy `Connection`
-(from `db.get_connection()`, same as every other module) and reads
-through `repository.py` — never raw SQL of its own.
+"""Budget grid assembly and the single-cell save. Every function here
+takes a SQLAlchemy `Connection` (from `db.get_connection()`, same as
+every other module) and reads through `repository.py` — never raw SQL
+of its own.
 
-**One real consolidation, not just a rename.** Legacy's `_budget_rows` has
-its own local `flatten(nodes)` helper that walks the merged tree with no
-zero-filtering at all — every account shows on the grid, budgeted or not,
-because you need to see a row to type a number into it. That turns out to
-be exactly what `domain.accounts.flatten_tree(nodes, zeros=True)` already
-does: `zeros=True` is precisely "never drop a zero-subtotal branch," and
-with nothing ever dropped, `has_children` collapses to the same plain
-`bool(node["children"])` legacy's own local version computed by hand. So
-this module calls the existing domain function with `zeros=True` instead
-of carrying a second, near-identical flatten implementation — one more
-instance of the "legacy duplicated this exact logic with no shared
-helper" pattern `domain/money.py`'s `normalize_zero` docstring already
-flagged for the sign-flip zero guard (also reused here, for the same
-reason: `merge()`'s own `signed()` closure needs it, same as `income_
-statement_groups`'s did).
+The grid needs every account row shown, budgeted or not, because you
+need to see a row to type a number into it — exactly what
+`domain.accounts.flatten_tree(nodes, zeros=True)` already does:
+`zeros=True` is precisely "never drop a zero-subtotal branch." This
+module calls that existing domain function rather than carrying a
+second, near-identical flatten implementation.
 """
 import calendar
 from datetime import date
@@ -38,24 +27,22 @@ from . import repository as repo
 
 
 def budget_grid(conn: Connection, scenario: str, month: str, pct_of_base: bool = False) -> dict:
-    """Ported from `app/main.py`'s `_budget_rows`, unchanged in shape: one
-    month at a time, Actual (this month's real postings in ACTUAL),
-    Variance against Budgeted (both sharing the money-in-between reading
-    order every other two-scenario report uses), and Budgeted itself
-    (editable) last — income/expense accounts only, no journal entries in
-    sight for the scenario itself since an income-statement-only scenario
-    never takes one (`fn_income_statement_only_guard`). Reuses `build_
-    account_tree` twice — once over `budget_lines`, once over ACTUAL's own
-    postings for the same month — and merges the two node-for-node rather
-    than inventing a second rollup function, since both sides share the
-    exact same account tree shape.
+    """One month at a time: Actual (this month's real postings in
+    ACTUAL), Variance against Budgeted (both sharing the money-in-between
+    reading order every other two-scenario report uses), and Budgeted
+    itself (editable) last — income/expense accounts only, no journal
+    entries in sight for the scenario itself since an
+    income-statement-only scenario never takes one
+    (`fn_income_statement_only_guard`). Reuses `build_account_tree` twice
+    — once over `budget_lines`, once over ACTUAL's own postings for the
+    same month — and merges the two node-for-node rather than inventing a
+    second rollup function, since both sides share the exact same account
+    tree shape.
 
     `month` must already be a valid `YYYY-MM-01` string (the router's own
-    job, same as legacy's `budget_page` route: normalizing a stale/hand-
-    typed month before ever calling this). Returns the zero-figure stub
-    legacy's route inlined itself when `scenario` doesn't resolve to a
-    real income-statement-only scenario — folded in here instead, so
-    every caller (including a future CSV export, `export/`, Phase 1.12)
+    job: normalizing a stale/hand-typed month before ever calling this).
+    Returns the zero-figure stub when `scenario` doesn't resolve to a
+    real income-statement-only scenario — folded in here so every caller
     gets the same fallback with no risk of drifting from it."""
     month_start = date.fromisoformat(month)
     month_end = date(month_start.year, month_start.month,
@@ -168,16 +155,12 @@ def budget_grid(conn: Connection, scenario: str, month: str, pct_of_base: bool =
 
 def save_budget_cell(conn: Connection, *, scenario_id: int, account_code: str, period_month: date,
                       amount_raw: str) -> Decimal:
-    """Ported from `app/main.py`'s `save_budget_cell` (minus `require_
-    csrf`/session concerns — `modules/auth/`, Phase 1.11, same documented
-    gap `modules/entries/router.py`'s own docstring already carries).
-    `amount_raw` stays a plain string in the request body, parsed to
+    """`amount_raw` stays a plain string in the request body, parsed to
     `Decimal` here rather than a Pydantic numeric field — same reasoning
     `modules.entries.schemas.EntryLineIn` gives for `debit`/`credit`: one
-    parsing question, answered once. Unlike legacy's own `round(float(...),
-    2)`, this parses straight to `Decimal` — the same fix `domain.entry.
-    parse_lines` already applied to debit/credit input, for the same
-    reason (`NUMERIC(18,2)` all the way down; `float` was only ever a
+    parsing question, answered once. Parses straight to `Decimal`, never
+    `float` — same as `domain.entry.parse_lines` does for debit/credit
+    input (`NUMERIC(18,2)` all the way down; `float` is only a
     latent-imprecision risk with no upside). Raises `ValueError` for a
     non-numeric amount or an unknown account code — the router's job to
     turn into a 400; `fn_budget_line_guard`'s own rejections (wrong

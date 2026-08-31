@@ -1,8 +1,8 @@
 """The auth module's `APIRouter` — login/logout, the "who am I" check a
-JSON SPA needs that legacy's server-rendered templates never did, and
-the account-settings routes (username/password). Mirrors every other
-module's shape (thin routes, real logic in `service.py`) with two
-differences specific to this module:
+JSON SPA needs on page load, and the account-settings routes
+(username/password). Mirrors every other module's shape (thin routes,
+real logic in `service.py`) with two differences specific to this
+module:
 
 - **A `_bad_request` shared helper**, same reasoning `modules/reference/
   router.py`'s own copy documents: every write route here needs the
@@ -11,14 +11,12 @@ differences specific to this module:
 - **`login` doesn't use `_bad_request`** — its two failure modes
   (`service.RateLimitedError`/`InvalidCredentialsError`) get distinct
   status codes (429/401) instead of a uniform 400. See `service.py`'s
-  own docstring for why that's a deliberate, low-risk improvement the
-  JSON medium enables rather than a `REBUILD.md` §5 decision.
+  own docstring.
 
-Deliberately not yet mounted into `app` — same as every prior module's
-router; real mounting, and wiring `deps.get_current_session`/
-`require_csrf_header` into the *other* modules' own write routes, is
-Phase 1.14 (see `modules/auth/__init__.py`'s own docstring for why that
-retrofit belongs there and not here).
+Carries no router-level `dependencies=[...]` — `/login` has to stay
+reachable with no session at all, and every other route here already
+spells out its own `Depends(get_current_session)` or
+`Depends(require_csrf_header)` per route.
 """
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.engine import Connection
@@ -50,10 +48,9 @@ def login(payload: schemas.LoginRequest, response: Response,
         raise HTTPException(401, detail=str(e))
     # The session itself is good for SESSION_TTL either way (see
     # service.create_session) — "remember me" only decides whether the
-    # *cookie* survives closing the browser, same distinction legacy's
-    # own `login_submit` draws: no max_age at all makes it a session
-    # cookie the browser drops on its own, an explicit one gives it a
-    # real lifetime matching the session behind it.
+    # *cookie* survives closing the browser: no max_age at all makes it
+    # a session cookie the browser drops on its own, an explicit one
+    # gives it a real lifetime matching the session behind it.
     response.set_cookie(
         SESSION_COOKIE, session["token"], httponly=True, samesite="lax",
         secure=settings.postwarden_cookie_secure,
@@ -66,10 +63,10 @@ def login(payload: schemas.LoginRequest, response: Response,
 @router.post("/logout")
 def logout(request: Request, response: Response,
            conn: Connection = Depends(get_connection)) -> dict:
-    """No CSRF check — same forgiving behavior as legacy's own `logout`
-    ("worst case of a bad token here is a no-op logout; just proceed").
-    Idempotent: calling this with no session at all, or an already-
-    expired one, still clears the cookie and answers success."""
+    """No CSRF check — the worst case of a bad token here is a no-op
+    logout, so it's not worth gating. Idempotent: calling this with no
+    session at all, or an already-expired one, still clears the cookie
+    and answers success."""
     service.logout(conn, request.cookies.get(SESSION_COOKIE))
     response.delete_cookie(SESSION_COOKIE)
     return {"ok": True}
@@ -77,19 +74,15 @@ def logout(request: Request, response: Response,
 
 @router.get("/me")
 def me(session: dict = Depends(get_current_session)) -> dict:
-    """Not a legacy route — the Jinja app never needed one, since
-    `request.state.user` was already in scope for every server-rendered
-    template. A JSON SPA has no equivalent on page load, so this is the
-    minimal "who am I, if anyone" check the new architecture requires —
-    an addition dictated by the medium, not invented business logic.
+    """The minimal "who am I, if anyone" check a JSON SPA needs on page
+    load, with no server-rendered template to carry that state for free.
 
     Includes `csrf_token`, same as `login`'s own response, not just
-    `id`/`username` — added in Phase 3.1 once a frontend actually
-    existed to expose the gap: a page load riding an existing, still-
-    valid session cookie (the common case — most page loads are not
-    themselves a fresh `POST /login`) has no other way to learn the
-    token its next write needs. Same value `login` already handed back
-    when this session was created, not a new one."""
+    `id`/`username`: a page load riding an existing, still-valid session
+    cookie (the common case — most page loads are not themselves a
+    fresh `POST /login`) has no other way to learn the token its next
+    write needs. Same value `login` already handed back when this
+    session was created, not a new one."""
     return {"id": session["user_id"], "username": session["username"],
             "csrf_token": session["csrf_token"]}
 
@@ -114,9 +107,9 @@ def change_password(payload: schemas.ChangePasswordRequest, response: Response,
                                  payload.new_password, payload.confirm_password)
     except (ValueError, SQLAlchemyError) as e:
         raise _bad_request(e)
-    # Same as legacy, and as the CLI's own reset-password: revoke every
-    # session for this user (service.change_password already did that),
-    # then clear this request's own cookie too — logging back in with
-    # the new password is itself the confirmation it was set correctly.
+    # Same as the CLI's own reset-password: revoke every session for
+    # this user (service.change_password already did that), then clear
+    # this request's own cookie too — logging back in with the new
+    # password is itself the confirmation it was set correctly.
     response.delete_cookie(SESSION_COOKIE)
     return {"ok": True}

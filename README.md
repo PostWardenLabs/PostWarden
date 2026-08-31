@@ -8,14 +8,13 @@ forecasts and budgets as you want) that never have to be reconciled
 against each other because they're all just rows in the same tables.
 
 PostgreSQL holds the truth and enforces every accounting rule itself,
-at the database level, regardless of what wrote the data. A FastAPI app
-sits on top and gives you something pleasant to actually use day to
-day — no ORM, no build step, no SPA, a thin layer over what the
-database is already guaranteeing (not the same thing as a small
-codebase; the app itself has grown a lot of reports and pages on top of
-that thin layer). Power BI and Excel can connect straight to the
-database through purpose-built reporting views, no export step
-required.
+at the database level, regardless of what wrote the data. A FastAPI
+backend (no ORM — plain SQL through SQLAlchemy Core) serves a JSON API
+to a React + TypeScript SPA, a thin layer over what the database is
+already guaranteeing (not the same thing as a small codebase; the app
+itself has grown a lot of reports and pages on top of that thin layer).
+Power BI and Excel can connect straight to the database through
+purpose-built reporting views, no export step required.
 
 **[postwarden.org](https://postwarden.org)** · **[Try the demo →](https://demo.postwarden.org)**
 (resets nightly, login shown on the page) · **[docs.postwarden.org](https://docs.postwarden.org)**

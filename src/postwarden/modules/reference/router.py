@@ -1,32 +1,27 @@
 """The reference module's `APIRouter` — Accounts, Account levels,
 Scenarios, Payees, Tags. Mirrors `modules/entries/router.py`'s shape
 (thin routes, real logic in `service.py`, a Pydantic body on every write
-route) with one structural difference: this router bundles five legacy
+route) with one structural difference: this router bundles five
 top-level resources rather than one, so it carries no single `prefix` —
-each route spells out its own full legacy path (`/accounts`, `/payees`,
-...) directly, the same paths `app/main.py` already used.
+each route spells out its own full path (`/accounts`, `/payees`, ...)
+directly.
 
 **Every write route catches `(ValueError, SQLAlchemyError)`, always as a
-400 — never a 404.** Legacy catches `(ValueError, psycopg.Error)`
-identically on every single write route in `app/main.py`, `_pg_msg`-ing
-whichever one it was, with no status-code distinction at all (a
-redirect-plus-flash has no such thing). `modules/entries/`,
-`modules/staging/`, `modules/budget/`, and `modules/imports/` all
-already settled on 400-always for the JSON-API equivalent — a "not
-found" id is a client-supplied-bad-input problem the same shape as any
-other validation failure, not a routing-level 404. `_bad_request` below
-exists because, unlike those four modules, *every* write route here (not
-just some) needs the identical two-exception mapping — Accounts/
-Scenarios/Account levels/Payees/Tags share no other structure, but they
-share this.
+400 — never a 404.** A "not found" id is a client-supplied-bad-input
+problem the same shape as any other validation failure, not a
+routing-level 404 — `modules/entries/`, `modules/staging/`,
+`modules/budget/`, and `modules/imports/` all use the same convention.
+`_bad_request` below exists because, unlike those four modules, *every*
+write route here (not just some) needs the identical two-exception
+mapping — Accounts/Scenarios/Account levels/Payees/Tags share no other
+structure, but they share this.
 
-**Mounted into `app` as of Phase 1.14 (`main.py`):** every route now
-requires `get_current_session` (router-level, legacy's global `auth_
-gate` equivalent), and every write route additionally requires `require_
-csrf_header`. None of these five resources carry a user-attribution
-column, so every write route gains the dependency as a bare
-`dependencies=[...]` entry, not a bound parameter — same shape `modules/
-budget/router.py`'s own `save_cell` uses for the identical reason.
+Every route requires `get_current_session` (router-level), and every
+write route additionally requires `require_csrf_header`. None of these
+five resources carry a user-attribution column, so every write route
+gains the dependency as a bare `dependencies=[...]` entry, not a bound
+parameter — same shape `modules/budget/router.py`'s own `save_cell`
+uses for the identical reason.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection

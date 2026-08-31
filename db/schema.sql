@@ -33,20 +33,10 @@ CREATE TYPE account_type AS ENUM ('asset', 'liability', 'equity', 'income', 'exp
 CREATE TYPE scenario_type AS ENUM ('actual', 'budget', 'forecast', 'what_if');
 
 -- ---------------------------------------------------------------------------
--- schema_version — tracks which db/migrations/NNN_*.sql files an existing
--- database has already applied (app/migrate.py, run once at app startup).
--- Irrelevant to a *fresh* install: this file already represents the current
--- state, so the row below is seeded to the highest migration number that
--- existed when this schema.sql was last regenerated — nothing in
--- db/migrations/ gets replayed on top of a brand-new database. It only
--- matters for an *existing* database catching up after a `git pull`.
--- One row, one column, on purpose — there's exactly one database per
--- instance, never a fleet to track independently.
---
--- Seeded to 0, not a leftover migration number: db/migrations/ is
--- currently empty on purpose (see its own README.md and CLAUDE.md's
--- "Numbered migrations are on the shelf for now") — every schema change
--- right now folds straight into this file instead.
+-- schema_version — predates Alembic (SPEC.md decision 13); Alembic's own
+-- alembic_version table is what actually tracks migration state now. Kept
+-- as-is rather than dropped, since a migration to remove it would touch
+-- every existing database for no functional gain. No longer written to.
 -- ---------------------------------------------------------------------------
 CREATE TABLE schema_version (
     version INTEGER NOT NULL
@@ -56,8 +46,8 @@ INSERT INTO schema_version (version) VALUES (0);
 -- ---------------------------------------------------------------------------
 -- Users and sessions — application-level authentication.
 --
--- Every route in the app requires a valid session (enforced in app/main.py,
--- not here — this table just holds the truth it checks against). Passwords
+-- Every route in the app requires a valid session (enforced per-route via
+-- modules/auth/deps.py's get_current_session, not here — this table just holds the truth it checks against). Passwords
 -- are hashed with bcrypt in the app layer; the hash is the only thing that
 -- ever reaches SQL. A session is an opaque random token looked up on every
 -- request — no signing secret to manage or rotate, and revoking one (or
@@ -259,7 +249,7 @@ CREATE TABLE payees (
 
 -- ---------------------------------------------------------------------------
 -- Scheduled entries — a template plus a recurrence rule. materialize_due_
--- schedules() (app/main.py, run lazily on request rather than a real cron —
+-- schedules() (modules/scheduling/service.py, run lazily on request rather than a real cron —
 -- there's no task runner in this deployment) posts a copy into the Staging
 -- scenario once next_date arrives; a human still has to approve it from
 -- there before it's real (see journal_entries.scheduled_entry_id /
@@ -300,7 +290,7 @@ CREATE TABLE scheduled_entry_lines (
 CREATE INDEX idx_scheduled_entry_lines_parent ON scheduled_entry_lines(scheduled_entry_id);
 
 -- ---------------------------------------------------------------------------
--- Import batches — one row per CSV import (app/main.py's /import), the
+-- Import batches — one row per CSV import (modules/imports/router.py's /import), the
 -- second producer Staging accepts entries from (see
 -- fn_staging_manual_entry_guard). A single upload targets exactly one
 -- scenario, chosen on the import form itself rather than trusted from a
@@ -471,7 +461,7 @@ CREATE TABLE tags (
     name       TEXT NOT NULL UNIQUE
                CHECK (name = lower(trim(name)) AND name ~ '^[a-z0-9][a-z0-9 _-]{0,39}$'),
     -- Same shape/meaning as payees.is_active: hides a tag from the tag-
-    -- input's suggestion list (all_tags() — see app/main.py) so an old,
+    -- input's suggestion list (tags_all() — modules/reference/repository.py) so an old,
     -- unused tag stops cluttering autocomplete, without touching any
     -- entry that already carries it. Never checked by anything that
     -- reads an entry's own tags (tags_by_entry, the per-entry badges) —
@@ -703,7 +693,7 @@ BEGIN
         -- being true already means OLD.promoted_entry_id IS NULL, so the
         -- only way NEW can differ here is the approve action setting it
         -- for the first time (Staging's own "Approve entries" — see
-        -- app/main.py) — the transition this whole exception exists to
+        -- modules/staging/service.py) — the transition this whole exception exists to
         -- still allow, not one more thing to block.
         IF NEW.scenario_id <> OLD.scenario_id
            OR NEW.reverses_entry_id IS DISTINCT FROM OLD.reverses_entry_id
@@ -1091,7 +1081,7 @@ $$;
 -- Cash Flow Statement — the finest-grained artifact one row per
 -- (transaction, contra account), everything else (the statement itself,
 -- the flagged-for-review list, the three-way tie-out) is built on top of
--- this by app/main.py's _cash_flow_rows(). Kept as one function rather
+-- this by modules/reports/service.py's cash_flow_rows(). Kept as one function rather
 -- than three, per decision 6 ("if a number matters, it should be
 -- computable by SQL alone") — every caller (the report, the flagged
 -- list, the tie-out) needs the same per-entry attribution, just grouped

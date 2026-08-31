@@ -6,15 +6,11 @@ How the code is organized and the conventions repeated across it. For
 about the FastAPI backend and the React + TypeScript frontend layered
 on top of the schema those two describe.
 
-Rewritten at cutover (`REBUILD.md`/`CLAUDE.md`'s own standing rule —
-this file describes the *old* Jinja2 app throughout the `rebuild`
-branch's life, deliberately stale until the branch actually lands).
-Everything below describes the tree as it exists after that cutover:
-a vertical-slice FastAPI backend (SQLAlchemy Core, no ORM) serving a
-JSON API, and a separate React SPA consuming it through a generated,
-typed client. `SPEC.md`'s decisions and the Postgres schema itself are
-unchanged by any of this — this rebuild only ever touched the
-application layer.
+A vertical-slice FastAPI backend (SQLAlchemy Core, no ORM) serves a
+JSON API; a separate React SPA consumes it through a generated, typed
+client. `SPEC.md`'s decisions and the Postgres schema itself are out of
+scope here — nothing below touches anything but the application layer
+on top of them.
 
 ## The shape of it
 
@@ -33,13 +29,13 @@ db/schema.sql        tables, triggers, views, functions — the single source of
 db/seed.sql           starter chart of accounts + ACTUAL/STAGING/BUD2026 scenarios
 db/seed_demo.sql      optional sample entries (skippable)
 alembic/              schema migrations forward from here — schema.sql stays the
-                       baseline for a fresh install (REBUILD.md decision 5)
+                       baseline for a fresh install
 
 src/postwarden/main.py       app factory, router mounting, SPA serving — see below
 src/postwarden/config.py     Settings — every env var the app reads, pydantic-settings
 src/postwarden/db.py         the SQLAlchemy Core engine (lazy, process-wide, cached)
-src/postwarden/errors.py     pg_message() — turns a raw Postgres trigger error into
-                               the same user-facing string legacy's app/main.py used
+src/postwarden/errors.py     pg_message() — turns a raw Postgres trigger error into a
+                               user-facing string
 src/postwarden/json.py       Decimal-safe JSON encoding, patched into FastAPI once
 src/postwarden/cli.py        create-user / reset-password (see scripts/create_user.sh)
 src/postwarden/domain/       pure business logic — money, periods, accounts, entry;
@@ -53,11 +49,11 @@ frontend/                    the React + TypeScript SPA — see frontend/README.
                                "Frontend" below
 
 apitests/                    the app layer's own suite — routes, services, repositories,
-                               the domain layer (own top-level dir, not tests/api/ — see
+                               the domain layer (own top-level dir, not tests/ — see
                                apitests/conftest.py for why nesting under tests/ doesn't work)
 tests/test_invariants.py     the schema's own rules, asserted straight against Postgres,
-tests/test_cashflow.py        never importing the app — REBUILD.md §3's "60 pure-Postgres
-                               tests," the actual safety net this rebuild leaned on
+tests/test_cashflow.py        never importing the app — the safety net that holds
+                               regardless of what the application layer looks like
 
 scripts/init_db.sh                 local database bootstrap
 scripts/create_user.sh             create or reset a login
@@ -68,12 +64,21 @@ deploy/gcp/                        a fully-worked example of running this on Goo
 
 ## Backend: vertical-slice modules over SQLAlchemy Core
 
-`REBUILD.md` decision 3 is the one structural choice everything else in
-`src/postwarden/` follows from: **Core, not the ORM** — Postgres itself
-already enforces the real invariants (double-entry balance, immutability,
-account hierarchy) through triggers, and an ORM's identity map/unit-of-
-work would fight that rather than help it. Every module composes typed,
-explicit SQL through Core instead.
+Two structural choices everything in `src/postwarden/` follows from.
+
+**Core, not the ORM** — Postgres itself already enforces the real
+invariants (double-entry balance, immutability, account hierarchy)
+through triggers, and an ORM's identity map/unit-of-work would fight
+that rather than help it. Every module composes typed, explicit SQL
+through Core instead.
+
+**Vertical slices, not horizontal layers** — `modules/entries/{router,
+schemas,service,repository}.py`, not `models/ services/ views/`. A
+layer-oriented structure means every feature touches four directories
+and every file grows without bound; a module should be deletable on its
+own, which is the actual test of whether a boundary is honest. A pure
+`domain/` layer sits underneath with no framework or IO imports (see
+below) for the same reason, one level further down.
 
 Each feature under `modules/` is a **vertical slice**, own subdirectory,
 consistent internal shape:
@@ -85,31 +90,30 @@ consistent internal shape:
 | `repository.py` | Raw SQL access through the shared `Connection` (`db.get_connection()`) — `text()` calls, not `Table`/`select()` Core constructs, wherever the schema's enum types/generated columns/set-returning functions would model awkwardly through Core with nothing gained (`reports/repository.py`'s own docstring is the fullest statement of this — reports read the existing `fn_trial_balance`/`fn_cash_flow_lines`/etc. Postgres functions directly rather than reinventing them in Core). |
 | `schemas.py` | Pydantic request-body models, where a module actually has a POST/PATCH body worth validating declaratively. Several modules (`reports`, `analytics`) have none at all — a GET with plain query params needs no schema, and response shapes stay plain dicts throughout (no response-model layer) since the OpenAPI generation step (`frontend/`'s `generate:api`) only ever needed request-side types to produce a useful client. |
 
-`REBUILD.md` decision 3's other half — "a module should be deletable on
-its own" — is why sibling modules each fork a small private copy of a
-helper (an account-id lookup, a filter-fragment builder) rather than
-import it from another business module. The one deliberate exception is
-`modules/auth/` (`deps.py`, `service.py`): every other module
-unconditionally depends on there being a logged-in user at all, so
-importing auth's session/CSRF helpers directly — rather than forking
-them nine times over — is the honest expression of that dependency, not
-a violation of it. See `modules/auth/deps.py`'s own docstring.
+"A module should be deletable on its own" is why sibling modules each
+fork a small private copy of a helper (an account-id lookup, a
+filter-fragment builder) rather than import it from another business
+module. The one deliberate exception is `modules/auth/` (`deps.py`,
+`service.py`): every other module unconditionally depends on there
+being a logged-in user at all, so importing auth's session/CSRF helpers
+directly — rather than forking them nine times over — is the honest
+expression of that dependency, not a violation of it. See
+`modules/auth/deps.py`'s own docstring.
 
 **Current modules** (`src/postwarden/modules/`): `auth` (sessions, CSRF,
 account settings), `entries` (the Journal), `staging` (import review +
 duplicates), `reports` (Trial Balance, Balance Sheet, Income Statement,
-Cash Flow, Variance, Ledger — the ~450 lines `REBUILD.md` §6 calls out
-as "genuinely hard," ported close to verbatim), `imports` (plain-CSV and
-mapped/rules importers), `budget` (budget lines + variance), `reference`
-(Accounts, Payees, Tags, Scenarios, Account Levels — reference-data
-CRUD), `scheduling` (scheduled entries + entry templates), `dashboard`
-(the landing page — the one module with no legacy JSON precedent at
-all, built fresh in Phase 4.7). `src/postwarden/analytics/` sits
-alongside `modules/` rather than inside it — it's not one feature but a
-cross-cutting mirror (`GET /api/accounts`, `/api/entries`, `/api/trial-
-balance`, etc.) plus the Connect Power BI/Excel settings routes, a real
-external contract (saved `.pbids` files point at these exact URLs)
-that predates and outlives any one module.
+Cash Flow, Variance, Ledger — the module with the most genuinely hard
+logic: account-tree rollups, period splitting, the cash-flow tie-out),
+`imports` (plain-CSV and mapped/rules importers), `budget` (budget lines
++ variance), `reference` (Accounts, Payees, Tags, Scenarios, Account
+Levels — reference-data CRUD), `scheduling` (scheduled entries + entry
+templates), `dashboard` (the landing page). `src/postwarden/analytics/`
+sits alongside `modules/` rather than inside it — it's not one feature
+but a cross-cutting mirror (`GET /api/accounts`, `/api/entries`,
+`/api/trial-balance`, etc.) plus the Connect Power BI/Excel settings
+routes, a real external contract (saved `.pbids` files point at these
+exact URLs) that predates and outlives any one module.
 
 `domain/` (`money.py`, `periods.py`, `accounts.py`, `entry.py`) is
 different in kind from `modules/`: pure functions, no `Connection`
@@ -122,8 +126,7 @@ fixtures at all, unlike every other `apitests/` subdirectory.
 
 ## Auth: per-route dependency, not global middleware
 
-Legacy's `auth_gate` was a single piece of ASGI middleware ahead of
-every route. The rebuilt backend does the equivalent per-route instead:
+Auth is a per-route dependency, not one piece of global middleware:
 every module's `APIRouter` sets `get_current_session` (`modules/auth/
 deps.py`) at its own router-level `dependencies=[...]`, and every write
 route additionally depends on `require_csrf_header`. An absent/expired
@@ -131,13 +134,12 @@ session is a plain `401` JSON body — there's no login *page* on the
 backend side for it to redirect to; the frontend's `SessionProvider`
 (below) is what turns a `401` into the login screen.
 
-The one piece of `auth_gate` that doesn't fit a per-route dependency —
-lazily materializing due schedules on every authenticated request
-(`SPEC.md` decision 9: no task runner, so "auto-post on the date"
-happens inline) — is the one real middleware `main.py` still adds
-(`advance_due_schedules`), gated on there being a valid session cookie,
-otherwise a no-op. See `main.py`'s own module docstring for the full
-reasoning, including why this is the *only* thing kept as middleware.
+One thing doesn't fit a per-route dependency: lazily materializing due
+schedules on every authenticated request (`SPEC.md` decision 9: no task
+runner, so "auto-post on the date" happens inline). That's the one real
+middleware `main.py` adds (`advance_due_schedules`), gated on there
+being a valid session cookie, otherwise a no-op. See `main.py`'s own
+module docstring for why this is the only thing kept as middleware.
 
 ## `main.py`: mounting, not logic
 
@@ -200,8 +202,8 @@ query/path param, and Pydantic request body under `src/postwarden/
 modules/*/router.py` + `schemas.py` into TypeScript types; `client.ts`
 wraps them in an `openapi-fetch` client that also attaches
 `X-CSRF-Token` to every non-`GET` request and notifies `SessionProvider`
-on any `401` (the SPA's equivalent of legacy's redirect-to-`/login` on
-a stale cookie). See `frontend/README.md` for the regeneration command
+on any `401`, which is what sends a stale-cookie request back to the
+login screen. See `frontend/README.md` for the regeneration command
 — this file stays a pointer, not a duplicate, of that doc's own
 mechanics.
 
@@ -216,10 +218,9 @@ Pydantic-free response shape has actually caused a bug.
 
 ### Component archetypes
 
-`UI_CONSISTENCY_AUDIT.md` §1 named five page shapes before any of this
-was rebuilt; on this branch that stops being a review convention and
-becomes the actual build order — one component per archetype, then
-per-screen configuration, not a bespoke page per screen:
+`UI_CONSISTENCY_AUDIT.md` §1 names five page shapes; the build follows
+that grouping directly — one component per archetype, then per-screen
+configuration, not a bespoke page per screen:
 
 | Archetype | Screens | Shared shape |
 |---|---|---|
@@ -230,12 +231,12 @@ per-screen configuration, not a bespoke page per screen:
 | Management / CRUD | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | Select/Merge/+Add/table/Status/Archive — `useSelectMode`, `MergeDialog` |
 
 Every Point-in-time and Range/period report screen also carries the
-`entry_link`/`cell_link` drill-through pattern ported from legacy's own
-Jinja macros: a non-zero (or, on Balance Sheet, any leaf) amount is a
-real `<Link className="amount-link">` to `/app/entries` pre-filtered to
-`scenario`/`date_from`/`date_to`/`account` — each report's own date-
-bounding rule differs (see each page's own `entryLink`/`cellLink`
-comment), ported exactly rather than unified into one shared rule.
+`entry_link`/`cell_link` drill-through pattern: a non-zero (or, on
+Balance Sheet, any leaf) amount is a real `<Link className="amount-
+link">` to `/app/entries` pre-filtered to `scenario`/`date_from`/
+`date_to`/`account` — each report's own date-bounding rule differs (see
+each page's own `entryLink`/`cellLink` comment) rather than being
+unified into one shared rule.
 
 ### Widgets
 
@@ -245,11 +246,11 @@ to one screen: `Combobox`, `DatePicker`, `NumberStepper`, `TagInput`,
 three hooks — `useCollapsibleTree` (account-tree expand/collapse state,
 persisted per report to `localStorage`), `useSelectMode` (the
 Management/CRUD archetype's row-selection state), `useInlineEdit`. Most
-of these exist specifically to reproduce a real browser-quirk fix the
-legacy vanilla-JS files already had and an off-the-shelf component
-would not: `DatePicker`'s digit/hyphen input filtering, explicit
-`tabIndex` for Safari's tab order, `option-key.js`'s `e.code`-not-`e.key`
-shortcut handling (`format/shortcut.ts` now).
+of these carry a real browser-quirk fix an off-the-shelf component
+would not reproduce by default: `DatePicker`'s digit/hyphen input
+filtering, explicit `tabIndex` for Safari's tab order, `format/
+shortcut.ts`'s `e.code`-not-`e.key` handling (macOS remaps letters under
+Option).
 
 ## Testing
 
@@ -258,8 +259,8 @@ Three suites, deliberately never sharing a single pytest invocation
 own comments for the mechanics of why):
 
 - **`tests/test_invariants.py` + `tests/test_cashflow.py`** — the 60
-  pure-Postgres tests, unchanged by this entire rebuild. Talk to
-  Postgres directly, never import the app package at all.
+  pure-Postgres tests. Talk to Postgres directly, never import the app
+  package at all; the safety net underneath every other layer.
 - **`apitests/`** — the app layer's own suite: `domain/` (no database),
   `modules/*/test_repository.py` + `test_service.py` + `test_router.py`
   per module, `export/`, `analytics/`, plus `test_config.py`/`test_db.py`/
@@ -267,9 +268,8 @@ own comments for the mechanics of why):
   own `conftest.py` provisions a disposable `postwarden_backend_test`
   database from `db/schema.sql` alone (no seed data) — every test
   builds its own minimal fixture rows.
-- **Frontend** — no automated test runner as of cutover; verification is
-  manual browser checking against `db/seed_demo.sql`'s deterministic
-  data (`REBUILD_STATUS.md`'s own standing verification checklist),
+- **Frontend** — no automated test runner; verification is manual
+  browser checking against `db/seed_demo.sql`'s deterministic data,
   plus `tsc -b` (part of `npm run build`) as the type-correctness gate.
 
 CI (`.github/workflows/backend-ci.yml`) runs the first two as two

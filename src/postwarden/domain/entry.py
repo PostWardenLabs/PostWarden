@@ -1,14 +1,11 @@
 """Pure journal-entry line parsing and tag-name validation.
 
-Ported from `app/main.py`'s module-level `_parse_lines`/`_parse_tags`,
-docstrings kept close to verbatim. `parse_lines` is the one function that
-needed a real signature change, not just a rename, to satisfy the
-domain layer's "zero framework/IO imports" rule: the legacy version took
-a Starlette `FormData` object and called `.getlist(...)` on it directly.
-Here it takes four plain parallel lists instead — the router extracts
-`form.getlist("account")` etc. and passes the lists in, so this module
-never imports FastAPI/Starlette at all. Amounts are `Decimal`, not the
-legacy `float` — see money.py's module docstring for why.
+`parse_lines` takes four plain parallel lists (accounts, debits, credits,
+memos) rather than a request/form object, to satisfy the domain layer's
+"zero framework/IO imports" rule — the router extracts the lists from
+the request and passes them in, so this module never imports
+FastAPI/Starlette at all. Amounts are `Decimal`, never `float` — see
+money.py's module docstring for why.
 
 The balance invariant itself (debits == credits across an entry's lines)
 is deliberately *not* re-checked here — it lives in a `DEFERRABLE

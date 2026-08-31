@@ -8,9 +8,8 @@ forked helper in this module.
 `IntervalUnit` mirrors `modules/reference/schemas.py`'s own `Literal`
 convention for a DB `CHECK`-constrained enum (`scheduled_entries.
 interval_unit IN ('day', 'week', 'month')`, `db/schema.sql`) — a bad
-value is a 422 from FastAPI/Pydantic directly, replacing legacy
-`create_schedule`'s own manual `if interval_unit not in SCHEDULE_UNITS`
-check."""
+value is a 422 from FastAPI/Pydantic directly, so `service.py` doesn't
+need to validate it itself."""
 from datetime import date
 from typing import Literal
 
@@ -32,8 +31,7 @@ class EntryLineIn(BaseModel):
 
 class CreateScheduleRequest(BaseModel):
     """Body of `POST /scheduled`. `next_date` defaults to today when
-    omitted, same as legacy's `form.get("next_date") or date.today().
-    isoformat()` — applied in `service.create_schedule`, not here, for
+    omitted — applied in `service.create_schedule`, not here, for
     the same "today is a runtime fact, not a request-shape one" reason
     `modules.entries.schemas.CreateEntryRequest` gives for its own
     `entry_date`. `target_scenario_id` names the column directly
@@ -56,9 +54,8 @@ class CreateScheduleRequest(BaseModel):
 
 class CreateTemplateRequest(BaseModel):
     """Body of `POST /templates`. Unlike `CreateScheduleRequest`, no
-    scenario field at all — entry templates aren't scenario-bound
-    (`app/main.py`'s own comment on `templates_full`, ported verbatim
-    into `repository.py`)."""
+    scenario field at all — entry templates aren't scenario-bound (see
+    `repository.py`'s own comment on `templates_full`)."""
     name: str
     description: str
     reference: str | None = None

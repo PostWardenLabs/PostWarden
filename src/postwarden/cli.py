@@ -1,22 +1,16 @@
-"""Command-line user management — the one piece of legacy `app/cli.py`
-this rebuild had not ported yet (surfaced at cutover: nothing else covers
-"create a login when none exists" or "I forgot my password" outside the
-one-time `POSTWARDEN_ADMIN_USER`/`_PASSWORD` env-var bootstrap on first
-boot, and `POST /settings/password` only works if you can already log
-in). A single-user self-hosted ledger with zero account-recovery path is
-a real regression, not a nice-to-have, so this ships with cutover itself
-rather than as a fast-follow.
+"""Command-line user management — the only account-recovery path this
+app has, outside the one-time `POSTWARDEN_ADMIN_USER`/`_PASSWORD`
+env-var bootstrap on first boot (`POST /settings/password` only works if
+you can already log in). A single-user self-hosted ledger with no
+account-recovery path is a real gap, not a nice-to-have.
 
-Same two subcommands, same interactive-password-prompt behavior, same
-`scripts/create_user.sh` wrapper convention as legacy — deliberately not
-reinvented. What differs is only what the rebuild itself already
-changed: a SQLAlchemy Core `Connection`/`get_engine()` (`db.py`) instead
-of legacy's psycopg-cursor `tx()`/`q1()`, and reusing `modules.auth.
-service`'s own `hash_password`/`MIN_PASSWORD_LEN` and `modules.auth.
-repository`'s own `user_by_username`/`insert_user`/`delete_sessions_
-for_user` rather than hand-rolling SQL a second time — those already
-carry the real behavior (bcrypt cost factor, username normalization
-rules) and this module doesn't want a second copy to drift from them.
+Two subcommands, an interactive password prompt, and `scripts/
+create_user.sh` as the usual wrapper. Reuses `modules.auth.service`'s
+own `hash_password`/`MIN_PASSWORD_LEN` and `modules.auth.repository`'s
+own `user_by_username`/`insert_user`/`delete_sessions_for_user` rather
+than hand-rolling SQL a second time — those already carry the real
+behavior (bcrypt cost factor, username normalization rules) and this
+module doesn't want a second copy to drift from them.
 
 Needs DATABASE_URL pointed at a running instance (same convention as the
 app itself — see db.py/config.py). Prefer scripts/create_user.sh over

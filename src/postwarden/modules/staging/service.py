@@ -1,30 +1,22 @@
 """Staged-entry assembly and mutation — the layover a scheduled entry's
-occurrence or a CSV import row sits in until approved. Ported from
-`app/main.py`'s `pending_staging_entries`, `approve_staging_entries`,
-`_pending_staging_entry`, `staging_edit_data`/`staging_edit_save`,
-`staging_reject`/`reject_staging_entries`, `_find_staging_duplicate_
-groups`, `merge_staging_duplicates`. Every function here takes a
-SQLAlchemy `Connection` and reads/writes through `repository.py`, same
-convention `modules/entries/service.py` established.
+occurrence or a CSV import row sits in until approved. Every function
+here takes a SQLAlchemy `Connection` and reads/writes through
+`repository.py`, same convention `modules/entries/service.py`
+established.
 
 **`_validate_pending` is the one function every write path here calls**
 (`approve_entry`, `get_edit_data`, `save_edit`, `reject_entry`, and
-`merge_duplicates` for both `keep_id` and every `remove_id`) — the
-consolidation `repository.py`'s own docstring flags: legacy has two
-near-duplicate versions of this same check (`approve_staging_entries`'s
-own inline block, and the shared `_pending_staging_entry` every other
-caller uses) with slightly different wording for the same "no target
-scenario" case. One function, one message, here.
+`merge_duplicates` for both `keep_id` and every `remove_id`) — one
+function, one message, for the "no target scenario"/"not pending" check
+every one of those needs.
 
 **`approve_entries`/`reject_entries` both use `Connection.begin_nested()`
 per entry, not a bare loop** — identical reasoning to `modules.entries.
-service.reverse_entries_bulk`: legacy's own loops each open and commit a
-separate `tx()` per entry, so one bad id in a bulk Approve/Reject doesn't
-take any other entry down with it. `db.get_connection()`'s one-
-transaction-per-request design means a bare loop would behave *worse*
-than legacy (Postgres aborts the whole transaction on the first error),
-so a `SAVEPOINT` per entry is what actually restores legacy's own
-behavior."""
+service.reverse_entries_bulk`: one bad id in a bulk Approve/Reject
+shouldn't take any other entry down with it, and `db.get_connection()`'s
+one-transaction-per-request design means a bare loop would abort the
+whole batch on the first error. A `SAVEPOINT` per entry gives each one
+true independence instead."""
 from datetime import date
 
 from sqlalchemy.engine import Connection
@@ -58,11 +50,10 @@ def _validate_pending(conn: Connection, entry_id: str) -> dict:
 def list_pending(conn: Connection, *, date_from: str = "", date_to: str = "", qtext: str = "",
                   tags: str = "", account: str = "", payee: str = "", amount_op: str = "",
                   amount_value: str = "", amount_value2: str = "", target_scenario: str = "") -> dict:
-    """Filtered Staging listing, unpaginated — matches legacy's own
-    `pending_staging_entries`, which never paginated this page. Each
-    entry comes back with its own `lines`/`tags` nested directly under
-    it, same "no reason to redo grouping the backend already did"
-    reasoning `modules.entries.service.list_entries`'s own docstring
+    """Filtered Staging listing, unpaginated — Staging is never large
+    enough to need it. Each entry comes back with its own `lines`/`tags`
+    nested directly under it, same "no reason to redo grouping the
+    backend already did" reasoning `modules.entries.service.list_entries`'s own docstring
     gives for the identical choice there."""
     try:
         tag_list = parse_tags(tags) if tags else []
@@ -174,20 +165,17 @@ def save_edit(conn: Connection, entry_id: str, *, entry_date: date | None, descr
 
 
 def reject_entry(conn: Connection, entry_id: str) -> None:
-    """Permanently discards one pending entry — ported from `staging_
-    reject`. A real `DELETE`, not a reversal: nothing here was ever
-    approved, so there's nothing to reverse, only a proposal to
-    withdraw (same reasoning legacy's own comment on `merge_staging_
-    duplicates` gives for the identical choice there)."""
+    """Permanently discards one pending entry. A real `DELETE`, not a
+    reversal: nothing here was ever approved, so there's nothing to
+    reverse, only a proposal to withdraw."""
     _validate_pending(conn, entry_id)
     repo.delete_lines_for_entry(conn, entry_id)
     repo.delete_entry(conn, entry_id)
 
 
 def reject_entries(conn: Connection, entry_ids: list[str]) -> tuple[list[str], list[str]]:
-    """Bulk sibling of `reject_entry` — ported from `reject_staging_
-    entries`'s own loop, `SAVEPOINT`-per-entry same as `approve_
-    entries`."""
+    """Bulk sibling of `reject_entry` — `SAVEPOINT`-per-entry, same as
+    `approve_entries`."""
     rejected: list[str] = []
     errors: list[str] = []
     for eid in entry_ids:

@@ -1,26 +1,24 @@
 """The scheduling module's `APIRouter` — scheduled entries and entry
 templates. Mirrors `modules/reference/router.py`'s shape: this module
-also bundles two legacy top-level resources, so it carries no single
-`prefix` — each route spells out its own full legacy path (`/scheduled`,
-`/templates`) directly.
+also bundles two top-level resources, so it carries no single `prefix`
+— each route spells out its own full path (`/scheduled`, `/templates`)
+directly.
 
-**No route for `service.materialize_due_schedules`.** Legacy has none
-either — it runs implicitly, once per request, from auth middleware
-(see `service.py`'s own docstring for why that stays unwired here).
-Nothing in this router calls it.
+**No route for `service.materialize_due_schedules`.** It runs from
+`main.py`'s own middleware once per request instead (see `service.py`'s
+own docstring for why). Nothing in this router calls it.
 
 **Every write route here catches `(ValueError, SQLAlchemyError)` as a
 400** — same settled convention `modules/entries/`, `/staging/`,
 `/budget/`, `/imports/`, and `/reference/` all already use; a "not
 found" id is client-supplied-bad-input, not a routing-level 404.
 
-**Mounted into `app` as of Phase 1.14 (`main.py`):** every route now
-requires `get_current_session` (router-level, legacy's global `auth_
-gate` equivalent), and every write route additionally requires `require_
-csrf_header`. Neither `scheduled_entries` nor `entry_templates` has a
+`get_current_session` is required at the router level for every route,
+and every write route additionally requires `require_csrf_header`.
+Neither `scheduled_entries` nor `entry_templates` has a
 user-attribution column at all (unlike `journal_entries.created_by_
-user_id`), so — same as `modules/reference/router.py`'s own Phase 1.14
-wiring — every write route below gains the dependency as a bare
+user_id`), so — same as `modules/reference/router.py`'s own wiring —
+every write route below gains the dependency as a bare
 `dependencies=[...]` entry, not a bound parameter; there's nothing to
 thread a `session["user_id"]` into.
 """

@@ -2,18 +2,11 @@
 Account levels, Scenarios, Payees, Tags. Every function here takes a
 SQLAlchemy `Connection` and reads/writes through `repository.py`, never
 raw SQL of its own — same convention every prior module established.
-Ported from `app/main.py`'s `create_account`, `quick_create_account`,
-`toggle_account`/`toggle_account_cashflow`, `create_account_level`,
-`rename_account_level`/`delete_account_level`, `create_scenario`,
-`toggle_lock`, `create_payee`/`quick_create_payee`, `toggle_payee`,
-`rename_payee`, `delete_payee`, `merge_payees`, `create_tag`,
-`toggle_tag`, `rename_tag`, `delete_tag`, `merge_tags`.
 
 Five functions raise `ValueError(f"... not found")` on an unknown id
-where their legacy originals silently no-op'd — see `repository.py`'s
-own docstring for which five and why (`toggle_account_active`,
-`toggle_account_cashflow`, `toggle_scenario_lock`, `rename_account_
-level`, `delete_account_level`)."""
+instead of silently no-op'ing — see `repository.py`'s own docstring for
+which five and why (`toggle_account_active`, `toggle_account_cashflow`,
+`toggle_scenario_lock`, `rename_account_level`, `delete_account_level`)."""
 from ...domain.entry import parse_tags
 from . import repository as repo
 
@@ -27,7 +20,7 @@ def list_accounts(conn, level_id: int | None = None) -> list[dict]:
 
 def create_account(conn, *, code: str, name: str, account_type: str,
                     parent_id: int | None, is_postable: bool, is_cashflow: bool) -> dict:
-    """No manual required-field check beyond stripping, same as legacy —
+    """No manual required-field check beyond stripping —
     `accounts.code`/`accounts.name`'s own `CHECK` constraints reject a
     blank or malformed value at the `INSERT`, surfaced by `errors.
     pg_message` same as any other trigger/constraint violation."""
@@ -38,12 +31,12 @@ def create_account(conn, *, code: str, name: str, account_type: str,
 
 def quick_create_account(conn, *, name: str, parent_id: int | None,
                           account_type: str | None, is_postable: bool) -> dict:
-    """Ported from `quick_create_account`. `parent_id` (when given) wins:
-    the new leaf inherits its parent's own `account_type` rather than
-    trusting a possibly-disagreeing caller-supplied one. The generated
-    code (`repository.next_account_code`) is what powers accounts.html's
-    "+" picker — the bottom-of-page form (`create_account` above) is
-    still there for anyone who wants an exact code."""
+    """`parent_id` (when given) wins: the new leaf inherits its parent's
+    own `account_type` rather than trusting a possibly-disagreeing
+    caller-supplied one. The generated code (`repository.
+    next_account_code`) is what powers the Accounts page's inline "+"
+    picker — the full create form (`create_account` above) is still there
+    for anyone who wants an exact code."""
     name = (name or "").strip()
     if not name:
         raise ValueError("Name is required")
@@ -117,10 +110,10 @@ def list_scenarios(conn) -> list[dict]:
 def create_scenario(conn, *, code: str, name: str, scenario_type: str, enforce_balance: bool,
                      income_statement_only: bool, base_level_id: int | None,
                      notes: str | None) -> dict:
-    """No manual required-field check beyond stripping/upper-casing, same
-    as legacy — `scenarios.code`'s own `CHECK` (uppercase, `^[A-Z0-9_]
-    {2,24}$`) and the three `actual_*`/`staging_*` constraints reject
-    anything invalid at the `INSERT`."""
+    """No manual required-field check beyond stripping/upper-casing —
+    `scenarios.code`'s own `CHECK` (uppercase, `^[A-Z0-9_]{2,24}$`) and
+    the three `actual_*`/`staging_*` constraints reject anything invalid
+    at the `INSERT`."""
     return repo.insert_scenario(
         conn, code=code.strip().upper(), name=name.strip(), scenario_type=scenario_type,
         enforce_balance=enforce_balance, income_statement_only=income_statement_only,
@@ -180,8 +173,8 @@ def delete_payee(conn, payee_id: int) -> str:
 
 
 def merge_payees(conn, payee_ids: list[int], target_name: str) -> tuple[int, int]:
-    """Returns `(merged_count, entries_affected)`, same two figures
-    legacy's own flash message reports. Ported from `merge_payees`."""
+    """Returns `(merged_count, entries_affected)` for the caller to
+    report back to the user."""
     if len(payee_ids) < 2:
         raise ValueError("Select at least two payees to merge")
     target_name = (target_name or "").strip()
@@ -233,8 +226,8 @@ def delete_tag(conn, tag_id: int) -> str:
 
 
 def merge_tags(conn, tag_ids: list[int], target_name: str) -> tuple[int, int]:
-    """Returns `(merged_count, entries_affected)` — ported from
-    `merge_tags`."""
+    """Returns `(merged_count, entries_affected)` for the caller to
+    report back to the user."""
     if len(tag_ids) < 2:
         raise ValueError("Select at least two tags to merge")
     names = parse_tags(target_name)

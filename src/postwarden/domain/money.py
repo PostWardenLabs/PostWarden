@@ -1,20 +1,12 @@
 """Pure money arithmetic — variance/percentage math shared by every report
 that compares two figures (Income Statement, Variance, the Budget grid).
 
-Ported from `app/main.py`'s `_pct_variance`/`_variance_amount`/`_pct_of`/
-`_divide` module-level helpers, with their docstrings kept close to
-verbatim — they carry rationale that isn't obvious from the code (which
-of the two figures plays "old" under each toggle state). Renamed without
-the leading underscore since these are now a module's public surface
-rather than file-private helpers.
-
-Deliberately `Decimal`-typed rather than the legacy `float` mix (`app/
-main.py`'s `_parse_lines` used `float(d)`/`float(c)` for debit/credit
-input). `db/schema.sql` stores every amount as `NUMERIC`, which psycopg
-already hands back as `Decimal` — the only place `float` ever entered
-the picture was that one `float()` call on user input, a latent
-imprecision risk with no upside. Fixed at the domain boundary rather than
-carried forward; see REBUILD_STATUS.md's Phase 1.1 log entry.
+Deliberately `Decimal`-typed, never `float`. `db/schema.sql` stores
+every amount as `NUMERIC`, which psycopg already hands back as
+`Decimal` — user-typed debit/credit input is the only place `float`
+could enter the picture at all, a latent imprecision risk with no
+upside, so it's parsed straight to `Decimal` at the domain boundary
+instead (`domain.entry.parse_lines`).
 """
 from decimal import Decimal
 
@@ -24,12 +16,11 @@ Money = Decimal | int | float
 def normalize_zero(v: Money) -> Money:
     """A negative zero (`-1 * 0`) is the same value as `0` but %-style
     formatting renders it as the confusing "-0.00" — no reason to show a
-    sign on a balance that's genuinely zero. Guards both `money()`'s own
-    render path and any caller (like `accounts.build_account_tree`'s sign
-    flip for credit-normal Income accounts) that flips a sign and might
-    land on zero. Extracted here because the legacy code duplicated this
-    exact guard in two places (`money()` and `_income_statement_groups`'
-    inline `signed()`) with no shared helper."""
+    sign on a balance that's genuinely zero. Guards any caller (like
+    `accounts.build_account_tree`'s sign flip for credit-normal Income
+    accounts) that flips a sign and might land on zero, before the
+    figure ever reaches the frontend's own `formatMoney`
+    (`frontend/src/format/money.ts`)."""
     return abs(v) if v == 0 else v
 
 

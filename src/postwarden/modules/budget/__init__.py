@@ -1,1 +1,1 @@
-"""Budget lines and variance. Phase 1.7."""
+"""Budget lines and variance."""

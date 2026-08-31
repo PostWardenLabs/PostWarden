@@ -630,8 +630,10 @@ STEP 1. Column Mappings
 
 ## Should more reports have the SKIP SIMULATED CLOSE button?
 
-## Should UI be React.js?
-- I don't mind having to build
-- I notice that interface changes seem kind of tedious right now
-- I also notice that doing one change that applies to several pages requires doing the same tweaks several times
-- We could try this in a new branch.
+## Should UI be React.js? — done
+Yes. Rebuilt on the `rebuild` branch and merged to `master` as `v0.31.0`
+(2026-08-30): FastAPI + Jinja2 + vanilla JS replaced by a vertical-slice
+FastAPI backend (SQLAlchemy Core, Alembic) serving a JSON API to a React
++ TypeScript SPA. See `docs/ARCHITECTURE.md` for the resulting shape and
+`SPEC.md`/`git log` for the reasoning kept from the planning that led
+here.

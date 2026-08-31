@@ -3,18 +3,13 @@ occurrence or a CSV import row sits in until approved. Same shape
 `modules/entries/router.py` established: thin routes, real logic in
 `service.py`.
 
-Mounted into `app` as of Phase 1.14 (`main.py`), which closes the two
-gaps this docstring used to flag: every route now requires `get_current_
-session` (router-level, legacy's global `auth_gate` equivalent), every
-write route additionally requires `require_csrf_header`, and
-`approve_entries` binds the resulting `session` to thread `session
-["user_id"]` through to `service.approve_entries` as the approved
-entry's own `created_by_user_id` — matching legacy's `auth.current_user
-(request)["user_id"]` at the same call site. No CSV import routes here
-either: `_parse_csv_import` and the two importer flows (plain CSV,
-mapped/rules) belong to `modules/imports/` (Phase 1.8), which produces
-the `import_batches`/staged `journal_entries` rows this module only ever
-reads and acts on."""
+Every route requires `get_current_session` (router-level); every write
+route additionally requires `require_csrf_header`, and `approve_entries`
+binds the resulting `session` to thread `session["user_id"]` through to
+`service.approve_entries` as the approved entry's own
+`created_by_user_id`. No CSV import routes here: `modules/imports/`
+produces the `import_batches`/staged `journal_entries` rows this module
+only ever reads and acts on."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError

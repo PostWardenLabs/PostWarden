@@ -1,29 +1,22 @@
 """The entries module's `APIRouter` — the Journal backend. Mirrors
 `modules/reports/router.py`'s shape (thin routes, real logic in
 `service.py`) with one real difference: every write route here needs a
-Pydantic body (`schemas.py`), not just query params — REBUILD.md
-decision 3's own named example of why entries has one and reports
-doesn't.
+Pydantic body (`schemas.py`), not just query params.
 
-Mounted into `app` as of Phase 1.14 (`main.py`), which closes the gap
-this docstring used to flag: **every route now requires `get_current_
-session` (set at the router level, the equivalent of legacy's global
-`auth_gate`), and every write route additionally requires `require_csrf_
-header`.** `create_entry`/`reverse_entry`/`reverse_entries_bulk` bind the
-resulting `session` and thread `session["user_id"]` through to
-`service.py` as `created_by_user_id`/`user_id` — the same columns that
-sat `NULL` before this phase now get a real value, matching legacy's own
-`auth.current_user(request)["user_id"]` at each of those three call
-sites. The other write routes here (`edit_entries_tags`, `edit_entry_
-description`, `edit_line_memo`) need the CSRF check but never touched
-attribution in legacy either, so they only gain `require_csrf_header` as
-a bare `dependencies=[...]` entry, not a bound parameter.
+Every route requires `get_current_session` (set at the router level),
+and every write route additionally requires `require_csrf_header`.
+`create_entry`/`reverse_entry`/`reverse_entries_bulk` bind the resulting
+`session` and thread `session["user_id"]` through to `service.py` as
+`created_by_user_id`/`user_id`. The other write routes here
+(`edit_entries_tags`, `edit_entry_description`, `edit_line_memo`) need
+the CSRF check but don't touch attribution, so they only gain
+`require_csrf_header` as a bare `dependencies=[...]` entry, not a bound
+parameter.
 
-**CSV/XLSX export routes landed in Phase 1.12**, alongside the shared
-`export/` module: `GET /entries/export.csv`/`.xlsx` reuse `service.
-export_rows`/`repository.build_filter` — the exact same filters and
-`WHERE` clause `GET /entries` itself uses — so what's on screen is
-always what gets exported."""
+`GET /entries/export.csv`/`.xlsx` reuse `service.export_rows`/
+`repository.build_filter` — the exact same filters and `WHERE` clause
+`GET /entries` itself uses — so what's on screen is always what gets
+exported."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError

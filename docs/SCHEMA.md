@@ -335,12 +335,10 @@ surfaces it for a self-hoster rather than making them find it in `psql`.
 Grouped the way `db/schema.sql` groups them.
 
 ### Infrastructure
-- **`schema_version`** — one row, one integer. Tracks which
-  `db/migrations/NNN_*.sql` files an *existing* database has applied
-  (`app/migrate.py`, run once at every app startup — see SPEC decision
-  13). Irrelevant to a fresh install: `schema.sql` seeds it to the
-  latest migration number directly, so nothing gets replayed on top of
-  a brand-new database.
+- **`schema_version`** — one row, one integer, predating Alembic's own
+  `alembic_version` table (see SPEC decision 13). No longer written to
+  by the app; kept as-is rather than dropped, since a real migration to
+  remove it would touch every existing database for no functional gain.
 
 ### Auth
 - **`users`** — `username` (lowercase, unique), `password_hash` (bcrypt,

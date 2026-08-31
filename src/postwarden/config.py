@@ -1,10 +1,6 @@
 """Application settings — one place for every env var the app reads.
 
-The legacy app read `os.environ.get(...)` ad hoc, in four different files,
-each with its own default spelled out inline (`app/db.py`'s `DATABASE_URL`,
-`app/auth.py`'s `POSTWARDEN_COOKIE_SECURE`, `app/main.py`'s
-`POSTWARDEN_ADMIN_USER`/`POSTWARDEN_ADMIN_PASSWORD`/`POSTWARDEN_DEMO_MODE`/
-`POSTWARDEN_BI_PORT`). Centralizing them here means a typo'd var name is a
+Centralizing them here means a typo'd var name is a
 `pydantic.ValidationError` at startup instead of a silently-empty default
 three request handlers deep, and every consumer (routers, `db.py`, tests)
 gets the same parsed/typed value instead of re-parsing the raw string.
@@ -21,38 +17,36 @@ class Settings(BaseSettings):
 
     @field_validator("postwarden_cookie_secure", "postwarden_demo_mode", mode="before")
     @classmethod
-    def _parse_legacy_bool(cls, value: object) -> object:
-        """Same truthy set as legacy `os.environ.get(...).lower() in
-        ("1", "true", "yes")`: those three spellings (any case) are True,
-        every other string — including "", which is what an env var set but
-        left blank in a .env file becomes — is False. Pydantic's own bool
+    def _parse_bool(cls, value: object) -> object:
+        """Truthy set: "1"/"true"/"yes" (any case) are True, every other
+        string — including "", which is what an env var set but left
+        blank in a .env file becomes — is False. Pydantic's own bool
         coercion is both looser (also accepts "on"/"off"/"t"/"f") and
-        stricter (raises on "" instead of treating it as falsy); matching
-        legacy exactly here avoids a startup crash on a blank-but-set var
-        that used to be a harmless no-op.
+        stricter (raises on "" instead of treating it as falsy); this
+        avoids a startup crash on a blank-but-set var that should just be
+        a harmless no-op.
         """
         if isinstance(value, str):
             return value.strip().lower() in ("1", "true", "yes")
         return value
 
-    # Same env var name as legacy app/db.py, but the SQLAlchemy-flavored
-    # "postgresql+psycopg://" scheme, not legacy's plain "postgresql://" —
-    # already the established convention here as of Phase 0.4's
-    # alembic/env.py and docker-compose.yml (both set/expect the
-    # driver explicitly; SQLAlchemy would otherwise try psycopg2, which
-    # this project doesn't install, instead of the psycopg3 that's pinned).
+    # The SQLAlchemy-flavored "postgresql+psycopg://" scheme, not plain
+    # "postgresql://" — alembic/env.py and docker-compose.yml both set/
+    # expect the driver explicitly; SQLAlchemy would otherwise try
+    # psycopg2, which this project doesn't install, instead of the
+    # psycopg3 that's pinned.
     database_url: str = Field(
         default="postgresql+psycopg://postwarden:postwarden@localhost:5432/postwarden",
         alias="DATABASE_URL",
     )
 
-    # Cookies default to not-Secure. See legacy app/auth.py's comment on
-    # why: an IAP tunnel or a plain-HTTP Docker network both present as
-    # http://localhost to the *browser*, even though the outer hop is
-    # encrypted — set this true only if uvicorn itself terminates real TLS.
+    # Cookies default to not-Secure: an IAP tunnel or a plain-HTTP Docker
+    # network both present as http://localhost to the *browser*, even
+    # though the outer hop is encrypted — set this true only if uvicorn
+    # itself terminates real TLS.
     postwarden_cookie_secure: bool = Field(default=False, alias="POSTWARDEN_COOKIE_SECURE")
 
-    # The one seeded login for demo/beta instances. app/cli.py's
+    # The one seeded login for demo/beta instances. `cli.py`'s
     # `create-user` is the normal path for a real instance; this pair is
     # what demo's nightly reset re-seeds and what the login page banner
     # shows back to the visitor when POSTWARDEN_DEMO_MODE is set.
@@ -60,7 +54,7 @@ class Settings(BaseSettings):
     postwarden_admin_password: str = Field(default="", alias="POSTWARDEN_ADMIN_PASSWORD")
 
     # Shows the "you're on the public demo" banner and the credentials
-    # inline on the login page — see legacy app/main.py's template globals.
+    # inline on the login page — see main.py's GET /config route.
     postwarden_demo_mode: bool = Field(default=False, alias="POSTWARDEN_DEMO_MODE")
 
     # Port shown to the user for connecting Power BI / psql directly to the
@@ -68,16 +62,16 @@ class Settings(BaseSettings):
     # itself never connects out on it, just displays it).
     postwarden_bi_port: str = Field(default="5432", alias="POSTWARDEN_BI_PORT")
 
-    # Where main.py looks for the built frontend (REBUILD_STATUS.md Phase
-    # 2.1) — `frontend/`'s own vite.config.ts `build.outDir` points at this
-    # exact path by convention, so a plain `npm run build` followed by a
-    # plain `uvicorn postwarden.main:app` serves the SPA with zero wiring
+    # Where main.py looks for the built frontend. `frontend/`'s own
+    # vite.config.ts `build.outDir` points at this exact path by
+    # convention, so a plain `npm run build` followed by a plain
+    # `uvicorn postwarden.main:app` serves the SPA with zero wiring
     # locally, and the Dockerfile's multi-stage build (a Node build stage,
-    # discarded before the final image — "no Node process at runtime" is the
-    # actual gate) copies to this same relative spot inside the image. Not
-    # required to exist: main.py only mounts it if the directory is actually
-    # there, so a backend-only checkout (CI, a module's own tests, anyone
-    # who hasn't run `npm run build` yet) is unaffected.
+    # discarded before the final image — "no Node process at runtime" is
+    # the actual gate) copies to this same relative spot inside the image.
+    # Not required to exist: main.py only mounts it if the directory is
+    # actually there, so a backend-only checkout (CI, a module's own
+    # tests, anyone who hasn't run `npm run build` yet) is unaffected.
     postwarden_static_dir: Path = Field(
         default=Path(__file__).resolve().parent / "static",
         alias="POSTWARDEN_STATIC_DIR",
@@ -85,16 +79,13 @@ class Settings(BaseSettings):
 
     # Read by GET /config for the footer's "PostWarden vX.Y.Z" and the
     # login page's own auth-brand corner. VERSION sits exactly two
-    # directories above this file everywhere this ever runs — a plain
+    # directories above this file everywhere this runs — a plain
     # repo-root checkout (repo_root/VERSION, repo_root/src/postwarden/
     # config.py) and the built image alike (Dockerfile's WORKDIR/VERSION,
     # WORKDIR/src/postwarden/config.py, since `pip install -e .` puts
-    # `src/` directly under WORKDIR) — one candidate covers both. (Before
-    # cutover this needed two candidates: `backend/`'s extra directory
-    # level meant a repo-root checkout sat one level deeper than the
-    # image did; promoting backend/ to the repo root collapsed that
-    # difference away.) Not required to exist — see main.py's own
-    # `/config` route for how an unreadable file degrades.
+    # `src/` directly under WORKDIR) — one candidate covers both. Not
+    # required to exist — see main.py's own `/config` route for how an
+    # unreadable file degrades.
     postwarden_version_file: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[2] / "VERSION",
         alias="POSTWARDEN_VERSION_FILE",

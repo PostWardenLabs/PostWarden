@@ -1,14 +1,10 @@
 """Assembly for the dashboard module — the landing page's five queries
-(`repository.py`) rolled into one `dashboard_summary()` call, ported
-from `app/main.py`'s `dashboard()` route.
+(`repository.py`) rolled into one `dashboard_summary()` call.
 
-One intentional omission: legacy's own `pending_count` (the amber
-Staging banner) isn't computed here at all. `ScheduledPage.tsx`'s own
-Phase 4.2 write-up already flagged the Dashboard as this hook's likely
-"second caller" once it existed — `useStagingPendingCount.ts` reads
-`GET /staging`'s own `entries.length`, and the frontend reuses that same
-hook rather than this module computing the identical count a second,
-independent way.
+One intentional omission: the pending-Staging count (the amber banner)
+isn't computed here at all. The frontend's `useStagingPendingCount.ts`
+reads `GET /staging`'s own `entries.length` instead, rather than this
+module computing the identical count a second, independent way.
 """
 from datetime import date
 from decimal import Decimal
@@ -25,13 +21,10 @@ _NO_FLOW = {"debit_name": None, "credit_name": None}
 
 def _flow_by_id(lines: list[dict], id_key: str) -> dict:
     """One `{row_id: {"debit_name", "credit_name"}}` map per side of the
-    entries/schedules those `lines` belong to — ported from legacy's own
-    `debit_names`/`credit_names`/`flow_side` dance (`app/main.py`), just
-    without baking an `<em>multiple</em>` marker into HTML: this is a
-    JSON API, so "more than one account on this side" comes back as
-    `None` and the frontend decides how to render that, the same split
-    every other Phase 4 screen already draws between backend data and
-    display formatting."""
+    entries/schedules those `lines` belong to. This is a JSON API, so
+    "more than one account on this side" comes back as `None` and the
+    frontend decides how to render that rather than this module baking
+    a display marker into the value itself."""
     debit_names: dict = {}
     credit_names: dict = {}
     for ln in lines:

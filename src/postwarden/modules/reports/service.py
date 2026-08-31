@@ -1,23 +1,19 @@
-"""Report assembly — the ~450 "genuinely hard" lines REBUILD.md §6 calls
-out (`_income_statement_matrix`/`_scale_income_statement_result`,
-`_cash_flow_rows`/`_cash_flow_tie_out`, `_compute_variance`), ported from
-`app/main.py`'s module-level `_`-prefixed helpers with their comments and
-docstrings kept close to verbatim, plus the "mechanical" wrapper
-functions (`_trial_balance_rows`, `_balance_sheet_rows`,
-`_income_statement_rows`/`_income_statement_balances`) those hard
-functions and `router.py`'s routes both need to actually run. Two pure
-helpers that were part of this same block in `app/main.py`
-(`_build_account_tree`/`_flatten_tree`, `_split_periods`) already moved
-to `domain/` in Phase 1.1 rather than here — no framework/IO imports
-meant no reason to wait; `income_statement_groups` (also pure) joined
-them there in this phase, see that module's own docstring.
+"""Report assembly — the genuinely hard parts
+(`_income_statement_matrix`/`_scale_income_statement_result`,
+`_cash_flow_rows`/`_cash_flow_tie_out`, `_compute_variance`), plus the
+"mechanical" wrapper functions (`_trial_balance_rows`,
+`_balance_sheet_rows`, `_income_statement_rows`/
+`_income_statement_balances`) those hard functions and `router.py`'s
+routes both need to actually run. Pure helpers with no framework/IO
+imports (`build_account_tree`/`flatten_tree`, `split_periods`,
+`income_statement_groups`) live in `domain/` instead, not here.
 
 Every function here takes a SQLAlchemy `Connection` (from
 `db.get_connection()`, same as every other module) as its first
 argument and reads through `repository.py` — never raw SQL of its own.
 Reports keep calling the existing Postgres SRFs directly rather than
-modeling them through SQLAlchemy Core, per REBUILD.md §6's own decision;
-`repository.py` is where that happens.
+modeling them through SQLAlchemy Core; `repository.py` is where that
+happens.
 """
 import logging
 from datetime import date, timedelta
@@ -178,17 +174,15 @@ def balance_sheet(conn: Connection, scenario: str, as_of: str | None, raw: int =
 
 
 def ledger_rows(conn: Connection, scenario: str, as_of: str | None, zeros: int = 0, raw: int = 0) -> dict:
-    """Ported from `app/main.py`'s `_ledger_rows`, unchanged in shape —
-    the one report that shows itemized lines rather than an aggregated
-    balance: one T-account card per postable account with activity (or
-    every account, with `zeros`), each a paired list of its own
-    debit/credit lines plus a running total. `raw` toggles the same
+    """The one report that shows itemized lines rather than an
+    aggregated balance: one T-account card per postable account with
+    activity (or every account, with `zeros`), each a paired list of its
+    own debit/credit lines plus a running total. `raw` toggles the same
     simulated-monthly-close carve-out Trial Balance applies to Income/
     Expense accounts (drop any flow-account line dated before the
     as-of month's start), applied here per *line* rather than to an
-    aggregate balance — Phase 4.1's own new backend work, since no
-    existing repository function returns itemized lines (see
-    `repository.ledger_lines`'s own docstring)."""
+    aggregate balance, since no existing repository function returns
+    itemized lines (see `repository.ledger_lines`'s own docstring)."""
     as_of_date = as_of or date.today().isoformat()
     as_of_dt = date.fromisoformat(as_of_date)
     month_start = date(as_of_dt.year, as_of_dt.month, 1)
@@ -342,8 +336,7 @@ def scale_income_statement_result(result: dict, n: int) -> dict:
 
     Pure — no DB, no repository call — but kept here rather than in
     `domain/` for cohesion with `income_statement_matrix` right below,
-    the one function that calls it (REBUILD_STATUS.md's Phase 1.4 lists
-    the two together)."""
+    the one function that calls it."""
     def scale_row(r):
         return {**r, "base_net": divide(r["base_net"], n), "compare_net": divide(r["compare_net"], n),
                 "variance": divide(r["variance"], n)}
@@ -373,9 +366,8 @@ def scale_income_statement_result(result: dict, n: int) -> dict:
 
 def income_statement_matrix(conn: Connection, scenario: str, periods: list[dict], date_from: str, date_to: str,
                              compare: str = "", zeros: int = 0, pct_of_base: bool = False) -> dict:
-    """Ported from `app/main.py`'s `_income_statement_matrix`, unchanged
-    in shape. Split-view counterpart to `income_statement_rows()` above —
-    one column group per Split period instead of one range. A thin
+    """Split-view counterpart to `income_statement_rows()` above — one
+    column group per Split period instead of one range. A thin
     wrapper around that same single-period function rather than a
     parallel calculation: every period gets its own full
     `income_statement_rows()` call with `zeros` forced on, which
@@ -404,10 +396,10 @@ def income_statement_matrix(conn: Connection, scenario: str, periods: list[dict]
     is appended after the real periods, same shape as any other period
     (its own `income_statement_rows()` call, zeros forced on) so a caller
     iterating `periods` needs no special casing. Its label is a plain,
-    frontend-rewritable default — the caller learns which preset (if any)
-    was picked, only the date_from/date_to it resolved to, same split
-    legacy already had between page and CSV export. Average follows right
-    after Totals, same treatment — see `scale_income_statement_result()`.
+    frontend-rewritable default — the caller learns only the
+    date_from/date_to it resolved to, not which preset (if any) was
+    picked. Average follows right after Totals, same treatment — see
+    `scale_income_statement_result()`.
     """
     accounts = repo.dim_accounts(conn, income_expense_only=True)
     per_period = [
@@ -669,16 +661,15 @@ def cash_flow_rows(conn: Connection, scenario: str, date_from: str, date_to: str
 # "Bank") lines up against a fine one (Checking + Savings) instead of
 # just not matching up at all. Scoped to full scenarios only — an
 # income-statement-only one never has the journal-entry facts this reads,
-# by design; see the Budget grid (Phase 1.7) for that comparison instead.
+# by design; see the Budget grid for that comparison instead.
 # ---------------------------------------------------------------------------
 
 
 def compute_variance(conn: Connection, baseline: str, compare: str, level_id: str, as_of: str | None,
                       zeros: int = 0, pct_of_base: bool = False) -> dict:
-    """Ported from `app/main.py`'s `_compute_variance`, unchanged in
-    shape. Shared by the variance report and its CSV export (Phase 1.12)
-    — same rollup, same baseline/compare resolution, so the export
-    matches what's on screen. Excludes Staging same as income-statement-
+    """Shared by the variance report and its CSV export — same rollup,
+    same baseline/compare resolution, so the export matches what's on
+    screen. Excludes Staging same as income-statement-
     only scenarios: Staging is a layover for entries waiting on approval,
     not a real balance sheet a user would ever want to compare against —
     whatever happens to be sitting there is incidental and temporary, not

@@ -5,11 +5,10 @@ from pydantic import BaseModel
 
 
 class LoginRequest(BaseModel):
-    """Body of `POST /login`. `remember` replaces legacy's `remember`
-    checkbox form field (present/absent -> `Form(None)`) with a real
-    bool — a JSON body has no equivalent of an unchecked checkbox simply
-    not appearing in the form data, so this is a plain, explicit field
-    instead."""
+    """Body of `POST /login`. `remember` is a plain, explicit bool
+    rather than a checkbox-style present/absent field, since a JSON
+    body has no equivalent of an unchecked checkbox simply not
+    appearing in the form data."""
     username: str
     password: str
     remember: bool = False

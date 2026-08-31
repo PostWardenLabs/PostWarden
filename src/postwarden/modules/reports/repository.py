@@ -1,16 +1,15 @@
 """Raw SQL access for the reports module — every report ultimately reads
-through one of the four Postgres set-returning functions REBUILD.md §6
-names (`fn_trial_balance`, `fn_account_balances`, `fn_cash_flow_lines`,
-`fn_rollup_balance`) plus a handful of plain table/view reads
-(`v_dim_account`, `v_fact_lines`, `scenarios`, `account_levels`,
-`budget_lines`, `accounts`, `journal_entries`).
+through one of four Postgres set-returning functions (`fn_trial_balance`,
+`fn_account_balances`, `fn_cash_flow_lines`, `fn_rollup_balance`) plus a
+handful of plain table/view reads (`v_dim_account`, `v_fact_lines`,
+`scenarios`, `account_levels`, `budget_lines`, `accounts`,
+`journal_entries`).
 
 Deliberately **not** modeled through SQLAlchemy Core `Table`/`select()`
-constructs — REBUILD.md §6's own decision: "Core is for CRUD," and an
-enum-typed, generated-column, set-returning-function-backed schema like
-this one models awkwardly through Core with nothing gained over a plain
-`text()` call. Every function here still goes through the same
-SQLAlchemy `Connection` `db.get_connection()` hands every route (so
+constructs: an enum-typed, generated-column, set-returning-function-backed
+schema like this one models awkwardly through Core with nothing gained
+over a plain `text()` call. Every function here still goes through the
+same SQLAlchemy `Connection` `db.get_connection()` hands every route (so
 transactions, pooling, and `pool_pre_ping` are all shared with the rest
 of the app) — "not modeled through Core" means no `Table` objects, not
 "bypass SQLAlchemy entirely."
@@ -60,14 +59,11 @@ def ledger_lines(conn: Connection, scenario: str, as_of: str) -> list[dict]:
     """Every individual debit/credit line posted in `scenario` on or
     before `as_of` — itemized, not aggregated, the one report in this
     module that needs real per-line detail rather than a balance.
-    Ported from legacy `_ledger_rows`'s own plain SQL join, not modeled
-    through a Postgres SRF: none of `fn_account_balances`/
-    `fn_trial_balance`/`fn_rollup_balance`/`fn_cash_flow_lines` return
-    itemized lines, and legacy itself never needed one either for what
-    started as "a teaching aid, not a working report" (`ledger.html`'s
-    own comment) — inventing one now would be manufacturing capability
-    this feature never asked for, not porting behavior (`REBUILD.md`
-    decision 4)."""
+    A plain SQL join, not modeled through a Postgres SRF: none of
+    `fn_account_balances`/`fn_trial_balance`/`fn_rollup_balance`/
+    `fn_cash_flow_lines` return itemized lines, and the Ledger page is a
+    teaching aid rather than a working report — it has never needed
+    one."""
     rows = conn.execute(text("""
         SELECT l.account_id, l.debit, l.credit, e.entry_date, a.account_type
           FROM journal_lines l
@@ -179,11 +175,10 @@ def full_scenarios(conn: Connection) -> list[dict]:
     the narrow slice `service.compute_variance` needs to pick a default
     `compare` scenario and exclude Staging/income-statement-only ones
     from consideration. Deliberately not the full `scenarios.*` +
-    `base_level_name` + `entry_count` shape legacy `scenarios_all()`
-    returns (used far beyond reports, e.g. every scenario picker) — that
-    belongs to `modules/reference/` (Phase 1.9) once it exists; reports
-    stays deletable on its own until then rather than reaching into a
-    module that isn't built yet."""
+    `base_level_name` + `entry_count` shape `modules/reference/`'s own
+    `scenarios_all()` returns (used far beyond reports, e.g. every
+    scenario picker) — reports stays deletable on its own rather than
+    reaching into another module for a shape it doesn't need."""
     rows = conn.execute(text(
         "SELECT code, income_statement_only, is_staging FROM scenarios ORDER BY scenario_type, code"
     )).mappings()
@@ -241,9 +236,9 @@ def budget_line_totals(conn: Connection, scenario_id: int, date_from: str | None
     it never takes a journal entry at all (`fn_income_statement_only_
     guard` blocks it).
 
-    A real, previously-undiscovered bug lived here until Phase 4.1's own
-    Income Statement screen was the first caller to ever exercise a
-    Compare-to against an income-statement-only (budget) scenario:
+    A real bug lived here until the Income Statement screen was the
+    first caller to ever exercise a Compare-to against an
+    income-statement-only (budget) scenario:
     `:date_from::date` — a bind param immediately followed by Postgres's
     `::` cast operator, no space between — reads to SQLAlchemy's `text()`
     parser as something other than a plain `:date_from` bind param, so

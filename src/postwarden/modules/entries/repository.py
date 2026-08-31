@@ -3,45 +3,34 @@ function takes a SQLAlchemy `Connection` (from `db.get_connection()`,
 shared with the rest of the app) and returns plain dicts/lists/scalars —
 `Decimal` for every money value (`NUMERIC(18,2)` columns; psycopg's
 default, unchanged here), never `float` — same convention
-`modules/reports/repository.py` established. Ported from `app/main.py`'s
-Journal-entry section: `_sync_entry_tags`/`_sync_tags`,
-`_add_tag_to_entries`, `_remove_tag_from_entries`, `_shared_journal_
-filters`/`_entries_filter`, and the raw SQL inline in `entries_page`,
-`create_entry`, `_reverse_one_entry`, `edit_entry_description`,
-`edit_line_memo`.
+`modules/reports/repository.py` established.
 
 **The entries/staging shared filter builder stays here, not in a common
-location.** Legacy's `_shared_journal_filters` is reused by both the
-Journal and Staging's own filter bar; only entries needs it in this
-phase. Phase 1.6 (`modules/staging/`) decides then whether to import
-`build_filter` from here or fork its own copy — same "don't reach into
-a module that doesn't exist yet" reasoning `modules/reports/
-repository.py`'s own `full_scenarios()` docstring already applied to
-`modules/reference/`.
+location.** The Journal and Staging's own filter bar both want it;
+`modules/staging/` decides whether to import `build_filter` from here or
+fork its own copy — the same "don't reach into a sibling module"
+reasoning `modules/reports/repository.py`'s own `full_scenarios()`
+docstring applies to `modules/reference/`.
 
 **`check_deferred_constraints` exists because of a real interaction with
 `db.get_connection()`'s design, not a hypothetical one.** The balance/
 has-lines invariants (`trg_lines_balanced`, `trg_entry_has_lines`,
 SPEC.md decision 2) are `DEFERRABLE INITIALLY DEFERRED` — they fire at
-COMMIT, not at the individual `INSERT`. Legacy's `tx()` context manager
-commits at the end of *each* route's own `with tx() as cur:` block, so a
-violation always surfaces inside that same route's `except
-psycopg.Error` handler. `db.get_connection()` (Phase 1.2) instead opens
+COMMIT, not at the individual `INSERT`. `db.get_connection()` opens
 *one* transaction for the whole request and commits only when the
 dependency's own generator resumes after the route returns — by which
-point the route's `try/except` has already exited. Left alone, an
+point the route's own `try/except` has already exited. Left alone, an
 unbalanced entry would still get rejected (Postgres does not let a
 violating transaction commit), but as an unhandled exception raised
 *after* the route returned 201, surfacing to the client as a bare 500
-with none of `errors.pg_message`'s trigger-message extraction — not the
-400-with-message legacy always gave. `SET CONSTRAINTS ALL IMMEDIATE`
-forces every deferred constraint trigger to run right now, inside the
-still-open transaction, at a point the caller controls — mechanically
-equivalent to what commit already does, just moved earlier so the
-service function's own `try/except` (or, in a bulk loop,
-`Connection.begin_nested()`'s own SAVEPOINT) is the thing that catches
-it. `service.create_entry`/`service.reverse_entry` both call this
-immediately after inserting an entry's lines, before returning.
+with none of `errors.pg_message`'s trigger-message extraction. `SET
+CONSTRAINTS ALL IMMEDIATE` forces every deferred constraint trigger to
+run right now, inside the still-open transaction, at a point the caller
+controls — mechanically equivalent to what commit already does, just
+moved earlier so the service function's own `try/except` (or, in a bulk
+loop, `Connection.begin_nested()`'s own SAVEPOINT) is the thing that
+catches it. `service.create_entry`/`service.reverse_entry` both call
+this immediately after inserting an entry's lines, before returning.
 """
 from decimal import Decimal, InvalidOperation
 
@@ -174,13 +163,12 @@ def build_filter(*, scenario: str = "", date_from: str | None = None, date_to: s
                   amount_value2: str = "", hide_reversed: bool = False,
                   entry_id: str = "") -> tuple[list[str], dict]:
     """WHERE-clause fragments + named bind params for the Journal's own
-    filter bar — ported from `_entries_filter`/`_shared_journal_filters`.
-    Unconditional `NOT s.is_staging`, same as legacy: the Journal is
+    filter bar. Unconditional `NOT s.is_staging`: the Journal is
     exclusively for posted, non-staging scenarios, and this holds even
     against a hand-edited query string. Shared by the paged list
-    (`list_entries` below) and, once `export/` (Phase 1.12) exists, the
-    CSV/XLSX export routes — same filters, same WHERE clause, so what you
-    see is exactly what you'd export."""
+    (`list_entries` below) and the CSV/XLSX export routes — same
+    filters, same WHERE clause, so what you see is exactly what you'd
+    export."""
     where: list[str] = ["NOT s.is_staging"]
     params: dict = {}
     if scenario:
@@ -244,10 +232,9 @@ def build_filter(*, scenario: str = "", date_from: str | None = None, date_to: s
 
 def list_entries(conn: Connection, where: list[str], params: dict, limit: int, offset: int) -> list[dict]:
     """One row per entry (no lines/tags — see `lines_for_entries`/
-    `tags_for_entries` below), ported from `entries_page`'s own query.
-    `total_debits`/`total_credits` and `reversed_by` are computed here,
-    same as legacy, rather than derived client-side from lines the
-    caller doesn't necessarily have yet."""
+    `tags_for_entries` below). `total_debits`/`total_credits` and
+    `reversed_by` are computed here rather than derived client-side from
+    lines the caller doesn't necessarily have yet."""
     sql = f"""
         SELECT e.id, e.entry_date, e.description, e.reference,
                e.reverses_entry_id, s.code AS scenario_code,
@@ -274,21 +261,17 @@ def list_entries(conn: Connection, where: list[str], params: dict, limit: int, o
 def export_rows(conn: Connection, where: list[str], params: dict, group_legs: bool = False) -> list[dict]:
     """Every journal *line* matching `where`/`params` (`build_filter`'s
     own output) — one row per leg, joined out to its entry/scenario/
-    account/payee — ported from `entries_export_csv`'s inline query
-    (shared verbatim by `entries_export_xlsx` in legacy too). Not the
-    same shape as `list_entries` above (one row per *entry*): an export
-    opens straight into a spreadsheet with no entry/line grouping the
-    JSON response's nested `lines` gets for free, so a caller (`export.py`,
-    Phase 1.12) works from a flat leg list instead.
+    account/payee. Not the same shape as `list_entries` above (one row
+    per *entry*): an export opens straight into a spreadsheet with no
+    entry/line grouping the JSON response's nested `lines` gets for
+    free, so `export.py` works from a flat leg list instead.
 
     `group_legs` orders debits before credits within each entry
     (`l.credit > 0` sorts false-before-true) rather than each line's own
     posting order — the XLSX export's traditional general-journal
-    presentation (`modules/reports/export.py`'s counterpart on the
-    reports side documents its own "why" for reports; here it's simply
-    "debits first, same as a printed journal always reads") — while the
-    CSV export keeps `line_no`'s original posting order, matching
-    legacy's own two slightly different ORDER BYs for the same query."""
+    presentation, "debits first, same as a printed journal always
+    reads" — while the CSV export keeps `line_no`'s original posting
+    order."""
     order = "e.entry_date DESC, e.seq DESC, l.credit > 0, l.line_no" if group_legs \
         else "e.entry_date DESC, e.seq DESC, l.line_no"
     sql = f"""

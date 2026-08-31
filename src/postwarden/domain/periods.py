@@ -2,12 +2,9 @@
 splitting, shared across every report that has a date range or an "as of"
 date.
 
-Ported from `app/main.py`'s module-level `_shift_date_by_month`/
-`_shift_range`/`_shift_month`/`_month_options`/`_split_periods`, docstrings
-kept close to verbatim. No framework or IO imports — `month_options()`
-reads the system clock via `date.today()` (same as the legacy version),
-which is fine for the domain layer's "no framework/IO" rule: no database,
-no HTTP, no request object.
+No framework or IO imports — `month_options()` reads the system clock
+via `date.today()`, which is fine for the domain layer's "no
+framework/IO" rule: no database, no HTTP, no request object.
 """
 import calendar
 from datetime import date, timedelta

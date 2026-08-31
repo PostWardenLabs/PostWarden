@@ -1,35 +1,27 @@
 """Both importers, and the shared Staging-landing step behind them.
-Ported from `app/main.py`'s `_parse_csv_import`, `_stage_import_groups`,
-`_parse_mapped_import_file`, `_transform_mapped_rows`, and the request-
-handling bodies of `import_csv`/`import_mapped_preview`/`import_mapped_
-commit`. Every function that touches the database takes a SQLAlchemy
+Every function that touches the database takes a SQLAlchemy
 `Connection` and reads/writes through `repository.py`, same convention
 every prior module established.
 
 **`stage_import_groups` is the one function both importers funnel
-through** — ported from `_stage_import_groups`, which legacy's own
-docstring already called out as "shared by both importers": one
-`import_batches` row, then one `journal_entries` + its `journal_lines`
-per group, regardless of which parser produced `groups`. Both `groups`
-shapes (the raw double-entry CSV's, and the mapped single-entry CSV's
-post-`transform_mapped_rows` output) agree on the same dict shape —
-`entry_date`/`description`/`reference`/`payee_name`/`lines` (each line
-`{code, amount, memo}`) — same as legacy.
+through**: one `import_batches` row, then one `journal_entries` + its
+`journal_lines` per group, regardless of which parser produced
+`groups`. Both `groups` shapes (the raw double-entry CSV's, and the
+mapped single-entry CSV's post-`transform_mapped_rows` output) agree on
+the same dict shape — `entry_date`/`description`/`reference`/
+`payee_name`/`lines` (each line `{code, amount, memo}`).
 
-**Amounts are `Decimal` throughout, not legacy's `float(d)`/`round(...,
-2)`.** Same fix `domain.entry.parse_lines` (Phase 1.1) and `modules.
-budget.service.save_budget_cell` (Phase 1.7) already applied to user-
-typed money for the identical reason: every amount ends up in a
-`NUMERIC(18,2)` column, so `float` was only ever a latent-imprecision
-risk introduced on the way in, with no upside. `_parse_csv_import`'s own
-`round(dv - cv, 2)` and `_transform_mapped_rows`'s own `round(amount, 2)`
-both become `.quantize(Decimal("0.01"))` here.
+**Amounts are `Decimal` throughout, never `float`.** Same fix
+`domain.entry.parse_lines` and `modules.budget.service.save_budget_cell`
+already apply to user-typed money for the identical reason: every
+amount ends up in a `NUMERIC(18,2)` column, so `float` is only ever a
+latent-imprecision risk introduced on the way in, with no upside.
 
 **No CSRF check, no `created_by_user_id`/`imported_by_user_id`
 attribution wired to a real user.** Same two documented gaps every prior
-write module carries — both are `modules/auth/` (Phase 1.11) concerns.
-Every import runs with `user_id=None` for now; `import_batches.imported_
-by_user_id` is nullable for exactly this reason, same as `journal_
+write module carries — both are `modules/auth/` concerns. Every import
+runs with `user_id=None` for now; `import_batches.imported_by_user_id`
+is nullable for exactly this reason, same as `journal_
 entries.created_by_user_id` (`db/schema.sql`'s own comment, already
 noted in `modules/entries/repository.py`'s docstring).
 
@@ -37,9 +29,9 @@ noted in `modules/entries/repository.py`'s docstring).
 reach into a module that doesn't exist yet" reasoning `repository.py`'s
 own docstring gives for `recent_batches`. `import_csv`/`import_mapped`
 both take `target_scenario_id` as a plain caller-supplied int, trusting
-whatever the frontend's own (future, `modules/reference/`-backed) picker
-sent — exactly as legacy's own form did, which never validated it beyond
-the foreign key `import_batches.target_scenario_id` already enforces."""
+whatever the frontend's own `modules/reference/`-backed picker sent —
+the foreign key `import_batches.target_scenario_id` is what actually
+enforces it's valid."""
 import base64
 import csv
 import io
@@ -53,10 +45,10 @@ from . import repository as repo
 IMPORT_REQUIRED_COLUMNS = ["Entry #", "Date", "Description", "Account code"]
 IMPORT_MAX_ERRORS_SHOWN = 20
 
-# ActualBudget-style single-entry export columns the mapped importer reads.
-# See `_parse_mapped_import_file`'s legacy docstring: no built-in double
-# entry, an Account column and a Category column instead, mapped into real
-# double-entry postings by `transform_mapped_rows` below.
+# ActualBudget-style single-entry export columns the mapped importer
+# reads: no built-in double entry, an Account column and a Category
+# column instead, mapped into real double-entry postings by
+# `transform_mapped_rows` below.
 IMPORT_MAPPED_COLUMNS = ["Account", "Date", "Payee", "Notes", "Category", "Amount"]
 IMPORT_MAPPED_NO_CATEGORY = ""  # the map key for blank/"(no category)" rows
 
@@ -75,9 +67,7 @@ def parse_csv_import(conn: Connection, content: str) -> tuple[list[dict], list[s
     the whole entry nets to zero) and is ready to stage. `errors`
     describes every row/group that didn't, by original CSV row number,
     and never touches the database beyond the one account-code lookup.
-    Ported from `_parse_csv_import`; see this module's own docstring on
-    why amounts are `Decimal` here where legacy used `float`. The "Entry
-    #"/"Scenario"/"Account name" columns an export produces are read only
+    The "Entry #"/"Scenario"/"Account name" columns an export produces are read only
     to group rows and are otherwise ignored — the id isn't reused, and
     the scenario a batch lands in comes from the import form, never
     trusted from inside the file itself."""
@@ -162,25 +152,22 @@ def parse_csv_import(conn: Connection, content: str) -> tuple[list[dict], list[s
 
 def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
                          target_scenario_id: int, user_id: int | None) -> int:
-    """Shared by both importers — see this module's own docstring. Ported
-    from `_stage_import_groups`. Returns the new batch id. Raises
-    `ValueError` if there's no configured Staging scenario, same as
-    legacy (`db/schema.sql`'s `uq_one_staging_scenario` means this can
-    only happen on a database nobody has finished setting up).
+    """Shared by both importers — see this module's own docstring.
+    Returns the new batch id. Raises `ValueError` if there's no
+    configured Staging scenario (`db/schema.sql`'s `uq_one_staging_
+    scenario` means this can only happen on a database nobody has
+    finished setting up).
 
-    **One real deviation from a verbatim port**: legacy's own `INSERT`
-    resolves each line's `account_id` via an inline `(SELECT id FROM
-    accounts WHERE code = %s)` subquery, so an unknown code (impossible
-    from `parse_csv_import`, whose groups are pre-validated, but *not*
+    **Every account code across every group is resolved up front,
+    before any row is written.** An unknown code is impossible from
+    `parse_csv_import`, whose groups are pre-validated, but *not*
     impossible from `import_mapped`, whose `account_map`/`category_map`
-    values are caller-supplied and never checked against real accounts)
-    silently resolves to `NULL` and only fails later on `journal_lines.
-    account_id`'s own `NOT NULL` constraint — a working but unhelpfully
-    generic error. This resolves every code across every group up front
-    instead, the same explicit "unknown account code" check `modules.
+    values are caller-supplied and never checked against real accounts —
+    resolving up front means a bad mapping value fails with a clear
+    message, the same explicit "unknown account code" check `modules.
     entries.service.create_entry` and `modules.staging.service.save_edit`
-    already both do, so a bad mapping value fails with a clear message
-    before any row is written, not a bare NOT NULL violation after."""
+    already both do, rather than surfacing later as a bare `journal_
+    lines.account_id` `NOT NULL` violation."""
     staging_id = repo.staging_scenario_id(conn)
     if staging_id is None:
         raise ValueError("No Staging scenario configured")
@@ -207,12 +194,11 @@ def stage_import_groups(conn: Connection, groups: list[dict], filename: str,
 
 def import_csv(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
                 user_id: int | None = None) -> dict:
-    """The plain double-entry CSV importer's full request body — ported
-    from `import_csv`'s try block. Raises `ValueError` when there's
-    nothing valid to stage at all (a missing-column file, or every group
-    failing validation), same as legacy; a partial success (some groups
-    good, some not) stages the good ones and reports the rest in
-    `errors` instead of raising."""
+    """The plain double-entry CSV importer's full request body. Raises
+    `ValueError` when there's nothing valid to stage at all (a
+    missing-column file, or every group failing validation); a partial
+    success (some groups good, some not) stages the good ones and
+    reports the rest in `errors` instead of raising."""
     groups, errors = parse_csv_import(conn, content)
     if not groups:
         raise ValueError("; ".join(errors[:IMPORT_MAX_ERRORS_SHOWN]) or "No valid entries found in the file")
@@ -223,8 +209,8 @@ def import_csv(conn: Connection, *, content: str, filename: str, target_scenario
 def parse_mapped_file(content: str) -> tuple[list[dict], list[str]]:
     """(rows, errors). Unlike `parse_csv_import`, this never validates
     account codes or balances — there's no double entry yet at this
-    point, just raw single-entry rows waiting on the mapping step. Pure —
-    no database — ported from `_parse_mapped_import_file`."""
+    point, just raw single-entry rows waiting on the mapping step. Pure
+    — no database."""
     reader = csv.DictReader(io.StringIO(content))
     if not reader.fieldnames:
         return [], ["The file is empty"]
@@ -248,11 +234,10 @@ def parse_mapped_file(content: str) -> tuple[list[dict], list[str]]:
 
 
 def preview_mapped(content: str) -> dict:
-    """What the mapping step's picker lists need — ported from `import_
-    mapped_preview`'s post-parse body (minus `postable`, a `modules/
-    reference/` concern the frontend fetches separately, same reasoning
-    every prior module applies). Raises `ValueError` on a bad file, same
-    as legacy."""
+    """What the mapping step's picker lists need — `postable` is left
+    out, a `modules/reference/` concern the frontend fetches separately,
+    same reasoning every prior module applies. Raises `ValueError` on a
+    bad file."""
     rows, errors = parse_mapped_file(content)
     if errors:
         raise ValueError("; ".join(errors))
@@ -274,8 +259,8 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
     other), so it can go straight into `stage_import_groups`. A zero-
     amount row (some exports include these for a pending/cleared marker
     row) is silently skipped, not an error — there's nothing to post.
-    Pure — no database — ported from `_transform_mapped_rows`; see this
-    module's own docstring on `Decimal` vs legacy's `float`."""
+    Pure — no database — see this module's own docstring on why amounts
+    stay `Decimal` throughout."""
     groups, errors = [], []
     for r in rows:
         money_code = account_map.get(r["account"])
@@ -343,10 +328,9 @@ def import_mapped(conn: Connection, *, content: str, filename: str, target_scena
 
 def decode_upload(raw: bytes) -> str:
     """`utf-8-sig` so an Excel-exported CSV's BOM doesn't end up glued to
-    the first header name — ported from both importers' identical
-    `raw.decode("utf-8-sig")` call, with legacy's own `UnicodeDecodeError`
-    -> `ValueError` translation so a router only ever has one exception
-    type to catch."""
+    the first header name — shared by both importers. Translates a
+    `UnicodeDecodeError` to `ValueError` so a router only ever has one
+    exception type to catch."""
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -355,9 +339,8 @@ def decode_upload(raw: bytes) -> str:
 
 def encode_for_roundtrip(raw: bytes) -> str:
     """The preview step's file content, base64-encoded so it can travel
-    to the frontend and back as plain JSON text for the commit step —
-    same round-trip legacy's hidden `file_b64` form field performs, just
-    JSON-shaped. See `router.py`'s own docstring."""
+    to the frontend and back as plain JSON text for the commit step. See
+    `router.py`'s own docstring."""
     return base64.b64encode(raw).decode("ascii")
 
 

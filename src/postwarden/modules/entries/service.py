@@ -1,24 +1,17 @@
 """Entry assembly and mutation — the Journal backend's business logic.
-Ported from `app/main.py`'s `create_entry`, `entries_page`,
-`_reverse_one_entry`, `reverse_entries_bulk`, `edit_entries_tags`,
-`edit_entry_description`, `edit_line_memo`. Every function here takes a
-SQLAlchemy `Connection` (from `db.get_connection()`) as its first
-argument and reads/writes through `repository.py` — never raw SQL of its
-own, same convention `modules/reports/service.py` established.
+Every function here takes a SQLAlchemy `Connection` (from
+`db.get_connection()`) as its first argument and reads/writes through
+`repository.py` — never raw SQL of its own, same convention
+`modules/reports/service.py` established.
 
 **`reverse_entries_bulk` uses `Connection.begin_nested()` (a SAVEPOINT)
-per entry, not a bare loop.** Legacy's `reverse_entries_bulk` calls
-`_reverse_one_entry` in a loop where *each call* opens and commits its
-own `tx()` — so one already-reversed or locked-scenario entry in the
-batch fails and moves on, independently of every other entry, because
-each one was already its own transaction. `db.get_connection()`
-deliberately gives the whole request *one* transaction (Phase 1.2), so a
-bare loop here would behave differently and worse: Postgres aborts an
-entire transaction on the first error inside it, so entry #2 failing
-would silently take #3 onward down with it too, even though they'd have
-succeeded standalone. A `SAVEPOINT` per entry (`conn.begin_nested()`)
-reproduces legacy's true per-entry independence inside the one shared
-transaction/connection `get_connection()` hands the request — a failed
+per entry, not a bare loop.** `db.get_connection()` gives the whole
+request *one* transaction, so a bare loop over entries would mean one
+already-reversed or locked-scenario entry failing takes every entry
+after it down too — Postgres aborts an entire transaction on the first
+error inside it, even though the later entries would have succeeded
+standalone. A `SAVEPOINT` per entry (`conn.begin_nested()`) gives each
+entry true independence inside the one shared transaction: a failed
 entry rolls back only to its own savepoint, leaving every entry already
 processed (and the ones still to come) unaffected.
 """
@@ -40,15 +33,13 @@ def list_entries(conn: Connection, *, scenario: str = "", date_from: str = "", d
                   hide_reversed: bool = False, entry_id: str = "", page: int = 1,
                   page_size: int = ENTRIES_PAGE_SIZE) -> dict:
     """Filtered, paginated Journal listing. Each entry comes back with
-    its own `lines`/`tags` nested directly under it — one JSON object per
-    entry — rather than legacy's three parallel dicts (`entries`,
-    `lines_by_entry`, `tags_by_entry`) a Jinja template re-joined by id
-    at render time. A JSON API consumer has no reason to redo grouping
-    the backend already did."""
+    its own `lines`/`tags` nested directly under it — one JSON object
+    per entry — so a JSON API consumer has no grouping-by-id left to
+    redo itself."""
     try:
         tag_list = parse_tags(tags) if tags else []
     except ValueError:
-        tag_list = []  # a hand-edited query string with a malformed tag; ignore, matches legacy
+        tag_list = []  # a hand-edited query string with a malformed tag; ignore it
     where, params = repo.build_filter(
         scenario=scenario, date_from=date_from or None, date_to=date_to or None, qtext=qtext,
         tag_list=tag_list, account=account, payee=payee, amount_op=amount_op,
@@ -56,7 +47,7 @@ def list_entries(conn: Connection, *, scenario: str = "", date_from: str = "", d
         entry_id=entry_id)
     page = max(page, 1)
     # One extra row purely to know whether a next page exists, trimmed
-    # back off below — same technique legacy's entries_page uses.
+    # back off below.
     rows = repo.list_entries(conn, where, params, page_size + 1, (page - 1) * page_size)
     has_next = len(rows) > page_size
     rows = rows[:page_size]
@@ -81,16 +72,14 @@ def export_rows(conn: Connection, *, scenario: str = "", date_from: str = "", da
                  amount_op: str = "", amount_value: str = "", amount_value2: str = "",
                  hide_reversed: bool = False, entry_id: str = "", group_legs: bool = False) -> list[dict]:
     """Every journal line matching the current filters — not just the
-    current page, unlike `list_entries` above — ported from
-    `entries_export_csv`/`entries_export_xlsx`'s shared `_entries_filter`
-    call. Same filters, same `WHERE` clause as `list_entries`, so what a
-    caller sees in the Journal is exactly what they'd export (the reason
-    `build_filter` lives in `repository.py` rather than being duplicated
-    here)."""
+    current page, unlike `list_entries` above. Same filters, same
+    `WHERE` clause as `list_entries`, so what a caller sees in the
+    Journal is exactly what they'd export (the reason `build_filter`
+    lives in `repository.py` rather than being duplicated here)."""
     try:
         tag_list = parse_tags(tags) if tags else []
     except ValueError:
-        tag_list = []  # a hand-edited query string with a malformed tag; ignore, matches legacy
+        tag_list = []  # a hand-edited query string with a malformed tag; ignore it
     where, params = repo.build_filter(
         scenario=scenario, date_from=date_from or None, date_to=date_to or None, qtext=qtext,
         tag_list=tag_list, account=account, payee=payee, amount_op=amount_op,
@@ -167,12 +156,11 @@ def reverse_entry(conn: Connection, entry_id: str, user_id: int | None = None) -
 
 def reverse_entries_bulk(conn: Connection, entry_ids: list[str],
                           user_id: int | None = None) -> tuple[list[str], list[str]]:
-    """Bulk sibling of `reverse_entry` — ported from `reverse_entries_
-    bulk`, with one real adaptation: a `SAVEPOINT` per entry
-    (`conn.begin_nested()`) stands in for legacy's per-entry `tx()`
-    commit — see this module's own docstring for why. Collects successes
-    and errors separately so one already-reversed or locked-scenario
-    entry in the batch doesn't stop the rest from going through."""
+    """Bulk sibling of `reverse_entry` — a `SAVEPOINT` per entry
+    (`conn.begin_nested()`, see this module's own docstring for why)
+    collects successes and errors separately, so one already-reversed
+    or locked-scenario entry in the batch doesn't stop the rest from
+    going through."""
     reversed_ids: list[str] = []
     errors: list[str] = []
     for eid in entry_ids:
@@ -187,10 +175,9 @@ def reverse_entries_bulk(conn: Connection, entry_ids: list[str],
 
 
 def edit_entries_tags(conn: Connection, entry_ids: list[str], action: str, tag: str) -> str:
-    """Add or remove one tag across whatever's checked — ported from
-    `edit_entries_tags`. Returns the tag name (echoed back, same as
-    legacy's JSON response, for a client that built the request from a
-    raw comma string and wants back the exact normalized name)."""
+    """Add or remove one tag across whatever's checked. Returns the tag
+    name, echoed back for a client that built the request from a raw
+    comma string and wants back the exact normalized name."""
     if not entry_ids:
         raise ValueError("No entries selected")
     tag_names = parse_tags(tag)
@@ -207,10 +194,10 @@ def edit_entries_tags(conn: Connection, entry_ids: list[str], action: str, tag: 
 
 
 def edit_description(conn: Connection, entry_id: str, description: str) -> str:
-    """Ported from `edit_entry_description`. Works on any entry, posted
-    or still pending in Staging — `fn_entries_guard` allows changing
-    `description`/`reference` on a posted entry (SPEC.md's tag-editing
-    reasoning: organizational, not a fact about the transaction)."""
+    """Works on any entry, posted or still pending in Staging —
+    `fn_entries_guard` allows changing `description`/`reference` on a
+    posted entry (SPEC.md's tag-editing reasoning: organizational, not
+    a fact about the transaction)."""
     description = (description or "").strip()
     if not description:
         raise ValueError("Description can't be empty")
@@ -220,8 +207,7 @@ def edit_description(conn: Connection, entry_id: str, description: str) -> str:
 
 
 def edit_line_memo(conn: Connection, line_id: int, memo: str | None) -> str:
-    """Ported from `edit_line_memo`. Returns `""` (not `None`) for a
-    cleared memo, same as legacy's own JSON response."""
+    """Returns `""` (not `None`) for a cleared memo."""
     memo = (memo or "").strip() or None
     if repo.update_line_memo(conn, line_id, memo) == 0:
         raise ValueError(f"Line {line_id} not found")
