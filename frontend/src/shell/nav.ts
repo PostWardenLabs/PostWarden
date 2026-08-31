@@ -2,16 +2,6 @@ export interface NavLink {
   key: string
   label: string
   href: string
-  // True for a link that's now a real client-side route (Sidebar.tsx
-  // renders it as a React Router `<Link>` instead of a plain `<a href>`)
-  // — see main.py's own Phase 3.2 comment on why that's `/app/tags`, not
-  // the bare `/tags` this same link pointed at through Phase 2.4/3.1.
-  // Every other link here still points at its legacy-shaped bare path and
-  // is still a real full-page navigation into what's today a raw JSON
-  // response — unchanged, not yet built, not this phase's job; each
-  // becomes `client: true` with its own `/app/*` href on its own Phase 4
-  // turn.
-  client?: boolean
 }
 
 export interface NavGroup {
@@ -36,36 +26,36 @@ export const NAV_GROUPS: NavGroup[] = [
     key: 'ledger',
     label: 'Books',
     links: [
-      { key: 'entries', label: 'Journal', href: '/app/entries', client: true },
-      { key: 'staging', label: 'Staging', href: '/app/staging', client: true },
-      { key: 'scheduled', label: 'Scheduled Entries', href: '/app/scheduled', client: true },
-      { key: 'import', label: 'Import', href: '/app/import', client: true },
-      { key: 'templates', label: 'Templates', href: '/app/templates', client: true },
-      { key: 'budget', label: 'Budget Grid', href: '/app/budget', client: true },
+      { key: 'entries', label: 'Journal', href: '/app/entries' },
+      { key: 'staging', label: 'Staging', href: '/app/staging' },
+      { key: 'scheduled', label: 'Scheduled Entries', href: '/app/scheduled' },
+      { key: 'import', label: 'Import', href: '/app/import' },
+      { key: 'templates', label: 'Templates', href: '/app/templates' },
+      { key: 'budget', label: 'Budget Grid', href: '/app/budget' },
     ],
   },
   {
     key: 'reports',
     label: 'Reports',
     links: [
-      { key: 'balance_sheet', label: 'Balance Sheet', href: '/app/balance-sheet', client: true },
-      { key: 'income_statement', label: 'Income Statement', href: '/app/income-statement', client: true },
-      { key: 'cash_flow', label: 'Cash Flow', href: '/app/cash-flow', client: true },
-      { key: 'variance', label: 'Variance', href: '/app/variance', client: true },
-      { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance', client: true },
-      { key: 'ledger', label: 'Ledger', href: '/app/ledger', client: true },
+      { key: 'balance_sheet', label: 'Balance Sheet', href: '/app/balance-sheet' },
+      { key: 'income_statement', label: 'Income Statement', href: '/app/income-statement' },
+      { key: 'cash_flow', label: 'Cash Flow', href: '/app/cash-flow' },
+      { key: 'variance', label: 'Variance', href: '/app/variance' },
+      { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance' },
+      { key: 'ledger', label: 'Ledger', href: '/app/ledger' },
     ],
   },
   {
     key: 'setup',
     label: 'Setup',
     links: [
-      { key: 'accounts', label: 'Accounts', href: '/app/accounts', client: true },
-      { key: 'account_levels', label: 'Levels', href: '/app/account-levels', client: true },
-      { key: 'scenarios', label: 'Scenarios', href: '/app/scenarios', client: true },
-      { key: 'payees', label: 'Payees', href: '/app/payees', client: true },
-      { key: 'tags', label: 'Tags', href: '/app/tags', client: true },
-      { key: 'help', label: 'Help', href: '/app/help', client: true },
+      { key: 'accounts', label: 'Accounts', href: '/app/accounts' },
+      { key: 'account_levels', label: 'Levels', href: '/app/account-levels' },
+      { key: 'scenarios', label: 'Scenarios', href: '/app/scenarios' },
+      { key: 'payees', label: 'Payees', href: '/app/payees' },
+      { key: 'tags', label: 'Tags', href: '/app/tags' },
+      { key: 'help', label: 'Help', href: '/app/help' },
     ],
   },
 ]

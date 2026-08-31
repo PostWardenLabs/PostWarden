@@ -14,35 +14,26 @@ interface ComboboxProps {
   disabled?: boolean
   id?: string
   name?: string
-  // Mirrors combobox.js's data-create-url: present, a "+ Create <name>"
-  // row appears whenever the typed text doesn't exactly match an
-  // existing option. Returning the new option both selects it here *and*
-  // is this component's whole contract with the caller for updating
-  // `options` — unlike combobox.js, which owned the real <select> and
-  // could just append an <option> to it itself, this component only
-  // ever renders whatever `options` it's given; the caller's own state
+  // When present, a "+ Create <name>" row appears whenever the typed
+  // text doesn't exactly match an existing option. Returning the new
+  // option both selects it here *and* is this component's whole contract
+  // with the caller for updating `options` — this component only ever
+  // renders whatever `options` it's given, so the caller's own state
   // (wherever `options` comes from) needs to gain the new entry too, or
   // it vanishes again next render even though `value` still points at it.
   onCreate?: (name: string) => Promise<ComboboxOption | null>
 }
 
-// Ported from app/static/combobox.js — a searchable combobox over a
-// plain list of options, replacing a native <select> with an
-// autocomplete-style text field + dropdown panel.
+// A searchable combobox over a plain list of options — an
+// autocomplete-style text field + dropdown panel in place of a native
+// <select>. A controlled component (value/onChange): there's no hidden
+// native <select> at all, `value`/`onChange` are the source of truth.
 //
-// A controlled component (value/onChange), unlike legacy's DOM
-// enhancement of a real server-rendered <select> — there's no hidden
-// native <select> here at all, since the SPA has no server-rendered
-// fallback markup to preserve underneath it (legacy's own reason for
-// keeping one: "this is a UI skin, not a new source of truth" for a
-// page that still had to work via a plain form post). `value`/`onChange`
-// already are the source of truth here.
-//
-// The two real browser-quirk fixes combobox.js exists to encode are both
-// still here: the iOS Safari `select()` no-op — the round-2 BACKLOG.md
-// fix, focusing an empty field clears it outright instead of trying to
-// select(), since "replace on next keystroke" no longer needs selection
-// to actually take effect on any platform — and the general one-tick
+// Two real browser-quirk fixes are encoded here: the iOS Safari
+// `select()` no-op — the round-2 BACKLOG.md fix, focusing an empty field
+// clears it outright instead of trying to select(), since "replace on
+// next keystroke" no longer needs selection to actually take effect on
+// any platform — and the general one-tick
 // defer on `.select()` for a field that already holds a value, since
 // select() called synchronously inside a focus handler is a known no-op
 // on some WebKit builds.
@@ -51,12 +42,10 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
   // What's shown in the input while open. When closed, the displayed
   // value is derived straight from `options`/`value` on every render
   // instead (see `displayValue` below) — always correct, never stale,
-  // no separate "resync after every mutation" step needed the way
-  // combobox.js's own syncInputFromSelect() was.
+  // no separate "resync after every mutation" step needed.
   const [inputText, setInputText] = useState('')
   // What actually filters the panel — reset to "" whenever the panel
-  // opens (matching combobox.js's own open() with no argument, which
-  // always shows the unfiltered full list first; only the "input" event
+  // opens (always shows the unfiltered full list first; only typing
   // narrows it) and set equal to inputText on every keystroke thereafter.
   const [filterText, setFilterText] = useState('')
   const [manualActive, setManualActive] = useState<number | null>(null)
@@ -231,8 +220,7 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
                     (isCreate ? ' combobox-create' : '')
                   }
                   // preventDefault so mousedown doesn't steal focus from
-                  // the input mid-click, same as combobox.js's own panel
-                  // listener.
+                  // the input mid-click.
                   onMouseDown={(e) => {
                     e.preventDefault()
                     if (isCreate) createAndSelect(row.query)

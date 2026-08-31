@@ -8,37 +8,32 @@ interface TagInputProps {
   // Comma-separated, matching every server-side consumer's own shape
   // (`CreateEntryRequest.tags`, `EditTagsRequest.tag`, the Journal
   // filter bar's own `tags` query param) — a caller never needs to
-  // convert to/from an array itself, same "the hidden input's own
-  // value is the source of truth" contract tags.js already had.
+  // convert to/from an array itself.
   value: string
   onChange: (csv: string) => void
   suggestions: string[]
-  // Mirrors tags.js's `data-creatable="0"` — the Journal filter bar's
-  // own Tags field sets this false, since filtering by a tag that
-  // doesn't exist yet is meaningless (there's nothing it could ever
-  // match).
+  // The Journal filter bar's own Tags field sets this false, since
+  // filtering by a tag that doesn't exist yet is meaningless (there's
+  // nothing it could ever match).
   creatable?: boolean
   placeholder?: string
   id?: string
 }
 
-// Ported from app/static/tags.js — a chip-based tag picker: typing
-// filters existing tags (arrow keys move a highlighted row, same as
-// Combobox.tsx), and only actually selecting one (click, Enter, or a
-// trailing comma) adds it. A tag that doesn't exist yet shows as a
-// "+ Create tag "…"" row, same affordance Combobox.tsx's own `onCreate`
-// gives a single-value field — but there's nothing to await here: a new
-// tag is only ever created for real, lazily, wherever the *form*
-// submits it (`domain.entry.parse_tags`/`repository.sync_entry_tags`
-// upsert by name), so this component just adds it to the chip list
-// client-side rather than round-tripping to `POST /tags` on every
-// keystroke, matching tags.js's own "nothing to roll back if the form
-// is abandoned" reasoning.
+// A chip-based tag picker: typing filters existing tags (arrow keys move
+// a highlighted row, same as Combobox.tsx), and only actually selecting
+// one (click, Enter, or a trailing comma) adds it. A tag that doesn't
+// exist yet shows as a "+ Create tag "…"" row, same affordance
+// Combobox.tsx's own `onCreate` gives a single-value field — but there's
+// nothing to await here: a new tag is only ever created for real,
+// lazily, wherever the *form* submits it (`domain.entry.parse_tags`/
+// `repository.sync_entry_tags` upsert by name), so this component just
+// adds it to the chip list client-side rather than round-tripping to
+// `POST /tags` on every keystroke — nothing to roll back if the form is
+// abandoned.
 //
-// A controlled component (value/onChange), unlike legacy's DOM
-// enhancement of a hidden `<input>` — same shape every other Phase 2.5
-// widget already took for the identical reason (no server-rendered
-// fallback markup to preserve underneath it on an SPA).
+// A controlled component (value/onChange) — no server-rendered fallback
+// markup to preserve underneath it on an SPA.
 export default function TagInput({ value, onChange, suggestions, creatable = true, placeholder, id }: TagInputProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')

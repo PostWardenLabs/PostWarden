@@ -3,26 +3,16 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAppConfig } from '../api/useAppConfig'
 import { useSession } from './sessionContext'
 
-// Ported from app/templates/login.html's {% block chrome %} override —
-// the one screen in the app that skips the normal topbar/sidebar shell
+// The one screen in the app that skips the normal topbar/sidebar shell
 // entirely for a full-page split: brand on the left, the form (plus the
 // demo callout, when applicable) on the right. See index.css's own
-// Phase 3.1 header comment for the .auth-*/.demo-callout/.checkline/
-// .grid-form rules this renders against.
+// header comment for the .auth-*/.demo-callout/.checkline/.grid-form
+// rules this renders against.
 //
-// Two real differences from the legacy template, both dictated by the
-// SPA medium rather than a design change:
-//
-// - **No ok=/err= query-string flash.** Legacy's `login_submit` fails by
-//   redirecting back to `/login?err=...` (a real page navigation, so the
-//   message survives in the URL); here `session.login()` returns its
-//   error directly to the same component that's still mounted, so a
-//   plain local `error` state does the same job with no URL round trip
-//   needed. The `ok=` half (a flash after some *other* successful
-//   action redirected here) has no equivalent yet either — nothing in
-//   the SPA redirects to a login screen on success today.
-// - **Demo credentials and the app version come from `GET /config`**
-//   (`useAppConfig`), not Jinja globals baked into the initial HTML.
+// A failed login sets local `error` state directly from `session.login()`'s
+// return value — no query-string flash or redirect involved, since this
+// component stays mounted through the attempt. Demo credentials and the
+// app version come from `GET /config` (`useAppConfig`).
 export default function LoginPage() {
   const session = useSession()
   const config = useAppConfig()

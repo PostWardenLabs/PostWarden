@@ -8,20 +8,17 @@ export interface SelectModeState<T> {
   toggleSelectAll: () => void
 }
 
-// Ported from entity-manage.js's Select-mode/Merge half (Phase 3.2) — the
-// part of that file with nothing entity-specific about it at all (Edit,
-// the other half, stays local to each page: an inline rename form is
-// different enough per entity that factoring it out here would buy
-// nothing). Payees (Phase 4.2) shares this exact hook unchanged, same as
-// entity-manage.js already shared one file between both legacy pages.
+// The Select-mode/Merge half shared by Tags and Payees — the part with
+// nothing entity-specific about it at all (Edit, the other half, stays
+// local to each page: an inline rename form is different enough per
+// entity that factoring it out here would buy nothing).
 //
 // `ids` is the full, currently-visible id list in table order — needed
 // for two things a plain Set of checked ids can't answer on its own:
 // "select all" needs to know the total to compare against, and the merge
 // survivor is "whichever checked row sorts first in the table," not
 // whichever was clicked first (TagsPage.tsx derives that by filtering its
-// own sorted list against `checkedIds`, same as legacy's own
-// `Array.from(table.querySelectorAll(".entity-check"))` DOM-order read).
+// own sorted list against `checkedIds`).
 //
 // `selectAllRef` is created by the *caller* and passed in, not created
 // and returned from here — a real oxlint `react(refs)` false positive
@@ -34,13 +31,12 @@ export interface SelectModeState<T> {
 // handler, same rule this file's own indeterminate-setting effect below
 // already follows.
 //
-// Generic as of Phase 3.4 — the Journal's own entries are keyed by a
+// Generic over `<T>` since the Journal's own entries are keyed by a
 // random 6-character string id (SPEC.md decision 17), not the plain
-// integer primary key every prior caller (Tags, and Payees in Phase 4.2)
-// happened to have. `<T>` costs nothing at either existing call site
-// (both already infer `T = number` from their own `ids: number[]`) and
-// avoids forking this hook a second time for the one caller whose ids
-// aren't numeric.
+// integer primary key Tags and Payees happen to have. `<T>` costs
+// nothing at either existing call site (both already infer `T = number`
+// from their own `ids: number[]`) and avoids forking this hook a second
+// time for the one caller whose ids aren't numeric.
 export function useSelectMode<T>(
   ids: T[],
   selectAllRef: RefObject<HTMLInputElement | null>,
@@ -59,8 +55,7 @@ export function useSelectMode<T>(
   }, [selectMode])
 
   // React has no `indeterminate` prop — it's a DOM-only property, not an
-  // HTML attribute, so it has to be set imperatively on the actual node,
-  // same as legacy's own `selectAll.indeterminate = ...` line.
+  // HTML attribute, so it has to be set imperatively on the actual node.
   useEffect(() => {
     const el = selectAllRef.current
     if (!el) return

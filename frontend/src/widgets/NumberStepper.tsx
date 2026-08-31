@@ -6,20 +6,18 @@ interface NumberStepperProps
   onChange: (value: string) => void
 }
 
-// Ported from app/static/number-stepper.js — custom up/down chevrons over
-// a plain <input type="number">, replacing the browser's own spinner
-// arrows so a native OS control doesn't sit inside an otherwise hand-
-// styled page. Typing directly and the keyboard's own Up/Down arrows
-// still work unchanged; the input stays a real type="number" throughout.
+// Custom up/down chevrons over a plain <input type="number">, replacing
+// the browser's own spinner arrows so a native OS control doesn't sit
+// inside an otherwise hand-styled page. Typing directly and the
+// keyboard's own Up/Down arrows still work unchanged; the input stays a
+// real type="number" throughout.
 //
-// A controlled component here (value/onChange props), unlike legacy's
-// plain DOM enhancement of a server-rendered field — but the step logic
+// A controlled component (value/onChange props), but the step logic
 // itself still goes through the native input's own .stepUp()/.stepDown()
 // via a ref rather than reimplementing step/min/max arithmetic by hand,
 // so the browser's own validation semantics (respecting `step` alignment,
 // clamping to `min`/`max`) stay authoritative. onChange fires only when
-// the native call actually changed the value, same as legacy dispatching
-// input/change events only on an actual change.
+// the native call actually changed the value.
 export default function NumberStepper({
   value,
   onChange,

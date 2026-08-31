@@ -15,28 +15,21 @@ interface ShellProps {
   children: ReactNode
 }
 
-// The app chrome, ported from app/templates/base.html: the hamburger
-// sidebar (hover-preview + click-to-pin — see useSidebarPin.ts and
-// Sidebar.tsx, ported from sidebar.js/sidebar-collapse.js), the topbar,
-// the ok=/err= flash banners, and the footer. The pre-paint theme/font/
-// pinned-sidebar restore that used to be base.html's own inline <head>
-// script now lives in frontend/index.html directly, ahead of anything
-// React renders — see that file's own comment; nothing here re-does it.
+// The app chrome: the hamburger sidebar (hover-preview + click-to-pin —
+// see useSidebarPin.ts and Sidebar.tsx), the topbar, the ok=/err= flash
+// banners, and the footer. The pre-paint theme/font/pinned-sidebar
+// restore lives in frontend/index.html directly, ahead of anything React
+// renders — see that file's own comment; nothing here re-does it.
 //
-// `user` is real session state as of Phase 3.1 (`auth/SessionProvider.tsx`)
-// — App.tsx is the caller that supplies it now, no longer a hardcoded
-// placeholder. Matches legacy exactly: no sidebar, no topbar user area,
-// with nobody logged in — only the topbar's left half, the flash slot,
-// and the footer render.
+// `user` is real session state from `auth/SessionProvider.tsx`, supplied
+// by App.tsx. With nobody logged in, only the topbar's left half, the
+// flash slot, and the footer render — no sidebar, no topbar user area.
 //
-// `version` closes the one gap Phase 2.4's own version of this comment
-// left open: legacy's footer reads the repo-root VERSION file directly
-// at template-render time (`"PostWarden v{{ version }}"`); this is a
-// plain prop instead, sourced from `GET /config` (`useAppConfig`,
-// Phase 3.1) by whichever caller has it — optional, and rendered without
-// the "v" prefix at all when absent, the same tolerant-degradation
-// choice `main.py`'s own `/config` route already makes for a missing
-// VERSION file (a blank string, not a 500).
+// `version` is sourced from `GET /config` (`useAppConfig`) by whichever
+// caller has it — optional, and rendered without the "v" prefix at all
+// when absent, the same tolerant-degradation choice `main.py`'s own
+// `/config` route already makes for a missing VERSION file (a blank
+// string, not a 500).
 export default function Shell({ title, current, user, onLogout, version, children }: ShellProps) {
   const { open, previewOpen, scheduleClose, toggle } = useSidebarPin()
 

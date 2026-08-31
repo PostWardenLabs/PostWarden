@@ -8,26 +8,17 @@ import client from './client'
 // `tags/TagsPage.tsx` already document for their own plain-dict routes,
 // cast through this local interface instead. Only the fields a picker
 // actually needs are typed; `repository.scenarios_all`'s own extra
-// columns (`base_level_name`, `entry_count`, ...) are real but unused
-// here.
+// columns (`base_level_name`, ...) are real but unused here.
 //
-// Widened for Phase 3.4 (the Journal): `is_staging`/`is_locked`/
-// `income_statement_only`/`enforce_balance`/`base_level_id` are what
-// `NewEntryPanel.tsx` needs to reproduce legacy `entries_page`'s own
-// `new_entry_scenarios` filter (excludes locked/income-statement-only/
-// staging scenarios from the New entry picker) and the balance-bar's
-// `enforcing()` check — Trial Balance's own Phase 3.3 usage only ever
-// read `code`/`name`/`is_locked`, so this is a strict superset, not a
-// breaking change to that call site.
-//
-// Widened again for Phase 5 item 8 (distinct empty states): `entry_count`
-// was already real on the wire (`repository.py`'s `scenarios_all()`
-// selects it, `GET /scenarios` returns it unfiltered) but unused here —
-// Trial Balance and Variance need it to tell "this scenario has never
-// had anything posted to it" apart from "this scenario has entries, just
-// none in the selected window," which a bare empty-grid can't distinguish
-// on its own. Every existing caller already gets it for free from the
-// same response; nothing here changes what any of them read before.
+// `is_staging`/`is_locked`/`income_statement_only`/`enforce_balance`/
+// `base_level_id` are what `NewEntryPanel.tsx` needs to filter locked/
+// income-statement-only/staging scenarios out of the New entry picker,
+// and to drive the balance-bar's own `enforcing()` check. `entry_count`
+// (real on the wire via `repository.py`'s `scenarios_all()`) is what
+// Trial Balance and Variance use to tell "this scenario has never had
+// anything posted to it" apart from "this scenario has entries, just
+// none in the selected window," which a bare empty-grid can't
+// distinguish on its own.
 export interface Scenario {
   id: number
   code: string
@@ -44,10 +35,9 @@ export interface Scenario {
 // A plain hook, not a Context/Provider — same call `useAppConfig.ts`
 // already made for the identical shape (one-shot GET, no writer other
 // than the server itself, more than one caller likely but none of them
-// needs to see another's request in flight). First caller is Trial
-// Balance's own scenario picker (Phase 3.3); every other report/Journal/
-// Budget screen needing the same list reuses this unchanged rather than
-// each hand-rolling its own `client.GET('/scenarios')`.
+// needs to see another's request in flight). Every report/Journal/
+// Budget screen needing the scenario list reuses this rather than each
+// hand-rolling its own `client.GET('/scenarios')`.
 export function useScenarios(): Scenario[] | null {
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null)
 

@@ -1,21 +1,13 @@
-// Ported from app/static/cents-entry.js (Phase 4.2) — the optional
-// "digits fill in from the right" mode for amount fields (EntryGrid.tsx's
-// debit/credit `<input className="amount">`), same input style as a bank
-// transfer app: typing 6200 produces 62.00, no decimal point to type.
-// Off by default, toggled from SettingsPage.tsx.
+// The optional "digits fill in from the right" mode for amount fields
+// (EntryGrid.tsx's debit/credit `<input className="amount">`), same
+// input style as a bank transfer app: typing 6200 produces 62.00, no
+// decimal point to type. Off by default, toggled from SettingsPage.tsx.
 //
-// A genuine verbatim port of the *mechanism*, not just the behavior —
-// unlike `format/date.ts`/`format/money.ts` (which replace a legacy
-// DOM-rewrite with a plain function every screen calls), this one is
-// already exactly the right shape for React: legacy's own file is a
-// `document`-level delegated listener matching `input.amount` by
-// className, needing no knowledge of which page or which row added the
-// field. `EntryGrid.tsx`'s debit/credit inputs already carry that same
-// `amount` className (ported in Phase 3.4, before this file existed) —
-// so this needs no EntryGrid changes at all, and covers Journal/
+// A `document`-level delegated listener matching `input.amount` by
+// className, rather than a React-owned handler — it needs no knowledge
+// of which page or which row added the field, so it covers Journal/
 // Scheduled/Entry templates' grids for free the moment it's initialized
-// once, same as legacy's own global `<script>` include covered every
-// page for free.
+// once, with no EntryGrid changes needed.
 //
 // `initCentsEntry()` is called once from `main.tsx`, outside React
 // entirely — nothing here is a React concern (no component owns these

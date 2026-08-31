@@ -9,10 +9,9 @@ interface MergeDialogProps {
   onConfirm: (name: string) => void
 }
 
-// Ported from entity-manage.js's Merge popup (Phase 3.2) — reuses
-// ConfirmDialog.tsx's own `.confirm-overlay`/`.confirm-modal`/
-// `.confirm-actions` CSS (already generic, per that file's own Phase 2.5
-// comment) rather than inventing a second modal look, but isn't built on
+// The Merge popup shared by Tags and Payees — reuses ConfirmDialog.tsx's
+// own `.confirm-overlay`/`.confirm-modal`/`.confirm-actions` CSS (already
+// generic) rather than inventing a second modal look, but isn't built on
 // `useConfirm()` itself: that context's `ask()` only ever resolves a
 // boolean, and a merge needs to hand back the typed survivor name too, so
 // this is a plain controlled component TagsPage.tsx renders directly,
@@ -26,10 +25,8 @@ interface MergeDialogProps {
 // checked row).
 //
 // Deliberately has no Tab focus trap, unlike ConfirmDialog.tsx's own
-// cancel/OK loop — a real, pre-existing gap in legacy's own
-// entity-manage.js (its `build()` wires an Escape listener but never a
-// Tab one, unlike confirm.js's dialog), ported as-is rather than fixed,
-// per REBUILD.md decision 4.
+// cancel/OK loop — a known, accepted gap (Escape closes it; Tab does
+// not) left as-is rather than fixed here.
 export default function MergeDialog({
   open, count, labelPlural, initialName, onCancel, onConfirm,
 }: MergeDialogProps) {

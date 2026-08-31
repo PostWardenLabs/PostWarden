@@ -7,22 +7,19 @@ interface ConfirmState extends ConfirmOptions {
   resolve: (result: boolean) => void
 }
 
-// Ported from app/static/confirm.js: a confirm dialog that actually looks
-// like the app, not the browser's own unstyleable alert skin. Same
-// true/false Promise shape as the native confirm() it replaces, just
-// asynchronous — awaiting a click instead of blocking the whole page
-// (see confirmContext.ts's useConfirm()).
+// A confirm dialog that actually looks like the app, not the browser's
+// own unstyleable alert skin. Same true/false Promise shape as the
+// native confirm() it replaces, just asynchronous — awaiting a click
+// instead of blocking the whole page (see confirmContext.ts's
+// useConfirm()).
 //
-// confirm.js also auto-wired itself to any `<form data-confirm="...">` —
-// a plain-HTML convention for progressively-enhanced server forms that
-// has no equivalent here: every write in the SPA already goes through a
-// typed API call a component controls directly, so there's no bare
-// <form> submit to intercept. Call `useConfirm()`'s returned function
-// directly at the point a destructive action is triggered instead.
+// Every write in the SPA goes through a typed API call a component
+// controls directly, so there's no bare `<form>` submit to intercept —
+// call `useConfirm()`'s returned function directly at the point a
+// destructive action is triggered instead.
 //
-// Mounted once, near the app root (see main.tsx) — same singleton-overlay
-// shape as confirm.js's own module-level overlay/modal, just as a
-// Provider instead of a lazily-built DOM node.
+// Mounted once, near the app root (see main.tsx), as a singleton overlay
+// via a Provider.
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ConfirmState | null>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
@@ -55,7 +52,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
 
   // Escape cancels; a tiny two-item focus trap keeps Tab/Shift+Tab from
   // ever leaving the modal while it's open — same expectation as any
-  // real dialog, ported from confirm.js's own document-level listener.
+  // real dialog.
   useEffect(() => {
     if (!state) return
     function onKeyDown(e: KeyboardEvent) {

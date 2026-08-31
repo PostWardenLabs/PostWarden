@@ -4,35 +4,21 @@ import type { NavGroup, NavLink } from './nav'
 import { NAV_GROUPS } from './nav'
 import { useSidebarGroupCollapse } from './useSidebarGroupCollapse'
 
-// A real client-side <Link> for a link whose screen actually exists as a
-// route (Phase 3.2 on: `nav.ts`'s own `client: true` flag), a plain
-// `<a href>` full-page navigation for everything else — see nav.ts's own
-// comment on `NavLink.client` for why the two still coexist here instead
-// of every link moving over at once.
 function NavAnchor({ link, active }: { link: NavLink; active: boolean }) {
   const className = active ? 'active' : undefined
-  if (link.client) {
-    return (
-      <Link to={link.href} className={className}>
-        {link.label}
-      </Link>
-    )
-  }
   return (
-    <a href={link.href} className={className}>
+    <Link to={link.href} className={className}>
       {link.label}
-    </a>
+    </Link>
   )
 }
 
-// Staging's "Find Duplicates" sub-page (Phase 4.5, routeKey
-// `staging_duplicates`) keeps the Staging sidebar link highlighted while
-// on it — mirrors legacy's own `nav: "staging"` set on `staging_
-// duplicates_page` (app/main.py) despite that page's own browser title
-// being "Find Duplicates", not "Staging". Same `startsWith` precedent
-// Topbar.tsx's own `current?.startsWith('settings')` check already
-// established for Settings/Settings Account, applied here to the
-// Sidebar's own per-link `active` check instead — `staging` is the only
+// Staging's "Find Duplicates" sub-page (routeKey `staging_duplicates`)
+// keeps the Staging sidebar link highlighted while on it, despite that
+// page's own browser title being "Find Duplicates", not "Staging". Same
+// `startsWith` precedent Topbar.tsx's own `current?.startsWith('settings')`
+// check already established for Settings/Settings Account, applied here to
+// the Sidebar's own per-link `active` check instead — `staging` is the only
 // nav key sharing a prefix with another route key, so this is safe
 // without an explicit enumeration.
 function isActive(linkKey: string, current?: string): boolean {
@@ -72,11 +58,10 @@ interface SidebarProps {
   onMouseLeave: () => void
 }
 
-// Ported from base.html's <nav id="sidebar">. Hover/pin mechanics live in
-// Shell.tsx (useSidebarPin) and are only passed in here as plain
-// open/onMouseEnter/onMouseLeave props — this component owns the nav
-// structure and the per-group collapse state, nothing about whether it's
-// currently visible.
+// Hover/pin mechanics live in Shell.tsx (useSidebarPin) and are only
+// passed in here as plain open/onMouseEnter/onMouseLeave props — this
+// component owns the nav structure and the per-group collapse state,
+// nothing about whether it's currently visible.
 export default function Sidebar({ current, open, onMouseEnter, onMouseLeave }: SidebarProps) {
   return (
     <nav

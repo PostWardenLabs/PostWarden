@@ -6,19 +6,14 @@ import type { AccountLevel } from '../api/useAccountLevels'
 import { useAccountLevels } from '../api/useAccountLevels'
 import type { Scenario } from '../api/useScenarios'
 
-// Ported from app/main.py's `postable_accounts_for_pickers`/
-// `postable_accounts_by_scenario` (Phase 3.4) — client-side, since
-// REBUILD.md decision 3 draws the line at "the frontend fetches
-// reference data separately," not at "the frontend re-derives nothing
-// from it." Both legacy functions are pure filters over data this hook
-// already has via `useAccounts`/`useAccountLevels`/the caller's own
-// `useScenarios` — recomputing them here means the New entry account
-// picker doesn't need a bespoke backend endpoint just to answer "which
-// accounts can this scenario actually post to," matching
-// `fn_line_account_guard` exactly (the same rule the database itself
-// enforces at commit): a leaf (`is_postable`) account, or — when a
-// scenario has its own `base_level_id` — anything sitting at that
-// level's own `depth`.
+// Computed client-side as a pure filter over data this hook already has
+// via `useAccounts`/`useAccountLevels`/the caller's own `useScenarios` —
+// so the New entry account picker doesn't need a bespoke backend
+// endpoint just to answer "which accounts can this scenario actually
+// post to," matching `fn_line_account_guard` exactly (the same rule the
+// database itself enforces at commit): a leaf (`is_postable`) account,
+// or — when a scenario has its own `base_level_id` — anything sitting at
+// that level's own `depth`.
 export interface PostableAccount {
   id: number
   code: string
@@ -28,15 +23,15 @@ export interface PostableAccount {
 
 export interface PostableAccounts {
   // Every account ANY scenario could post to, the union across all of
-  // them — legacy's own "no single scenario to be precise about" case
-  // (entry_templates.html isn't scenario-bound). Used for the Journal's
-  // own filter-bar Account picker, which has no scenario context to
-  // narrow against either.
+  // them — for a picker with no single scenario to be precise about
+  // (Entry Templates isn't scenario-bound). Used for the Journal's own
+  // filter-bar Account picker, which has no scenario context to narrow
+  // against either.
   forPickers: PostableAccount[]
   // {scenario_id: [...]}, each scenario's own exact posting targets —
   // the New entry panel's account picker re-keys into this whenever the
   // Scenario field changes (see NewEntryPanel.tsx's own
-  // refreshAccountsForScenario, ported from app.js's).
+  // refreshAccountsForScenario).
   byScenario: Map<number, PostableAccount[]>
 }
 

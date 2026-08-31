@@ -3,20 +3,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const PIN_KEY = 'postwarden-sidebar-pinned'
 
 // Hover the hamburger (or the sidebar panel itself) to preview the menu;
-// click it to pin the sidebar open instead. Ported from
-// app/static/sidebar.js: same 200ms close grace period (moving the mouse
-// from the hamburger to the panel crosses a real gap — closing on that
-// crossing would mean the menu shuts before the pointer arrives), same
-// Escape-closes-an-unpinned-preview behavior, same localStorage key.
+// click it to pin the sidebar open instead. 200ms close grace period
+// (moving the mouse from the hamburger to the panel crosses a real gap —
+// closing on that crossing would mean the menu shuts before the pointer
+// arrives), Escape closes an unpinned preview, pin state persists to
+// localStorage.
 //
 // `html.sidebar-pinned` is read by index.html's own pre-paint script
 // before React ever mounts (so a pinned sidebar doesn't flash unpinned on
 // load), so this hook writes that class straight to
-// document.documentElement itself, the same way the legacy script did,
-// rather than letting React own it indirectly through some wrapper
-// element's className — there is no wrapper element positioned to hold
-// it; the class has to be the single source of truth right where the
-// pre-paint script already put it.
+// document.documentElement itself rather than letting React own it
+// indirectly through some wrapper element's className — there is no
+// wrapper element positioned to hold it; the class has to be the single
+// source of truth right where the pre-paint script already put it.
 export function useSidebarPin() {
   const [pinned, setPinned] = useState(() =>
     document.documentElement.classList.contains('sidebar-pinned'),

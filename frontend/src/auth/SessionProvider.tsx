@@ -3,10 +3,9 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import client, { setCsrfToken, setUnauthorizedHandler } from '../api/client'
 import { SessionContext, type SessionUser, type SessionValue } from './sessionContext'
 
-// The real session state Phase 2.4's own Shell.tsx/App.tsx left as a
-// hardcoded PLACEHOLDER_USER, and the real `onLogout` Topbar.tsx's own
-// comment described as "where Phase 3.1 wires a real client.POST(
-// '/logout', ...) call instead."
+// The real session state — `status`/`user`/`login`/`logout` shared via
+// `SessionContext` with every screen and with Topbar.tsx's own logout
+// button.
 //
 // `/login`, `/logout`, and `/me` all answer with a bare Pydantic-free
 // `dict` (see modules/auth/router.py's own module docstring: "response
@@ -48,12 +47,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('anonymous')
   }
 
-  // The one GET /me on mount — the SPA's own equivalent of legacy
-  // `auth_gate` reading the session cookie on every server-rendered
-  // page load, just run once here instead of per navigation, since
-  // there's no client-side router re-mounting this component on one
-  // (REBUILD_STATUS.md Phase 2.4's own note on why Sidebar's links are
-  // still plain <a href>s).
+  // The one GET /me on mount, reading whatever session cookie the
+  // browser already has. Runs once, not per navigation: `SessionProvider`
+  // sits above `<Routes>` (see main.tsx), so it's never remounted when
+  // the route changes.
   useEffect(() => {
     let cancelled = false
     client.GET('/me').then(({ data, error }) => {

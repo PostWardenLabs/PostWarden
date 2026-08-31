@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * Healthz
-         * @description Liveness check — no DB touch. Used by Phase 0's docker-compose bring-up.
+         * @description Liveness check — no DB touch.
          */
         get: operations["healthz_healthz_get"];
         put?: never;
@@ -33,29 +33,16 @@ export interface paths {
         };
         /**
          * Config
-         * @description Public, unauthenticated app metadata — Phase 3.1. Legacy never
-         *     needed a route for this: `version`/`demo_banner`/`demo_user`/
-         *     `demo_password` were plain Jinja globals, already in scope for
-         *     every server-rendered template (`login.html`'s auth-brand corner
-         *     and demo callout, `base.html`'s footer). A JSON SPA has nothing
-         *     playing that role, so this is the same class of addition `GET /me`
-         *     already is: dictated by the medium, not new business logic. Lives
-         *     here rather than in a module for the same reason `/healthz` does —
-         *     no DB touch, nothing worth a router/service/repository split for.
-         *
-         *     Unauthenticated on purpose: the login page itself is the main
-         *     caller, before any session exists.
+         * @description Public, unauthenticated app metadata — the login page (before any
+         *     session exists) is the main caller, for the footer's version string
+         *     and the demo-instance banner/callout. Lives here rather than in a
+         *     module for the same reason `/healthz` does — no DB touch, nothing
+         *     worth a router/service/repository split for.
          *
          *     `demo_user`/`demo_password` are only ever included when
-         *     `demo_banner` is true — this is a real, security-relevant departure
-         *     from just mirroring the Jinja globals' own always-populated dict:
-         *     those globals are always set server-side, but Jinja's own `{% if
-         *     demo_banner %}` guard means legacy only ever put them in an actual
-         *     HTTP response when a visitor was really looking at a demo instance.
-         *     A JSON body has no equivalent of a template conditionally omitting
-         *     a value from its own rendered output, so that conditional has to be
-         *     made explicit here — the alternative would leak a real instance's
-         *     admin password to any unauthenticated caller of this route whenever
+         *     `demo_banner` is true — a real, security-relevant conditional, not
+         *     incidental: leaving it out would leak a real instance's admin
+         *     password to any unauthenticated caller of this route whenever
          *     `POSTWARDEN_ADMIN_PASSWORD` happens to be set (every Docker
          *     deployment's own bootstrap-admin convenience, not just demo's),
          *     regardless of `POSTWARDEN_DEMO_MODE`.
@@ -97,10 +84,10 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description No CSRF check — same forgiving behavior as legacy's own `logout`
-         *     ("worst case of a bad token here is a no-op logout; just proceed").
-         *     Idempotent: calling this with no session at all, or an already-
-         *     expired one, still clears the cookie and answers success.
+         * @description No CSRF check — the worst case of a bad token here is a no-op
+         *     logout, so it's not worth gating. Idempotent: calling this with no
+         *     session at all, or an already-expired one, still clears the cookie
+         *     and answers success.
          */
         post: operations["logout_logout_post"];
         delete?: never;
@@ -118,19 +105,15 @@ export interface paths {
         };
         /**
          * Me
-         * @description Not a legacy route — the Jinja app never needed one, since
-         *     `request.state.user` was already in scope for every server-rendered
-         *     template. A JSON SPA has no equivalent on page load, so this is the
-         *     minimal "who am I, if anyone" check the new architecture requires —
-         *     an addition dictated by the medium, not invented business logic.
+         * @description The minimal "who am I, if anyone" check a JSON SPA needs on page
+         *     load, with no server-rendered template to carry that state for free.
          *
          *     Includes `csrf_token`, same as `login`'s own response, not just
-         *     `id`/`username` — added in Phase 3.1 once a frontend actually
-         *     existed to expose the gap: a page load riding an existing, still-
-         *     valid session cookie (the common case — most page loads are not
-         *     themselves a fresh `POST /login`) has no other way to learn the
-         *     token its next write needs. Same value `login` already handed back
-         *     when this session was created, not a new one.
+         *     `id`/`username`: a page load riding an existing, still-valid session
+         *     cookie (the common case — most page loads are not themselves a
+         *     fresh `POST /login`) has no other way to learn the token its next
+         *     write needs. Same value `login` already handed back when this
+         *     session was created, not a new one.
          */
         get: operations["me_me_get"];
         put?: never;
@@ -740,12 +723,10 @@ export interface paths {
         /**
          * Import Mapped Preview
          * @description No `conn`/database at all — parsing and grouping the file's own
-         *     Account/Category values is pure, ported straight from `service.
-         *     preview_mapped`. `target_scenario_id`/`filename` are handed back
-         *     unchanged alongside `file_content_b64` purely so the frontend can
-         *     carry them forward into the commit step without holding separate
-         *     state of its own — same round-trip legacy's hidden form fields
-         *     performed.
+         *     Account/Category values is pure (`service.preview_mapped`).
+         *     `target_scenario_id`/`filename` are handed back unchanged alongside
+         *     `file_content_b64` purely so the frontend can carry them forward
+         *     into the commit step without holding separate state of its own.
          */
         post: operations["import_mapped_preview_import_mapped_preview_post"];
         delete?: never;
@@ -1412,8 +1393,7 @@ export interface components {
          * ApproveRejectRequest
          * @description Body of both `POST /staging/approve` and `POST /staging/reject` —
          *     same shape, since both are "act on this checked set" over the same
-         *     checkboxes (`staging.html`'s Approve/Reject buttons share one
-         *     `<form>`, see legacy's own comment on `reject_staging_entries`).
+         *     selection.
          */
         ApproveRejectRequest: {
             /** Entry Ids */
@@ -1493,12 +1473,10 @@ export interface components {
         /**
          * CreateEntryRequest
          * @description Body of `POST /entries`. `entry_date` defaults to today when
-         *     omitted, same as legacy's `form.get("entry_date") or
-         *     date.today().isoformat()` — done in `service.create_entry`, not here,
-         *     since "today" is a runtime fact, not a request-shape one.
-         *     `created_by_user_id` is deliberately not a field: that's set from the
-         *     session once `modules/auth/` (Phase 1.11) exists, not from anything
-         *     the client sends — see `router.py`'s own docstring.
+         *     omitted — done in `service.create_entry`, not here, since "today" is
+         *     a runtime fact, not a request-shape one. `created_by_user_id` is
+         *     deliberately not a field: that's set from the session, not from
+         *     anything the client sends — see `router.py`'s own docstring.
          */
         CreateEntryRequest: {
             /** Entry Date */
@@ -1561,8 +1539,7 @@ export interface components {
         /**
          * CreateScheduleRequest
          * @description Body of `POST /scheduled`. `next_date` defaults to today when
-         *     omitted, same as legacy's `form.get("next_date") or date.today().
-         *     isoformat()` — applied in `service.create_schedule`, not here, for
+         *     omitted — applied in `service.create_schedule`, not here, for
          *     the same "today is a runtime fact, not a request-shape one" reason
          *     `modules.entries.schemas.CreateEntryRequest` gives for its own
          *     `entry_date`. `target_scenario_id` names the column directly
@@ -1615,9 +1592,8 @@ export interface components {
         /**
          * CreateTemplateRequest
          * @description Body of `POST /templates`. Unlike `CreateScheduleRequest`, no
-         *     scenario field at all — entry templates aren't scenario-bound
-         *     (`app/main.py`'s own comment on `templates_full`, ported verbatim
-         *     into `repository.py`).
+         *     scenario field at all — entry templates aren't scenario-bound (see
+         *     `repository.py`'s own comment on `templates_full`).
          */
         CreateTemplateRequest: {
             /** Name */
@@ -1655,9 +1631,8 @@ export interface components {
         /**
          * EditStagingEntryRequest
          * @description Body of `POST /staging/{entry_id}/edit` — the inline edit panel's
-         *     Save. `entry_date` defaults to today when omitted, same as legacy's
-         *     `form.get("entry_date") or date.today().isoformat()`, applied in
-         *     `service.save_edit` rather than here for the same reason `modules.
+         *     Save. `entry_date` defaults to today when omitted — applied in
+         *     `service.save_edit` rather than here, same reasoning `modules.
          *     entries.schemas.CreateEntryRequest` gives: "today" is a runtime
          *     fact, not a request-shape one.
          */
@@ -1681,9 +1656,9 @@ export interface components {
         /**
          * EditTagsRequest
          * @description Body of `POST /entries/tags` — one tag, added to or removed from
-         *     every given entry. Same shape as legacy's bulk 'Edit tags' popup,
-         *     which fires one of these per chip added/removed rather than batching
-         *     a set of changes behind a Save button.
+         *     every given entry. The bulk 'Edit tags' popup fires one of these per
+         *     chip added/removed rather than batching a set of changes behind a
+         *     Save button.
          */
         EditTagsRequest: {
             /** Entry Ids */
@@ -1700,11 +1675,10 @@ export interface components {
         };
         /**
          * LoginRequest
-         * @description Body of `POST /login`. `remember` replaces legacy's `remember`
-         *     checkbox form field (present/absent -> `Form(None)`) with a real
-         *     bool — a JSON body has no equivalent of an unchecked checkbox simply
-         *     not appearing in the form data, so this is a plain, explicit field
-         *     instead.
+         * @description Body of `POST /login`. `remember` is a plain, explicit bool
+         *     rather than a checkbox-style present/absent field, since a JSON
+         *     body has no equivalent of an unchecked checkbox simply not
+         *     appearing in the form data.
          */
         LoginRequest: {
             /** Username */
@@ -1719,19 +1693,14 @@ export interface components {
         };
         /**
          * MappedImportCommitRequest
-         * @description Body of `POST /import/mapped` — the mapping step's Confirm. Legacy
-         *     round-trips the uploaded file and the two mappings between `GET
-         *     /import/mapped/preview`'s response and this commit step as hidden
-         *     `<form>` fields: the raw file re-encoded as base64 (`file_b64`), and
-         *     `account_map__<key>`/`category_map__<key>`-prefixed fields for each
-         *     mapping choice (`form.multi_items()`'s own prefix-strip loop in
-         *     `import_mapped_commit`). Nothing is ever persisted server-side
-         *     between the two steps either way — same "there's nothing to save,
-         *     expire, or clean up" reasoning `app/main.py`'s own comment on this
-         *     importer gives — this is just that same round-trip JSON-shaped
-         *     instead of form-field-name-shaped, the identical adaptation `modules.
-         *     staging.schemas.MergeDuplicatesRequest.line_memos` already made for
-         *     its own prefixed-form-field precursor (`memo_<line_id>`).
+         * @description Body of `POST /import/mapped` — the mapping step's Confirm. The
+         *     client round-trips the uploaded file and the two mappings between
+         *     `GET /import/mapped/preview`'s response and this commit step: the
+         *     raw file re-encoded as base64 (`file_content_b64`), plus
+         *     `account_map`/`category_map` dicts for each mapping choice. Nothing
+         *     is ever persisted server-side between the two steps — there's
+         *     nothing to save, expire, or clean up, so the round trip is the
+         *     simplest correct design.
          */
         MappedImportCommitRequest: {
             /** Filename */
@@ -1763,14 +1732,10 @@ export interface components {
         /**
          * MergeDuplicatesRequest
          * @description Body of `POST /staging/duplicates/merge`. `line_memos` is keyed by
-         *     line id as a string (JSON object keys are always strings) rather
-         *     than the parallel `memo_<line_id>` form fields legacy's HTML form
-         *     used — the router looks up each of the survivor's own line ids in
-         *     this dict, same "ignore whatever key doesn't belong to a line the
-         *     survivor actually has" behavior `merge_staging_duplicates`'s own
-         *     `form.get(f"memo_{row['id']}")` lookup already has (a missing key
-         *     just leaves that line's memo untouched, matching legacy's `is not
-         *     None` check).
+         *     line id as a string (JSON object keys are always strings) — the
+         *     router looks up each of the survivor's own line ids in this dict,
+         *     and a missing key just leaves that line's memo untouched rather than
+         *     clearing it.
          */
         MergeDuplicatesRequest: {
             /** Keep Id */
@@ -1800,7 +1765,7 @@ export interface components {
          * MergePayeesRequest
          * @description Body of `POST /payees/merge`. `payee_ids[0]` is the survivor —
          *     which one survives is otherwise arbitrary, since `target_name` is set
-         *     explicitly afterward regardless (ported from `merge_payees`).
+         *     explicitly afterward regardless.
          */
         MergePayeesRequest: {
             /** Payee Ids */
@@ -1821,10 +1786,10 @@ export interface components {
         };
         /**
          * QuickCreateAccountRequest
-         * @description Body of `POST /accounts/quick-create` — the accounts.html "+"
-         *     picker. Exactly one of `parent_id`/`account_type` drives the new
-         *     leaf's type (`parent_id` wins when both are given, same as legacy);
-         *     the code itself is generated, not supplied.
+         * @description Body of `POST /accounts/quick-create` — the Accounts page's inline
+         *     "+" picker. Exactly one of `parent_id`/`account_type` drives the new
+         *     leaf's type (`parent_id` wins when both are given); the code itself
+         *     is generated, not supplied.
          */
         QuickCreateAccountRequest: {
             /** Name */
@@ -1899,17 +1864,14 @@ export interface components {
         /**
          * EntryLineIn
          * @description One line of a new entry. `debit`/`credit` stay plain strings, not
-         *     `Decimal` fields — the one deliberate shape change from legacy's
-         *     parallel `account[]`/`debit[]`/`credit[]`/`memo[]` form arrays, which
-         *     only existed because an HTML `<form>` has no way to express "a list
-         *     of line objects." `domain.entry.parse_lines` already does exactly
-         *     the string -> `Decimal` parsing (and the validation messages
-         *     `test_entry.py` covers) against parallel string lists; giving
+         *     `Decimal` fields: `domain.entry.parse_lines` already does the
+         *     string -> `Decimal` parsing (and the validation messages
+         *     `test_entry.py` covers) against parallel string lists, so giving
          *     Pydantic its own numeric field here would mean "is this a valid
          *     amount" gets answered twice, by two different validators, possibly
          *     disagreeing. The router unzips a `list[EntryLineIn]` back into
-         *     parallel lists immediately before calling `parse_lines`, so the
-         *     parsing logic itself is untouched.
+         *     parallel lists before calling `parse_lines`, so the parsing logic
+         *     itself stays untouched.
          */
         postwarden__modules__entries__schemas__EntryLineIn: {
             /** Account */

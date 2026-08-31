@@ -7,13 +7,12 @@ import client from './client'
 // docstring), so openapi-fetch can only type it as
 // `{[key: string]: unknown}[]` — same gap `useScenarios.ts` already
 // documents for its own plain-dict route, cast through this local
-// interface instead. First caller is the Journal's `usePostableAccounts.ts`
-// (Phase 3.4), which only needed `is_postable`/`is_active`/`depth`;
-// `account_type`/`parent_id`/`is_cashflow`/`parent_path` were added in
-// Phase 4.6 for Accounts' own CRUD screen, the second caller this file's
-// own comment anticipated — `sort_path`/`normal_side` are still real but
-// unused by either caller (the former because `v_dim_account` already
-// arrives pre-sorted by it; the latter has no caller at all yet).
+// interface instead. The Journal's `usePostableAccounts.ts` only needs
+// `is_postable`/`is_active`/`depth`; `account_type`/`parent_id`/
+// `is_cashflow`/`parent_path` serve the Accounts CRUD screen —
+// `sort_path`/`normal_side` are still real but unused by either caller
+// (the former because `v_dim_account` already arrives pre-sorted by it;
+// the latter has no caller at all yet).
 export type AccountType = 'asset' | 'liability' | 'equity' | 'income' | 'expense'
 
 export interface Account {

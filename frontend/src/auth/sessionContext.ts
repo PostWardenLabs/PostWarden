@@ -21,9 +21,8 @@ export interface SessionValue {
   // the new value from a successful POST /settings/username response;
   // without this, every other reader of `user.username` (Topbar's own
   // username link, this same screen's "Signed in as" line on
-  // SettingsPage) stayed stale until the next full page load, since
-  // nothing previously wrote a rename back into this context — caught
-  // in Phase 4.2's own manual verification pass, not by any type check.
+  // SettingsPage) would stay stale until the next full page load, since
+  // nothing else writes a rename back into this context.
   setUsername: (username: string) => void
 }
 

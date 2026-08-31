@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react'
 
 import client from './client'
 
-// GET /templates's own response — ported from `templates_full()`, each
-// template already nested with its own `lines`/`tags` server-side (see
-// `modules/scheduling/service.py`'s own `list_templates` docstring
-// contrasting this against the Journal/Staging's three-parallel-dicts
-// precursor). First caller is the Journal's "Load template" picker
-// (Phase 3.4, `entry_templates.js`'s own React port) — `payee_name` is
-// real (`templates_all`'s own join) but unused here, since the picker
-// only ever needs `payee_id` to drive the New entry form's own Payee
-// field the same way loading a template does in legacy.
+// GET /templates's own response — each template already nested with its
+// own `lines`/`tags` server-side (see `modules/scheduling/service.py`'s
+// own `list_templates` docstring). Used by the Journal's "Load template"
+// picker — `payee_name` is real (`templates_all`'s own join) but unused
+// here, since the picker only ever needs `payee_id` to drive the New
+// entry form's own Payee field.
 export interface TemplateLine {
   code: string
   debit: string | null

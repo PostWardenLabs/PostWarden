@@ -1,23 +1,9 @@
-// Ported from app/static/money-format.js's `format()`/`prefs()` (Phase
-// 3.3) — the first screen with a real money figure to show. Same
-// localStorage key/shape and defaults as legacy (`postwarden-number-
-// format`, `{ symbol: "", position: "prefix", decimal: ".", thousands:
-// "," }`), read fresh on every call rather than cached, so a change made
-// on a future Settings screen (not yet built — same "don't reach into a
-// screen that doesn't exist yet" reasoning every prior phase applies)
-// takes effect on this page's very next render with no wiring of its own.
-//
-// Deliberately NOT a port of money-format.js's own *mechanism* — that
-// file's `<span class="money-fmt" data-value="...">` + a DOMContentLoaded
-// rewrite exists solely because Jinja renders static HTML once per page
-// load and needed a way to reformat it after the fact (and to still show
-// *something* correct with JS disabled). React re-renders from state on
-// every change, so there's no static HTML to rewrite and no no-JS
-// fallback case to cover — this is the same "port the behavior, not the
-// legacy workaround for a rendering model this app no longer has" call
-// `modules/auth/router.py`'s `GET /me` (Phase 1.11) already made for an
-// analogous reason. Every screen just calls `formatMoney(value)` and
-// renders the returned string directly.
+// Reads the user's preferred number format from localStorage (set from
+// SettingsPage.tsx: `postwarden-number-format`, `{ symbol: "", position:
+// "prefix", decimal: ".", thousands: "," }`), fresh on every call rather
+// than cached, so a change made on Settings takes effect on the next
+// render with no wiring of its own. Every screen just calls
+// `formatMoney(value)` and renders the returned string directly.
 const STORAGE_KEY = 'postwarden-number-format'
 
 interface MoneyPrefs {
@@ -49,14 +35,14 @@ export function formatMoney(value: string | number | null | undefined): string {
   const n = typeof value === 'number' ? value : parseFloat(value)
   if (Number.isNaN(n)) return ''
   const p = prefs()
-  // No separate "negative zero" fix needed here the way app/main.py's own
-  // `money()` filter has one (`if v == 0: v = abs(v)`) — that fix exists
-  // because Python's `Decimal('-0.00')` stringifies as literally "-0.00",
-  // and legacy's own %-formatting doesn't special-case it. JS's `<` and
-  // `Math.abs` both already treat -0 as equal to (not less than) +0 per
-  // spec, so `parseFloat("-0.00") < 0` is `false` and `Math.abs(-0)` is
-  // `0` with no extra step — verified, not assumed, directly in a Node
-  // REPL (no frontend test runner exists yet to carry a real unit test).
+  // No separate "negative zero" fix needed here — Python's own
+  // `Decimal('-0.00')` stringifies as literally "-0.00" (see
+  // `domain/money.py`'s `normalize_zero`, which corrects it server-side
+  // before this ever runs), but JS's `<` and `Math.abs` both already
+  // treat -0 as equal to (not less than) +0 per spec, so
+  // `parseFloat("-0.00") < 0` is `false` and `Math.abs(-0)` is `0` with
+  // no extra step — verified, not assumed, directly in a Node REPL (no
+  // frontend test runner exists yet to carry a real unit test).
   const negative = n < 0
   const [intPart, decPart] = Math.abs(n).toFixed(2).split('.')
   const grouped = p.thousands
@@ -68,16 +54,14 @@ export function formatMoney(value: string | number | null | undefined): string {
 }
 
 // Trial Balance's own debit/credit leaf-row cells render nothing at all
-// for a genuine zero balance (`{{ r.debit_balance | money if
-// r.debit_balance else '' }}` — a falsy `Decimal(0)`), not "0.00". A
-// plain JS truthiness check can't reproduce that: the value here is
-// always a non-empty numeric *string* ("0.00"), which is truthy
-// regardless of the number it spells. Still used for exactly that one
-// case — a debit/credit *pair*, where one side is trivially $0 for
-// nearly every row by construction (a balance can't be on both sides at
-// once), so a blank non-balance side is the meaningful signal, not
-// noise. `formatMoneyOrDash` below is the one every single-value money
-// column should reach for instead.
+// for a genuine zero balance, not "0.00" — a plain JS truthiness check
+// can't do this on its own: the value here is always a non-empty numeric
+// *string* ("0.00"), which is truthy regardless of the number it spells.
+// Used for exactly that one case — a debit/credit *pair*, where one side
+// is trivially $0 for nearly every row by construction (a balance can't
+// be on both sides at once), so a blank non-balance side is the
+// meaningful signal, not noise. `formatMoneyOrDash` below is the one
+// every single-value money column should reach for instead.
 export function isZeroAmount(value: string | number | null | undefined): boolean {
   if (value === null || value === undefined || value === '') return true
   const n = typeof value === 'number' ? value : parseFloat(value)

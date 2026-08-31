@@ -39,16 +39,13 @@ interface DatePickerProps {
   placeholder?: string
 }
 
-// Ported from app/static/datepicker.js — a calendar popup over a plain
-// text field holding (and, via onChange, committing) the exact same
-// YYYY-MM-DD value a native <input type="date"> would. Typing a date
-// directly still works; the calendar is the alternative, not a
-// replacement.
+// A calendar popup over a plain text field holding (and, via onChange,
+// committing) the exact same YYYY-MM-DD value a native
+// <input type="date"> would. Typing a date directly still works; the
+// calendar is the alternative, not a replacement.
 //
-// A controlled component (value/onChange), unlike legacy's DOM
-// enhancement of a server-rendered <input> — the widget itself is
-// otherwise a close behavioral port, including the two accessibility
-// fixes that motivated it in the first place: explicit tabIndex={0} on
+// A controlled component (value/onChange). Includes two accessibility
+// fixes: explicit tabIndex={0} on
 // every button that needs to survive Tab under macOS Safari's default
 // "text fields only" Tab-order setting (see .date-day/.date-nav/
 // .date-today below), and a roving-tabindex day grid so Tab doesn't have

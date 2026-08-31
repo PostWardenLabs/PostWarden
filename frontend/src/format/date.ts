@@ -1,25 +1,16 @@
-// Ported from app/static/date-format.js's own `format()`/`pref()` (Phase
-// 4.2, alongside SettingsPage.tsx) — same localStorage key/default as
-// legacy (`postwarden-date-format`, `"iso"`), read fresh on every call
-// rather than cached, mirroring `format/money.ts`'s own identical
-// contract for the identical reason (a change made on Settings takes
-// effect on the next render with no wiring of its own).
-//
-// Deliberately NOT a port of date-format.js's own *mechanism* — that
-// file rewrites `<span class="date-fmt" data-value="...">` nodes after
-// the fact because Jinja renders the ISO string once per page load and
-// needed a way to reformat it client-side. React re-renders from state,
-// so every date-displaying screen just calls `formatDate(iso)` directly
-// and renders the returned string — same "port the behavior, not the
-// legacy DOM-rewrite workaround" call `format/money.ts`'s own file
-// comment already made for `formatMoney`.
+// Reads the user's preferred date format from localStorage (set from
+// SettingsPage.tsx), fresh on every call rather than cached — mirroring
+// `format/money.ts`'s own identical contract for the identical reason (a
+// change made on Settings takes effect on the next render with no wiring
+// of its own). React re-renders from state, so every date-displaying
+// screen just calls `formatDate(iso)` directly and renders the returned
+// string.
 //
 // Parses the ISO string by hand rather than `new Date("2026-08-26")` —
-// ported verbatim from date-format.js's own comment: that parses as UTC
-// midnight, which local-timezone display would then render as the
-// *previous* day west of UTC. Every date column in this app is a plain
-// `DATE` (no time, no timezone), so this only ever needs to reorder
-// y/m/d, never a real timezone conversion.
+// that parses as UTC midnight, which local-timezone display would then
+// render as the *previous* day west of UTC. Every date column in this
+// app is a plain `DATE` (no time, no timezone), so this only ever needs
+// to reorder y/m/d, never a real timezone conversion.
 const STORAGE_KEY = 'postwarden-date-format'
 const DEFAULT_FORMAT = 'iso'
 const MONTHS = [

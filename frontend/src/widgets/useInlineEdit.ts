@@ -10,12 +10,10 @@ export interface InlineEditResult {
 
 interface UseInlineEditOptions {
   // A draft can autosave blank (memo — `.memo-cell`) or never (an entry's
-  // own description, which the server already refuses to store empty) —
-  // `description-edit.js`'s own point 2 for keeping it a separate file
-  // from `memo-edit.js` rather than one shared abstraction. This flag is
-  // the one behavioral knob that difference actually reduces to; the
-  // other (stopping `<summary>`'s native toggle on click) is a DOM
-  // concern the *caller* handles, not this hook.
+  // own description, which the server already refuses to store empty).
+  // This flag is the one behavioral difference between the two cells;
+  // stopping `<summary>`'s native toggle on click is a DOM concern the
+  // *caller* handles, not this hook.
   allowBlank: boolean
   // Called after any save actually lands on the server — both the
   // debounced autosave and the final commit — so the caller's own copy
@@ -36,28 +34,16 @@ export interface InlineEditState {
 }
 
 // Shared debounce-autosave-with-corrective-cancel mechanics behind both
-// `DescriptionCell.tsx` and `MemoCell.tsx` (Phase 3.4) — the part of
-// `description-edit.js`/`memo-edit.js` with nothing field-specific about
-// it (same factoring judgment `useCollapsibleTree.ts`/`useSelectMode.ts`
-// already made for their own legacy JS pairs/trios). The two source
-// files stayed deliberately separate in vanilla JS ("two files this
-// close in shape is exactly the amount of duplication worth keeping
-// simple... a third such widget would be the point to actually factor
-// one out") — but that reasoning was about the cost of *sharing* in
-// hand-wired DOM code, not about React hooks: a bug fixed once here
-// benefits both cells for free, at no coordination cost, so sharing it
-// is the better default in this codebase, not a departure from that
-// call.
+// `DescriptionCell.tsx` and `MemoCell.tsx` — the part of inline-editing
+// with nothing field-specific about it. A bug fixed once here benefits
+// both cells for free, at no coordination cost.
 //
 // The iPad bug this whole pattern exists to survive (BACKLOG.md — a
 // hardware-keyboard setup where blur/Enter's own save never landed) is
 // why a draft autosaves on a debounce *while still typing*, independent
 // of whatever eventually closes the field — and why `cancel()` has to
 // actively re-POST the pre-edit value if a debounced draft already beat
-// it to the server, not just repaint the old text locally. See
-// `memo-edit.js`'s own file comment for the full writeup; nothing about
-// the reasoning changed in this port, only the mechanism (React state
-// instead of a raw DOM `<input>` swapped into a cell).
+// it to the server, not just repaint the old text locally.
 export function useInlineEdit(
   serverValue: string,
   save: (value: string) => Promise<InlineEditResult>,

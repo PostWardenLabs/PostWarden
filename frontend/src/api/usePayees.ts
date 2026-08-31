@@ -5,8 +5,8 @@ import client from './client'
 // GET /payees's own response is a plain `list[dict]`
 // (`modules/reference/repository.py`'s own `payees_all`), same
 // cast-through-a-local-interface gap every other reference hook already
-// documents. First caller is the Journal's own Payee picker (Phase 3.4);
-// `entry_count` (`payees_all`'s own subquery) is real but unused here.
+// documents. Used by the Journal's own Payee picker; `entry_count`
+// (`payees_all`'s own subquery) is real but unused here.
 export interface Payee {
   id: number
   name: string

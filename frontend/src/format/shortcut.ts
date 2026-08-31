@@ -1,18 +1,13 @@
-// Ported from app/static/option-key.js — shows the real Mac/iPad/iPhone
-// modifier key symbol (⌥) in place of the literal "Alt+" text every
-// keyboard-shortcut hint in the app is written with (button labels like
-// "Reverse (Alt+R)"). BACKLOG.md's own ask: "When device is iPad or Mac
-// show option key instead of ALT."
+// Shows the real Mac/iPad/iPhone modifier key symbol (⌥) in place of the
+// literal "Alt+" text every keyboard-shortcut hint in the app is written
+// with (button labels like "Reverse (Alt+R)"). BACKLOG.md's own ask:
+// "When device is iPad or Mac show option key instead of ALT."
 //
 // The underlying shortcuts themselves never change — every keydown
 // listener in this app checks e.code (KeyR, KeyE, ...), which is what the
 // real Option key on a Mac keyboard (and the on-screen/hardware-keyboard
-// equivalent on iPad) actually sets; nothing here touches that wiring.
-// legacy swept rendered text nodes client-side once on load, since its
-// ~15 hint spots were server-rendered strings baked into static HTML; a
-// React component just calls this at render time instead — same
-// detection, same output, no DOM text-walking needed since JSX already
-// re-renders from source data.
+// equivalent on iPad) actually sets; nothing here touches that wiring. A
+// React component just calls this at render time to pick the label.
 //
 // Detection: navigator.userAgentData (the modern replacement for
 // navigator.platform, Chromium-only for now) when available, falling back

@@ -11,32 +11,23 @@ interface TopbarProps {
   onLogout?: () => void
 }
 
-// Ported from base.html's <header class="topbar">. .topbar-inner is
-// deliberately NOT sized off --content-max — see index.css's own comment
-// on that, carried over unchanged with the rest of this section.
+// .topbar-inner is deliberately NOT sized off --content-max — see
+// index.css's own comment on that.
 //
-// The wordmark is a React Router `<Link>` as of Phase 3.2, not a plain
-// `<a href="/">` — "/" is now a real client route (App.tsx's own
-// Dashboard), so clicking it should re-render in place rather than force
-// a full page reload. The username link is the same kind of `<Link>` as
-// of Phase 4.2 (Settings) — `current` can be either `'settings'` or
-// `'settings_account'` (App.tsx's own `routeKey`, one nav key per real
-// route, the account sub-page split out the same way legacy's own
-// `account.html` is a separate template from `settings.html`), so the
-// active check matches either with `startsWith` rather than gaining a
-// second exact comparison.
+// The wordmark is a React Router `<Link>`, not a plain `<a href="/">` —
+// "/" is a real client route (App.tsx's own Dashboard), so clicking it
+// re-renders in place rather than forcing a full page reload. The
+// username link is the same kind of `<Link>` — `current` can be either
+// `'settings'` or `'settings_account'` (App.tsx's own `routeKey`, one
+// nav key per real route, the account sub-page split out as its own
+// route), so the active check matches either with `startsWith` rather
+// than gaining a second exact comparison.
 //
-// The username link and "Log out" button only render with a real `user`
-// — matching legacy's own `{% if request.state.user %}` guard around the
-// entire topbar-right block. Logout is a plain <button>, not legacy's
-// `<form method="post" action="/logout">` — a real form submit would be a
-// full-page navigation, wrong for a SPA; `onLogout` is where Phase 3.1
-// wires a real `client.POST('/logout', ...)` call instead. It's optional
-// and unwired for now because that call needs an X-CSRF-Token sourced
-// from a real session, and there is no session anywhere in the frontend
-// yet (Phase 3.1's login screen is what creates one) — same "don't reach
-// into a mechanism that doesn't exist yet" reasoning every backend module
-// already applied to its own CSRF gap ahead of Phase 1.11.
+// The username link and "Log out" button only render with a real
+// `user`. Logout is a plain <button>, not a `<form method="post">` — a
+// real form submit would be a full-page navigation, wrong for a SPA;
+// `onLogout` is wired to `session.logout` (App.tsx), which POSTs
+// `/logout` with the current session's CSRF token.
 export default function Topbar({ title, current, user, onLogout }: TopbarProps) {
   return (
     <header className="topbar">
