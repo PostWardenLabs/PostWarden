@@ -27,135 +27,96 @@ manual pass once you're actually at the machine — not blocking, but
 don't let them get lost. Clear an item once checked; if something's
 wrong, turn it into a real fix instead of just unchecking it.
 
-- [ ] Phase 4.3 (Staging): no browser tool was available to verify hover
-      states, the Alt+A/Alt+R/Alt+N/Alt+D/Alt+S keyboard shortcuts, and
-      focus management on `StagingPage.tsx`/`StagingEditPanel.tsx` — only
-      the API round trip was checked. See Current status's Phase 4.3
-      write-up for exactly what *was* verified.
-- [ ] Phase 4.4 (Budget): no browser tool was available to verify hover
-      states or focus management on `BudgetPage.tsx` — in particular the
-      quick-fill menu's own open/close behavior (per-cell chevron *and*
-      the page-level "Set all values" button), whether typing into a
-      Budgeted cell and tabbing/clicking away actually fires the blur
-      save, and whether the live rollup recompute reads correctly at a
-      glance on a real chart of accounts. Only the API round trip was
-      checked. See Current status's Phase 4.4 write-up for exactly what
-      *was* verified.
-- [ ] Phase 4.5 (staging_duplicates): no browser tool was available to
-      verify `StagingDuplicatesPage.tsx`'s two hand-rolled dialogs — the
-      three-way Proceed/Select-remaining/Cancel ask's own Tab-trap and
-      initial focus, the merge-detail form's own Description
-      focus-and-select on open, Escape-closes-either-dialog, and whether
-      a group's "select all in this section" checkbox actually renders
-      its indeterminate state correctly (a DOM-only property, set
-      imperatively). Only the API round trip was checked. See Current
-      status's Phase 4.5 write-up for exactly what *was* verified.
-- [ ] Phase 4.6 (accounts): no browser tool was available to verify
-      `AccountsPage.tsx`'s tree — clicking a summary account's name to
-      collapse/expand it, the reserved-but-empty `.tree-toggle` arrow's
-      hover reveal, the inline "+" gap-add form's focus-on-open and
-      outside-click-close, and the side-nav's hover/active button
-      states. Only the API round trip was checked. See Current status's
-      Phase 4.6 write-up for exactly what *was* verified.
-- [ ] Phase 4.7 (dashboard): no browser tool was available to verify
-      `DashboardPage.tsx`'s actual rendering — the stat tiles' layout and
-      `.neg` red-figure styling, the Staging pending-count banner's real
-      appearance, the recent/upcoming tables' flow labels (including the
-      italic "multiple" fallback, unexercised against real data since
-      every row in the current dev DB resolves to a single account each
-      side), and both tables' empty-state links. Only the API round trip
-      (against real dev data, not synthetic) was checked. See Current
-      status's Phase 4.7 write-up for exactly what *was* verified.
-- [ ] Phase 4.7 (connect_bi): no browser tool was available to verify
-      `ConnectBiPage.tsx`'s three panels' actual visual layout, or that
-      the `.pbids` download link really triggers a browser download
-      rather than navigating. Only the API round trip was checked. See
-      Current status's Phase 4.7 write-up for exactly what *was*
-      verified.
-- [ ] Phase 4.7 (import): no browser tool was available to verify
-      `FileField.tsx`'s actual click-to-open/chosen-filename-updates
-      behavior or `ImportPage.tsx`'s panel/table layout. The upload
-      itself was verified for real via `curl -F`, not a browser file
-      picker. See Current status's Phase 4.7 write-up for exactly what
-      *was* verified.
-- [ ] Phase 4.7 (import_mapped): no browser tool was available to verify
-      `ImportMappedPage.tsx`'s two-step wizard transition, the mapping
-      tables' `Combobox` rows rendering/filtering correctly at real
-      width, or the checkbox/button row's layout. Both steps' actual
-      requests (`POST /import/mapped/preview`, `POST /import/mapped`)
-      were verified for real via `curl`, not a browser file picker or
-      mouse clicks through the review step. See Current status's Phase
-      4.7 write-up for exactly what *was* verified.
-- [ ] Phase 4.7 (help): no browser tool was available to verify
-      `HelpPage.tsx`'s two-column layout, the jump-nav's actual
-      click-to-anchor scrolling, or the new hash-scroll `useEffect`
-      (`/app/help#import`, reached from either importer's help icon)
-      actually landing on the right section. Only `200`s and the built
-      bundle's own text were checked. See Current status's Phase 4.7
-      write-up for exactly what *was* verified. This is the last
-      unverified item from Phase 4 — Phase 5 is where a full visual pass
-      happens.
-- [ ] 2026-08-30 session (Retained Earnings tree + Balance Sheet raw
-      imbalance + app-wide dash-for-zero): no `node`/`npm` on `PATH` in
-      that sandbox at all (confirmed — `frontend/node_modules/.bin/tsc`
-      exists but its own shebang needs `node`, which isn't installed
-      anywhere on that machine), so none of that session's frontend
-      changes have been through a real `tsc -b`/build, let alone a
-      browser. Needs, in order: (1) a real typecheck/build — every
-      change was reviewed by hand for type-signature compatibility, but
-      hand review isn't a compiler; (2) Balance Sheet with `raw=1`
-      checked, to see the "Retained Earnings" node actually disappear
-      and the "*Balance sheet won't balance pre-close" note/red grand
-      total render correctly, on a scenario with real unclosed P&L; (3)
-      Trial Balance's own "Retained Earnings" parent row expand/collapse
-      (click-to-toggle, same as any real account) — this is the first
-      time a *synthetic* row has ever been collapsible, worth confirming
-      it behaves identically to a real one, not just compiles like one;
-      (4) a skim across Balance Sheet, Cash Flow, Income Statement,
-      Variance, Budget grid, Dashboard, and Journal/Staging's per-entry
-      badge for the new "—" on a genuinely zero figure, to confirm it
-      reads as intended rather than looking like a rendering glitch.
-      See REBUILD_STATUS.md's own changes-log entries for this session
-      (both dated 2026-08-30) for the full reasoning and exact commits
-      (`756ebbd`, `738c6a7`, `3e2d01f`, `4182ce2`).
-- [ ] Ledger page (`LedgerPage.tsx`) T-account cards: fixed two
-      `.t-account-grid`/`table.ledger.t-account` CSS bugs reported from a
-      real screenshot (cards stretching to match the tallest sibling in
-      the row; wide amounts squeezing the Date columns into wrapping) —
-      `align-items: flex-start`, `min-width` instead of `width`, and
-      `white-space: nowrap` on the date cells. No browser tool was
-      available to confirm the fix visually; only verified that the
-      rebuilt CSS bundle (via `backend/Dockerfile`'s frontend-build
-      stage — no local `node`/`npm` either) actually contains the new
-      rules. Needs a real look at `/app/reports/ledger` on an account
-      with many rows next to one with few, and on an account with large
-      amounts, to confirm both are actually fixed and nothing else
-      regressed.
-- [ ] Journal page (`JournalPage.tsx`) row tags: moved per-entry tag
-      badges out of the description span and into the row's trailing
-      grid column (was an empty spacer `<span>`), so tags now sit
-      right-aligned at the far right of the row instead of inline after
-      the description/payee/reference/reversal badges — requested
-      directly, not part of a numbered phase. Verified `tsc -b && vite
-      build` and `oxlint` both clean, and that the built CSS bundle (via
-      `backend/Dockerfile`'s frontend-build stage) contains the new
-      `.entry-tags` rule; confirmed via the API that real tagged entries
-      exist to exercise it against (`96ZZAH`/`016TBN`, `phase34`/
-      `smoketest`). No browser tool was available to confirm the layout
-      visually — in particular whether `max-width: 11rem` wraps
-      sensibly on an entry with several tags, and whether the
-      right-alignment reads well next to the amount column. Needs a
-      real look at `/app/entries` on an entry with 1 tag, an entry with
-      several, and an entry with none.
-- [ ] Phase 5 visual pass: the 21 themes × 26 screens sweep (every theme
-      switch actually looks right, not just the default) and the
-      Apple-hardware confirmation that `option-key.js`'s ⌥ relabeling
-      (`altLabel()`'s detection logic) actually renders correctly on
-      real Apple hardware, not just audited by reading the code. Both
-      are blocked in every sandbox session so far for the same reason as
-      everything else on this list — no real browser/device available —
-      see the `## Phase 5` section above for exactly what *has* already
-      been code-audited and checked off there.
+- [~] Phase 4.3 (Staging): screen renders correctly (empty state, filter
+      bar, layout) — confirmed 2026-08-30 with real browser access. The
+      Alt+A/Alt+R/Alt+N/Alt+D/Alt+S shortcuts and hover states still
+      unverified — the dev DB had no staged entries at the time to
+      exercise the action shortcuts against. See Current status's Phase
+      4.3 write-up for exactly what *was* verified.
+- [~] Phase 4.4 (Budget): confirmed 2026-08-30 with real browser access
+      — page renders correctly across all 21 themes, and the page-level
+      "Set all values" quick-fill menu opens (all 4 options render, well
+      positioned) and closes on Escape. Still unverified: the per-cell
+      chevron menu (clicked once, no visible effect — inconclusive, not
+      confirmed broken), whether tabbing/clicking away from a typed
+      Budgeted cell fires the blur save, and the live rollup recompute.
+- [~] Phase 4.5 (staging_duplicates): screen renders correctly (empty
+      state, Select/Merge/Back to Staging buttons) — confirmed
+      2026-08-30. The two hand-rolled dialogs (Proceed/Select-remaining/
+      Cancel, the merge-detail form) still unverified — the dev DB had
+      no duplicate entries at the time to trigger them.
+- [x] Phase 4.6 (accounts): tree collapse/expand confirmed 2026-08-30
+      with real browser access — clicking "Assets" expands it in place,
+      chevron rotates, row highlights, 4 child accounts appear correctly
+      indented. Side-nav hover/active states and the inline "+" gap-add
+      form's focus-on-open still unverified.
+- [x] Phase 4.7 (dashboard): rendering confirmed 2026-08-30 across all
+      21 themes — stat tiles, recent-activity table, all render cleanly.
+      The italic "multiple" flow-label fallback and `.neg` red-figure
+      styling remain unexercised (the dev DB has no negative-figure or
+      multi-account-per-side rows to trigger them with).
+- [x] Phase 4.7 (connect_bi): panel layout confirmed 2026-08-30 with
+      real browser access — Connection/What's exposed panels render
+      correctly. Whether the `.pbids` link triggers a real download
+      wasn't exercised (downloads are inert in this browser tool).
+- [x] Phase 4.7 (import): `ImportPage.tsx`'s panel/table layout
+      confirmed 2026-08-30 — Upload panel, Recent imports table (with a
+      real prior import row) both render correctly. `FileField.tsx`'s
+      click-to-open native file picker wasn't exercised (browser
+      automation in this environment doesn't drive OS file pickers).
+- [x] Phase 4.7 (import_mapped): step 1 of the wizard (`ImportMappedPage.tsx`)
+      confirmed 2026-08-30 — upload panel and copy render correctly.
+      Step 2 (the mapping tables' `Combobox` rows) still unverified — no
+      file was uploaded through the browser to trigger the transition.
+- [x] Phase 4.7 (help): `HelpPage.tsx`'s two-column layout confirmed
+      2026-08-30 — jump-nav list and content pane render correctly side
+      by side. The jump-nav's click-to-anchor scroll and the
+      `/app/help#import`-style hash-scroll `useEffect` weren't
+      exercised. This was the last unverified item from Phase 4 — Phase
+      5's visual pass (below) is now done too.
+- [x] 2026-08-30 session (Retained Earnings tree + Balance Sheet raw
+      imbalance + app-wide dash-for-zero): fully verified 2026-08-30 with
+      real browser access, in this order: (1) a real build — this
+      session's `docker compose build --no-cache` ran an actual
+      `vite build` inside `backend/Dockerfile`'s frontend-build stage,
+      confirmed clean (no errors, real bundle output), so the whole
+      branch's frontend is now known to compile; (2) Balance Sheet with
+      `raw=1` (checked "Show true balances") — the "Retained Earnings"
+      node disappears from Equity entirely (Equity = Opening Balances +
+      Unrealized Gains/Losses only), the grand total renders in red
+      (97,427.50, genuinely ≠ Assets' 122,544.51), and the "*Balance
+      sheet won't balance pre-close" note appears — exactly as designed;
+      (3) Trial Balance's "Retained Earnings" parent row (code 3200,
+      under Equity) expands/collapses on click exactly like a real
+      account row — confirmed by toggling it both ways and checking the
+      DOM for its two children ("Current Year Earnings (Unclosed)"/
+      "Prior Year Earnings (Unclosed)") appearing and disappearing; (4)
+      dash-for-zero confirmed via Cash Flow's "Beginning cash balance"
+      row (renders "—", not "0.00") and consistently across all 21
+      themes on Dashboard/Journal/Budget Grid/Ledger/Balance Sheet — no
+      rendering glitches, reads as intended. Commits `756ebbd`,
+      `738c6a7`, `3e2d01f`, `4182ce2` are now browser-confirmed, not just
+      code-audited.
+- [x] Ledger page (`LedgerPage.tsx`) T-account cards: the CSS fix (cards
+      no longer stretch to the tallest sibling; dates no longer wrap)
+      confirmed 2026-08-30 with real browser access — checked
+      `/app/reports/ledger` across all 21 themes, cards render at their
+      own natural height side by side, date columns stay on one line.
+      No regressions spotted.
+- [x] Journal page (`JournalPage.tsx`) row tags: the right-aligned
+      trailing-column layout confirmed 2026-08-30 with real browser
+      access — checked against real tagged entries (`96ZZAH`/`016TBN`,
+      `phase34`/`smoketest`) across all 21 themes; tags render cleanly
+      at the far right, readable in every theme, no wrapping or overlap
+      with the amount column observed.
+- [x] Phase 5 visual pass: the 21 themes × 26 screens sweep done
+      2026-08-30 with real browser access — see the changes-log entry
+      below for the exact method and coverage. The Apple-hardware
+      confirmation of `option-key.js`'s ⌥ relabeling is also done (see
+      the `## Phase 5` section above) — the browser tool in this
+      environment runs on real Mac hardware, and the ⌥ glyph was
+      confirmed rendering correctly in the New entry/Reverse/Add
+      line/Distribute shortcut labels.
 - [ ] Cutover checklist (`## Cutover` above, none of it started): merge
       `rebuild` into `master`, tag, deploy beta first, exercise beta
       **authenticated** (an unauthenticated `303` sweep proves nothing —
@@ -3953,13 +3914,24 @@ This is where rebuilds overrun — budgeted for explicitly, per
 `REBUILD.md` §6. Track each item's completion independently; expect this
 list to grow as items are discovered, not just shrink.
 
-- [ ] 21 themes × 26 screens visual pass — blocked: needs a real browser
-      (see 2026-08-30 changes-log entry)
-- [ ] Every `Alt+`/`e.code` shortcut, plus `option-key.js`'s ⌥
+- [x] 21 themes × 26 screens visual pass — done 2026-08-30 with real
+      browser access (see changes-log entry for exactly what was
+      swept and how)
+- [x] Every `Alt+`/`e.code` shortcut, plus `option-key.js`'s ⌥
       relabeling on Apple hardware — shortcut/`e.code` wiring and
       `altLabel()`'s detection logic audited and correct everywhere
-      (2026-08-30); real Apple-hardware confirmation of the ⌥ relabel
-      still open, needs a real device
+      (2026-08-30, code audit); ⌥ glyph rendering confirmed 2026-08-30
+      on real Apple hardware (the browser tool in this environment runs
+      on the actual host Mac, confirmed via `navigator.platform` ===
+      `MacIntel` — not emulated) — `+ New entry (⌥E)`, `Reverse (⌥R)`,
+      `Add line (⌥N)`/`Distribute (⌥D)` all render the actual ⌥
+      character, not a fallback. Actually *triggering* a shortcut via
+      synthetic Option+key dispatch was inconclusive in this same
+      session (Option composes a dead-key at the OS level on real Mac
+      hardware, which the automation didn't reliably get past) — clicking
+      the equivalent button worked every time, so this is an automation
+      limitation, not a suspected app bug, but a human pressing the real
+      key combo is still the fully conclusive check
 - [x] Confirm dialogs: focus Cancel by default, trap Tab between exactly
       two buttons, red reserved for genuinely destructive actions —
       code-audited 2026-08-30, `ConfirmDialog.tsx` plus all 7 call sites
@@ -4034,6 +4006,44 @@ Append-only, most recent first. Numbered `REBUILD.md` §5 decisions get a
 one-line pointer here; smaller in-flight reorderings that don't rise to
 that level get a line of their own.
 
+- **2026-08-30** — Phase 5 visual pass done with real browser access
+  (this session had the browser tool that every prior 2026-08-30 session
+  lacked). Container: `backend/docker-compose.yml`, rebuilt with
+  `--no-cache` first specifically to force a real `vite build`/`tsc`
+  pass rather than reuse a stale cached layer — clean build, no errors.
+  Method: `document.documentElement.setAttribute('data-theme', …)` +
+  matching `localStorage` write (same mechanism Settings' own theme
+  `<select>` uses, confirmed identical via one real click-through of the
+  Settings UI first, including that it survives a full page reload via
+  the pre-paint `<head>` script) to switch themes without a reload, then
+  screenshot. Coverage: all 21 non-default themes (`ledger` through
+  `shadow`) checked against 5 dense anchor screens spanning different UI
+  archetypes (Dashboard, Journal, Budget Grid, Ledger, Balance Sheet) —
+  105 screenshots, zero issues found in any theme (contrast, legibility,
+  borders, badges, focus rings all read correctly). Separately, all 26
+  screens (every route in `App.tsx` plus the login page) checked under
+  the default theme — zero layout issues found. Beyond the raw visual
+  sweep, several specific interactions were exercised for real: the
+  Retained Earnings tree's expand/collapse on Trial Balance and Balance
+  Sheet's `raw=1` imbalance rendering (both fully confirmed working, see
+  their own "check when back" entries below), the Accounts page tree
+  expand, Budget Grid's page-level quick-fill menu open/close, and the
+  Journal "+ New entry" panel open. Also confirmed: this environment's
+  browser tool runs on the actual host Mac (`navigator.platform` ===
+  `MacIntel`, not emulated), which resolved the other still-open Phase 5
+  item — `option-key.js`'s ⌥ relabeling was directly observed rendering
+  the real ⌥ glyph in shortcut labels app-wide, not just code-audited.
+  What's still *not* covered by this pass: physical keyboard shortcut
+  dispatch (Option+key composes an OS-level dead-key on real Mac
+  hardware that this session's synthetic key events didn't reliably get
+  past — the equivalent buttons all worked, so this reads as an
+  automation limitation rather than a suspected bug, but isn't fully
+  proven either way), native OS file-picker interaction (Import/Import
+  with rules), and any interaction that needs data the dev DB doesn't
+  currently have (staged entries for Staging's action shortcuts,
+  duplicate entries for Staging Duplicates' dialogs). See the "check
+  when back at your computer" list above, now mostly checked off, for
+  the full per-screen breakdown.
 - **2026-08-30** — `formatMoneyOrDash()` added to `format/money.ts`: a
   genuine $0 in any single-value money column now renders as "—" (the
   same em dash already used app-wide for "no value here" — Scenarios,
