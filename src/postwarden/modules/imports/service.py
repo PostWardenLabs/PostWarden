@@ -102,11 +102,17 @@ _DATE_FORMAT_LABELS = {f["key"]: f["label"] for f in IMPORT_DATE_FORMATS}
 # `shape` (a grouped file's rows don't have a `category` field; a
 # Debit/Credit file has no single `amount` field). `key` is the internal
 # field name every downstream function (`parse_file` and on) still uses;
-# `label` is what the mapping step's own picker shows, deliberately
-# "Money Account"/"Category" rather than bare "Account" — the mapping
-# step's whole job is picking *which* of the file's account-shaped
-# columns is the money side versus the category side, and two options
-# both labeled "Account" would defeat that. `required` gates `parse_
+# `label` is what the mapping step's own picker shows. The two
+# account-shaped targets in this shape are "Account"/"Other Account", not
+# "Account"/"Category" — PostWarden's schema has no `category` concept
+# anywhere (`docs/SCHEMA.md` has no such table or column); "Category" is
+# ActualBudget's own budgeting-app vocabulary, and reads as if it names a
+# real PostWarden field when it doesn't (flagged directly by David after
+# using the shipped wizard). Both still have to read as distinguishable
+# *account* pickers, not "Account"/"Account" — the mapping step's whole
+# job is picking *which* of the file's account-shaped columns is the
+# entry's primary account versus its offsetting one, and two options both
+# labeled bare "Account" would defeat that. `required` gates `parse_
 # file`'s own structural validation the same way the old exact-column-
 # name check did: money account, date, and amount are the three fields a
 # double-entry posting can't exist without; payee/description/memo/
@@ -557,13 +563,13 @@ def target_fields_for_shape(shape: dict) -> list[dict]:
             {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
         ]
     return [
-        {"key": "account", "label": "Money Account", "required": True, "lookup_capable": True},
+        {"key": "account", "label": "Account", "required": True, "lookup_capable": True},
         {"key": "date", "label": "Entry Date", "required": True, "lookup_capable": False},
         *amount_fields,
         {"key": "payee", "label": "Payee", "required": False, "lookup_capable": False},
         {"key": "description", "label": "Entry Description", "required": False, "lookup_capable": False},
         {"key": "memo", "label": "Line Memo", "required": False, "lookup_capable": False},
-        {"key": "category", "label": "Category", "required": False, "lookup_capable": True},
+        {"key": "category", "label": "Other Account", "required": False, "lookup_capable": True},
     ]
 
 

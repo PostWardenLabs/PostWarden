@@ -141,7 +141,7 @@ export default function HelpPage() {
             real account codes already in the file — is one shape among several, not a separate importer, so
             export → edit in a spreadsheet → re-import is still a real round trip. Below the shape, map each of
             the file&apos;s own columns onto a target field (date, description, account, amount, ...); an{' '}
-            <span className="mono">Account</span> or <span className="mono">Category</span> column can be
+            <span className="mono">Account</span> or <span className="mono">Other Account</span> column can be
             flagged as already holding real codes, or as labels (like a bank&apos;s own free-text category)
             that need mapping to a real account next.
           </p>

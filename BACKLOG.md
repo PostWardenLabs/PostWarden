@@ -452,6 +452,31 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
   → `ImportWizard.tsx`) once "mapped" is a clear misnomer with nothing
   else competing for attention — not urgent, since the name is internal
   (route paths and schema class names, not user-facing copy).
+  **Four hands-on bugs fixed post-ship, `v0.31.2`**, all David caught
+  using the wizard for real right after it landed: (1) the `"one"`-shape
+  mapping step's two account targets were labeled "Money Account"/
+  "Category" — ActualBudget's own vocabulary, not anything PostWarden's
+  schema actually has, read as fake data fields (`SPEC.md` decision 23's
+  own addendum); relabeled "Account"/"Other Account". (2) The
+  column-mapping table's dropdown panels rendered clipped, hidden behind
+  the table's own frame — an `overflowX: 'auto'` wrapper around the
+  table silently promoted `overflow-y` to `auto` too (the same CSS-spec
+  quirk `.table-scroll`'s own comment in `index.css` already documents
+  for the sticky-header case), clipping any panel that opened past the
+  table's bottom edge; the wrapper wasn't earning its keep on a
+  four-column table that never needs horizontal scroll, so it's gone.
+  (3) `Combobox.tsx`: Enter on an *open* panel with nothing highlighted
+  (a fresh open before typing or arrowing — `activeIndex` defaults to
+  -1) fell through neither the "commit the highlighted row" branch nor
+  the "already closed, move to the next line" branch, so its keydown
+  handler never called `preventDefault()` and the browser's own default
+  Enter-submits-the-form behavior ran instead — hit while tabbing
+  through the review step's value-mapping comboboxes. (4)
+  `Combobox.tsx`: `resolveAndClose`'s own docstring already promised
+  "Tab, or clicking elsewhere" both resolve and close the panel, but no
+  `onBlur` was ever actually wired up — only the Tab keydown branch
+  called it, so clicking away from an open combobox left it open until
+  something else eventually closed it.
 
 ## Feature: Every theme has a light and dark mode. 
 - To move between themes and their light/dark variants, there is 

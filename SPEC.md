@@ -1344,6 +1344,16 @@ holds, now for every file shape rather than the mapped importer alone.
 error shape this decision described as the plain importer's own
 carve-out are gone; see decision 24 for what replaced them.
 
+**Addendum (post-Phase-4 fix):** "Money Account"/"Category" — described
+just above as deliberate — turned out to be the wrong deliberate choice.
+David flagged, after using the shipped wizard, that both read as if they
+named real PostWarden data fields when neither does; PostWarden's schema
+has no `category` concept anywhere. `target_fields_for_shape`'s
+`"one"`-shape labels are now "Account"/"Other Account" — still two
+distinguishable account pickers (the reason given above for not making
+both bare "Account" still holds), just without borrowing ActualBudget's
+own vocabulary to do it.
+
 ### 24. Shape is a wizard property, not a choice of importer
 
 Decision 23 gave single-entry exports their own importer because

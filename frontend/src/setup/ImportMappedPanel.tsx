@@ -353,8 +353,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   // real account's *code* (not id) — `transform_rows` on the backend
   // looks values up by code, matching `postable_accounts_for_pickers`'
   // own `<option value="{{ p.code }}">`. `service.IMPORT_NO_VALUE_KEY`
-  // (empty string) is the "(blank)"/"(no category)" row's own key, same
-  // on both sides of the wire.
+  // (empty string) is the "(blank)" row's own key, same on both sides of
+  // the wire.
   const [valueMaps, setValueMaps] = useState<Record<string, Record<string, string>>>({})
   const [flipSign, setFlipSign] = useState(false)
   const [validating, setValidating] = useState(false)
@@ -806,43 +806,58 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
                   Phase 4 item 2) — does this column already hold a real
                   account code, or a label that needs mapping to one in
                   the review step. */}
-              <div style={{ overflowX: 'auto' }}>
-                <table className="ledger">
-                  <thead>
-                    <tr><th>Import file column</th><th>Sample value</th><th>Target data field</th><th>Holds</th></tr>
-                  </thead>
-                  <tbody>
-                    {columns.columns.map((c) => {
-                      const target = columnTargets[c] ?? ''
-                      const field = tableFields.find((f) => f.key === target)
-                      return (
-                        <tr key={c}>
-                          <td className="mono">{c}</td>
-                          <td className="dim">
-                            {columns.sample_rows.slice(0, 3).map((r) => r[c] || '—').join(', ')}
-                          </td>
-                          <td>
+              {/* No `overflowX: 'auto'` wrapper here (unlike the
+                  validate-step's plain-text error table below) — this
+                  table's own combobox dropdowns are `position: absolute`
+                  panels that escape a normal-flow parent but *not* an
+                  ancestor's own scroll clipping: `overflow-x: auto` alone
+                  silently promotes `overflow-y` to `auto` too (the same
+                  CSS-spec quirk `.table-scroll`'s own comment in
+                  index.css documents for the sticky-header case), turning
+                  this div into a real vertical scroll container that cuts
+                  a panel off the moment it extends past the table's own
+                  bottom edge. Confirmed live: a dropdown opened on any
+                  row before the last rendered as a sliver, clipped
+                  exactly at the wrapper's own boundary. This table's four
+                  columns fit any reasonable width without horizontal
+                  scroll to begin with, so the wrapper wasn't earning its
+                  keep — `EntryGrid.tsx`'s own combobox-per-row table
+                  never had one either. */}
+              <table className="ledger">
+                <thead>
+                  <tr><th>Import file column</th><th>Sample value</th><th>Target data field</th><th>Holds</th></tr>
+                </thead>
+                <tbody>
+                  {columns.columns.map((c) => {
+                    const target = columnTargets[c] ?? ''
+                    const field = tableFields.find((f) => f.key === target)
+                    return (
+                      <tr key={c}>
+                        <td className="mono">{c}</td>
+                        <td className="dim">
+                          {columns.sample_rows.slice(0, 3).map((r) => r[c] || '—').join(', ')}
+                        </td>
+                        <td>
+                          <Combobox
+                            options={targetOptions}
+                            value={target}
+                            onChange={(v) => setColumnTargets((m) => ({ ...m, [c]: v }))}
+                          />
+                        </td>
+                        <td>
+                          {field?.lookup_capable && (
                             <Combobox
-                              options={targetOptions}
-                              value={target}
-                              onChange={(v) => setColumnTargets((m) => ({ ...m, [c]: v }))}
+                              options={COLUMN_KIND_OPTIONS}
+                              value={columnKinds[c] ?? defaultColumnKind(target, shape)}
+                              onChange={(v) => setColumnKinds((m) => ({ ...m, [c]: v as 'code' | 'label' }))}
                             />
-                          </td>
-                          <td>
-                            {field?.lookup_capable && (
-                              <Combobox
-                                options={COLUMN_KIND_OPTIONS}
-                                value={columnKinds[c] ?? defaultColumnKind(target, shape)}
-                                onChange={(v) => setColumnKinds((m) => ({ ...m, [c]: v as 'code' | 'label' }))}
-                              />
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
 
               {!!missingRequiredFields.length && (
                 <p className="dim small" style={{ marginTop: '0.8rem' }}>
@@ -891,18 +906,18 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
             {Object.entries(preview.values_found).map(([key, vf]) => {
               const field = columns?.fields_by_shape[shapeKey(preview.shape)]?.find((f) => f.key === key)
               const label = field?.label ?? key
-              const blankLabel = key === 'category' ? '(no category)' : '(blank)'
-              const heading = key === 'account' ? `${label} — which is the money side?`
-                : key === 'category' ? `${label} — which account is the other side?`
+              const blankLabel = '(blank)'
+              const heading = key === 'account' ? `${label} — which account is this?`
+                : key === 'category' ? `${label} — which account is the offsetting side?`
                 : `${label} — which account?`
               return (
                 <div className="panel" key={key}>
                   <h2>{heading}</h2>
                   {key === 'category' && (
                     <p className="dim small">
-                      &quot;(no category)&quot; covers transfers/withdrawals and anything else this export left
-                      blank — map it to whichever single account fits most of those rows, or leave it unmapped to
-                      skip them all.
+                      &quot;(blank)&quot; covers transfers/withdrawals and anything else this export left blank —
+                      map it to whichever single account fits most of those rows, or leave it unmapped to skip
+                      them all.
                     </p>
                   )}
                   <table className="ledger">

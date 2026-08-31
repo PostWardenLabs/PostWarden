@@ -196,6 +196,21 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
         onClick={() => {
           if (!open) openPanel()
         }}
+        // `resolveAndClose`'s own docstring already documents "Tab, or
+        // clicking elsewhere" as the two ways focus can leave without an
+        // explicit pick — but only the Tab keydown branch below actually
+        // called it; a plain click on something else (another field, the
+        // page background) blurs the input natively with nothing wired
+        // to that event at all, so the panel just stayed open, stuck
+        // open until a later focus-and-pick cycle closed it (flagged
+        // directly by David: "lots of combo boxes don't close when I
+        // click away, they only close when I choose an option"). `onBlur`
+        // fires for both cases (a real click-away, and Tab's own native
+        // focus move after the keydown branch below already ran) —
+        // `resolveAndClose`'s own `if (!open) return` guard makes the
+        // Tab case's second call here a harmless no-op, not a double
+        // resolve.
+        onBlur={resolveAndClose}
         onChange={(e) => {
           setInputText(e.target.value)
           setFilterText(e.target.value)
@@ -215,12 +230,19 @@ export default function Combobox({ options, value, onChange, disabled, id, name,
             setManualActive(Math.max(activeIndex - 1, 0))
           } else if (e.key === 'Enter') {
             const row = rows[activeIndex]
+            e.preventDefault()
             if (open && row) {
-              e.preventDefault()
               if ('create' in row) createAndSelect(row.query)
               else selectOption(row)
-            } else if (!open) {
-              e.preventDefault()
+            } else {
+              // Either already closed, or open with nothing highlighted
+              // (a fresh open with an empty filter defaults `activeIndex`
+              // to -1, see its own comment above) — either way there's
+              // nothing to commit, so Enter just moves on. Closing first
+              // matters for the open-but-unhighlighted case: leaving the
+              // panel open while focus jumps to the next row read as the
+              // *next* combobox spontaneously opening its own panel.
+              if (open) closePanel()
               focusLineBelow(e.currentTarget)
             }
           } else if (e.key === 'Escape') {
