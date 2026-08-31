@@ -414,6 +414,25 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
   user-created scenarios" — also already true, though not for the
   reason expected: there's no rename/delete route for *any* scenario,
   so ACTUAL/STAGING were never specially exposed to begin with.
+- **New import with rules page — all three items shipped.** Post-
+  `v0.31.0`, no version bump of their own yet:
+    - *Enter should move between combo boxes, not submit the form* —
+      `Combobox.tsx` now moves focus to the line below on Enter, the
+      same way a spreadsheet does (`a22688d`).
+    - *Direct access, instead of reaching it via a link on another page*
+      — the plain and mapped importers are two tabs on one Import page
+      now, so neither is hidden behind the other (`4e83869`).
+    - *A column mapping step instead of assuming column names* — the
+      mapped importer is a three-step wizard (upload → map columns →
+      review). `IMPORT_MAPPED_FIELDS` replaced the old exact-header
+      requirement, which only ever worked because ActualBudget's own
+      export happened to use those literal names; any single-entry CSV
+      works now, whatever its columns are called. Backend `d30a3d5`,
+      frontend `2991b2f`; `SPEC.md` decision 23 has the reasoning.
+      **Shipped with the mapping table oriented target-field → file
+      column, rather than the file-column → target shape specified in
+      the original ask** — see `IMPORT_WIZARD.md` §2 for why, and why
+      it's being flipped back.
 
 ## Feature: Every theme has a light and dark mode. 
 - To move between themes and their light/dark variants, there is 
@@ -452,6 +471,7 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 
 ## Ensure that the import functionality currently flags entries it can’t handle (unknown format, etc)
 - It should preferably flag which lines it couldn’t read, e.g. “couldn’t read lines ”
+- Absorbed into the import wizard plan as **R3** — see `IMPORT_WIZARD.md`.
 
 ## Documentation for user guidance:
 - How do teach people who don’t understand double entry accounting and accrual basis
@@ -489,6 +509,10 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 
 ## Feature: Export/import metadata (Chart of Accounts, scenarios, payees, tags) from csv files
 - Would allow users to setup their desired metadata structure offline
+- The *import* half is **R10** of the import wizard plan
+  (`IMPORT_WIZARD.md`) — its steps 1–3 are identical whether the target
+  is journal entries or a chart of accounts, which is why that plan says
+  to build them target-agnostic even while shipping entries only.
 
 
 - Auto calculate journal entries for loans, like car loans or mortgages. Add principal, interest rate, time period, etc.
@@ -503,7 +527,7 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 - Feature: “Asset Manager” (Objects, Tangible Assets, Fixed Assets, etc. ; Manager): A page where you create assets that appreciate/deteriorate. You set the rules (residual value, useful life, etc) and the app handles the journal entries for you.
 - Payment reminder. Scheduled payments coming up widget on dashboard.
 - “Send to email button” for reports. Other emails like reminders for upcoming payments.
-- Manage imports: Manage file templates, choosing delimiter, separate debit/credit columns, thousands and decimal indicator, contains header row, etc.
+- Manage imports: Manage file templates, choosing delimiter, separate debit/credit columns, thousands and decimal indicator, contains header row, etc. — absorbed into the import wizard plan (`IMPORT_WIZARD.md`): the delimiter/decimal/header settings are its **phase 2**, separate debit/credit columns its **phase 4**, and saved file templates its **R5**.
 
 - Add “is cash flow account” attribute to accounts. That way we can make cash flow reporting. 
 
@@ -561,6 +585,11 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 
 ## Import XLSX files
 - Import files button allows CSV and XLSX files
+- Absorbed into the import wizard plan as **R7** — see `IMPORT_WIZARD.md`.
+  Cheap *if* its phase 2 abstraction boundary ("file → table of strings,
+  nothing format-specific downstream") actually holds; expensive to
+  retrofit if it doesn't, which is why that boundary gets built before
+  there's a second format to justify it.
 
 ## Automatically flag possible duplicates
 - This logic could run on the db
@@ -605,25 +634,41 @@ _Hi Claude: This backlog contains features I might want to implement, some are m
 ## Accounts page
 - Change "MARK AS CASH" button wording to something different
 
-## New import with rules page
-- Wish I could navigate between combo boxes with enter instead of having enter submit the form
-- Add a column mapping step instead of assuming. Say a user uploads a file, the next step is a page where the user sees a table, every row they see is a column of the file they uploaded. On the right side they have a combo box to decide where to map that column, or choose to ignore it. For example:
+## The import wizard — planned in `IMPORT_WIZARD.md`, not here
 
-STEP 1. Column Mappings
+The three original "New import with rules page" items have all shipped
+(see Done above). The plan that replaced them is a much larger one, on
+the stated assumption that **the wizard eventually becomes the only
+import path in PostWarden**, for double-entry and single-entry files
+alike, retiring both of today's importers.
 
-| import file column name | target data field (dropdown menu) |
-|---|---|
-| "Account" | Account |
-| "Date" | Entry Date |
-| "Payee" | Payee | 
-| "Notes" | Entry Description |
-| "Category_Group" | _(Ignore)_ |
-| "Category" | Account |
-| "Amount" | Amount |
-| "Split_Amount" | _(Ignore)_ |
-| "Cleared" | _(Ignore)_ |
+That plan lives in [`IMPORT_WIZARD.md`](IMPORT_WIZARD.md) rather than as
+a backlog bullet, because it's a real design document — a seven-step
+spine, twelve requirements, a schema-impact table, and five phased
+implementation steps. Short version:
 
-- The current way of reaching the import with rules page is weird. You need to go to another page and click a different link; there is no direct access. Think of a more transparent way of laying it out to the user.
+- The mapping table gets **flipped** to the file-column → target
+  orientation originally specified (one row per column in the file,
+  defaulting to *Ignore*), which is the only shape that forces an
+  explicit decision about every column rather than silently dropping the
+  ones nobody picked.
+- A **dialect step** (delimiter, decimal/thousands separator, date
+  format, header row) is what actually unblocks "any bank's CSV" — a
+  European export using `;` and `1.234,56` fails today with no control
+  anywhere to fix it.
+- One wizard subsumes both importers once it can answer **"does one file
+  row equal one entry, or do several combine into one?"** — that single
+  question is the whole difference between them.
+- **No wipe-and-rebuild.** Every schema change it implies (saved
+  profiles, a duplicate-detection hash, large-file staging) is a purely
+  additive Alembic migration.
+
+Several existing backlog items below are absorbed into that plan and
+should be read against it rather than picked up independently: "Ensure
+that the import functionality currently flags entries it can't handle"
+(its R3), "Manage imports: Manage file templates, choosing delimiter…"
+(its R5 and phase 2), "Import XLSX files" (its R7), and "Export/import
+metadata … from csv files" (its R10).
 
 ## How come Income Statement only scenarios don't get to pick base level?
 - That was the original intended use case, that if a user wants to do an expense budget they might want to just assing a total number to a rollup of the Actual Scenario
