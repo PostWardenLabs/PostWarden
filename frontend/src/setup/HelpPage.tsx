@@ -11,7 +11,7 @@ import { Link, useLocation } from 'react-router-dom'
 // `#scheduled`, ...) are plain `<a href="#...">`, no scroll-spy/`active`
 // state.
 //
-// `ImportPage.tsx`'s and `ImportMappedPage.tsx`'s own help icons link to
+// `ImportPage.tsx`'s own help icon links to
 // `/app/help#import`, which needs a manual scroll on mount, since React
 // Router doesn't scroll to a URL's hash on its own (no data
 // router/`<ScrollRestoration>` in this app). First and only place this

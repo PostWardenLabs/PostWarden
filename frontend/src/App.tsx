@@ -17,7 +17,6 @@ import AccountsPage from './setup/AccountsPage'
 import ConnectBiPage from './setup/ConnectBiPage'
 import EntryTemplatesPage from './setup/EntryTemplatesPage'
 import HelpPage from './setup/HelpPage'
-import ImportMappedPage from './setup/ImportMappedPage'
 import ImportPage from './setup/ImportPage'
 import PayeesPage from './setup/PayeesPage'
 import ScenariosPage from './setup/ScenariosPage'
@@ -42,7 +41,6 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/account-levels') return 'account_levels'
   if (pathname === '/app/scheduled') return 'scheduled'
   if (pathname === '/app/templates') return 'templates'
-  if (pathname === '/app/import/mapped') return 'import_mapped'
   if (pathname === '/app/import') return 'import'
   if (pathname === '/app/help') return 'help'
   if (pathname === '/app/settings/account') return 'settings_account'
@@ -75,7 +73,6 @@ const PAGE_TITLES: Record<string, string> = {
   scheduled: 'Scheduled Entries',
   templates: 'Templates',
   import: 'Import',
-  import_mapped: 'Import with rules',
   help: 'Help',
   settings: 'Settings',
   settings_account: 'Account',
@@ -139,7 +136,6 @@ function App() {
         <Route path="/app/scheduled" element={<ScheduledPage />} />
         <Route path="/app/templates" element={<EntryTemplatesPage />} />
         <Route path="/app/import" element={<ImportPage />} />
-        <Route path="/app/import/mapped" element={<ImportMappedPage />} />
         <Route path="/app/help" element={<HelpPage />} />
         <Route path="/app/settings" element={<SettingsPage />} />
         <Route path="/app/settings/account" element={<SettingsAccountPage />} />

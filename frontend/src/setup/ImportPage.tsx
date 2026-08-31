@@ -1,40 +1,36 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import client from '../api/client'
-import { useScenarios } from '../api/useScenarios'
-import Combobox from '../widgets/Combobox'
-import FileField from '../widgets/FileField'
+import ImportMappedPanel from './ImportMappedPanel'
+import ImportPlainPanel from './ImportPlainPanel'
 
-// The plain double-entry CSV importer.
+// The Import screen's own container: a page-head, a two-way tab bar,
+// and the "Recent imports" table shared by both tabs, since both
+// importers ultimately funnel through the same `stage_import_groups`
+// (modules/imports/service.py's own docstring) and land in the same
+// `import_batches` table — there's only ever one real history to show,
+// regardless of which tab produced a given row.
 //
-// `errorDetail`/`ErrorBody` — same local cast-from-`unknown` shape every
-// write-route screen in this app carries (`PayeesPage.tsx` and onward),
-// since FastAPI's plain `HTTPException(400, detail=...)` isn't typed any
-// more specifically than that in the generated client.
-interface ErrorBody {
-  detail?: string
-}
-
-function errorDetail(error: unknown, fallback: string): string {
-  return (error as ErrorBody | undefined)?.detail || fallback
-}
-
-// `IMPORT_MAX_ERRORS_SHOWN` — mirrors `modules/imports/service.py`'s own
-// constant of the same value (20). The backend's success response
-// returns every row error, untruncated (`import_csv`'s own `errors` is
-// the full list); `service.import_csv` just returns data, it doesn't
-// format a message, so this screen does the truncate-and-append-"...and
-// N more" formatting instead — identical logic to Import-with-rule's own
-// review step, which needs the same truncation for the same reason and
-// forks it rather than sharing a one-off helper for two callers.
-const IMPORT_MAX_ERRORS_SHOWN = 20
-
-function skippedRowsMessage(errors: string[]): string {
-  const shown = errors.slice(0, IMPORT_MAX_ERRORS_SHOWN)
-  if (errors.length > shown.length) shown.push(`...and ${errors.length - shown.length} more`)
-  return `${errors.length} row(s) skipped: ${shown.join('; ')}`
-}
+// This page used to be two: a plain `ImportPage.tsx` with the whole of
+// what's now `ImportPlainPanel.tsx`, reachable from the sidebar, and a
+// separate `ImportMappedPage.tsx` (now `ImportMappedPanel.tsx`) at
+// `/app/import/mapped`, reachable only via a text link buried in the
+// first page's copy — flagged in BACKLOG.md as "weird," since a user
+// with a single-entry export had to already know the second importer
+// existed. One nav entry, one URL, two tabs fixes that: whichever
+// shape a file turns out to be, the other importer is one click away,
+// not a hunt through prose.
+//
+// Each tab is unmounted while inactive (a plain `mode === 'x' && <.../>`
+// below, not both panels kept mounted and hidden via CSS) — switching
+// tabs mid-way through the mapped importer's upload/review flow loses
+// that in-progress state, same as navigating away from it used to.
+// Accepted trade-off: two file inputs with the same `id` can't both
+// exist in the DOM at once anyway (FileField.tsx's `id` prop), and
+// losing an in-progress upload on a deliberate tab switch is a
+// reasonable expectation, not a surprise.
+type Mode = 'plain' | 'mapped'
 
 interface RecentBatch {
   id: number
@@ -59,26 +55,8 @@ function formatBatchTime(iso: string): string {
 }
 
 export default function ImportPage() {
-  const scenarios = useScenarios()
+  const [mode, setMode] = useState<Mode>('plain')
   const [recent, setRecent] = useState<RecentBatch[] | null>(null)
-  const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
-  const [file, setFile] = useState<File | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  // Same exclusions as Scheduled's target-scenario picker (ScheduledPage.tsx)
-  // and Import-with-rules' own — an import has to land somewhere it can
-  // eventually become real postings.
-  const eligibleScenarios = useMemo(
-    () => (scenarios ?? []).filter((s) => !s.is_locked && !s.income_statement_only && !s.is_staging),
-    [scenarios],
-  )
-  const firstScenarioId = eligibleScenarios[0]?.id ?? 0
-  // `null` until the user actually picks one, derived rather than synced
-  // via an effect — same reasoning ScheduledPage.tsx's own identical
-  // `explicitScenarioId` gives (scenarios load asynchronously, so a
-  // plain `useState(firstScenarioId)` would freeze at 0 forever).
-  const [explicitScenarioId, setExplicitScenarioId] = useState<number | null>(null)
-  const scenarioId = explicitScenarioId ?? firstScenarioId
 
   function reload() {
     client.GET('/import').then(({ data }) => {
@@ -86,11 +64,11 @@ export default function ImportPage() {
     })
   }
 
-  // Separate from `reload()` above (called again after a successful
-  // upload) so the initial fetch can guard against setting state on an
-  // unmounted component — same `cancelled` shape `AccountLevelsPage.tsx`/
-  // `AccountsPage.tsx` already use for the identical local-fetch-plus-
-  // reload pattern.
+  // Separate from `reload()` above (called again after either tab
+  // stages a batch) so the initial fetch can guard against setting
+  // state on an unmounted component — same `cancelled` shape
+  // `AccountLevelsPage.tsx`/`AccountsPage.tsx` already use for the
+  // identical local-fetch-plus-reload pattern.
   useEffect(() => {
     let cancelled = false
     client.GET('/import').then(({ data }) => {
@@ -100,36 +78,6 @@ export default function ImportPage() {
       cancelled = true
     }
   }, [])
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!file || !scenarioId) return
-    setSubmitting(true)
-    const body = new FormData()
-    body.append('target_scenario_id', String(scenarioId))
-    body.append('file', file)
-    // openapi-fetch's own `defaultBodySerializer` passes a `FormData`
-    // instance straight through unchanged (and skips the JSON
-    // `Content-Type` header so the browser sets its own multipart
-    // boundary) — the cast below is only to satisfy the generated
-    // client's request-body type, which openapi-typescript can only
-    // describe as `{ target_scenario_id: number; file: string }` (an
-    // `UploadFile` has no better OpenAPI representation), not because
-    // anything at runtime actually expects that shape.
-    const { data, error } = await client.POST('/import', {
-      body: body as unknown as { target_scenario_id: number; file: string },
-    })
-    setSubmitting(false)
-    if (error) {
-      setFlash({ err: errorDetail(error, 'Could not import the file') })
-      return
-    }
-    const result = data as unknown as { staged_count: number; errors: string[] }
-    const okMsg = `Staged ${result.staged_count} entr${result.staged_count === 1 ? 'y' : 'ies'} for review in Staging`
-    setFlash({ ok: okMsg, err: result.errors.length ? skippedRowsMessage(result.errors) : undefined })
-    setFile(null)
-    reload()
-  }
 
   return (
     <>
@@ -141,35 +89,19 @@ export default function ImportPage() {
         <Link to="/app/help#import" className="help-icon" aria-label="How this works" title="How this works">?</Link>
       </div>
 
-      {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
-      {flash?.err && <div className="flash flash-err">{flash.err}</div>}
-
-      <div className="panel">
-        <h2>Upload a CSV</h2>
-        <form className="grid-form" onSubmit={handleSubmit}>
-          <label className="field">
-            Target scenario
-            <Combobox
-              options={eligibleScenarios.map((s) => ({ value: String(s.id), label: `${s.code} — ${s.name}` }))}
-              value={String(scenarioId)}
-              onChange={(v) => setExplicitScenarioId(Number(v))}
-            />
-          </label>
-          <label className="field" htmlFor="import-file-input" style={{ minWidth: '15rem' }}>
-            CSV file
-            <FileField id="import-file-input" name="file" accept=".csv,text/csv" required onFileChange={setFile} />
-          </label>
-          <button type="submit" disabled={submitting || !file}>Import</button>
-        </form>
+      <div className="bar" role="tablist" aria-label="Import method">
+        <button type="button" role="tab" aria-selected={mode === 'plain'}
+                className={mode === 'plain' ? '' : 'quiet'} onClick={() => setMode('plain')}>
+          CSV import
+        </button>
+        <button type="button" role="tab" aria-selected={mode === 'mapped'}
+                className={mode === 'mapped' ? '' : 'quiet'} onClick={() => setMode('mapped')}>
+          Import with rules
+        </button>
       </div>
 
-      <p className="dim small">
-        Have a single-entry export instead — one row per transaction, no debits/credits of its own (a budgeting
-        app or bank export, say — ActualBudget&apos;s own CSV shape is the one this was built and tested
-        against)?{' '}
-        <Link className="quiet-link" to="/app/import/mapped">Import with rules</Link> maps it into double entry
-        first.
-      </p>
+      {mode === 'plain' && <ImportPlainPanel onStaged={reload} />}
+      {mode === 'mapped' && <ImportMappedPanel onStaged={reload} />}
 
       {!!recent?.length && (
         <>

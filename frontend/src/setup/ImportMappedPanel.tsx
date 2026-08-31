@@ -7,16 +7,19 @@ import Combobox from '../widgets/Combobox'
 import FileField from '../widgets/FileField'
 import { usePostableAccounts } from '../widgets/usePostableAccounts'
 
-// The mapped importer's upload + review flow. The review step only ever
-// exists as `POST /import/mapped/preview`'s response body — there's no
-// GET route for it — so this is one component with two internal steps
-// (`step` below), not two React Router routes.
+// The mapped importer's upload + review flow — split out of what used
+// to be the whole of `ImportMappedPage.tsx` when the plain and mapped
+// importers merged onto one page as two tabs (`ImportPage.tsx`'s own
+// docstring has the reasoning). The review step only ever exists as
+// `POST /import/mapped/preview`'s response body — there's no GET route
+// for it — so this is one component with two internal steps (`step`
+// below), not two React Router routes.
 //
 // `errorDetail`/`ErrorBody`, `IMPORT_MAX_ERRORS_SHOWN`/
-// `skippedRowsMessage` — identical to `ImportPage.tsx`'s own copies.
-// Forked, not shared, same as that file's own comment on why: two
-// three-line helpers each with exactly one caller isn't worth a shared
-// module import cycle between two sibling screens.
+// `skippedRowsMessage` — identical to `ImportPlainPanel.tsx`'s own
+// copies. Forked, not shared, same as that file's own comment on why:
+// two three-line helpers each with exactly one caller isn't worth a
+// shared module import cycle between two sibling panels.
 interface ErrorBody {
   detail?: string
 }
@@ -49,15 +52,22 @@ interface PreviewResult {
 
 const CHOOSE = { value: '', label: '— choose —' }
 
-export default function ImportMappedPage() {
+interface ImportMappedPanelProps {
+  // Called once a batch actually lands, so the container can re-fetch
+  // the shared "Recent imports" table — same contract as
+  // `ImportPlainPanel.tsx`'s own `onStaged`.
+  onStaged: () => void
+}
+
+export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) {
   const scenarios = useScenarios()
   const postable = usePostableAccounts(scenarios)
   const [step, setStep] = useState<'upload' | 'review'>('upload')
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
 
-  // Same exclusions as the plain Import screen's own target-scenario
-  // picker (ImportPage.tsx) — an import has to land somewhere it can
-  // eventually become real postings.
+  // Same exclusions as the plain Import panel's own target-scenario
+  // picker (ImportPlainPanel.tsx) — an import has to land somewhere it
+  // can eventually become real postings.
   const eligibleScenarios = useMemo(
     () => (scenarios ?? []).filter((s) => !s.is_locked && !s.income_statement_only && !s.is_staging),
     [scenarios],
@@ -95,9 +105,9 @@ export default function ImportMappedPage() {
     const body = new FormData()
     body.append('target_scenario_id', String(scenarioId))
     body.append('file', file)
-    // Same `FormData`-passes-through-unchanged reasoning as ImportPage.tsx's
-    // own identical cast — see that file's comment for the openapi-fetch
-    // source dig this is based on.
+    // Same `FormData`-passes-through-unchanged reasoning as
+    // ImportPlainPanel.tsx's own identical cast — see that file's
+    // comment for the openapi-fetch source dig this is based on.
     const { data, error } = await client.POST('/import/mapped/preview', {
       body: body as unknown as { target_scenario_id: number; file: string },
     })
@@ -143,6 +153,7 @@ export default function ImportMappedPage() {
     setFile(null)
     setPreview(null)
     setStep('upload')
+    onStaged()
   }
 
   function startOver() {
@@ -154,22 +165,19 @@ export default function ImportMappedPage() {
 
   return (
     <>
-      <div className="page-head">
-        <p className="page-sub">
-          For single-entry exports — one row per transaction, no debit/credit of their own — from whatever
-          budgeting app or bank export produces that shape; ActualBudget&apos;s own CSV export is the one this
-          was built and tested against. Map each Account and Category value to a real PostWarden account once,
-          and every row gets turned into a proper double-entry posting, staged in{' '}
-          <Link className="quiet-link" to="/app/staging">Staging</Link> for review same as any other import.
-        </p>
-        <Link to="/app/help#import" className="help-icon" aria-label="How this works" title="How this works">?</Link>
-      </div>
-
-      {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
-      {flash?.err && <div className="flash flash-err">{flash.err}</div>}
-
       {step === 'upload' && (
         <>
+          <p className="page-sub">
+            For single-entry exports — one row per transaction, no debit/credit of their own — from whatever
+            budgeting app or bank export produces that shape; ActualBudget&apos;s own CSV export is the one this
+            was built and tested against. Map each Account and Category value to a real PostWarden account once,
+            and every row gets turned into a proper double-entry posting, staged in{' '}
+            <Link className="quiet-link" to="/app/staging">Staging</Link> for review same as any other import.
+          </p>
+
+          {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
+          {flash?.err && <div className="flash flash-err">{flash.err}</div>}
+
           <div className="panel">
             <h2>Upload a single-entry CSV</h2>
             <p className="dim small">
@@ -202,11 +210,6 @@ export default function ImportMappedPage() {
               </button>
             </form>
           </div>
-
-          <p className="dim small" style={{ marginTop: '1rem' }}>
-            Already have a file with real debits and credits per line? Use the plain{' '}
-            <Link className="quiet-link" to="/app/import">Import</Link> instead.
-          </p>
         </>
       )}
 
@@ -218,6 +221,9 @@ export default function ImportMappedPage() {
             posting in <Link className="quiet-link" to="/app/staging">Staging</Link>. Leave a value unmapped to
             skip every row that uses it (reported, not silently dropped).
           </p>
+
+          {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
+          {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
           <form onSubmit={handleCommitSubmit}>
             <div className="panel">
