@@ -243,7 +243,32 @@ def test_transform_mapped_rows_reports_an_unmapped_account(book):
              "description": "", "memo": "", "category": "Rent", "amount": "-10"}]
     groups, errors = service.transform_mapped_rows(rows, {}, {"Rent": book["rent"]["code"]}, False)
     assert groups == []
-    assert "no mapping chosen for account" in errors[0]
+    # IMPORT_WIZARD.md §7 Phase 3 item 1 — structured, not a pre-joined
+    # "Row N: ..." string, so a validation-report table can render `raw`
+    # and `message` as separate columns.
+    assert errors[0]["row_no"] == 2
+    assert errors[0]["raw"] == rows[0]
+    assert "No mapping chosen for account" in errors[0]["message"]
+
+
+def test_transform_mapped_rows_reports_an_unmapped_category(book):
+    rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
+             "description": "", "memo": "", "category": "Mystery", "amount": "-10"}]
+    groups, errors = service.transform_mapped_rows(
+        rows, {"Checking": book["checking"]["code"]}, {}, False)
+    assert groups == []
+    assert errors[0]["row_no"] == 2
+    assert "No mapping chosen for category 'Mystery'" in errors[0]["message"]
+
+
+def test_transform_mapped_rows_reports_a_non_numeric_amount(book):
+    rows = [{"row_no": 2, "account": "Checking", "date": "2026-08-01", "payee": "",
+             "description": "", "memo": "", "category": "Rent", "amount": "not-a-number"}]
+    groups, errors = service.transform_mapped_rows(
+        rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]}, False)
+    assert groups == []
+    assert errors[0]["row_no"] == 2
+    assert "isn't numeric" in errors[0]["message"]
 
 
 def test_transform_mapped_rows_description_wins_over_the_payee_fallback(book):
@@ -305,15 +330,62 @@ def test_import_mapped_stages_entries_via_an_arbitrary_column_map(book, conn):
     assert result["errors"] == []
 
 
-def test_import_mapped_raises_row_errors_when_the_mapping_is_incomplete(book, conn):
+def test_import_mapped_blocks_without_confirmation_when_a_row_fails_validation(book, conn):
+    # IMPORT_WIZARD.md §7 Phase 3 item 2 — a row error blocks the whole
+    # commit by default now (`skip_bad_rows` defaults to False), rather
+    # than the old implicit "stage what worked, report the rest."
     content = _csv(
         "Account,Date,Payee,Notes,Category,Amount",
         "Checking,2026-08-01,Landlord,,Rent,-500",
     )
-    with pytest.raises(ValueError, match="no mapping chosen for account"):
+    with pytest.raises(ValueError, match="No mapping chosen for account"):
         service.import_mapped(conn, content=content, filename="export.csv",
                                target_scenario_id=book["actual"]["id"], column_map=MAPPED_COLUMN_MAP,
                                account_map={}, category_map={}, flip_sign=False)
+    assert repo.recent_batches(conn, 10) == []  # nothing staged
+
+
+def test_import_mapped_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+        "Checking,2026-08-02,Employer,,,1000",
+    )
+    result = service.import_mapped(
+        conn, content=content, filename="export.csv", target_scenario_id=book["actual"]["id"],
+        column_map=MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
+        # Only "Rent" is mapped — the second row's blank category has no
+        # mapping, so it should fail and the first row should still stage.
+        category_map={"Rent": book["rent"]["code"]}, flip_sign=False, skip_bad_rows=True)
+    assert result["staged_count"] == 1
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["row_no"] == 3
+    assert "No mapping chosen for category" in result["errors"][0]["message"]
+
+
+def test_validate_mapped_reports_row_errors_without_touching_the_database(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    result = service.validate_mapped(content, MAPPED_COLUMN_MAP, account_map={},
+                                      category_map={}, flip_sign=False)
+    assert result["groups_count"] == 0
+    assert len(result["errors"]) == 1
+    assert "No mapping chosen for account" in result["errors"][0]["message"]
+    assert repo.recent_batches(conn, 10) == []
+
+
+def test_validate_mapped_returns_zero_errors_for_a_clean_file(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    result = service.validate_mapped(
+        content, MAPPED_COLUMN_MAP, account_map={"Checking": book["checking"]["code"]},
+        category_map={"Rent": book["rent"]["code"]}, flip_sign=False)
+    assert result["groups_count"] == 1
+    assert result["errors"] == []
 
 
 def test_import_mapped_raises_when_the_column_map_is_incomplete(book, conn):
@@ -489,7 +561,7 @@ def test_transform_mapped_rows_reports_the_dialects_own_expected_date_format(boo
         rows, {"Checking": book["checking"]["code"]}, {"Rent": book["rent"]["code"]},
         flip_sign=False, dialect=dialect)
     assert groups == []
-    assert "expected DD/MM/YYYY" in errors[0]
+    assert "expected DD/MM/YYYY" in errors[0]["message"]
 
 
 def test_import_mapped_stages_a_semicolon_european_decimal_file_end_to_end(book, conn):

@@ -794,6 +794,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/import/mapped/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Mapped Validate
+         * @description No `conn`/database at all — the review step's own pre-commit check
+         *     (`service.validate_mapped`), run with the exact account/category maps
+         *     the user just chose, same `dialect` re-application every other step
+         *     here does. Not a fourth wizard step (same reasoning `/mapped/columns/
+         *     reparse` already documents) — a clean file's `errors` comes back
+         *     empty and the frontend skips straight to `POST /import/mapped`
+         *     without ever showing a validation-report screen (R1).
+         */
+        post: operations["import_mapped_validate_import_mapped_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/import/mapped": {
         parameters: {
             query?: never;
@@ -1787,6 +1813,12 @@ export interface components {
          *     `account_map`/`category_map`. Nothing is ever persisted server-side
          *     between any of these steps — there's nothing to save, expire, or
          *     clean up, so the round trip is the simplest correct design.
+         *
+         *     `skip_bad_rows` (IMPORT_WIZARD.md §7 Phase 3 item 2) — defaults to
+         *     `False`: any row error blocks the whole commit unless the caller
+         *     explicitly opts in, once it's actually seen those errors (normally
+         *     via `POST /import/mapped/validate` first — see `service.import_
+         *     mapped`'s own docstring).
          */
         MappedImportCommitRequest: {
             /** Filename */
@@ -1828,6 +1860,11 @@ export interface components {
              * @default false
              */
             flip_sign: boolean;
+            /**
+             * Skip Bad Rows
+             * @default false
+             */
+            skip_bad_rows: boolean;
         };
         /**
          * MappedImportPreviewRequest
@@ -1863,6 +1900,56 @@ export interface components {
             dialect: {
                 [key: string]: string | number;
             };
+        };
+        /**
+         * MappedImportValidateRequest
+         * @description Body of `POST /import/mapped/validate` — the review step's own
+         *     pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run with the exact
+         *     account/category maps the user just chose. Same fields `MappedImport
+         *     CommitRequest` carries, minus `skip_bad_rows` — this endpoint's whole
+         *     point is finding out whether that's needed before the frontend has to
+         *     decide it. Never touches the database (`service.validate_mapped`).
+         */
+        MappedImportValidateRequest: {
+            /** Filename */
+            filename: string;
+            /** Target Scenario Id */
+            target_scenario_id: number;
+            /** File Content B64 */
+            file_content_b64: string;
+            /**
+             * Column Map
+             * @default {}
+             */
+            column_map: {
+                [key: string]: string;
+            };
+            /**
+             * Dialect
+             * @default {}
+             */
+            dialect: {
+                [key: string]: string | number;
+            };
+            /**
+             * Account Map
+             * @default {}
+             */
+            account_map: {
+                [key: string]: string;
+            };
+            /**
+             * Category Map
+             * @default {}
+             */
+            category_map: {
+                [key: string]: string;
+            };
+            /**
+             * Flip Sign
+             * @default false
+             */
+            flip_sign: boolean;
         };
         /**
          * MergeDuplicatesRequest
@@ -3601,6 +3688,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MappedImportPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_mapped_validate_import_mapped_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MappedImportValidateRequest"];
             };
         };
         responses: {

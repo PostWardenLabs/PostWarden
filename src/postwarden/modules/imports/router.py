@@ -34,7 +34,17 @@ it's the dialect panel living inside the "columns" step (IMPORT_WIZARD.md
 user-edited dialect instead of the one `/mapped/columns` guessed. Every
 later step (`/mapped/preview`, `/mapped`) also takes that same `dialect`
 forward and re-applies it server-side, same "never trust caller-supplied
-structure without re-deriving it" reasoning `column_map` already gets."""
+structure without re-deriving it" reasoning `column_map` already gets.
+
+**`POST /import/mapped/validate` isn't a fifth step either** — it's the
+review step's own pre-commit check (IMPORT_WIZARD.md §7 Phase 3), run
+with the account/category maps the review step just collected, before
+`POST /import/mapped` actually commits anything. A row error there now
+blocks `/mapped` outright unless the caller sets `skip_bad_rows` (see
+`schemas.MappedImportCommitRequest`'s own docstring) — the frontend's own
+flow is to call `/mapped/validate` first, show a validation-report screen
+only when it comes back with any errors, and only then let the user
+choose to stage the rest and skip them."""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import SQLAlchemyError
@@ -151,6 +161,35 @@ def import_mapped_preview(payload: schemas.MappedImportPreviewRequest) -> dict:
     }
 
 
+@router.post("/mapped/validate", dependencies=[Depends(require_csrf_header)])
+def import_mapped_validate(payload: schemas.MappedImportValidateRequest) -> dict:
+    """No `conn`/database at all — the review step's own pre-commit check
+    (`service.validate_mapped`), run with the exact account/category maps
+    the user just chose, same `dialect` re-application every other step
+    here does. Not a fourth wizard step (same reasoning `/mapped/columns/
+    reparse` already documents) — a clean file's `errors` comes back
+    empty and the frontend skips straight to `POST /import/mapped`
+    without ever showing a validation-report screen (R1)."""
+    try:
+        content = service.decode_roundtrip(payload.file_content_b64)
+        dialect = service.resolve_dialect(payload.dialect)
+        result = service.validate_mapped(content, payload.column_map, payload.account_map,
+                                          payload.category_map, payload.flip_sign, dialect)
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+    return {
+        **result,
+        "filename": payload.filename,
+        "target_scenario_id": payload.target_scenario_id,
+        "file_content_b64": payload.file_content_b64,
+        "column_map": payload.column_map,
+        "dialect": dialect,
+        "account_map": payload.account_map,
+        "category_map": payload.category_map,
+        "flip_sign": payload.flip_sign,
+    }
+
+
 @router.post("/mapped")
 def import_mapped_commit(payload: schemas.MappedImportCommitRequest,
                           session: dict = Depends(require_csrf_header),
@@ -162,7 +201,7 @@ def import_mapped_commit(payload: schemas.MappedImportCommitRequest,
             target_scenario_id=payload.target_scenario_id, column_map=payload.column_map,
             account_map=payload.account_map, category_map=payload.category_map,
             flip_sign=payload.flip_sign, dialect=service.resolve_dialect(payload.dialect),
-            user_id=session["user_id"])
+            skip_bad_rows=payload.skip_bad_rows, user_id=session["user_id"])
     except ValueError as e:
         raise HTTPException(400, detail=str(e))
     except SQLAlchemyError as e:

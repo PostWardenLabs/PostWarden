@@ -1298,6 +1298,42 @@ comma-decimal, `DD/MM/YYYY`, a BOM'd export, junk rows above the header)
 are all slash- or ISO-dated; a dot-date format is a small follow-up, not
 a blocker, whenever a real file surfaces the gap.
 
+**A validation report replaced the flat error banner, for the mapped
+importer only** (IMPORT_WIZARD.md §3 step 5, §7 Phase 3, R3).
+`transform_mapped_rows`' `errors` used to be a `list[str]`, each entry a
+pre-formatted `"Row N: ..."` message, joined and truncated at
+`IMPORT_MAX_ERRORS_SHOWN` wherever it surfaced. It's now a structured
+`list[{row_no, raw, message}]` — `raw` is the row exactly as `parse_
+mapped_file` produced it, so a real table can show what was actually in
+the file (date, account, category, amount, payee) next to why it failed,
+not just a joined string; truncation for display moved to the frontend,
+since the value itself is no longer pre-formatted for one particular
+rendering. A new pure endpoint, `POST /import/mapped/validate`, runs the
+same transform `POST /import/mapped` commits with — against the same
+account/category maps — but never touches the database; the review
+step's own Confirm calls it first, and only shows the new
+validation-report screen when it comes back with any row errors at all
+(R1: a clean file's `errors` is empty and staging happens immediately,
+exactly as this step always behaved, no extra screen for the common
+case). `import_mapped` gained `skip_bad_rows: bool = False` to match: a
+row error now blocks the whole commit unless the caller explicitly opts
+in, rather than the old implicit "stage what worked, report the rest" —
+an API caller that skips `/mapped/validate` and posts straight to
+`/mapped` with row errors present gets exactly that block, the same
+protection a human clicking through the wizard gets from actually seeing
+the report first.
+
+Scoped to the mapped importer specifically, not `parse_csv_import` (the
+plain importer). Its own errors mix per-row (`"missing Account code"`)
+and per-entry, multi-row (`"doesn't balance"`, spanning every line of one
+`Entry #` group) failures in ways that don't reduce to one `{row_no, raw,
+message}` per row as cleanly as the mapped importer's always-one-row-one-
+entry shape does; it's also a smaller, more mechanically fixed file
+format to begin with (real double-entry CSVs with required exact column
+names, not arbitrary bank exports). Left as a plausible follow-up, not
+attempted here — `parse_csv_import`'s errors stay a flat `list[str]`,
+`ImportPlainPanel.tsx` stays a single flash banner.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

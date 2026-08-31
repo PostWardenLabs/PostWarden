@@ -248,6 +248,94 @@ def test_import_mapped_commit_endpoint_rejects_an_unmapped_account(book, conn):
         "account_map": {}, "category_map": {}, "flip_sign": False,
     })
     assert resp.status_code == 400
+    # IMPORT_WIZARD.md §7 Phase 3 item 2 — blocked outright, nothing
+    # staged, `skip_bad_rows` left at its default `False`.
+    assert c.get("/import").json()["recent_batches"] == []
+
+
+def test_import_mapped_validate_endpoint_reports_row_errors_without_staging_anything(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/validate", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "account_map": {}, "category_map": {}, "flip_sign": False,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["groups_count"] == 0
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["row_no"] == 2
+    assert "No mapping chosen for account" in body["errors"][0]["message"]
+    assert body["column_map"] == MAPPED_COLUMN_MAP
+    assert body["account_map"] == {}
+    assert c.get("/import").json()["recent_batches"] == []
+
+
+def test_import_mapped_validate_endpoint_returns_zero_errors_for_a_clean_file(book, conn):
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+
+    resp = c.post("/import/mapped/validate", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "account_map": {"Checking": book["checking"]["code"]},
+        "category_map": {"Rent": book["rent"]["code"]}, "flip_sign": False,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["groups_count"] == 1
+    assert body["errors"] == []
+
+
+def test_import_mapped_commit_endpoint_stages_the_good_rows_when_skip_bad_rows_is_true(book, conn):
+    # The end-to-end flow the review step actually follows: validate
+    # first (comes back with one row error), then commit with
+    # `skip_bad_rows: true` to stage the rest and skip that row.
+    content = _csv(
+        "Account,Date,Payee,Notes,Category,Amount",
+        "Checking,2026-08-01,Landlord,,Rent,-500",
+        "Checking,2026-08-02,Employer,,,1000",
+    )
+    c = client_for(conn)
+    columns = c.post(
+        "/import/mapped/columns", data={"target_scenario_id": str(book["actual"]["id"])},
+        files={"file": ("export.csv", content, "text/csv")}).json()
+    account_map = {"Checking": book["checking"]["code"]}
+    category_map = {"Rent": book["rent"]["code"]}  # blank-category row 2 is left unmapped on purpose
+
+    validation = c.post("/import/mapped/validate", json={
+        "filename": columns["filename"], "target_scenario_id": columns["target_scenario_id"],
+        "file_content_b64": columns["file_content_b64"], "column_map": MAPPED_COLUMN_MAP,
+        "account_map": account_map, "category_map": category_map, "flip_sign": False,
+    }).json()
+    assert validation["groups_count"] == 1
+    assert len(validation["errors"]) == 1
+
+    resp = c.post("/import/mapped", json={
+        "filename": validation["filename"], "target_scenario_id": validation["target_scenario_id"],
+        "file_content_b64": validation["file_content_b64"], "column_map": validation["column_map"],
+        "account_map": validation["account_map"], "category_map": validation["category_map"],
+        "flip_sign": validation["flip_sign"], "skip_bad_rows": True,
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["staged_count"] == 1
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["row_no"] == 3
 
 
 def test_import_mapped_commit_endpoint_carries_an_edited_dialect_through_preview_and_commit(book, conn):

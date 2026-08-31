@@ -11,17 +11,20 @@ import { usePostableAccounts } from '../widgets/usePostableAccounts'
 // The mapped importer's upload + column-mapping + review flow — split
 // out of what used to be the whole of `ImportMappedPage.tsx` when the
 // plain and mapped importers merged onto one page as two tabs
-// (`ImportPage.tsx`'s own docstring has the reasoning). Three internal
-// steps now, not two (`step` below) — BACKLOG.md's "New import with
+// (`ImportPage.tsx`'s own docstring has the reasoning). Up to four
+// internal steps now (`step` below) — BACKLOG.md's "New import with
 // rules page" #2 added a column-mapping step between upload and review,
 // since the importer used to require the file's own header row to read
 // literally `Account,Date,Payee,Notes,Category,Amount` (true of
 // ActualBudget's export by construction, false of anything else) — see
-// `SPEC.md` decision 23's own account of why. None of these three steps
-// exist as their own GET route — there's no server-side state between
-// them to restore from on a refresh either, same reasoning the old
-// two-step version already had — so this stays one component with
-// internal `step` state, not three React Router routes.
+// `SPEC.md` decision 23's own account of why; a fourth, `'validate'`,
+// only ever renders when the review step's own pre-commit check (IMPORT_
+// WIZARD.md §7 Phase 3) finds row errors — a clean file never sees it.
+// None of these steps exist as their own GET route — there's no
+// server-side state between them to restore from on a refresh either,
+// same reasoning the old two-step version already had — so this stays
+// one component with internal `step` state, not separate React Router
+// routes.
 //
 // `errorDetail`/`ErrorBody`, `IMPORT_MAX_ERRORS_SHOWN`/
 // `skippedRowsMessage` — identical to `ImportPlainPanel.tsx`'s own
@@ -38,8 +41,20 @@ function errorDetail(error: unknown, fallback: string): string {
 
 const IMPORT_MAX_ERRORS_SHOWN = 20
 
-function skippedRowsMessage(errors: string[]): string {
-  const shown = errors.slice(0, IMPORT_MAX_ERRORS_SHOWN)
+// `service.transform_mapped_rows`' own per-row error shape (IMPORT_WIZARD.md
+// §7 Phase 3 item 1) — structured, not a pre-joined "Row N: ..." string,
+// so the validation-report table below can render `raw`'s own field
+// values next to `message` as separate columns. `raw` is the row exactly
+// as `parse_mapped_file` produced it — still-unparsed strings for
+// whichever fields got mapped.
+interface RowError {
+  row_no: number
+  raw: Record<string, string>
+  message: string
+}
+
+function skippedRowsMessage(errors: RowError[]): string {
+  const shown = errors.slice(0, IMPORT_MAX_ERRORS_SHOWN).map((e) => `Row ${e.row_no}: ${e.message}`)
   if (errors.length > shown.length) shown.push(`...and ${errors.length - shown.length} more`)
   return `${errors.length} row(s) skipped: ${shown.join('; ')}`
 }
@@ -138,6 +153,28 @@ interface PreviewResult {
   dialect: Dialect
 }
 
+// What `POST /import/mapped/validate` hands back (IMPORT_WIZARD.md §3
+// step 5, §7 Phase 3) — the review step's own pre-commit check, run with
+// the account/category maps that step just collected. `groups_count` is
+// how many entries would actually stage; `errors` is empty for a clean
+// file, in which case the frontend skips straight to committing without
+// ever showing the validation-report step (R1). Everything else is the
+// same round-tripped shape `commit()` below needs to actually stage —
+// including `account_map`/`category_map`/`flip_sign` this time, since
+// (unlike `PreviewResult`) those choices already exist by this step.
+interface ValidateResult {
+  groups_count: number
+  errors: RowError[]
+  filename: string
+  target_scenario_id: number
+  file_content_b64: string
+  column_map: Record<string, string>
+  dialect: Dialect
+  account_map: Record<string, string>
+  category_map: Record<string, string>
+  flip_sign: boolean
+}
+
 const CHOOSE = { value: '', label: '— choose —' }
 const IGNORE = { value: '', label: '— ignore —' }
 
@@ -166,7 +203,7 @@ interface ImportMappedPanelProps {
 export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) {
   const scenarios = useScenarios()
   const postable = usePostableAccounts(scenarios)
-  const [step, setStep] = useState<'upload' | 'columns' | 'review'>('upload')
+  const [step, setStep] = useState<'upload' | 'columns' | 'review' | 'validate'>('upload')
   const [flash, setFlash] = useState<{ ok?: string; err?: string } | null>(null)
 
   // Same exclusions as the plain Import panel's own target-scenario
@@ -210,6 +247,8 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
   const [accountMap, setAccountMap] = useState<Record<string, string>>({})
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
   const [flipSign, setFlipSign] = useState(false)
+  const [validating, setValidating] = useState(false)
+  const [validation, setValidation] = useState<ValidateResult | null>(null)
   const [committing, setCommitting] = useState(false)
 
   const accountOptions = useMemo(
@@ -334,11 +373,20 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setStep('review')
   }
 
-  async function handleCommitSubmit(e: FormEvent) {
+  // The review step's own Confirm (IMPORT_WIZARD.md §3 step 5, §7 Phase
+  // 3) — runs the real transform against the account/category maps just
+  // chosen, but *without* staging anything yet (`POST /import/mapped/
+  // validate`, pure — no database). A clean file (no row errors) skips
+  // straight to `commit()`, same as this step always did; a file with
+  // any row errors shows the new validation-report step instead, so
+  // staging the rest and skipping those rows is something the user
+  // chooses, not the old implicit default.
+  async function handleReviewSubmit(e: FormEvent) {
     e.preventDefault()
     if (!preview) return
-    setCommitting(true)
-    const { data, error } = await client.POST('/import/mapped', {
+    setValidating(true)
+    setFlash(null)
+    const { data, error } = await client.POST('/import/mapped/validate', {
       body: {
         filename: preview.filename,
         target_scenario_id: preview.target_scenario_id,
@@ -350,22 +398,58 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
         flip_sign: flipSign,
       },
     })
+    setValidating(false)
+    if (error) {
+      setFlash({ err: errorDetail(error, 'Could not check those rows') })
+      return
+    }
+    const result = data as unknown as ValidateResult
+    if (!result.errors.length) {
+      await commit(result, false)
+      return
+    }
+    setValidation(result)
+    setStep('validate')
+  }
+
+  // The actual commit, `POST /import/mapped` — shared by the clean-file
+  // path above (called straight from `handleReviewSubmit`, `skipBadRows:
+  // false` since there's nothing to skip) and the validation-report
+  // step's own "stage the rest" button (`skipBadRows: true`, an explicit
+  // confirmation the backend requires whenever row errors exist —
+  // `service.import_mapped`'s own docstring).
+  async function commit(payload: ValidateResult, skipBadRows: boolean) {
+    setCommitting(true)
+    const { data, error } = await client.POST('/import/mapped', {
+      body: {
+        filename: payload.filename,
+        target_scenario_id: payload.target_scenario_id,
+        file_content_b64: payload.file_content_b64,
+        column_map: payload.column_map,
+        dialect: payload.dialect as unknown as WireDialect,
+        account_map: payload.account_map,
+        category_map: payload.category_map,
+        flip_sign: payload.flip_sign,
+        skip_bad_rows: skipBadRows,
+      },
+    })
     setCommitting(false)
     if (error) {
-      // Stays on this same review step rather than bouncing back to the
-      // upload step — the mappings are still right here in component
-      // state, there's no server-side state between any of these steps
-      // to restore from either way (see the `errors: string[]` shape
-      // below: the round trip is client-held state, not a stored row).
+      // Stays on whichever step is currently shown (review or the
+      // validation report) rather than bouncing back to upload — the
+      // mappings are still right here in component state, there's no
+      // server-side state between any of these steps to restore from
+      // either way.
       setFlash({ err: errorDetail(error, 'Could not stage those rows') })
       return
     }
-    const result = data as unknown as { staged_count: number; errors: string[] }
+    const result = data as unknown as { staged_count: number; errors: RowError[] }
     const okMsg = `Staged ${result.staged_count} entr${result.staged_count === 1 ? 'y' : 'ies'} for review in Staging`
     setFlash({ ok: okMsg, err: result.errors.length ? skippedRowsMessage(result.errors) : undefined })
     setFile(null)
     setColumns(null)
     setPreview(null)
+    setValidation(null)
     setStep('upload')
     onStaged()
   }
@@ -375,6 +459,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
     setColumns(null)
     setColumnTargets({})
     setPreview(null)
+    setValidation(null)
     setFlash(null)
     setStep('upload')
   }
@@ -574,7 +659,7 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
           {flash?.ok && <div className="flash flash-ok">{flash.ok}</div>}
           {flash?.err && <div className="flash flash-err">{flash.err}</div>}
 
-          <form onSubmit={handleCommitSubmit}>
+          <form onSubmit={handleReviewSubmit}>
             <div className="panel">
               <h2>Account — which is the money side?</h2>
               <p className="dim small">Whichever real bank/credit-card account each of these represents.</p>
@@ -641,8 +726,10 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
                 Flip Amount&apos;s sign (check this if a normal expense shows as a positive number in your file
                 instead of negative)
               </label>
-              <button type="submit" disabled={committing} style={{ marginTop: '0.8rem' }}>
-                {committing ? 'Staging…' : `Stage ${preview.row_count} row${preview.row_count === 1 ? '' : 's'}`}
+              <button type="submit" disabled={validating || committing} style={{ marginTop: '0.8rem' }}>
+                {validating ? 'Checking…'
+                  : committing ? 'Staging…'
+                  : `Stage ${preview.row_count} row${preview.row_count === 1 ? '' : 's'}`}
               </button>
               {/* A real `<button>`, not an `<a class="button-link quiet">`
                   — "start over" resets this component's own state, it
@@ -656,6 +743,72 @@ export default function ImportMappedPanel({ onStaged }: ImportMappedPanelProps) 
               </button>
             </div>
           </form>
+        </>
+      )}
+
+      {step === 'validate' && validation && (
+        <>
+          {/* The validation-report step (IMPORT_WIZARD.md §3 step 5, §7
+              Phase 3) — only ever shown once `POST /import/mapped/
+              validate` comes back with at least one row error (R1: a
+              clean file never sees this screen at all, `handleReviewSubmit`
+              stages it directly). Every failing row, its own mapped
+              values, and why it failed — not the old flat joined-string
+              banner — with an explicit choice: fix the mapping and
+              re-check, or stage the rest and skip these. */}
+          <p className="page-sub">
+            {validation.errors.length} row{validation.errors.length === 1 ? '' : 's'} can&apos;t be staged as
+            currently mapped; {validation.groups_count} other{validation.groups_count === 1 ? '' : 's'} would
+            stage fine. Fix the mapping and go back, or stage the rest and skip these.
+          </p>
+
+          {flash?.err && <div className="flash flash-err">{flash.err}</div>}
+
+          <div className="panel">
+            <h2>Rows that didn&apos;t pass validation</h2>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="ledger">
+                <thead>
+                  <tr>
+                    <th>Row</th><th>Date</th><th>Account</th><th>Category</th><th>Amount</th><th>Payee</th>
+                    <th>Problem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validation.errors.slice(0, IMPORT_MAX_ERRORS_SHOWN).map((e) => (
+                    <tr key={e.row_no}>
+                      <td className="mono">{e.row_no}</td>
+                      <td className="mono">{e.raw.date || '—'}</td>
+                      <td className="mono">{e.raw.account || '—'}</td>
+                      <td className="mono">{e.raw.category || '—'}</td>
+                      <td className="mono">{e.raw.amount || '—'}</td>
+                      <td className="dim">{e.raw.payee || '—'}</td>
+                      <td>{e.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {validation.errors.length > IMPORT_MAX_ERRORS_SHOWN && (
+              <p className="dim small" style={{ marginTop: '0.5rem' }}>
+                ...and {validation.errors.length - IMPORT_MAX_ERRORS_SHOWN} more.
+              </p>
+            )}
+
+            <button type="button" disabled={committing || !validation.groups_count}
+                    onClick={() => commit(validation, true)} style={{ marginTop: '0.8rem' }}>
+              {committing ? 'Staging…'
+                : `Stage ${validation.groups_count} row${validation.groups_count === 1 ? '' : 's'}, `
+                  + `skip ${validation.errors.length}`}
+            </button>
+            <button type="button" className="quiet" style={{ marginLeft: '0.5rem' }}
+                    onClick={() => { setValidation(null); setStep('review') }}>
+              Back to review
+            </button>
+            <button type="button" className="quiet" style={{ marginLeft: '0.5rem' }} onClick={startOver}>
+              Start over
+            </button>
+          </div>
         </>
       )}
     </>

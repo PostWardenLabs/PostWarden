@@ -115,8 +115,13 @@ instance.
   names onto Money Account/Entry Date/Amount/Payee/Entry Description/
   Line Memo/Category — by then mapping each distinct Account/Category
   value to a real PostWarden account once per import, and turning every
-  row into a proper balanced posting for the same Staging
-  review. **Find Duplicates** scans every pending entry at once for the classic
+  row into a proper balanced posting for the same Staging review; a row
+  that can't be resolved as currently mapped (an account or category
+  value with no mapping chosen, a date or amount that doesn't parse)
+  shows up in a validation report first — row number, its own values,
+  and why — with the choice to fix the mapping and try again, or stage
+  the rest and skip those rows, rather than either silently dropping
+  them or refusing the whole file. **Find Duplicates** scans every pending entry at once for the classic
   overlapping-import mistake — the same transaction proposed twice,
   same accounts/amounts/date — groups whatever it finds, and merges
   a group down to one entry with your choice of which description,

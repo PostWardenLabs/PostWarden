@@ -592,7 +592,7 @@ def preview_mapped(content: str, column_map: dict[str, str], dialect: dict = IMP
 
 
 def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], category_map: dict[str, str],
-                           flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[str]]:
+                           flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT) -> tuple[list[dict], list[dict]]:
     """Applies the two mappings row by row, producing the same
     (groups, errors) shape `parse_csv_import` returns — every group
     already balanced by construction (two legs, one the negation of the
@@ -606,23 +606,36 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
     drive `parse_amount`/`parse_date` here — this is the only place in
     the mapped importer's pipeline that actually reads a raw Amount or
     Date string as a number/date rather than a plain mapped string, so
-    it's the only place those three dialect fields matter at all."""
+    it's the only place those three dialect fields matter at all.
+
+    `errors` is a list of `{row_no, raw, message}` dicts, one per failing
+    row (IMPORT_WIZARD.md §7 Phase 3 item 1) — not a pre-formatted
+    "Row N: ..." string. `raw` is the row's own dict exactly as `parse_
+    mapped_file` produced it (its already-mapped Account/Date/.../Amount
+    values, still unparsed strings), so a validation-report UI can show
+    what was actually in the file next to why it failed, rather than
+    only a joined message. Untruncated — `IMPORT_MAX_ERRORS_SHOWN`
+    truncation is a display concern now, applied by whatever renders
+    this list, not baked into the value a caller gets back."""
     groups, errors = [], []
     for r in rows:
         money_code = account_map.get(r["account"])
         if not money_code:
-            errors.append(f"Row {r['row_no']}: no mapping chosen for account {r['account']!r}")
+            errors.append({"row_no": r["row_no"], "raw": r,
+                            "message": f"No mapping chosen for account {r['account']!r}"})
             continue
         cat_key = r["category"] or IMPORT_MAPPED_NO_CATEGORY
         other_code = category_map.get(cat_key)
         if not other_code:
             label = r["category"] or "(no category)"
-            errors.append(f"Row {r['row_no']}: no mapping chosen for category {label!r}")
+            errors.append({"row_no": r["row_no"], "raw": r,
+                            "message": f"No mapping chosen for category {label!r}"})
             continue
         try:
             amount = parse_amount(r["amount"], dialect).quantize(Decimal("0.01"))
         except InvalidOperation:
-            errors.append(f"Row {r['row_no']}: Amount {r['amount']!r} isn't numeric")
+            errors.append({"row_no": r["row_no"], "raw": r,
+                            "message": f"Amount {r['amount']!r} isn't numeric"})
             continue
         if flip_sign:
             amount = -amount
@@ -632,7 +645,8 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
             entry_date = parse_date(r["date"], dialect)
         except ValueError:
             date_label = _DATE_FORMAT_LABELS.get(dialect.get("date_format", "iso"), "YYYY-MM-DD")
-            errors.append(f"Row {r['row_no']}: invalid Date {r['date']!r} — expected {date_label}")
+            errors.append({"row_no": r["row_no"], "raw": r,
+                            "message": f"Invalid Date {r['date']!r} — expected {date_label}"})
             continue
         memo = r["memo"] or None
         # Standard expense-tracker sign convention (negative = money out):
@@ -661,9 +675,32 @@ def transform_mapped_rows(rows: list[dict], account_map: dict[str, str], categor
     return groups, errors
 
 
+def validate_mapped(content: str, column_map: dict[str, str], account_map: dict[str, str],
+                     category_map: dict[str, str], flip_sign: bool,
+                     dialect: dict = IMPORT_DEFAULT_DIALECT) -> dict:
+    """The review step's own pre-commit validation report (IMPORT_WIZARD.md
+    §3 step 5, §7 Phase 3) — runs the exact same `parse_mapped_file` +
+    `transform_mapped_rows` pipeline `import_mapped` commits with, against
+    the same account/category maps, but never touches the database and
+    never stages anything. Lets the frontend show every row that would
+    fail and why *before* the user decides whether to stage the rest and
+    skip them (`import_mapped`'s own `skip_bad_rows`) — R1's "sniff/check
+    first, ask second" applied to committing, not just to the earlier
+    sniffing steps. Raises `ValueError` on the same structural (pre-row)
+    failures `preview_mapped` already raises for — an incomplete or
+    wrong `column_map` is caught before any row is even attempted, same
+    as it always was; only row-level failures come back as data here."""
+    rows, errors = parse_mapped_file(content, column_map, dialect)
+    if errors:
+        raise ValueError("; ".join(errors))
+    groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign, dialect)
+    return {"groups_count": len(groups), "errors": row_errors}
+
+
 def import_mapped(conn: Connection, *, content: str, filename: str, target_scenario_id: int,
                    column_map: dict[str, str], account_map: dict[str, str], category_map: dict[str, str],
-                   flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT, user_id: int | None = None) -> dict:
+                   flip_sign: bool, dialect: dict = IMPORT_DEFAULT_DIALECT, skip_bad_rows: bool = False,
+                   user_id: int | None = None) -> dict:
     """The mapped importer's commit step — ported from `import_mapped_
     commit`'s try block, minus the base64/hidden-form-field round-trip
     (see `router.py`'s own docstring on why the wire shape changed, not
@@ -671,14 +708,29 @@ def import_mapped(conn: Connection, *, content: str, filename: str, target_scena
     from the preview step's own response, same "never trust caller-
     supplied structure without re-deriving it" reasoning `stage_import_
     groups`' own account-code re-resolution already documents. `dialect`
-    gets the same treatment for the same reason."""
+    gets the same treatment for the same reason.
+
+    **`skip_bad_rows` makes a partial import an explicit choice, not an
+    implicit default** (IMPORT_WIZARD.md §7 Phase 3 item 2). Row errors
+    used to mean "stage whatever worked, report the rest" unconditionally
+    — now, unless the caller explicitly opts in, any row error blocks the
+    whole commit, same as a structural `parse_mapped_file` error already
+    did. The intended caller (`ImportMappedPanel.tsx`) always calls
+    `validate_mapped` (via `POST /import/mapped/validate`) first and only
+    ever sets `skip_bad_rows=True` once a user has actually seen those
+    errors and chosen to skip them; a caller that posts straight here
+    with row errors present and `skip_bad_rows` left `False` gets exactly
+    the same block an API-only consumer should get — no silent partial
+    stage."""
     rows, errors = parse_mapped_file(content, column_map, dialect)
     if errors:
         raise ValueError("; ".join(errors))
     groups, row_errors = transform_mapped_rows(rows, account_map, category_map, flip_sign, dialect)
+    if row_errors and not skip_bad_rows:
+        messages = [e["message"] for e in row_errors[:IMPORT_MAX_ERRORS_SHOWN]]
+        raise ValueError("; ".join(messages))
     if not groups:
-        raise ValueError("; ".join(row_errors[:IMPORT_MAX_ERRORS_SHOWN])
-                         or "No valid entries produced — check the mapping")
+        raise ValueError("No valid entries produced — check the mapping")
     batch_id = stage_import_groups(conn, groups, filename, target_scenario_id, user_id)
     return {"batch_id": batch_id, "staged_count": len(groups), "errors": row_errors}
 

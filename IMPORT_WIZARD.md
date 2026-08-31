@@ -122,7 +122,7 @@ buried in
 | **2. Shape** | one row per entry vs. rows grouped by a key column; one signed Amount vs. a Debit/Credit pair | ❌ hardcoded, one answer per importer |
 | **3. Column mapping** | §2's table; available targets depend on step 2 | ✅ right orientation (Phase 1); dialect-aware (Phase 2) |
 | **4. Value mapping** | for each column flagged "needs lookup," every distinct value → a real account (or payee, or tag) | ⚠️ hardcoded to Account + Category |
-| **5. Validation report** | every row that couldn't be read, why, and "skip those N, import the other M" | ❌ one flat error banner |
+| **5. Validation report** | every row that couldn't be read, why, and "skip those N, import the other M" | ✅ mapped importer only (Phase 3); plain importer still one flat error banner |
 | **6. Confirm** | stage into Staging | ✅ |
 
 Step 2 is the structural key. **"Does one file row equal one entry, or
@@ -379,17 +379,57 @@ in German exports) — only slash-separated `MM/DD/YYYY`/`DD/MM/YYYY` and
 ISO are recognized. `SPEC.md` decision 23 has the fuller reasoning for
 why that's an acceptable v1 gap rather than a blocker.
 
-### Phase 3 — Step 5, the per-row validation report (small–medium)
+### Phase 3 — Step 5, the per-row validation report (small–medium) — ✅ shipped
 
-1. Every parse/transform function already returns `(rows, errors)` —
-   change `errors` from `list[str]` to a structured
-   `list[{row_no, raw, message}]`, and stop truncating at
-   `IMPORT_MAX_ERRORS_SHOWN` on the wire (truncate in the UI instead).
-2. `import_mapped` gains a `skip_bad_rows: bool`, so a partial import is
-   an explicit choice rather than the current implicit "stage what
-   worked, report the rest."
-3. Frontend: a real errors table between review and commit, with the
-   skip/go-back actions.
+Shipped close to this plan, with one scope narrowing: everything below
+is the *mapped* importer's own pipeline (`transform_mapped_rows`,
+`import_mapped`) — the plain importer's `parse_csv_import` keeps its
+flat `list[str]` errors, unchanged. Its errors mix per-row and per-entry
+(multi-row) failures in ways that don't map onto one `{row_no, raw,
+message}` per row as cleanly, and it's a smaller, more mechanically
+fixed file format to begin with (real double-entry CSVs, not arbitrary
+bank exports) — a plausible follow-up, not attempted here.
+
+1. `transform_mapped_rows`'s `errors` is now a structured
+   `list[{row_no, raw, message}]`, not a pre-formatted `"Row N: ..."`
+   string — `raw` is the row exactly as `parse_mapped_file` produced it
+   (its already-mapped Account/Date/.../Amount values, still unparsed
+   strings), so a validation-report table can render what was actually
+   in the file next to why it failed. Untruncated over the wire —
+   `IMPORT_MAX_ERRORS_SHOWN` truncation moved to the frontend, applied
+   only when actually rendering the table.
+2. A new pure function, `service.validate_mapped` (`POST /import/mapped/
+   validate`, no database) — runs the exact `parse_mapped_file` +
+   `transform_mapped_rows` pipeline `import_mapped` commits with, against
+   the same account/category maps, and returns `{groups_count, errors}`
+   without staging anything. Not a sixth wizard step (same reasoning
+   `/mapped/columns/reparse` already established for the dialect panel)
+   — the review step calls it first on every submit, and only shows the
+   new validation-report screen when it comes back with any errors at
+   all; a clean file's `errors` comes back empty and the frontend
+   commits immediately, exactly as this step always behaved (R1).
+3. `import_mapped` gains `skip_bad_rows: bool = False` — a row error now
+   blocks the whole commit (same as a structural `parse_mapped_file`
+   error already did) unless the caller explicitly opts in, rather than
+   the old implicit "stage what worked, report the rest." The frontend
+   always calls `/mapped/validate` first and only ever sends
+   `skip_bad_rows: true` once a user has actually seen the errors and
+   chosen "stage the rest, skip these" — an API-only caller that posts
+   straight to `/mapped` with row errors present and `skip_bad_rows`
+   left `False` gets the same block, not a silent partial stage.
+4. Frontend: a fourth `ImportMappedPanel.tsx` step, `'validate'`, shown
+   only when `/mapped/validate` reports errors — a table (row, date,
+   account, category, amount, payee, problem) plus "Stage the rest, skip
+   these" (re-posts to `/mapped` with `skip_bad_rows: true`) and "Back to
+   review" (returns to the account/category mapping step with its state
+   intact, no re-upload needed).
+
+Not done, and not attempted: R2's fuller ambition of showing the
+*resulting* journal entries (with their legs and running balance) at
+this step — the report shows what failed and why, and how many rows
+would stage, not a preview of the entries themselves. A pure per-row
+diagnostic table was the actually-asked-for shape (R3); a full entry
+preview is a bigger addition, left for whenever it's actually needed.
 
 ### Phase 4 — Steps 2 + 4, and retiring the plain importer (large)
 
