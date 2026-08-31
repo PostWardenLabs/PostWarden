@@ -43,6 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { key: 'variance', label: 'Variance', href: '/app/variance' },
       { key: 'tb', label: 'Trial Balance', href: '/app/trial-balance' },
       { key: 'ledger', label: 'Ledger', href: '/app/ledger' },
+      { key: 'custom_report', label: 'Report Builder', href: '/app/custom-report' },
     ],
   },
   {

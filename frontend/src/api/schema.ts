@@ -430,6 +430,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reports/custom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Custom Report */
+        get: operations["custom_report_reports_custom_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/custom.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Custom Report Csv */
+        get: operations["custom_report_csv_reports_custom_csv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/custom.xlsx": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Custom Report Xlsx */
+        get: operations["custom_report_xlsx_reports_custom_xlsx_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/entries": {
         parameters: {
             query?: never;
@@ -1486,6 +1537,12 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AccountTypeFilter
+         * @description The five `account_type` enum values, as a typed filter.
+         * @enum {string}
+         */
+        AccountTypeFilter: "asset" | "liability" | "equity" | "income" | "expense";
+        /**
          * ApproveRejectRequest
          * @description Body of both `POST /staging/approve` and `POST /staging/reject` —
          *     same shape, since both are "act on this checked set" over the same
@@ -1701,6 +1758,16 @@ export interface components {
             /** Lines */
             lines: components["schemas"]["postwarden__modules__scheduling__schemas__EntryLineIn"][];
         };
+        /**
+         * Dimension
+         * @description What the metric is grouped by — each member maps to exactly one
+         *     GROUP BY shape in `repository._DIMENSIONS`. `account_level` is the
+         *     doc's `account_level:N` split into an enum member plus a separate
+         *     validated `level_id` query param (the same shape Variance's own
+         *     `level_id` takes), so the enum itself stays closed.
+         * @enum {string}
+         */
+        Dimension: "account" | "account_level" | "tag" | "scenario" | "month" | "quarter" | "year";
         /**
          * EditDescriptionRequest
          * @description Body of `POST /entries/{entry_id}/edit-description`.
@@ -2059,6 +2126,13 @@ export interface components {
             /** Target Name */
             target_name: string;
         };
+        /**
+         * Metric
+         * @description What gets aggregated — each member maps to exactly one SELECT
+         *     fragment in `repository._METRICS`.
+         * @enum {string}
+         */
+        Metric: "net_amount" | "debit_total" | "credit_total" | "entry_count";
         /**
          * QuickCreateAccountRequest
          * @description Body of `POST /accounts/quick-create` — the Accounts page's inline
@@ -2953,6 +3027,131 @@ export interface operations {
                 as_of?: string;
                 zeros?: number;
                 pct_of_base?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    custom_report_reports_custom_get: {
+        parameters: {
+            query?: {
+                metric?: components["schemas"]["Metric"];
+                dimension?: components["schemas"]["Dimension"];
+                scenario?: string;
+                date_from?: string;
+                date_to?: string;
+                account_id?: number | null;
+                subtree?: number;
+                tag_id?: number | null;
+                payee_id?: number | null;
+                account_type?: components["schemas"]["AccountTypeFilter"] | null;
+                level_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    custom_report_csv_reports_custom_csv_get: {
+        parameters: {
+            query?: {
+                metric?: components["schemas"]["Metric"];
+                dimension?: components["schemas"]["Dimension"];
+                scenario?: string;
+                date_from?: string;
+                date_to?: string;
+                account_id?: number | null;
+                subtree?: number;
+                tag_id?: number | null;
+                payee_id?: number | null;
+                account_type?: components["schemas"]["AccountTypeFilter"] | null;
+                level_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    custom_report_xlsx_reports_custom_xlsx_get: {
+        parameters: {
+            query?: {
+                metric?: components["schemas"]["Metric"];
+                dimension?: components["schemas"]["Dimension"];
+                scenario?: string;
+                date_from?: string;
+                date_to?: string;
+                account_id?: number | null;
+                subtree?: number;
+                tag_id?: number | null;
+                payee_id?: number | null;
+                account_type?: components["schemas"]["AccountTypeFilter"] | null;
+                level_id?: number | null;
             };
             header?: never;
             path?: never;

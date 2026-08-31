@@ -7,10 +7,10 @@ land on a new page. All seven proposed changes in §5 have since shipped
 — see each item's own strikethrough note for what actually landed.
 
 **This file is the standing reference for planning any future report
-UI change, not just a historical record of this one pass.** §1's four
+UI change, not just a historical record of this one pass.** §1's six
 archetypes (Filterable transaction list, Point-in-time report,
-Range/period report, Editable grid, plus Management/CRUD) are the
-actual unit of design from here on — a change to how one report's
+Range/period report, Editable grid, Management/CRUD, Composable report)
+are the actual unit of design from here on — a change to how one report's
 filter bar looks or behaves gets planned against *every other report in
 its archetype* before it's built, the same way §5.6's prev/next
 navigation was designed once per archetype (point-in-time vs. range)
@@ -27,13 +27,13 @@ structural read of what was actually rendered, not a visual QA pass.
 
 ---
 
-## 1. The pages fall into four real archetypes, not one
+## 1. The pages fall into six real archetypes, not one
 
 They don't all need the same controls — a Journal filter and a Balance
 Sheet's "as of" picker are answering different questions. The
 inconsistency worth fixing isn't "why doesn't every page have every
 field," it's that **pages already doing the same job don't agree with
-each other**. Four archetypes, as currently built:
+each other**. Six archetypes, as currently built:
 
 | Archetype | Pages | What it's answering |
 |---|---|---|
@@ -41,7 +41,8 @@ each other**. Four archetypes, as currently built:
 | **Point-in-time report** | Balance Sheet, Trial Balance, Variance, Ledger | "what do balances look like as of a date" — Ledger reclassified here (was Range/period, see the correction below §2c) once it grew a real "as of" |
 | **Range/period report** | Income Statement, Cash Flow | "what happened between two dates" |
 | **Editable grid** | Budget Grid | "let me change numbers, not just read them" |
-| **Management / CRUD list** | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | "let me create/edit/retire records" — a genuinely different job from the five above, its own section at the end |
+| **Management / CRUD list** | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | "let me create/edit/retire records" — a genuinely different job from the others, its own section at the end |
+| **Composable report** | Report Builder (`/app/custom-report`) | "let me pick my own metric/breakdown/filters/chart, not just read a report someone else designed" — added 2026-08-31, see `CUSTOM_REPORTS.md` and §2g below |
 
 The TO-BE proposal (§4) defines one canonical control set **per
 archetype**, not one for the whole app — that's the actual fix for
@@ -217,6 +218,28 @@ else, because a second row of checkboxes/export links needs the form
 itself to not be the flex container). Not a user-visible bug, but worth
 knowing before touching any of these — Staging is the one filter form
 shaped differently underneath despite looking identical on screen.
+
+### 2g. Composable report (new, 2026-08-31 — Report Builder)
+
+Built after this audit's original pass, so it postdates every AS-IS
+table above rather than fitting into one — its own section instead.
+Reuses the same filter widgets every archetype here already standardizes
+on (`Combobox`, `DatePicker`, `PeriodPresetPicker`), plus three fields no
+other report needs: Metric and Break-down-by (both compile-time enum
+dropdowns — see `CUSTOM_REPORTS.md`'s Architecture section on why no
+runtime schema endpoint exists for these) and a Chart-type picker (bar/
+line/area/pie/table), all URL-state like every other report. Its filter
+row is a superset of what any *one* other report needs (scenario, date
+range, account + subtree, tag, payee, account type) because it has to
+express whatever any of them can, not because it's over-filtered for its
+own job. One deliberate divergence from every Range/period report above:
+a blank date range here means *all history*, not "this month" — a custom
+report over everything is a sensible default, where the classic reports'
+own "this month" default exists specifically because most of them chose
+one (see §2c's own table). No drill-through links (§1's Point-in-time/
+Range-period rows both note the `entry_link`/`cell_link` pattern) — a
+chart bar or pie wedge isn't a natural click target the way a report
+table's amount cell is; deferred, not ruled out.
 
 ---
 

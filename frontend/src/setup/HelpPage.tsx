@@ -48,6 +48,7 @@ export default function HelpPage() {
           <a href="#budget-grid">Budget grid</a>
           <a href="#reports">Reports &amp; simulated close</a>
           <a href="#variance">Variance</a>
+          <a href="#custom-reports">Report Builder</a>
           <a href="#scenarios">Scenarios</a>
           <a href="#accounts">Accounts &amp; levels</a>
           <a href="#payees">Payees</a>
@@ -205,6 +206,18 @@ export default function HelpPage() {
             Compares two scenarios side by side, rolled up to a common level so a scenario entered straight
             against a summary account like &quot;Bank&quot; still lines up against a finer one that split
             Checking/Savings, instead of just not matching up at all.
+          </p>
+
+          <h2 id="custom-reports">Report Builder</h2>
+          <p>
+            Pick one metric (net amount, debit total, credit total, or entry count) and one way to break it down
+            (account, account level, tag, scenario, month, quarter, or year), add whichever filters apply — date
+            range, scenario, account type, a single account (optionally including everything under it), a tag, a
+            payee — and view the result as a bar, line, area, or pie chart, or a plain table. Unlike the other
+            reports, a blank date range here means <em>all history</em>, not the current month. The whole
+            configuration lives in the page&apos;s URL, so any report you build is bookmarkable and shareable with
+            no save step. Breaking down by Scenario ignores the Scenario filter above it — comparing scenarios
+            <em>is</em> the point of that breakdown.
           </p>
 
           <h2 id="scenarios">Scenarios</h2>

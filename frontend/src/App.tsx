@@ -7,6 +7,7 @@ import BudgetPage from './budget/BudgetPage'
 import JournalPage from './journal/JournalPage'
 import BalanceSheetPage from './reports/BalanceSheetPage'
 import CashFlowPage from './reports/CashFlowPage'
+import CustomReportPage from './reports/CustomReportPage'
 import DashboardPage from './reports/DashboardPage'
 import IncomeStatementPage from './reports/IncomeStatementPage'
 import LedgerPage from './reports/LedgerPage'
@@ -56,6 +57,7 @@ function routeKey(pathname: string): string {
   if (pathname === '/app/income-statement') return 'income_statement'
   if (pathname === '/app/variance') return 'variance'
   if (pathname === '/app/ledger') return 'ledger'
+  if (pathname === '/app/custom-report') return 'custom_report'
   return 'dashboard'
 }
 
@@ -87,6 +89,7 @@ const PAGE_TITLES: Record<string, string> = {
   income_statement: 'Income Statement',
   variance: 'Variance',
   ledger: 'Ledger',
+  custom_report: 'Report Builder',
 }
 
 // Root component. Three-way branch on `session.status`, matching the
@@ -146,6 +149,7 @@ function App() {
         <Route path="/app/income-statement" element={<IncomeStatementPage />} />
         <Route path="/app/variance" element={<VariancePage />} />
         <Route path="/app/ledger" element={<LedgerPage />} />
+        <Route path="/app/custom-report" element={<CustomReportPage />} />
         <Route path="/app/entries" element={<JournalPage />} />
         <Route path="/app/staging" element={<StagingPage />} />
         <Route path="/app/staging/duplicates" element={<StagingDuplicatesPage />} />

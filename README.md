@@ -82,6 +82,15 @@ instance.
   bold total on whichever side the balance actually landed) — a teaching
   aid for double-entry itself, not another working report, so it's
   always the current month, nothing to configure beyond scenario.
+- **Report Builder** — pick one metric (net amount, debit/credit total,
+  entry count) and one breakdown (account, account level, tag, scenario,
+  month/quarter/year), add whichever filters apply, and view it as a
+  bar, line, area, or pie chart, or a plain table — for the "spend by
+  category over time" or "expense distribution" question that doesn't
+  have its own dedicated report page. Every metric/breakdown/filter
+  choice is a closed, pre-vetted option (never a free-form query), the
+  whole configuration lives in the URL like every other report, and it
+  has the same Export CSV/XLSX siblings.
 - **A Budget grid** — an [Actual Budget](https://actualbudget.org)-style
   grid: type a number per account per month, watch every subtotal update
   live, see Actual and Variance right next to what you budgeted. No

@@ -225,7 +225,7 @@ Pydantic-free response shape has actually caused a bug.
 
 ### Component archetypes
 
-`UI_CONSISTENCY_AUDIT.md` §1 names five page shapes; the build follows
+`UI_CONSISTENCY_AUDIT.md` §1 names six page shapes; the build follows
 that grouping directly — one component per archetype, then per-screen
 configuration, not a bespoke page per screen:
 
@@ -236,6 +236,7 @@ configuration, not a bespoke page per screen:
 | Range/period report | Income Statement, Cash Flow | scenario + date-from/date-to, `PeriodPresetPicker` |
 | Editable grid | Budget | live client-side recompute, no full-page reload on edit |
 | Management / CRUD | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | Select/Merge/+Add/table/Status/Archive — `useSelectMode`, `MergeDialog` |
+| Composable report | Report Builder (`CustomReportPage.tsx`) | metric/dimension dropdowns typed against the generated `Metric`/`Dimension`/`AccountTypeFilter` enum unions, the same filter widgets every other archetype already uses, a chart-type toggle (Recharts) with a flat table + total row as the non-chart view — see `CUSTOM_REPORTS.md` |
 
 Every Point-in-time and Range/period report screen also carries the
 `entry_link`/`cell_link` drill-through pattern: a non-zero (or, on
