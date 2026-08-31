@@ -1,12 +1,11 @@
 """DB-backed tests of modules.reports.service — the report-assembly
-functions REBUILD.md §6 calls the ~450 "genuinely hard" lines, run
-against a real Postgres (see ../../conftest.py and this package's own
-conftest.py for the `book` fixture the numbers below are hand-derived
-from). Each report's own pure sub-logic (sign flips, zero-hiding, tree
-rollup) already has dedicated, DB-free coverage in tests/domain/ — these
-tests prove the SQL wiring and assembly glue instead: right SRF args,
-right column names, right sign conventions, numbers that actually
-reconcile against each other."""
+functions, run against a real Postgres (see ../../conftest.py and this
+package's own conftest.py for the `book` fixture the numbers below are
+hand-derived from). Each report's own pure sub-logic (sign flips,
+zero-hiding, tree rollup) already has dedicated, DB-free coverage in
+apitests/domain/ — these tests prove the SQL wiring and assembly glue
+instead: right SRF args, right column names, right sign conventions,
+numbers that actually reconcile against each other."""
 from datetime import date
 from decimal import Decimal
 

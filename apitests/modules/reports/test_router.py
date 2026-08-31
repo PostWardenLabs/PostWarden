@@ -3,8 +3,8 @@ through a throwaway FastAPI() + include_router(), the same pattern
 test_json.py established for an unmounted route, proving the whole
 chain (query params -> service -> repository -> real Postgres -> JSON
 response) works together, including that Decimal values round-trip as
-strings over real HTTP (Phase 1.3's json.py) with zero extra wiring in
-this module — see router.py's own docstring for why.
+strings over real HTTP (json.py's own custom encoder) with zero extra
+wiring in this module — see router.py's own docstring for why.
 
 `get_connection` is overridden to hand back this test's own rolled-back
 transaction (`conn`, from ../../conftest.py) instead of opening a real
@@ -22,7 +22,7 @@ def client_for(conn) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
-    # As of Phase 1.14, every route here requires a session
+    # Every route here requires a session
     # (`APIRouter(dependencies=[Depends(get_current_session)])`) — no
     # write routes in this module, so there's no `require_csrf_header`
     # to override alongside it.
@@ -139,7 +139,7 @@ def test_ledger_endpoint(book, conn):
 
 
 def test_ledger_endpoint_has_no_export_siblings(book, conn):
-    # Unlike every other report in this module — legacy's own
-    # ledger.html never had CSV/XLSX links either.
+    # Unlike every other report in this module — Ledger has never had
+    # CSV/XLSX export siblings.
     assert client_for(conn).get("/reports/ledger.csv").status_code == 404
     assert client_for(conn).get("/reports/ledger.xlsx").status_code == 404

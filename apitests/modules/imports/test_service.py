@@ -1,11 +1,6 @@
 """DB-backed tests of modules.imports.service — both importers' parsing,
 the shared `stage_import_groups` landing step, and the base64 round-trip
-the mapped importer's preview/commit split relies on. Ported test intent
-from `tests/test_auth.py`'s `test_import_csv_stages_entries_and_approves_
-into_target`/`test_import_csv_reports_bad_rows_and_still_stages_the_
-valid_ones`/`test_import_csv_rejects_a_file_missing_required_columns` —
-the mapped importer has no legacy test coverage at all (REBUILD.md §4's
-own blind-spot list), so its tests here are new, not a port."""
+the mapped importer's preview/commit split relies on."""
 from decimal import Decimal
 
 import pytest

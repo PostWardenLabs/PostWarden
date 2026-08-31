@@ -4,7 +4,7 @@ from pathlib import Path
 from postwarden.config import Settings, get_settings
 
 
-def test_defaults_match_legacy_app_db_defaults(monkeypatch):
+def test_defaults_match_documented_app_db_defaults(monkeypatch):
     for var in (
         "DATABASE_URL",
         "POSTWARDEN_COOKIE_SECURE",
@@ -28,7 +28,7 @@ def test_database_url_reads_from_env(monkeypatch):
     assert Settings().database_url == "postgresql+psycopg://u:p@dbhost:5432/postwarden_test"
 
 
-def test_bool_fields_accept_the_same_truthy_spellings_legacy_used(monkeypatch):
+def test_bool_fields_accept_common_truthy_spellings(monkeypatch):
     for truthy in ("1", "true", "True", "yes", "YES"):
         monkeypatch.setenv("POSTWARDEN_DEMO_MODE", truthy)
         assert Settings().postwarden_demo_mode is True, truthy

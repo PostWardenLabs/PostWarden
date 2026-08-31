@@ -1,9 +1,6 @@
 """Unit tests for postwarden.domain.money — no database, no app.
 
-New tests, not a port: the legacy `_pct_variance`/`_variance_amount`/
-`_pct_of`/`_divide` were file-private helpers with no direct test
-coverage of their own (only indirectly, through route-level HTML
-assertions). These exercise the behavior each docstring documents.
+Exercises the behavior each function's own docstring documents.
 """
 from decimal import Decimal
 

@@ -113,9 +113,9 @@ def test_delete_lines_for_entry_and_delete_entry(book, conn, staged_entry):
 
 
 def test_all_pending_entries_basic_includes_already_promoted_entries(book, conn, staged_entry):
-    # Ported quirk, not a bug fix — see this function's own docstring:
-    # legacy's duplicate-finder never filtered on promoted_entry_id, so
-    # an already-approved staging-origin entry stays a candidate.
+    # Deliberate, not a bug — see this function's own docstring: the
+    # duplicate-finder never filters on promoted_entry_id, so an
+    # already-approved staging-origin entry stays a candidate.
     posted_id = mk_entry(conn, book["actual"]["id"], "2026-03-01", "Posted")
     repo.mark_promoted(conn, staged_entry, posted_id)
     ids = {e["id"] for e in repo.all_pending_entries_basic(conn)}

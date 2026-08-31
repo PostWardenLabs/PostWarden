@@ -11,7 +11,7 @@ def test_trial_balance_returns_a_row_per_active_account(book, conn):
     assert by_code["1100"]["debit_balance"] == 2200
     # Old Expense (5900) is inactive, and fn_trial_balance's own WHERE
     # da.is_active excludes it — unlike this module's own accounts(),
-    # which (like legacy's api_accounts) has no such filter at all.
+    # which has no such filter at all.
     assert "5900" not in by_code
 
 

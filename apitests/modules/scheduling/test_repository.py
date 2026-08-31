@@ -177,9 +177,8 @@ def test_templates_all_and_lines_and_tags_for(book, conn):
     # Raw debit/credit straight off the generated columns here — both are
     # `NUMERIC NOT NULL` (never NULL), so the zero side reads back as
     # Decimal("0.00"), not None. `service.list_templates` is what turns a
-    # zero side into `None` for the JSON response (str()-if-truthy, same
-    # as legacy's own `templates_full`) — see test_service.py's own
-    # assertion on that shape.
+    # zero side into `None` for the JSON response (str()-if-truthy) —
+    # see test_service.py's own assertion on that shape.
     assert lines == [{"template_id": tpl_id, "code": "1100", "debit": Decimal("0.00"),
                        "credit": Decimal("500.00"), "memo": "out"}]
     tags = repo.template_tags_for(conn, [tpl_id])

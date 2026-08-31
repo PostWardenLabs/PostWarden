@@ -13,7 +13,7 @@ def client_for(conn) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
-    # As of Phase 1.14, every route here requires a session
+    # Every route here requires a session
     # (`APIRouter(dependencies=[Depends(get_current_session)])`), and every
     # write route additionally requires `require_csrf_header` — override both
     # to a fixed fake session rather than simulate a real login/CSRF-token

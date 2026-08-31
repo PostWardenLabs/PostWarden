@@ -79,9 +79,9 @@ def test_end_to_end_implicit_dict_return_uses_string_decimal():
 
 
 def test_end_to_end_explicit_json_response_uses_string_decimal():
-    """A route that explicitly builds JSONResponse({...}), legacy's own
-    ok/err action-toast idiom — the path Starlette's plain json.dumps
-    would otherwise crash on outright."""
+    """A route that explicitly builds JSONResponse({...}) — the path
+    Starlette's plain json.dumps would otherwise crash on outright, since
+    it doesn't go through FastAPI's own Decimal-aware encoder."""
     app = FastAPI()
 
     @app.post("/action")

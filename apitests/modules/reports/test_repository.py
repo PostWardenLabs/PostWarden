@@ -109,8 +109,8 @@ def test_ledger_lines_respects_as_of_upper_bound(book, conn):
 
 
 def test_budget_line_totals_with_both_date_bounds_set(book, conn):
-    # Regression test for a real bug, only found doing Phase 4.1's Income
-    # Statement screen: `:date_from::date` (a bind param directly
+    # Regression test for a real bug found building Income Statement:
+    # `:date_from::date` (a bind param directly
     # followed by Postgres's `::` cast, no space) reads to SQLAlchemy's
     # text() parser as something other than a plain named param, so the
     # literal string reached Postgres unsubstituted and raised a syntax

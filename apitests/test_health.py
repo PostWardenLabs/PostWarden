@@ -1,9 +1,8 @@
-"""Phase 0 smoke test: proves the app boots and CI can run pytest at all.
+"""Smoke test: proves the app boots and CI can run pytest at all.
 
-Not a port of any existing test — there is no legacy equivalent. Superseded
-by real module tests starting Phase 1, but kept as the one thing that
-exercises the full pipeline (install -> import -> TestClient -> assert)
-before any product code exists.
+Superseded in coverage by the real module tests, but kept as the cheapest
+possible check that the full pipeline (install -> import -> TestClient ->
+assert) still works.
 """
 from fastapi.testclient import TestClient
 

@@ -3,9 +3,9 @@ through a throwaway FastAPI() + include_router(), the same pattern
 modules/reports/test_router.py established, proving the whole chain
 (request body/query params -> service -> repository -> real Postgres ->
 JSON response) works together, including that Decimal values round-trip
-as strings (Phase 1.3's json.py) and that a domain `ValueError` or a
-deferred-trigger `SQLAlchemyError` both come back as a 400 with a plain
-message, not a bare 500."""
+as strings (json.py's own custom encoder) and that a domain `ValueError`
+or a deferred-trigger `SQLAlchemyError` both come back as a 400 with a
+plain message, not a bare 500."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -20,7 +20,7 @@ def client_for(conn) -> TestClient:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
-    # As of Phase 1.14, every route here requires a session
+    # Every route here requires a session
     # (`APIRouter(dependencies=[Depends(get_current_session)])`), and every
     # write route additionally requires `require_csrf_header` — override both
     # to a fixed fake session rather than simulate a real login/CSRF-token

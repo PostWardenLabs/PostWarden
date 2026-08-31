@@ -1,9 +1,6 @@
 """Fixtures for tests that need a real Postgres connection — currently
 just `modules/reports/`. `domain/` tests need no database at all (that's
-the whole point of `domain/`); `test_config.py`/`test_db.py`'s own DB
-check is a one-off manual smoke test outside the suite (see
-REBUILD_STATUS.md's Phase 1.2 log entry), not something this file needs
-to support.
+the whole point of `domain/`).
 
 `DATABASE_URL` (same env var `config.py`/`db.py` read, `backend-ci.yml`
 already sets it) names which Postgres *server* to reach — host, port,
@@ -182,9 +179,9 @@ def mk_budget_line(conn: Connection, scenario_id: int, account_id: int, amount, 
 
 
 def mk_user(conn: Connection) -> dict:
-    """A real `users` row — needed as of Phase 1.14, whose write-route
-    tests (`modules/entries/`, `/staging/`, `/imports/`) fake a logged-in
-    session by overriding `get_current_session`/`require_csrf_header`
+    """A real `users` row — the write-route tests (`modules/entries/`,
+    `/staging/`, `/imports/`) fake a logged-in session by overriding
+    `get_current_session`/`require_csrf_header`
     directly rather than a real login, but still thread that session's
     `user_id` into `created_by_user_id`/`imported_by_user_id` for real —
     a bare made-up int like `1` would violate those columns' own FK

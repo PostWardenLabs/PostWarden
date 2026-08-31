@@ -1,7 +1,7 @@
 """Shared fixture `book` for `analytics/` tests — forked from
 `modules/reports/conftest.py`'s own fixture of the same name, not
-imported (REBUILD.md decision 3's "deletable on its own" test, same
-reasoning `analytics/repository.py`'s own docstring already gives for
+imported (the "deletable on its own" test, same reasoning
+`analytics/repository.py`'s own docstring already gives for
 forking `reports`'/`reference`'s queries instead of reusing them).
 
 Extended a little past the reports fixture's own minimal shape, since

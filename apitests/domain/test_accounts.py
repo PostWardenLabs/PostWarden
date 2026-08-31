@@ -194,7 +194,7 @@ def test_income_statement_groups_hides_zero_root_unless_zeros():
 def test_income_statement_groups_sign_never_produces_negative_zero():
     # A genuinely zero income root, flipped (sign=-1 * 0), must render as
     # 0 not -0 — normalize_zero's whole reason for existing (see its own
-    # docstring: this was legacy's duplicate inline `signed()` guard).
+    # docstring).
     roots = build_account_tree(INCOME_EXPENSE_ACCOUNTS, {11: 0, 21: 400})
     income = income_statement_groups(roots, "income", flip=True, zeros=True)
     assert str(income[0]["base_subtotal"]) != "-0"

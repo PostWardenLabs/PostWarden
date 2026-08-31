@@ -5,7 +5,7 @@ throwaway `FastAPI()` + `include_router()`, the same pattern
 transaction; `get_settings` is overridden for the Connect BI routes so
 the port shown is deterministic regardless of the ambient environment;
 `get_current_session` is overridden to a fixed fake session, since every
-route here requires one as of Phase 1.14."""
+route here requires one."""
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -20,8 +20,8 @@ def client_for(conn, *, bi_port: str = "5432") -> TestClient:
     app.include_router(router)
     app.dependency_overrides[get_connection] = lambda: conn
     app.dependency_overrides[get_settings] = lambda: Settings(POSTWARDEN_BI_PORT=bi_port)
-    # As of Phase 1.14, every route here (both /api/* and /settings/connect-bi*)
-    # requires a session — the same router-level `get_current_session` dependency
+    # Every route here (both /api/* and /settings/connect-bi*) requires a
+    # session — the same router-level `get_current_session` dependency
     # every other module's own router carries.
     app.dependency_overrides[get_current_session] = lambda: {"user_id": 1, "username": "test"}
     return TestClient(app)

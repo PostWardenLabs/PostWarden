@@ -70,10 +70,10 @@ def test_journal_xlsx_grand_total_sums_debits_and_credits_when_balanced():
 
 def test_journal_xlsx_flags_an_out_of_balance_filtered_result():
     # A single debit leg with no matching credit leg in the export — the
-    # filtered result itself is out of balance, same as legacy's own
-    # "this filter includes a scenario that allows single-sided entries"
-    # label (single-sided entries are a real, if rare, legal state —
-    # SPEC.md's own scenario.enforce_balance flag).
+    # filtered result itself is out of balance, which the export flags
+    # with a "this filter includes a scenario that allows single-sided
+    # entries" label (single-sided entries are a real, if rare, legal
+    # state — SPEC.md's own scenario.enforce_balance flag).
     ws = load_workbook(io.BytesIO(export.journal_xlsx([_leg(debit=Decimal("100.00"))], "", "", "").body)).active
     values = [tuple(row) for row in ws.iter_rows(values_only=True)]
     assert "out of balance" in values[-1][3]

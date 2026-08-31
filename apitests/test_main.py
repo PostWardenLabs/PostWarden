@@ -1,14 +1,14 @@
-"""Tests of `main.py` itself — the app factory. Three things are new as
-of Phase 1.14 and none of them are covered by any module's own tests:
+"""Tests of `main.py` itself — the app factory. Three things here aren't
+covered by any module's own tests:
 
 1. **Every module's router is actually mounted into the real `app`
    object**, not just built and tested in isolation the way every
-   module's own `test_router.py` proved through Phase 1.13.
-2. **The Phase 1.14 auth wiring holds through the real `app`**, not just
-   each module's own throwaway `FastAPI()` + `include_router()` (which,
-   as of this phase, overrides `get_current_session`/`require_csrf_
-   header` directly — proving the dependency is *present*, not that
-   `main.py` actually leaves it enabled when mounting for real).
+   module's own `test_router.py` proves.
+2. **The auth wiring holds through the real `app`**, not just each
+   module's own throwaway `FastAPI()` + `include_router()` (which
+   overrides `get_current_session`/`require_csrf_header` directly —
+   proving the dependency is *present*, not that `main.py` actually
+   leaves it enabled when mounting for real).
 3. **The two bits of real logic `main.py` itself adds**: the `lifespan`
    admin-bootstrap hook, and the `advance_due_schedules` middleware.
 
@@ -32,7 +32,7 @@ to a fake that can't touch any real database at all, since proving
 these conditions") doesn't need a real connection — `bootstrap_admin_
 from_env`'s and `materialize_due_schedules`' own logic already have
 their own real-Postgres tests in `modules/auth/`'s and `modules/
-scheduling/`'s own test suites (Phases 1.11, 1.10).
+scheduling/`'s own test suites.
 """
 import pytest
 from fastapi import HTTPException
@@ -94,16 +94,15 @@ def test_a_protected_write_route_401s_with_no_session(conn):
 
 
 def test_analytics_api_route_401s_with_no_session(conn):
-    # /api/* answered a bare unauthenticated request with a JSON 401 in
-    # legacy too (`auth_gate`'s own `path.startswith("/api/")` branch) —
-    # confirms that didn't quietly change shape moving to a per-route
-    # dependency.
+    # /api/* answers a bare unauthenticated request with a plain JSON 401,
+    # not a redirect to /login — confirmed here since it's a per-route
+    # dependency rather than something visible from the route path alone.
     resp = app_client(conn).get("/api/accounts")
     assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# GET /config — Phase 3.1's public, unauthenticated app-metadata route.
+# GET /config — the public, unauthenticated app-metadata route.
 # ---------------------------------------------------------------------------
 
 def _config_client(settings: Settings) -> TestClient:
@@ -153,8 +152,8 @@ def test_config_includes_demo_credentials_when_demo_mode_is_on(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The `/app/*` SPA-shell fallback — Phase 3.2's answer to the deep-link gap
-# (see main.py's own comment on why `/app`, not `/api`).
+# The `/app/*` SPA-shell fallback — answers the deep-link gap (see main.py's
+# own comment on why `/app`, not `/api`).
 # ---------------------------------------------------------------------------
 
 def test_spa_index_response_serves_index_html_when_present(monkeypatch, tmp_path):
@@ -189,8 +188,7 @@ def test_app_routes_are_only_registered_when_the_static_dir_exists():
     # registered route at all here, same as `/` and `/assets/*` never
     # were (this file's own comment on the plain `app.mount(...)` above).
     # A real dev/Docker environment with a built frontend is verified by
-    # hand instead, per REBUILD_STATUS.md's own "Verified for real" note —
-    # there is no way to flip `main._static_dir.is_dir()` after import
+    # hand instead — there is no way to flip `main._static_dir.is_dir()` after import
     # without reloading the module, and reloading `postwarden.main` mid-
     # suite would rebuild the real `app` every other test in this file
     # depends on being a stable singleton.
@@ -206,8 +204,7 @@ def test_app_route_serves_the_real_spa_shell_when_a_build_exists():
     # The inverse of the skip above — exercised for real (not just the
     # extracted `_spa_index_response` helper) whenever this environment
     # does have a real `npm run build` output sitting where `config.py`'s
-    # `postwarden_static_dir` looks, same as this file was run against for
-    # this phase's own manual verification.
+    # `postwarden_static_dir` looks.
     if not main._static_dir.is_dir():
         pytest.skip("no frontend build in this environment — see the "
                      "skip above for why this can't be forced")
@@ -217,9 +214,9 @@ def test_app_route_serves_the_real_spa_shell_when_a_build_exists():
 
 
 # ---------------------------------------------------------------------------
-# advance_due_schedules — the one piece of legacy's auth_gate middleware
-# main.py still carries (see main.py's own docstring for why the rest of
-# auth_gate didn't move here as middleware).
+# advance_due_schedules — the one piece of auth-adjacent logic that runs as
+# middleware rather than a route dependency (see main.py's own docstring for
+# why).
 # ---------------------------------------------------------------------------
 
 class _FakeConn:
@@ -280,9 +277,9 @@ def test_advance_due_schedules_calls_materialize_when_the_session_is_valid(monke
     assert len(calls) == 1
 
 
-def test_advance_due_schedules_swallows_a_failure_same_as_legacy(monkeypatch):
-    # "A failure here shouldn't take the app down" — same bare
-    # `except Exception: pass` legacy's own auth_gate uses.
+def test_advance_due_schedules_swallows_a_failure(monkeypatch):
+    # "A failure here shouldn't take the app down" — the middleware wraps
+    # the call in a bare `except Exception: pass`.
     monkeypatch.setattr(main, "get_engine", lambda: _FakeEngine())
     monkeypatch.setattr(main.auth_service, "get_session", lambda conn, token: {"user_id": 1})
 
