@@ -31,10 +31,13 @@ services:
   app:
     build: .
     environment:
-      DATABASE_URL: postgresql://postwarden:postwarden@db:5432/postwarden
+      # +psycopg: the SQLAlchemy-flavored URL scheme (see alembic/env.py's
+      # own comment) — not the plain postgresql:// legacy app/db.py used.
+      DATABASE_URL: postgresql+psycopg://postwarden:postwarden@db:5432/postwarden
       # First-boot convenience: if both are set and no user exists yet,
-      # this account is created automatically — see app/auth.py. Leave
-      # unset and use `docker compose exec app python -m app.cli
+      # this account is created automatically — see main.py's lifespan
+      # hook (modules/auth/service.py's bootstrap_admin_from_env). Leave
+      # unset and use `docker compose exec app python -m postwarden.cli
       # create-user <name>` instead if you'd rather not put a password
       # in .env. Never overwrites an existing password.
       POSTWARDEN_ADMIN_USER: ${POSTWARDEN_ADMIN_USER:-}
@@ -42,17 +45,17 @@ services:
       # Set to true only if uvicorn itself is terminating real HTTPS (not
       # the case for the documented IAP-tunnel or Cloudflare-tunnel
       # deployments — both encrypt at the tunnel layer instead). See
-      # app/auth.py's COOKIE_SECURE comment.
+      # config.py's postwarden_cookie_secure comment.
       POSTWARDEN_COOKIE_SECURE: ${POSTWARDEN_COOKIE_SECURE:-}
       # Shows a banner on the login page and pre-fills it with
       # POSTWARDEN_ADMIN_USER/PASSWORD above — off by default on purpose, a
       # normal self-hoster's own login should never appear on their own
-      # login page. See app/main.py's demo_banner comment.
+      # login page. See main.py's GET /config route.
       POSTWARDEN_DEMO_MODE: ${POSTWARDEN_DEMO_MODE:-}
       # Purely informational — lets Settings > Connect Power BI / Excel show
       # the right port to connect to. Not a real connection: the app never
       # talks to Postgres over this, it just mirrors whatever DB_PORT the
-      # "db" service below is actually bound to.
+      # "db" service above is actually bound to.
       POSTWARDEN_BI_PORT: ${DB_PORT:-5432}
     ports:
       # Same story as DB_PORT above — only relevant when two instances of

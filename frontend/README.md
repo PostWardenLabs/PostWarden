@@ -12,10 +12,10 @@ npm install
 npm run dev
 ```
 
-`vite.config.ts` proxies `/healthz` to `http://localhost:8001` (the
-backend's own `docker-compose.yml` default port), so `npm run dev`'s live
+`vite.config.ts` proxies `/healthz` to `http://localhost:8000` (the repo
+root `docker-compose.yml`'s default port), so `npm run dev`'s live
 page can reach a real backend without a CORS dance. Run the backend
-separately — `cd ../backend && docker compose up -d --build` — for that
+separately — `cd .. && docker compose up -d --build` — for that
 proxy to have something to talk to.
 
 ## Build
@@ -24,10 +24,10 @@ proxy to have something to talk to.
 npm run build
 ```
 
-Writes straight into `../backend/src/postwarden/static/` (not this
+Writes straight into `../src/postwarden/static/` (not this
 project's own `dist/`) — `main.py` serves that directory via FastAPI's
 `StaticFiles` if it exists. A plain `uvicorn postwarden.main:app` picks up
-a build with no extra wiring; `backend/Dockerfile`'s own multi-stage build
+a build with no extra wiring; the root `Dockerfile`'s own multi-stage build
 does the same thing inside a discarded Node build stage, so the final
 image never installs Node at all.
 
@@ -39,19 +39,19 @@ npm run generate:api
 
 Regenerates `src/api/schema.ts` from the backend's own OpenAPI schema —
 `openapi-typescript` turns every route, path/query param, and Pydantic
-request body under `backend/src/postwarden/modules/*/router.py` +
+request body under `../src/postwarden/modules/*/router.py` +
 `schemas.py` into TypeScript types, and `src/api/client.ts` wraps them in
 an `openapi-fetch` client every screen imports instead of hand-rolling its
 own `fetch(...)` calls. Needs the **backend's own Python environment
-active** (same one `pytest` needs — `cd ../backend && pip install
--e ".[dev]"`, or the checked-in `backend/.venv`), not just Node: the first
-half of the script (`backend/scripts/dump_openapi_schema.py`) imports
+active** (same one `pytest` needs — `cd .. && pip install
+-e ".[dev]"`, or the checked-in root `.venv`), not just Node: the first
+half of the script (`../scripts/dump_openapi_schema.py`) imports
 `postwarden.main` directly rather than requiring a live server — see that
 script's own docstring for why no `DATABASE_URL`/Postgres/Docker is needed
 either.
 
 `src/api/schema.ts` is **committed**, not gitignored, even though it's
-generated — the frontend-build stage of `backend/Dockerfile` runs on a
+generated — the frontend-build stage of the root `Dockerfile` runs on a
 bare `node:22-slim` image with no Python at all, so nothing in that build
 can regenerate it. Re-run `npm run generate:api` and commit the diff
 whenever a backend route or request body changes; nothing enforces that

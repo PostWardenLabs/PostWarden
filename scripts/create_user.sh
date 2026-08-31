@@ -3,9 +3,9 @@
 # (never as a command-line argument, so it doesn't end up in shell history).
 #
 # Needs DATABASE_URL pointed at a running instance — defaults to
-# postwarden:postwarden@localhost:5432/postwarden, same as the app. Inside Docker, run it
-# through the app container instead: `docker compose exec app
-# python -m app.cli create-user someone`.
+# postgresql+psycopg://postwarden:postwarden@localhost:5432/postwarden, same
+# as the app. Inside Docker, run it through the app container instead:
+# `docker compose exec app python -m postwarden.cli create-user someone`.
 #
 # Usage:
 #   ./scripts/create_user.sh <username>            # create a new login
@@ -19,7 +19,7 @@ if [ $# -lt 1 ]; then
 fi
 
 if [[ "${2:-}" == "--reset" ]]; then
-    python3 -m app.cli reset-password "$1"
+    python3 -m postwarden.cli reset-password "$1"
 else
-    python3 -m app.cli create-user "$1"
+    python3 -m postwarden.cli create-user "$1"
 fi

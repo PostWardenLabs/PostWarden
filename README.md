@@ -222,30 +222,34 @@ Postgres is exposed on `localhost:5432` (user/db/password: `postwarden`) so
 Power BI, Excel, or `psql` can connect directly alongside the app.
 
 **Editing the app while it runs**: `docker-compose.override.yml` (merged
-in automatically, no flag needed) bind-mounts `app/` into the container
-and runs `uvicorn` with `--reload` — edit a template or static JS/CSS and
-refresh the browser to see it (no restart needed, `Jinja2Templates`/
-`StaticFiles` always read straight from disk), edit Python and `uvicorn`
-auto-restarts in about a second. Doesn't apply to a new
-`requirements.txt` entry — that still needs `docker compose build`. It
-applies to *every* local `docker compose` command while the file exists,
-so before calling something done, verify once against the real,
-non-reloading shape beta/demo/production actually run:
-`docker compose -f docker-compose.yml up -d --build` (naming only the
-base file skips the auto-merge). Delete the override file entirely to
+in automatically, no flag needed) bind-mounts `src/` into the container
+and runs `uvicorn` with `--reload` — edit Python and it auto-restarts in
+about a second. Doesn't cover a frontend/ edit (the SPA is baked into the
+image at build time — run `npm run dev` inside `frontend/` for live
+frontend iteration instead, see `frontend/README.md`) or a new
+`pyproject.toml` dependency/Alembic migration — those still need
+`docker compose build`. It applies to *every* local `docker compose`
+command while the file exists, so before calling something done, verify
+once against the real, non-reloading shape beta/demo/production actually
+run: `docker compose -f docker-compose.yml up -d --build` (naming only
+the base file skips the auto-merge). Delete the override file entirely to
 make that the default again.
 
 ## Run it (local, no Docker)
 
-Requires PostgreSQL 14+ and Python 3.11+.
+Requires PostgreSQL 14+, Python 3.12+, and Node 22+ (only for building the
+frontend once — nothing at runtime needs Node, see "Project layout" below).
 
 ```bash
 ./scripts/init_db.sh --with-demo     # create + load the database
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+pip install -e ".[dev]"
+cd frontend && npm install && npm run build && cd ..   # builds into src/postwarden/static/
+uvicorn postwarden.main:app --reload
 ```
 
-Set `DATABASE_URL` if your Postgres isn't `postwarden:postwarden@localhost:5432/postwarden`.
+Set `DATABASE_URL` if your Postgres isn't
+`postwarden:postwarden@localhost:5432/postwarden` — note the
+`postgresql+psycopg://` scheme (see `.env.example`).
 
 ## Creating a login
 
@@ -259,8 +263,8 @@ overwrites a password on later boots.
 **Any time, including after the fact:**
 ```bash
 # Inside Docker:
-docker compose exec app python -m app.cli create-user <username>     # new login
-docker compose exec app python -m app.cli reset-password <username>  # forgot it
+docker compose exec app python -m postwarden.cli create-user <username>     # new login
+docker compose exec app python -m postwarden.cli reset-password <username>  # forgot it
 
 # Outside Docker, same thing:
 ./scripts/create_user.sh <username>            # new login
@@ -275,14 +279,14 @@ git pull
 docker compose up -d --build
 ```
 
-That's the whole thing, schema changes included: any pending
-`db/migrations/*.sql` files run automatically at startup, in order, before
-the app accepts traffic (see `app/migrate.py`) — no separate migration
-step to remember, no `docker compose down -v` that would wipe your real
-data. A failed migration fails the app's startup loudly rather than
-serving traffic against a half-migrated schema; back up first if you want
-a safety net (`pg_dump`, see `deploy/gcp/README.md`'s Backups section even
-if you're not on GCP — the command itself is the same anywhere).
+Schema changes ship as Alembic migrations (`alembic/versions/`), applied
+automatically at container startup before the app accepts traffic (see the
+Dockerfile's own `CMD`) — no separate migration step to remember, no
+`docker compose down -v` that would wipe your real data. A failed
+migration fails the app's startup loudly rather than serving traffic
+against a half-migrated schema; back up first if you want a safety net
+(`pg_dump`, see `deploy/gcp/README.md`'s Backups section even if you're
+not on GCP — the command itself is the same anywhere).
 
 ## Documentation
 
@@ -293,7 +297,7 @@ Start with this README for orientation, then:
 | [`docs/GUIDE.md`](docs/GUIDE.md) | New to PostWarden or to double-entry itself — what it is, why double-entry for personal finance, and a chart-of-accounts pattern to start from. |
 | [`SPEC.md`](SPEC.md) | Design decisions and the reasoning behind them — read this before changing how anything is modeled. |
 | [`docs/SCHEMA.md`](docs/SCHEMA.md) | The entity-relationship diagram and a table-by-table reference. |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the FastAPI app, templates, and JS are organized, and the UI patterns reused across screens. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the FastAPI backend and the React frontend are organized, and the UI patterns reused across screens. |
 | [`deploy/gcp/README.md`](deploy/gcp/README.md) | Deploying to Google Cloud — provisioning, redeploying, backups, remote BI access. |
 
 [`docs/README.md`](docs/README.md) is the short map tying those together
@@ -373,22 +377,30 @@ ORDER BY month, account_code;
 ## Project layout
 
 ```
-db/schema.sql             the source of truth — tables, triggers, views, functions
-db/seed.sql               starter chart of accounts + ACTUAL / STAGING / BUD2026 scenarios
-db/seed_demo.sql          optional sample entries
+db/schema.sql              the source of truth — tables, triggers, views, functions
+db/seed.sql                starter chart of accounts + ACTUAL / STAGING / BUD2026 scenarios
+db/seed_demo.sql           optional sample entries
 
-app/main.py               every route — see docs/ARCHITECTURE.md for the section map
-app/auth.py               sessions, password hashing, CSRF, login rate-limit
-app/db.py                 the psycopg3 connection pool
-app/cli.py                create-user / reset-password (see scripts/create_user.sh)
-app/templates/            one Jinja2 template per screen, all extending base.html
-app/static/               one small JS file per progressive enhancement, plus style.css
+src/postwarden/main.py     FastAPI app, route mounting, startup admin bootstrap
+src/postwarden/config.py   Settings — every env var the app reads, in one place
+src/postwarden/db.py       the SQLAlchemy Core engine
+src/postwarden/cli.py      create-user / reset-password (see scripts/create_user.sh)
+src/postwarden/domain/     pure business logic — money, periods, accounts, entry
+src/postwarden/modules/    one vertical slice per feature (router + service + repository),
+                            see docs/ARCHITECTURE.md for the section map
+src/postwarden/static/     the built frontend (git-ignored — `npm run build` writes here)
+alembic/                   schema migrations — schema.sql is still the source of truth for
+                            a fresh install; Alembic carries changes forward from there
 
-tests/test_invariants.py  the schema's own rules, asserted straight against Postgres
-tests/test_auth.py        the app layer — routes, sessions, CSRF, rendering
+frontend/                  the React + TypeScript SPA — see frontend/README.md
 
-scripts/init_db.sh        local database bootstrap
-scripts/create_user.sh    create or reset a login
+tests/test_invariants.py   the schema's own rules, asserted straight against Postgres
+tests/test_cashflow.py     cash-flow reporting, same straight-against-Postgres approach
+apitests/                  the app layer — routes, services, repositories, the domain layer
+
+scripts/init_db.sh                 local database bootstrap
+scripts/create_user.sh             create or reset a login
+scripts/dump_openapi_schema.py     regenerates frontend/'s typed API client (see frontend/README.md)
 deploy/gcp/               a fully-worked example of running this on Google Cloud — not
                           how demo.postwarden.org/beta.postwarden.org are actually run,
                           see deploy/gcp/README.md and PostWardenPublic for that
@@ -409,28 +421,29 @@ LICENSE                   AGPL-3.0 — see "License" below
 
 ## Tests
 
-`tests/test_invariants.py` exercises the invariants in `SPEC.md` directly
-against Postgres — balance enforcement, scenario locking, account
-hierarchy, immutability, reversal integrity — so they hold regardless of
-which client writes to the database. `tests/test_auth.py` drives the
-actual FastAPI app instead, for the things only the app layer enforces:
-login, session and CSRF checks, logout. Each run gets a disposable
-`postwarden_test` database (dropped and recreated from `db/schema.sql` +
-`db/seed.sql`).
+`tests/test_invariants.py` and `tests/test_cashflow.py` exercise the
+invariants in `SPEC.md` directly against Postgres — balance enforcement,
+scenario locking, account hierarchy, immutability, reversal integrity —
+so they hold regardless of which client writes to the database. Each run
+gets a disposable `postwarden_test` database (dropped and recreated from
+`db/schema.sql` + `db/seed.sql`), and these two files never import the
+app itself, on purpose. `apitests/` drives the actual FastAPI app
+instead, for everything only the app layer enforces: routes, services,
+repositories, the domain layer, login/session/CSRF checks.
 
 With `docker compose up -d db` already running:
 
 ```bash
-docker run --rm --network postwarden_default -v "$PWD":/srv/postwarden -w /srv/postwarden \
-  python:3.12-slim bash -c "pip install -q -r requirements-dev.txt && python -m pytest tests -v"
-```
+pip install -e ".[dev]"
 
-Or locally, with `psycopg[binary]` and `pytest` installed and `POSTWARDEN_TEST_ADMIN_URL`
-/ `POSTWARDEN_TEST_URL` pointed at a reachable Postgres:
+# The app layer — its own disposable postwarden_backend_test database:
+alembic upgrade head
+pytest apitests -v
 
-```bash
-pip install -r requirements-dev.txt
-pytest tests -v
+# The pure-Postgres invariants — point at any reachable Postgres:
+POSTWARDEN_TEST_ADMIN_URL=postgresql://postwarden:postwarden@localhost:5432/postgres \
+POSTWARDEN_TEST_URL=postgresql://postwarden:postwarden@localhost:5432/postwarden_test \
+pytest tests/test_invariants.py tests/test_cashflow.py -v
 ```
 
 ## License

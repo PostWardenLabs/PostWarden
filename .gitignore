@@ -3,17 +3,17 @@ __pycache__/
 .pytest_cache/
 .env
 
-# backend/ (the rebuild branch's new app, see REBUILD.md) is a proper
-# src-layout package — pip installs it editable, which means a local venv
-# and an egg-info dir, neither of which belong in git.
-backend/.venv/
-backend/**/*.egg-info/
+# The backend is a proper src-layout package — pip installs it editable,
+# which means a local venv and an egg-info dir, neither of which belong
+# in git.
+.venv/
+src/**/*.egg-info/
 
-# frontend/'s build output (REBUILD_STATUS.md Phase 2.1) — vite.config.ts's
-# own outDir points `npm run build` straight into the backend package
-# instead of frontend/'s own dist/ (already covered by frontend/.gitignore),
-# so it needs its own entry here.
-backend/src/postwarden/static/
+# frontend/'s build output — vite.config.ts's own outDir points `npm run
+# build` straight into the backend package instead of frontend/'s own
+# dist/ (already covered by frontend/.gitignore), so it needs its own
+# entry here.
+src/postwarden/static/
 
 # mkdocs build output (docs.postwarden.org) — built fresh on deploy, see
 # mkdocs.yml and docs/ (this is not the source, just what `mkdocs build`

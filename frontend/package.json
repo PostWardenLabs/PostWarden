@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "generate:api": "python3 ../backend/scripts/dump_openapi_schema.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.ts --empty-objects-unknown"
+    "generate:api": "python3 ../scripts/dump_openapi_schema.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.ts --empty-objects-unknown"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0",

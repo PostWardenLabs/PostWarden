@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     // Builds straight into the backend package's own static/ directory
-    // (backend/src/postwarden/static, per config.py's postwarden_static_dir
+    // (src/postwarden/static, per config.py's postwarden_static_dir
     // default) rather than this project's own dist/. Two things fall out
     // of that for free, both worth having: a plain local `uvicorn
     // postwarden.main:app` picks up a `npm run build` with zero wiring
@@ -16,7 +16,7 @@ export default defineConfig({
     // convention, not two. See REBUILD_STATUS.md's Phase 2.1 write-up:
     // "no Node process is required at runtime" is the actual gate this
     // satisfies.
-    outDir: '../backend/src/postwarden/static',
+    outDir: '../src/postwarden/static',
     emptyOutDir: true,
   },
   server: {
@@ -25,8 +25,11 @@ export default defineConfig({
     // phase's own placeholder page calls. Not meant to grow into a full API
     // proxy list by hand; Phase 2.2's typed client is where a real answer
     // to "how does the dev server reach every backend route" belongs.
+    // Port 8000: docker-compose.yml's own APP_PORT default, now that the
+    // backend runs at the repo root instead of a separate backend/
+    // instance on its own port (cutover — see REBUILD_STATUS.md).
     proxy: {
-      '/healthz': 'http://localhost:8001',
+      '/healthz': 'http://localhost:8000',
     },
   },
 })

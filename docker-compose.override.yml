@@ -4,50 +4,33 @@
 # themselves, and has no effect on beta/demo/production, which don't
 # have this file.
 #
-# Two independent things, layered together:
-#   - Bind-mounts ./app over the image's baked-in copy, so the container
-#     reads the real files on disk instead of a frozen snapshot from
-#     build time — without this, editing a file on your machine has no
-#     effect on the running container at all, --reload or not.
-#   - --reload makes uvicorn watch for .py changes and restart itself
-#     automatically (~1s) so new Python code takes effect without a
-#     manual restart.
+# Bind-mounts ./src over the image's baked-in copy, so the container reads
+# the real files on disk instead of a frozen snapshot from build time —
+# without this, editing a file on your machine has no effect on the
+# running container at all, --reload or not. --reload makes uvicorn watch
+# for .py changes and restart itself automatically (~1s) so new Python
+# code takes effect without a manual restart.
 #
-# Templates and static JS/CSS don't actually need --reload to update —
-# Jinja2Templates/StaticFiles already read straight from disk on every
-# request (no template caching was ever added, consistent with "no build
-# step") — the bind mount alone is what makes editing those instant.
+# Doesn't help with a new entry in pyproject.toml's dependencies, an
+# alembic/ migration, or anything main.py reads from *outside* ./src at
+# startup — VERSION (repo root, read once via Settings) is the one that
+# actually bites: bumping it and refreshing the page keeps showing the old
+# number, because only ./src is bind-mounted. Not a bug, just this file's
+# bind-mount scope working exactly as documented — `docker compose -f
+# docker-compose.yml up -d --build` (naming only the base file skips the
+# auto-merge) is what actually picks up any of those, and is worth doing
+# once before calling something done, same spirit as this project's
+# existing "verify against the real thing" testing culture.
 #
-# Doesn't help with a new entry in requirements.txt — that's baked into
-# an earlier image layer, not part of ./app, and still needs a real
-# `docker compose build`.
-#
-# Same story for anything main.py reads from *outside* ./app at startup —
-# VERSION (repo root, read once into templates.env.globals so the footer
-# doesn't re-read it per request) is the one that actually bit a session:
-# bumping it and refreshing the page kept showing the old number, because
-# only ./app is bind-mounted — VERSION sat frozen at whatever was baked
-# into the image at the last real build, and a plain `docker compose
-# restart app` doesn't rebuild the image, so it didn't help either. Not a
-# bug, just this file's bind-mount scope working exactly as documented
-# above — but easy to mistake for one mid-session if you don't already
-# know VERSION lives outside ./app. `docker compose up -d --build` (the
-# real-shape check two paragraphs up) is what actually picks up a VERSION
-# bump; nothing short of that will while iterating.
-#
-# This applies to every local `docker compose` command for as long as the
-# file exists — including a plain `--build`. There's no local way to
-# accidentally test the *real*, non-reloading production shape unless you
-# explicitly bypass it: `docker compose -f docker-compose.yml up -d --build`
-# (naming only the base file skips the auto-merge). Worth doing that once
-# before calling something done, same spirit as this project's existing
-# "verify against the real thing" testing culture — the override is for
-# iterating fast, not for the final check.
+# Doesn't help with a frontend/ edit either — the built SPA is baked into
+# the image at build time (Dockerfile's frontend-build stage), not bind-
+# mounted here. Run `npm run dev` inside frontend/ instead for live
+# frontend iteration (see frontend/vite.config.ts's own dev-proxy comment).
 #
 # Delete this file any time to go back to exactly today's (production-
 # shaped, non-reloading) behavior by default — nothing else changes.
 services:
   app:
     volumes:
-      - ./app:/srv/postwarden/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      - ./src:/srv/postwarden/src
+    command: ["sh", "-c", "alembic stamp head && uvicorn postwarden.main:app --host 0.0.0.0 --port 8000 --reload"]

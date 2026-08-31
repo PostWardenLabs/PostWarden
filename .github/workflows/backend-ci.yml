@@ -1,35 +1,42 @@
 name: Backend CI
 
-# Runs backend/'s test suite against a real Postgres service container.
-# There is no CI at all on `master` (see REBUILD.md §6, Phase 0.5) — this
-# is new, not a port, and lands empty-green: as of Phase 0 there is one
-# smoke test (backend/tests/test_health.py) plus a check that the Alembic
-# baseline actually applies, and every subsequent PR is checked from here
-# on as modules land (Phase 1).
+# Runs the app's test suite against a real Postgres service container.
 #
-# Scoped to backend/ paths on purpose: frontend/ doesn't exist yet, and
-# legacy app/ has its own (nonexistent) CI story that this doesn't touch.
-#
-# Phase 1.15 added the second job below: the root `tests/` suite
-# (`test_invariants.py`, `test_cashflow.py`) — REBUILD.md §3's "60
-# pure-Postgres tests," the safety net this whole rebuild leans on — had
-# never actually run in CI at all, on any branch (`master` has none, and
-# this workflow was scoped to `backend/` only). A safety net nobody
-# checks isn't one; it only ever ran by hand, per README's "Tests"
-# section. `tests/**` is added to the trigger paths for the same reason
-# `db/schema.sql` already was: that's what these tests are actually
-# exercising.
+# Two jobs, deliberately kept separate rather than one shared Postgres
+# instance:
+#   - `test`: apitests/ — the FastAPI app's own suite (Phase 1 onward),
+#     installed and migrated via Alembic first. Deliberately a top-level
+#     directory, not tests/api/ — pytest loads every conftest.py from the
+#     repo root down to each collected path, so nesting this under tests/
+#     would mean tests/conftest.py's own pytest_configure (below) fires
+#     on every run of this suite too, and it dials a `db` hostname this
+#     job's Postgres service doesn't expose.
+#   - `invariants`: tests/test_invariants.py + tests/test_cashflow.py —
+#     REBUILD.md §3's "60 pure-Postgres tests," the actual safety net this
+#     whole rebuild leaned on. These apply db/schema.sql directly
+#     (tests/conftest.py's own CREATE DATABASE + raw SQL file), not
+#     through Alembic, and import psycopg/pytest only — never the app
+#     package itself (REBUILD.md §3 — "never import the app") — so mixing
+#     them into `test`'s already-migrated database would mean two
+#     different schema-provisioning paths sharing one Postgres instance
+#     for no reason.
 on:
   push:
     paths:
-      - "backend/**"
+      - "src/**"
+      - "alembic/**"
+      - "pyproject.toml"
       - "db/schema.sql"
+      - "apitests/**"
       - "tests/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
-      - "backend/**"
+      - "src/**"
+      - "alembic/**"
+      - "pyproject.toml"
       - "db/schema.sql"
+      - "apitests/**"
       - "tests/**"
       - ".github/workflows/backend-ci.yml"
   workflow_dispatch: {}
@@ -61,28 +68,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install backend
-        working-directory: backend
         run: pip install -e ".[dev]"
 
       - name: Apply the Alembic baseline
-        working-directory: backend
         run: alembic upgrade head
 
       - name: pytest
-        working-directory: backend
-        run: pytest -q
+        run: pytest apitests -q
 
   invariants:
-    # Deliberately its own job, own Postgres service, not a step tacked
-    # onto `test` above: these tests apply `db/schema.sql` directly
-    # (`tests/conftest.py`'s own `CREATE DATABASE` + raw SQL file), not
-    # through Alembic — mixing that into the `test` job's already-migrated
-    # database would mean two different schema-provisioning paths sharing
-    # one Postgres instance for no reason. Only `psycopg`/`pytest` are
-    # installed, not `backend`'s own package or `requirements-dev.txt`'s
-    # full legacy-app dependency set: `tests/test_invariants.py` and
-    # `tests/test_cashflow.py` import neither, by design (REBUILD.md §3 —
-    # "never import the app").
     runs-on: ubuntu-latest
     services:
       postgres:
