@@ -32,7 +32,8 @@ services:
     build: .
     environment:
       # +psycopg: the SQLAlchemy-flavored URL scheme (see alembic/env.py's
-      # own comment) — not the plain postgresql:// legacy app/db.py used.
+      # own comment) — plain postgresql:// would make SQLAlchemy try to
+      # load psycopg2 instead of the psycopg3 driver this project uses.
       DATABASE_URL: postgresql+psycopg://postwarden:postwarden@db:5432/postwarden
       # First-boot convenience: if both are set and no user exists yet,
       # this account is created automatically — see main.py's lifespan

@@ -4,13 +4,13 @@ Revision ID: 6bfc0e7ee503
 Revises:
 Create Date: 2026-08-29 17:00:38.518263
 
-REBUILD.md §5 decision 5: Alembic replaces the hand-rolled runner in
-app/migrate.py, with db/schema.sql as the baseline revision. schema.sql
-itself stays the source of truth for a fresh install — this migration does
-not re-derive the schema in SQLAlchemy's own metadata language, it just
-applies the exact same file, so "alembic upgrade head" and "psql -f
-schema.sql" are guaranteed to produce identical databases (there is only
-one definition, not two that could drift).
+Alembic replaces the project's previous hand-rolled migration runner,
+with db/schema.sql as the baseline revision. schema.sql itself stays the
+source of truth for a fresh install — this migration does not re-derive
+the schema in SQLAlchemy's own metadata language, it just applies the
+exact same file, so "alembic upgrade head" and "psql -f schema.sql" are
+guaranteed to produce identical databases (there is only one definition,
+not two that could drift).
 
 schema.sql is 1,259 lines of plain SQL including PL/pgSQL functions in
 dollar-quoted bodies (fn_generate_entry_id, fn_entry_balanced, etc.) and

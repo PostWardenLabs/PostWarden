@@ -13,21 +13,19 @@ export default defineConfig({
     // (no separate "copy the build somewhere" step for local dev), and the
     // Dockerfile's multi-stage build (a Node build stage, discarded before
     // the final image) copies to the exact same relative path — one
-    // convention, not two. See REBUILD_STATUS.md's Phase 2.1 write-up:
-    // "no Node process is required at runtime" is the actual gate this
-    // satisfies.
+    // convention, not two. The gate this satisfies: no Node process is
+    // required at runtime, only the static files it produced.
     outDir: '../src/postwarden/static',
     emptyOutDir: true,
   },
   server: {
     // Dev-only convenience so `npm run dev`'s own live page can reach the
-    // real backend without a CORS dance — proxies just the one route this
-    // phase's own placeholder page calls. Not meant to grow into a full API
-    // proxy list by hand; Phase 2.2's typed client is where a real answer
-    // to "how does the dev server reach every backend route" belongs.
+    // real backend without a CORS dance. Not meant to grow into a full API
+    // proxy list by hand — see frontend/src/api/client.ts's own comment on
+    // how the typed client actually reaches the backend in dev vs. prod.
     // Port 8000: docker-compose.yml's own APP_PORT default, now that the
     // backend runs at the repo root instead of a separate backend/
-    // instance on its own port (cutover — see REBUILD_STATUS.md).
+    // instance on its own port.
     proxy: {
       '/healthz': 'http://localhost:8000',
     },

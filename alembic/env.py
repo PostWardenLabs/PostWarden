@@ -18,17 +18,17 @@ if config.config_file_name is not None:
 # No target_metadata: this app models CRUD through SQLAlchemy Core, not
 # declarative ORM models, and the schema itself (enums, generated columns,
 # triggers, set-returning functions) is not modeled through SQLAlchemy at
-# all (REBUILD.md §5/§6) — db/schema.sql stays the source of truth.
-# `alembic revision --autogenerate` has nothing to diff against here and
-# is not part of this project's workflow; migrations are handwritten.
+# all — db/schema.sql stays the source of truth. `alembic revision
+# --autogenerate` has nothing to diff against here and is not part of
+# this project's workflow; migrations are handwritten.
 target_metadata = None
 
-# DATABASE_URL, not alembic.ini's sqlalchemy.url, matches app/db.py's own
-# env var name so there is exactly one thing to point at a different
-# database, in dev or in CI. The URL scheme differs from legacy's, though:
-# SQLAlchemy needs the driver named explicitly (postgresql+psycopg://,
-# not legacy app/db.py's plain postgresql://, which psycopg3 accepts
-# directly via libpq but SQLAlchemy would otherwise try psycopg2 for).
+# DATABASE_URL, not alembic.ini's sqlalchemy.url, matches
+# src/postwarden/db.py's own env var name so there is exactly one thing
+# to point at a different database, in dev or in CI. SQLAlchemy needs
+# the driver named explicitly (postgresql+psycopg://, not plain
+# postgresql://, which psycopg3 accepts directly via libpq but
+# SQLAlchemy would otherwise try psycopg2 for).
 config.set_main_option(
     "sqlalchemy.url",
     os.environ.get(
