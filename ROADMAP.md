@@ -722,13 +722,32 @@ or above was either shipped or absorbed (§11).
 | PikaPods / one-click hosting | marketing surface, cheap late, wasteful early | when courting non-technical users |
 | Multi-user permissions, MFA, password reset email | multi-user tier; single-user self-host is the product today | if/when a hosted offering is real |
 | Asset Manager (depreciation schedules) | same machinery family as the loan generator | after the loan generator ships (§6.12) |
-| Multicurrency | shape already decided: currency on entries + a `prices` table, never per-account (SPEC extension roadmap) | when a real multicurrency user exists |
+| Multicurrency | shape already decided — `currency` belongs on `journal_entries`/`journal_lines`, never `accounts` (full rationale below the table) | when a real multicurrency user exists |
 | Email anything (reports, reminders) | no task runner by design (SPEC decision 9) | only with a deliberate SPEC reversal |
 | Manual closing entries option | discourage; the simulated close is the product's answer (decision 10) | write the "do I need closing entries?" GUIDE section instead |
 | Auto account-code digit growth | user codes are load-bearing UX; migration churn for cosmetic gain; risks confusing history | if CoA levels ever become user-invisible |
 | Remove/delete accounts | append-only philosophy: only the "post a reclass entry, then archive" shape is admissible; archive already covers the picker-hygiene need | if archive proves insufficient in practice |
-| Entity dimension, fiscal periods & closing | SPEC's extension roadmap; projects (P1) is the near-term sibling | unchanged |
+| Entity dimension | `entities` + `entity_id` on entries so one fact table can consolidate multiple sets of books — elimination entries become just another scenario or a dedicated elimination entity, CPM-style; projects (P1) is the nearer-term sibling competing for the same kind of attention | when multi-book consolidation is a real need |
+| Periods & closing | a fiscal calendar table, closing entries generated per period, `is_locked` graduating from scenario-level to period-level; partly pre-empted by decision 10 (the simulated close is a query, not a posting) — still worth it for multi-period locking specifically, just not for the close itself | if multi-period locking (not the close itself) becomes a real need |
 | Remote BI connection docs | Connect page shipped; what remains is documenting tunnel/hosting options honestly | docs pass alongside P6 |
+
+**Multicurrency's rejected shape, spelled out for whoever revisits it:**
+not scaffolded on `accounts` again. A `currency` column lived there for
+a while, unused end to end — no route ever set it past its own `'MXN'`
+default, no view consumed it, no UI touched it — and was dropped once
+that became clear (git log around `accounts.currency` has the removal).
+GnuCash's model was the implicit template that column was scaffolding
+toward — an account is denominated in one currency, and a
+cross-currency transaction's split carries its own `value_num`/
+`value_denom` pair against that — and it's the wrong shape here
+specifically: a checking account is one real-world account regardless
+of what currency a given purchase against it happened to post in, so
+"what currency is *this account*" was never the right question.
+"What currency was *this transaction*" (or *this leg*, for a split that
+mixes them) is. If this gets built, `currency` belongs on
+`journal_entries` (or `journal_lines`, if two legs of the same entry can
+genuinely disagree), not `accounts` — plus a `prices` table, GnuCash's
+one good idea worth keeping, to translate in the reporting views.
 
 ## 10. Decision register
 

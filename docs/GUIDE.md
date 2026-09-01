@@ -51,7 +51,7 @@ ideas underneath those features, not a tour of the screens.
 - **Multi-currency**, not yet. Nothing in the app converts or
   translates between currencies, and there's no per-account or
   per-entry currency to set in the meantime — pick one and stay in it
-  until that ships. It's on `SPEC.md`'s Extension roadmap, tied to a
+  until that ships. It's parked in `ROADMAP.md`, tied to a
   transaction rather than an account (a checking account doesn't
   change currency because one purchase against it happened to be in
   euros) — a `currency` column on entries, plus a `prices` table,
