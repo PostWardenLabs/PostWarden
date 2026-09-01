@@ -235,7 +235,7 @@ page per screen:
 | Archetype | Screens | Shared shape |
 |---|---|---|
 | Filterable transaction list | Journal, Staging | URL-state filters, a paginated/scrollable table |
-| Point-in-time report | Trial Balance, Balance Sheet, Variance, Ledger | scenario + "as of" date, `useCollapsibleTree` for the account tree (Ledger is flat cards instead — no hierarchy to collapse) |
+| Point-in-time report | Trial Balance, Balance Sheet, Variance, Ledger | scenario + "as of" date, the account tree's expand/collapse state (Ledger is flat cards instead — no hierarchy to collapse). Trial Balance/Balance Sheet render that tree through TanStack Table (`useExpandedTree` — `SPEC.md` decision 26); Variance/Ledger still use the older hand-rolled `useCollapsibleTree` until `ROADMAP.md` S6 ports them |
 | Range/period report | Income Statement, Cash Flow | scenario + date-from/date-to, `PeriodPresetPicker` |
 | Editable grid | Budget | live client-side recompute, no full-page reload on edit |
 | Management / CRUD | Accounts, Payees, Tags, Scenarios, Account Levels, Scheduled Entries, Templates | Select/Merge/+Add/table/Status/Archive — `useSelectMode`, `MergeDialog` |
@@ -309,14 +309,15 @@ follow if another heavy-dependency page appears.
 `widgets/` holds the pieces reused across archetypes rather than tied
 to one screen: `Combobox`, `DatePicker`, `NumberStepper`, `TagInput`,
 `ConfirmDialog`, `MergeDialog`, `FileField`, `PeriodPresetPicker`, plus
-three hooks — `useCollapsibleTree` (account-tree expand/collapse state,
-persisted per report to `localStorage`), `useSelectMode` (the
-Management/CRUD archetype's row-selection state), `useInlineEdit`. Most
-of these carry a real browser-quirk fix an off-the-shelf component
-would not reproduce by default: `DatePicker`'s digit/hyphen input
-filtering, explicit `tabIndex` for Safari's tab order, `format/
-shortcut.ts`'s `e.code`-not-`e.key` handling (macOS remaps letters under
-Option).
+four hooks — `useCollapsibleTree` and `useExpandedTree` (both
+account-tree expand/collapse state persisted per report to the same
+`localStorage` shape; see `SPEC.md` decision 26 for why there are two
+and which reports use which), `useSelectMode` (the Management/CRUD
+archetype's row-selection state), `useInlineEdit`. Most of these carry
+a real browser-quirk fix an off-the-shelf component would not
+reproduce by default: `DatePicker`'s digit/hyphen input filtering,
+explicit `tabIndex` for Safari's tab order, `format/shortcut.ts`'s
+`e.code`-not-`e.key` handling (macOS remaps letters under Option).
 
 ## Testing
 

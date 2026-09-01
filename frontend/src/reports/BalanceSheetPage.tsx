@@ -1,17 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { getCoreRowModel, getExpandedRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
 import { formatMoneyOrDash } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
-import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
+import { buildRowTree, useExpandedTree, type ExpandedTreeState, type TreeNode, type TreeRow } from '../widgets/useExpandedTree'
 
 // The second Point-in-time report screen, built directly on
 // TrialBalancePage.tsx's own pattern: URL-state filters, one useEffect
-// fetch, a useCollapsibleTree'd account tree. The one structural
-// difference from
+// fetch, an account tree rendered through TanStack Table
+// (ROADMAP.md S1 — see TrialBalancePage.tsx's own comment on what that
+// port did and didn't change). The one structural difference from
 // Trial Balance worth calling out: `GET /reports/balance-sheet`'s own
 // response is NOT the `{grouped: [...]}` per-type-section shape Trial
 // Balance returns — `service.balance_sheet` flattens straight to three
@@ -26,7 +28,7 @@ import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsib
 // onto `result["equity"]` server-side, so it renders through the exact
 // same `SectionRows` component every real Equity account already does —
 // no separate render path needed here at all.
-interface Row extends CollapsibleRow {
+interface Row extends TreeRow {
   account_code: string
   account_name: string
   path: string
@@ -86,15 +88,15 @@ export default function BalanceSheetPage() {
     }
   }, [scenario, asOf, zeros, raw])
 
-  // One tree across all three sections — same reasoning TrialBalancePage
-  // gives: useCollapsibleTree only needs a flat list to walk parent
-  // chains, it doesn't care which section a row's in. `result.equity`
-  // already includes the synthetic "Retained Earnings" node (a real
-  // parent/children triple now, not id-less tuples), so it's registered
-  // with the tree exactly like every real Equity account is — no
-  // separate handling needed.
+  // One shared expanded-state record across all three sections — same
+  // reasoning TrialBalancePage gives: useExpandedTree only needs a flat
+  // list to know every row's collapsed-or-not entry, it doesn't care which
+  // section a row's in. `result.equity` already includes the synthetic
+  // "Retained Earnings" node (a real parent/children triple now, not
+  // id-less tuples), so it's registered exactly like every real Equity
+  // account is — no separate handling needed.
   const allRows = result ? [...result.assets, ...result.liabilities, ...result.equity] : []
-  const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
+  const { expanded, onExpandedChange } = useExpandedTree(COLLAPSE_KEY, allRows)
 
   function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -200,7 +202,7 @@ export default function BalanceSheetPage() {
               </tr>
             </thead>
             <tbody>
-              <SectionRows label="Assets" rows={result.assets} tree={tree} sign={1}
+              <SectionRows label="Assets" rows={result.assets} expanded={expanded} onExpandedChange={onExpandedChange} sign={1}
                            scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
@@ -208,7 +210,7 @@ export default function BalanceSheetPage() {
                 <td className="num money money-first">{formatMoneyOrDash(result.total_assets)}</td>
               </tr>
 
-              <SectionRows label="Liabilities" rows={result.liabilities} tree={tree} sign={-1}
+              <SectionRows label="Liabilities" rows={result.liabilities} expanded={expanded} onExpandedChange={onExpandedChange} sign={-1}
                            scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
@@ -216,7 +218,7 @@ export default function BalanceSheetPage() {
                 <td className="num money money-first">{formatMoneyOrDash(result.total_liabilities)}</td>
               </tr>
 
-              <SectionRows label="Equity" rows={result.equity} tree={tree} sign={-1}
+              <SectionRows label="Equity" rows={result.equity} expanded={expanded} onExpandedChange={onExpandedChange} sign={-1}
                            scenario={scenario} asOf={result.as_of} />
               <tr className="subtotal">
                 <td></td>
@@ -249,37 +251,57 @@ export default function BalanceSheetPage() {
 // negation `balance_sheet.html`'s own `entry_link(r.account_code,
 // -r.subtotal)` applies for every non-Assets row, ported here as a
 // per-section multiplier rather than repeating the ternary three times.
+// Same one-`useReactTable`-per-section shape TrialBalancePage.tsx's
+// GroupRows uses, for the same reason — see that component's own comment.
+const NO_COLUMNS: ColumnDef<TreeNode<Row>>[] = [{ id: 'row' }]
+
 function SectionRows({
   label,
   rows,
-  tree,
+  expanded,
+  onExpandedChange,
   sign,
   scenario,
   asOf,
 }: {
   label: string
   rows: Row[]
-  tree: ReturnType<typeof useCollapsibleTree>
+  expanded: ExpandedTreeState['expanded']
+  onExpandedChange: ExpandedTreeState['onExpandedChange']
   sign: 1 | -1
   scenario: string
   asOf: string
 }) {
+  const data = useMemo(() => buildRowTree(rows), [rows])
+  const table = useReactTable({
+    data,
+    columns: NO_COLUMNS,
+    getRowId: (row, index, parent) =>
+      row.id !== undefined ? String(row.id) : `${parent ? parent.id + '-' : ''}idx-${index}`,
+    getSubRows: (row) => row.subRows,
+    state: { expanded },
+    onExpandedChange,
+    getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+  })
+
   return (
     <>
       <tr className="type-head">
         <td colSpan={3}>{label}</td>
       </tr>
-      {rows.map((r) =>
-        tree.isHidden(r) ? null : (
+      {table.getRowModel().rows.map((row) => {
+        const r = row.original
+        return (
           <tr
-            key={r.id}
-            className={r.has_children && r.id !== undefined && tree.isCollapsed(r.id) ? 'collapsed' : undefined}
+            key={row.id}
+            className={r.has_children && !row.getIsExpanded() ? 'collapsed' : undefined}
             data-has-children={r.has_children ? '1' : '0'}
           >
             <td className="mono dim">{r.account_code}</td>
             <td
               className={`acct-name depth-${Math.min(r.depth, 6)}`}
-              onClick={() => r.id !== undefined && r.has_children && tree.toggle(r.id)}
+              onClick={r.has_children ? row.getToggleExpandedHandler() : undefined}
             >
               <span className="tree-toggle" />
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
@@ -302,8 +324,8 @@ function SectionRows({
               )}
             </td>
           </tr>
-        ),
-      )}
+        )
+      })}
     </>
   )
 }

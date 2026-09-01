@@ -1523,6 +1523,75 @@ dependency, and the lazy-route pattern it forced) live in
 `docs/ARCHITECTURE.md`, not here — rendering choices aren't schema
 design.
 
+### 26. The report-table tree is TanStack Table's row model, not a hand-rolled ancestor walk
+
+`ROADMAP.md` S1's first slice: Trial Balance and Balance Sheet's
+account trees render through a real `useReactTable` instance
+(`@tanstack/react-table@8`, one per type-section) instead of
+`useCollapsibleTree`'s own manual `parent_id` ancestor walk. Purely a
+rendering-mechanics swap — `table.ledger.report-table`'s markup and
+every CSS selector that keys off it (`.acct-name.depth-N`,
+`.tree-toggle`, `tr.collapsed`, `tr[data-has-children="1"]`) are
+untouched, so this is a decision about *how* a report page computes
+"which rows are visible right now," not about how the tree looks.
+
+- **8, not 9.** `@tanstack/react-table@9` was current on npm at the
+  time and has a genuinely different, store/selector-based API
+  (`useTable`/`createTableHook` in place of `useReactTable`) — a very
+  recent major version, not what "adopt TanStack Table (headless)" was
+  scoped against. Pinned to the mature v8 line (`useReactTable`,
+  `getCoreRowModel`, `getExpandedRowModel`) instead of the newest major
+  release, deliberately: this is meant to be a stable foundation
+  several more reports build on (S6, S7), not a place to absorb a
+  paradigm change mid-migration.
+- **Headless, not styled.** The constraint was never losing Trial
+  Balance/Balance Sheet's own look — a styled grid (AG Grid, MUI
+  DataGrid) would mean re-approximating it; TanStack Table only
+  computes row/column models and leaves every `<td>` to be hand-
+  rendered exactly as before.
+- **One `useReactTable` instance per type-section** (Assets,
+  Liabilities, ... — `GroupRows`/`SectionRows` in
+  `TrialBalancePage.tsx`/`BalanceSheetPage.tsx`), not one spanning the
+  whole report. Each section is already its own self-contained tree —
+  no real account's `parent_id` ever crosses a type boundary — so
+  nothing is lost by not unifying them, and a per-section `data` array
+  (built from that section's own flat row list via a new
+  `buildRowTree`, `widgets/useExpandedTree.ts`) stays simple.
+- **One shared `expanded` record across every section on the page**,
+  from one `useExpandedTree(storageKey, allRows)` call at the page
+  level — TanStack tolerates a record entry for a row id its own table
+  instance never sees, so sharing one controlled `expanded` state
+  object across several `useReactTable` calls is safe, and it's what
+  keeps the collapse state one flat concept per page instead of one
+  per section.
+- **Same on-disk shape, new in-memory one.** `useExpandedTree` reads
+  and writes the exact `localStorage` key `useCollapsibleTree` already
+  used, in the same format (an array of collapsed numeric ids) —
+  nobody's saved collapse state resets by moving a report onto this
+  hook. Internally, though, TanStack's `ExpandedState` inverts this
+  app's own default: a row *missing* from the record reads as
+  collapsed, where this app's own default has always been expanded
+  unless the user explicitly collapsed it. `useExpandedTree` bridges
+  this by writing an explicit `true`/`false` for every row with a
+  known id, every render, rather than only the collapsed ones.
+- **The one real bug this surfaced**: `row.toggleExpanded()`
+  (table-core's own `RowExpanding` feature) collapses a row by
+  *deleting* its key from the record it hands to `onExpandedChange`,
+  not by setting it to `false` — it relies on its own
+  `row.getIsExpanded()` treating a missing key as falsy. A first pass
+  at `onExpandedChange` checked for the literal `=== false` and missed
+  the deleted-key case entirely, so a click silently did nothing.
+  Worth recording because it's exactly the kind of thing a future
+  report's own expansion wiring would re-discover the hard way:
+  build the next `expanded` record with `!record[id]` (falsy — missing
+  or `false`), never `record[id] === false`.
+- **`useCollapsibleTree` itself stays**, unchanged in behavior, for
+  the five report pages not yet ported (Variance, Cash Flow, Ledger,
+  Income Statement, Budget) — `ROADMAP.md` S6 moves each of those in
+  turn. It gained one export (`loadCollapsed`) so `useExpandedTree`
+  reads the same on-disk format via the same function rather than a
+  second copy of the same six lines.
+
 ## Extension roadmap
 
 Shipped since this list was first written: recurring/scheduled entries

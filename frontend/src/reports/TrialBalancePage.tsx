@@ -1,22 +1,30 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { getCoreRowModel, getExpandedRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table'
 
 import client from '../api/client'
 import { useScenarios } from '../api/useScenarios'
 import { formatMoney, isZeroAmount } from '../format/money'
 import Combobox from '../widgets/Combobox'
 import DatePicker from '../widgets/DatePicker'
-import { useCollapsibleTree, type CollapsibleRow } from '../widgets/useCollapsibleTree'
+import { buildRowTree, useExpandedTree, type ExpandedTreeState, type TreeNode, type TreeRow } from '../widgets/useExpandedTree'
 
 // The Point-in-time report archetype's canonical screen: an account tree
-// as of a given date.
+// as of a given date. ROADMAP.md S1's proof-of-concept port to
+// TanStack Table (headless) — the table's own markup/CSS
+// (`table.ledger.report-table`) is unchanged from before the port; only
+// the tree-building/expansion mechanics underneath it moved from
+// `useCollapsibleTree` to `useExpandedTree` + a real `useReactTable`
+// instance per type group. See BalanceSheetPage.tsx for the same port
+// applied to a differently-shaped (flat sections, no `grouped` wrapper)
+// response.
 //
 // GET /reports/trial-balance's own response is a plain `dict`
 // (`modules/reports/router.py`), so openapi-fetch can only type it as
 // `{[key: string]: unknown}` — same gap `tags/TagsPage.tsx`'s own
 // comment documents for GET /tags, cast through these local interfaces
 // instead.
-interface Row extends CollapsibleRow {
+interface Row extends TreeRow {
   account_code: string
   account_name: string
   path: string
@@ -97,13 +105,17 @@ export default function TrialBalancePage() {
   }, [scenario, asOf, zeros, raw])
 
   // Every leaf row across every group, in one flat list — what
-  // useCollapsibleTree needs to walk parent chains regardless of which
-  // section (Assets, Liabilities, ...) a given account sits in; the
-  // synthetic "Retained Earnings" node (a real parent/children triple,
-  // `domain.accounts.earnings_rows`) is registered here exactly like a
-  // real account is, unlike its old flat, id-less, tree-invisible shape.
+  // useExpandedTree needs so a row's collapsed-or-not entry exists
+  // regardless of which section (Assets, Liabilities, ...) a given account
+  // sits in; the synthetic "Retained Earnings" node (a real parent/children
+  // triple, `domain.accounts.earnings_rows`) is registered here exactly
+  // like a real account is, unlike its old flat, id-less, tree-invisible
+  // shape. One shared expanded-state record, fed into a separate
+  // `useReactTable` per group below — safe, since no real account's
+  // `parent_id` ever crosses a type boundary, and TanStack ignores a
+  // record entry for an id its own table instance never sees.
   const allRows = result ? result.grouped.flatMap((g) => g.rows) : []
-  const tree = useCollapsibleTree(COLLAPSE_KEY, allRows)
+  const { expanded, onExpandedChange } = useExpandedTree(COLLAPSE_KEY, allRows)
 
   // `replace: true`, unlike the prev/next `<Link>`s below (a genuine
   // history *push*) — deliberate, not a blind default. `DatePicker.tsx`'s
@@ -202,7 +214,8 @@ export default function TrialBalancePage() {
             </thead>
             <tbody>
               {result.grouped.map((g) => (
-                <GroupRows key={g.type} group={g} tree={tree} scenario={scenario} raw={raw}
+                <GroupRows key={g.type} group={g} expanded={expanded} onExpandedChange={onExpandedChange}
+                           scenario={scenario} raw={raw}
                            asOf={result.as_of} monthStart={result.as_of.slice(0, 7) + '-01'} />
               ))}
               <tr className={`grand${result.in_balance ? '' : ' out-of-balance'}`}>
@@ -239,8 +252,18 @@ export default function TrialBalancePage() {
   )
 }
 
-function GroupRows({ group, tree, scenario, raw, asOf, monthStart }: {
-  group: Group; tree: ReturnType<typeof useCollapsibleTree>
+// One `useReactTable` instance per group — TanStack needs a nested `data`
+// tree (`getSubRows`), and each type group (Assets, Income, ...) is
+// already its own self-contained tree, so there's no need for one
+// page-wide table spanning every group the way `expanded` state does.
+// `columns` is a single throwaway entry: this component still hand-renders
+// every `<td>` itself below (same JSX as before the port), so nothing here
+// reads through TanStack's own cell/column model — `useReactTable` just
+// needs *a* non-empty `columns` array to construct the table instance.
+const NO_COLUMNS: ColumnDef<TreeNode<Row>>[] = [{ id: 'row' }]
+
+function GroupRows({ group, expanded, onExpandedChange, scenario, raw, asOf, monthStart }: {
+  group: Group; expanded: ExpandedTreeState['expanded']; onExpandedChange: ExpandedTreeState['onExpandedChange']
   scenario: string; raw: boolean; asOf: string; monthStart: string
 }) {
   // trial_balance.html's own `entry_link()` macro: a leaf row's non-zero
@@ -258,27 +281,36 @@ function GroupRows({ group, tree, scenario, raw, asOf, monthStart }: {
     `&date_from=${isFlow && !raw ? monthStart : ''}&date_to=${asOf}&account=${encodeURIComponent(code)}`
   const isFlowType = group.type === 'income' || group.type === 'expense'
 
+  const data = useMemo(() => buildRowTree(group.rows), [group.rows])
+  const table = useReactTable({
+    data,
+    columns: NO_COLUMNS,
+    getRowId: (row, index, parent) =>
+      row.id !== undefined ? String(row.id) : `${parent ? parent.id + '-' : ''}idx-${index}`,
+    getSubRows: (row) => row.subRows,
+    state: { expanded },
+    onExpandedChange,
+    getCoreRowModel: getCoreRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+  })
+
   return (
     <>
       <tr className="type-head">
         <td colSpan={4}>{group.label}</td>
       </tr>
-      {group.rows.map((r, i) =>
-        tree.isHidden(r) ? null : (
-          // Every row here — real account or the synthetic "Retained
-          // Earnings" node — carries a real `id` now, so the `?? index`
-          // fallback below is purely defensive at this point; kept
-          // rather than removed, since `Row["id"]` is still optional on
-          // the type and nothing enforces every future caller sets one.
+      {table.getRowModel().rows.map((row) => {
+        const r = row.original
+        return (
           <tr
-            key={r.id ?? `${group.type}-${i}`}
-            className={r.id !== undefined && r.has_children && tree.isCollapsed(r.id) ? 'collapsed' : undefined}
-            data-has-children={r.id !== undefined ? (r.has_children ? '1' : '0') : undefined}
+            key={row.id}
+            className={r.has_children && !row.getIsExpanded() ? 'collapsed' : undefined}
+            data-has-children={r.has_children ? '1' : '0'}
           >
             <td className="mono dim">{r.account_code}</td>
             <td
               className={`acct-name depth-${Math.min(r.depth, 6)}`}
-              onClick={() => r.id !== undefined && r.has_children && tree.toggle(r.id)}
+              onClick={r.has_children ? row.getToggleExpandedHandler() : undefined}
             >
               <span className="tree-toggle" />
               {r.account_name} {r.path && <span className="dim small">{r.path}</span>}
@@ -294,8 +326,8 @@ function GroupRows({ group, tree, scenario, raw, asOf, monthStart }: {
               )}
             </td>
           </tr>
-        ),
-      )}
+        )
+      })}
       {group.show_type_total && (
         <tr className="subtotal">
           <td></td>

@@ -27,7 +27,12 @@ export interface CollapsibleTreeState {
   toggle: (id: number) => void
 }
 
-function loadCollapsed(storageKey: string): Set<number> {
+// Exported so `useExpandedTree.ts` (the TanStack-table-backed sibling hook,
+// ROADMAP.md S1) reads the exact same on-disk shape — an array of
+// collapsed numeric ids — rather than re-deriving its own parsing. Both
+// hooks share this storage format deliberately: a report migrating from
+// this hook to that one must not reset anyone's saved collapse state.
+export function loadCollapsed(storageKey: string): Set<number> {
   try {
     return new Set(JSON.parse(localStorage.getItem(storageKey) || '[]'))
   } catch {

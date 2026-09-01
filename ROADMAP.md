@@ -242,34 +242,13 @@ additive migration and its UI cost before any project exists is zero
 
 ## 5. Track S — the reporting surface
 
-### S1 — the matrix table component
+### S1 — the matrix table component ✅
 
-Adopt **TanStack Table (headless)** as the renderer for every
-hierarchical/columnar report table (D4, §10). Headless is the point:
-it provides row/column models only, so the existing
-`table.ledger.report-table` markup and the entire stylesheet survive
-by construction — the constraint is *don't lose the current
-capabilities and aesthetics* of the report tables, and a styled grid
-library (AG Grid, MUI) would mean re-approximating them instead.
-It replaces, with first-class equivalents, the three things currently
-hand-rolled: column groups (Income Statement Split's two-row
-`rowSpan`/`colSpan` header math), expanding sub-rows
-(`useCollapsibleTree`'s ancestor-walk hiding), and pinned lead columns
-(the sticky Code/Account cells inside `.table-scroll`).
-
-Not a drop-in: TanStack's expansion model is nested (`getSubRows`)
-while the report APIs return flat rows with `parent_id`/`depth`, so
-the component builds the tree client-side; and `useCollapsibleTree`'s
-localStorage persistence is re-expressed as controlled `expanded`
-state (keep the per-report storage keys so nobody's collapse state
-resets). Port **Trial Balance and Balance Sheet only** in this phase —
-the two simplest tree reports, as the proof that aesthetics really
-survive. No user-visible change is the acceptance criterion.
-
-Why first: once users can compose report shapes a developer never
-hand-built (S5), every shape needs a generic renderer. Migrating the
-renderer *after* users' saved configs point at it means rewriting the
-widget layer under load.
+TanStack Table (headless) v8 adopted for Trial Balance and Balance
+Sheet's account trees, one `useReactTable` per type-section — SPEC.md
+decision 26. Column groups and pinned lead columns, the library's
+other two motivating capabilities, stay unexercised until S6 ports a
+report that actually needs them.
 
 ### S2 — the three-section shell and the tabbed surface
 
